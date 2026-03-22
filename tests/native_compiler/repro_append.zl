@@ -1,0 +1,15 @@
+import zen.io
+
+class Transpiler {
+    function test() {
+        from zen.io import write
+        let l -> []
+        l.append(1)
+        write(l)
+    }
+}
+
+function main() {
+    let t -> Transpiler()
+    t.test()
+}

@@ -1,0 +1,51 @@
+function split(s, sep) {
+    <- __builtin_string.split(s, sep)
+}
+
+function join(parts, sep) {
+    <- __builtin_string.join(parts, sep)
+}
+
+function trim(s) {
+    <- __builtin_string.trim(s)
+}
+
+function substring(s, start, end) {
+    <- __builtin_string.substring(s, start, end)
+}
+
+function starts_with(s, prefix) {
+    <- __builtin_string.starts_with(s, prefix)
+}
+
+function ends_with(s, suffix) {
+    <- __builtin_string.ends_with(s, suffix)
+}
+
+function replace(s, old, new) {
+    <- __builtin_string.replace(s, old, new)
+}
+
+function length(s) {
+    <- __builtin_string.length(s)
+}
+
+function to_lower(s) {
+    <- __builtin_string.to_lower(s)
+}
+
+function to_upper(s) {
+    <- __builtin_string.to_upper(s)
+}
+
+function index_of(s, sub) {
+    <- __builtin_string.index_of(s, sub)
+}
+
+function at(s, i) {
+    <- __builtin_string.at(s, i)
+}
+
+function str(x) {
+    <- __builtin_string.str(x)
+}

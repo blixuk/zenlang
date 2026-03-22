@@ -1,0 +1,351 @@
+import `compiler/Token` as TokenModule
+
+enumerator ASTKind {
+    BINARY_EXPRESSION,
+    UNARY_EXPRESSION,
+    LITERAL_EXPRESSION,
+    GROUPING_EXPRESSION,
+    VARIABLE_EXPRESSION,
+    CALL_EXPRESSION,
+    GET_EXPRESSION,
+    SET_EXPRESSION,
+    ASSIGNMENT_EXPRESSION,
+    LOGICAL_EXPRESSION,
+    EXPRESSION_STATEMENT,
+    REASSIGNMENT_STATEMENT,
+    MEMBER_REASSIGNMENT_STATEMENT,
+    LET_STATEMENT,
+    BLOCK_STATEMENT,
+    FUNCTION_STATEMENT,
+    RETURN_STATEMENT,
+    WHEN_STATEMENT,
+    WHILE_STATEMENT,
+    STRUCTURE_MEMBER,
+    STRUCTURE_STATEMENT,
+    ENUMERATOR_STATEMENT,
+    CLASS_STATEMENT,
+    IMPORT_STATEMENT,
+    FROM_IMPORT_STATEMENT,
+    DO_WHILE_STATEMENT,
+    FOR_STATEMENT,
+    STRUCTURE_INITIALIZATION_EXPRESSION,
+    STRUCTURE_INIT_FIELD,
+    PARAMETER,
+    CHECK_EXPRESSION,
+    RAISE_EXPRESSION,
+    ASSERT_STATEMENT,
+    CASE_CLAUSE,
+    INDEX_EXPRESSION,
+    LIST_LITERAL_EXPRESSION,
+    DEFER_STATEMENT
+}
+
+structure ASTNode {
+    kind: ASTKind
+}
+
+// Expressions
+
+structure BinaryExpression {
+    kind: ASTKind,
+    left: Variant,
+    operator: Token,
+    right: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure UnaryExpression {
+    kind: ASTKind,
+    operator: Token,
+    right: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure LiteralExpression {
+    kind: ASTKind,
+    value: Variant,
+    is_string: Boolean,
+    line: Integer,
+    column: Integer
+}
+
+structure GroupingExpression {
+    kind: ASTKind,
+    expression: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure VariableExpression {
+    kind: ASTKind,
+    name: Token,
+    line: Integer,
+    column: Integer
+}
+
+structure CallExpression {
+    kind: ASTKind,
+    callee: Variant,
+    arguments: List,
+    line: Integer,
+    column: Integer
+}
+
+structure GetExpression {
+    kind: ASTKind,
+    object: Variant,
+    name: Token,
+    line: Integer,
+    column: Integer
+}
+
+structure IndexExpression {
+    kind: ASTKind,
+    object: Variant,
+    index: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure SetExpression {
+    kind: ASTKind,
+    object: Variant,
+    name: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure AssignmentExpression {
+    kind: ASTKind,
+    name: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure LogicalExpression {
+    kind: ASTKind,
+    left: Variant,
+    operator: Token,
+    right: Variant,
+    line: Integer,
+    column: Integer
+}
+
+// Statements
+
+structure ExpressionStatement {
+    kind: ASTKind,
+    expression: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure ReassignmentStatement {
+    kind: ASTKind,
+    name: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure MemberReassignmentStatement {
+    kind: ASTKind,
+    callee: Variant,
+    expression: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure LetStatement {
+    kind: ASTKind,
+    name: Token,
+    initializer: Variant,
+    type_annotation: Variant, // Optional
+    line: Integer,
+    column: Integer
+}
+
+structure BlockStatement {
+    kind: ASTKind,
+    statements: List,
+    line: Integer,
+    column: Integer
+}
+
+structure FunctionStatement {
+    kind: ASTKind,
+    name: Token,
+    parameters: List,
+    body: BlockStatement, // Variant or BlockStatement
+    return_type: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure ReturnStatement {
+    kind: ASTKind,
+    keyword: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure WhenStatement {
+    kind: ASTKind,
+    condition: Variant,
+    then_branch: Variant,
+    else_branch: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure WhileStatement {
+    kind: ASTKind,
+    condition: Variant,
+    body: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure StructureMember {
+    kind: ASTKind,
+    name: Token, 
+    value: Variant,
+    declared_type: Variant,
+    mutable: Boolean,
+    line: Integer,
+    column: Integer
+}
+
+structure StructureStatement {
+    kind: ASTKind,
+    name: Token,
+    members: List,
+    line: Integer,
+    column: Integer
+}
+
+structure EnumeratorStatement {
+    kind: ASTKind,
+    name: Token,
+    members: List,
+    line: Integer,
+    column: Integer
+}
+
+structure ClassStatement {
+    kind: ASTKind,
+    name: Token,
+    parent: Variant, // Token or nothing (for inheritance)
+    members: List,   // List of StructureMember
+    methods: List,   // List of FunctionStatement
+    line: Integer,
+    column: Integer
+}
+
+structure ImportStatement {
+    kind: ASTKind,
+    path: Token,
+    alias: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure FromImportStatement {
+    kind: ASTKind,
+    path: Token,
+    imports: List,
+    line: Integer,
+    column: Integer
+}
+
+structure DoWhileStatement {
+    kind: ASTKind,
+    condition: Variant,
+    body: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure ForStatement {
+    kind: ASTKind,
+    variable: Token,
+    iterable: Variant,
+    body: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure StructureInitField {
+    kind: ASTKind,
+    name: Token,
+    value: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure StructureInitializationExpression {
+    kind: ASTKind,
+    structure_name: Token,
+    fields: List,
+    line: Integer,
+    column: Integer
+}
+structure Parameter {
+    kind: ASTKind,
+    name: Token,
+    type_annotation: Variant,
+    line: Integer,
+    column: Integer
+}
+
+structure CaseClause {
+    kind: ASTKind,
+    value: Variant, // expression or nothing for default
+    condition: Variant, // if it's a conditional case
+    body: Variant, // BlockStatement or Expression
+    line: Integer,
+    column: Integer
+}
+
+structure CheckExpression {
+    kind: ASTKind,
+    value: Variant, // expression to check
+    cases: List, // List of CaseClause
+    else_branch: Variant, // optional block/expr
+    line: Integer,
+    column: Integer
+}
+
+structure RaiseExpression {
+    kind: ASTKind,
+    value: Variant, // expression to raise
+    line: Integer,
+    column: Integer
+}
+
+structure AssertStatement {
+    kind: ASTKind,
+    condition: Variant,
+    message: Variant, // optional error/message
+    line: Integer,
+    column: Integer
+}
+structure ListLiteralExpression {
+    kind: ASTKind,
+    elements: List,
+    line: Integer,
+    column: Integer
+}
+
+structure DeferStatement {
+    kind: ASTKind,
+    statement: Variant,
+    line: Integer,
+    column: Integer
+}

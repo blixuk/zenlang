@@ -1,0 +1,9 @@
+import ./../../src/compiler/CTranspiler.zl.minimal as CTranspiler
+
+function test_minimal() {
+    let ast -> []
+    let transpiler -> CTranspiler.Transpiler { ast: ast }
+    __builtin_output.write(`Success`)
+}
+
+test_minimal()

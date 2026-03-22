@@ -1,0 +1,5 @@
+from zen.io import write
+import utils as u
+
+u.hello()
+write(u.x)

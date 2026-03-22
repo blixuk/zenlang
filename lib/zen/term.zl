@@ -1,0 +1,36 @@
+class Term {
+    let CLEAR -> `\033[2J\033[H`
+    let RESET -> `\033[0m`
+    let BOLD -> `\033[1m`
+    
+    let BLACK -> `\033[30m`
+    let RED -> `\033[31m`
+    let GREEN -> `\033[32m`
+    let YELLOW -> `\033[33m`
+    let BLUE -> `\033[34m`
+    let MAGENTA -> `\033[35m`
+    let CYAN -> `\033[36m`
+    let WHITE -> `\033[37m`
+
+    function color(c, text) {
+        <- c + text + `\033[0m`
+    }
+
+    function info(text) {
+        __builtin_output.info(text)
+    }
+
+    function warn(text) {
+        __builtin_output.warn(text)
+    }
+
+    function error(text) {
+        __builtin_output.error(text)
+    }
+
+    function debug(text) {
+        __builtin_output.debug(text)
+    }
+}
+
+let term -> Term()

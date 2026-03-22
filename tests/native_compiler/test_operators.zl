@@ -1,0 +1,76 @@
+from zen.io import write
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/AST import ASTKind
+from ../../src/compiler/Token import TokenType
+
+function test_operators() {
+    write(`Testing Operators Parser...`)
+
+    // Test 1: Power (2 ** 3)
+    let source -> `x -> 2 ** 3;`
+    let lexer -> Lexer(source)
+    let parser -> Parser(lexer.tokenize())
+    let stmts -> parser.parse()
+    
+    let expr_stmt -> stmts[0]
+    let assign -> expr_stmt.expression
+    let power_expr -> assign.value
+    
+    write(`Stmt 0 Kind (Expression): ` + stmts[0].kind)
+    write(`Assign Value Kind: ` + power_expr.kind) // Expected: BINARY_EXPRESSION (0?)
+    
+    when power_expr.kind = ASTKind.BINARY_EXPRESSION {
+        write(`Binary Expr Found`)
+        when power_expr.operator.kind = TokenType.POWER {
+            write(`Operator is POWER (**) - PASS`)
+        } or {
+            write(`Operator FAIl: ` + power_expr.operator.kind)
+        }
+    } or {
+        write(`FAIL: Expected BinaryExpression`)
+    }
+
+    // Test 2: Precedence (1 || 2 && 3) -> 1 || (2 && 3)
+    let source2 -> `res -> 1 || 2 && 3;`
+    let lexer2 -> Lexer(source2)
+    let parser2 -> Parser(lexer2.tokenize())
+    let stmts2 -> parser2.parse()
+    
+    let root -> stmts2[0].expression.value // the || expression
+    
+    write(`Root Op Kind: ` + root.operator.kind) // Expected: BITWISE_OR (66?)
+    // TokenType.BITWISE_OR = ??
+    
+    let right -> root.right
+    write(`Right Kind: ` + right.kind) // Binary
+    write(`Right Op Kind: ` + right.operator.kind) // Expected: BITWISE_AND (65?)
+    
+    // Test 3: Unary with Power (-2 ** 3) -> - (2 ** 3)
+    let source3 -> `res -> -2 ** 3;`
+    let lexer3 -> Lexer(source3)
+    let parser3 -> Parser(lexer3.tokenize())
+    let stmts3 -> parser3.parse()
+    
+    let root3 -> stmts3[0].expression.value // Unary (-)
+    write(`Root3 Kind: ` + root3.kind) // ASTKind.UNARY_EXPRESSION (1)
+    write(`Root3 Op: ` + root3.operator.value) // "-"
+    
+    let inner -> root3.right 
+    write(`Inner Kind: ` + inner.kind) // Binary
+    write(`Inner Op: ` + inner.operator.value) // "**"
+    
+     // Test 4: Power Right Associativity (2 ** 3 ** 4) -> 2 ** (3 ** 4)
+    let source4 -> `res -> 2 ** 3 ** 4;`
+    let lexer4 -> Lexer(source4)
+    let parser4 -> Parser(lexer4.tokenize())
+    let stmts4 -> parser4.parse()
+    
+    let root4 -> stmts4[0].expression.value
+    write(`Root4 Op: ` + root4.operator.value) // "**"
+    write(`Root4 Left: ` + root4.left.value) // Expected 2
+    write(`Root4 Right Kind: ` + root4.right.kind) // Binary
+    write(`Root4 Right Left: ` + root4.right.left.value) // Expected 3
+}
+
+test_operators()

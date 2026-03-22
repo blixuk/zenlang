@@ -1,0 +1,16 @@
+from zen.io import write
+class Animal {
+    function sound() {
+        write(`Generic Animal Sound`)
+    }
+}
+
+class Dog extends Animal {
+    function sound() {
+        write(`Dog says:`)
+        parent.sound()
+    }
+}
+
+let d -> Dog()
+d.sound()

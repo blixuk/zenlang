@@ -1,0 +1,8 @@
+import zen.string as Str
+from zen.io import write
+
+function main() {
+    let s -> "Hello"
+    let repr -> Str.str(s)
+    write(repr)
+}

@@ -1,0 +1,8 @@
+from zen.io import write
+// Assignments
+
+//let y -> when True { <- 10 } or { <- 20 }
+//write(y)
+
+let x -> 10 when False or 20 
+write(x)

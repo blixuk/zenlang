@@ -1,0 +1,64 @@
+from zen.io import write
+
+//let items -> [1, 2, 3]
+//let items_ex -> [4, 5, 6]
+
+// explicit iterator
+//do for item in items {
+//    write(item)
+//}
+
+// explicit iterator nested
+//do for item in items {
+//    write(item)
+//    write()
+//    do for item in items_ex {
+//        write(item)
+//    }
+//    write()
+//}
+
+// implicit iterator
+//do for in items {
+//    write(iterator * 2)
+//}
+
+// implicit iterator nested
+//do for in items {
+//    write(iterator)
+//    write()
+//    do for in items_ex {
+//        write(iterator)
+//    }
+//    write()
+//}
+
+//do for (key: String, value: String) in list {
+//    do for (key: String, value: String) in list {
+//        
+//    }
+//}
+
+let items_iter -> [
+    [1,1],[2,2],[3,3]
+]
+
+// explicit iterator
+//do for (x, y) in items_iter {
+//    write(x)
+//    write(y)
+//    write()
+//}
+
+// implicit iterator
+//do for () in items_iter {
+//    write(key, value)
+//    //write(value)
+//}
+
+// implicit iterator
+do for x in items_iter {
+    write(x)
+}
+
+

@@ -1,0 +1,186 @@
+import `lib/zen/io` as IO
+import `lib/zen/sys` as Sys
+import `lib/zen/string` as Str
+import `compiler/Lexer` as Lexer
+import `compiler/Parser` as Parser
+import `compiler/CTranspiler` as CTranspiler
+import `compiler/Module/Resolver` as Resolver
+import `compiler/Module/DependencyGraph` as DependencyGraph
+from `compiler/AST` import ASTNode, ASTKind, ImportStatement
+import `compiler/Token` as TokenModule
+
+function get_dirname(path: String) : String {
+    let parts: List -> Str.split(path, `/`)
+    let len: Integer -> parts.length()
+    when (len <= 1) { <- `.` }
+    
+    // Join all but last
+    let result: String -> ``
+    let i: Integer -> 0
+    while (i < len - 1) {
+        let part: String -> parts[i] // using index since list.c supports [i] (via CTranspiler macro/func?)
+        // CTranspiler emits ZenList_get for [].
+        // ZenList_get returns Variant. Cast to string.
+        
+        when (i > 0) { result -> result + `/` }
+        result -> result + part
+        i -> i + 1
+    }
+    
+    // Handle leading slash if path started with /
+    when (Str.starts_with(path, `/`)) {
+        result -> `/` + result
+    }
+    
+    <- result
+}
+
+function build_dependency_graph(path, resolver, graph, visited) {
+    // Check visited
+    for v in visited {
+        let s: String -> v
+        when (s = path) { <- nothing }
+    }
+    visited.append(path)
+    graph.add_node(path)
+    
+    let src: String -> IO.read_file(path)
+    let lex: Lexer -> Lexer.Lexer(src)
+    let toks: List -> lex.tokenize()
+    let par: Parser -> Parser.Parser(toks)
+    let ast: List -> par.parse()
+    
+    for stmt in ast {
+        let node: ASTNode -> stmt
+        // IO.write(`DEBUG: Stmt kind: ` + Str.str(node.kind) + `\n`)
+        
+        when (stmt.kind = ASTKind.IMPORT_STATEMENT) {
+             IO.write(`DEBUG: Found ImportStatement\n`)
+             // let import_stmt: ImportStatement -> stmt
+             // let import_path: String -> stmt.path.value
+             
+             // Debug path
+             IO.write(`DEBUG: Accessing path...\n`)
+             let p: Token -> stmt.path
+             IO.write(`DEBUG: Accessed path. Value is: ` + p.value + `\n`)
+             
+             let import_path: String -> p.value
+             // Resolve
+             let resolved: String -> resolver.resolve(import_path)
+             when (resolved != ``) {
+                 graph.add_edge(path, resolved)
+                 build_dependency_graph(resolved, resolver, graph, visited)
+             }
+        } or when (stmt.kind = ASTKind.FROM_IMPORT_STATEMENT) {
+             IO.write(`DEBUG: Found FromImportStatement\n`)
+             let p: Token -> stmt.path
+             let resolved: String -> resolver.resolve(p.value)
+             when (resolved != ``) {
+                 graph.add_edge(path, resolved)
+                 build_dependency_graph(resolved, resolver, graph, visited)
+             }
+        }
+    }
+}
+
+function parse_recursive(path, resolver, graph) {
+    // Check if already parsed/processed
+    // Graph doesn't store ASTs, so we maintain a map?
+    // We don't have Map. Storing in graph?
+    // Graph stores structure.
+    
+    // For now, simple traversal:
+    // 1. Read file
+    // 2. Parse to AST
+    // 3. Scan imports -> resolve -> recurse
+    // 4. Collect statements
+    
+    // To handle order, we should build graph first, then traverse order.
+    
+    build_dependency_graph(path, resolver, graph, [])
+    
+    let order: List -> graph.get_compilation_order()
+    let all_statements: List -> []
+    
+    for module_path in order {
+        // Parse again? Or cache?
+        // Without Dict, caching is hard (O(N) lookup).
+        // Parsing is fast enough for now?
+        // Let's re-read and re-parse.
+        
+        // Skip re-parsing if we can't cache.
+        // Actually, verifying module order is the key.
+        
+        let src: String -> IO.read_file(module_path)
+        let lex: Lexer -> Lexer.Lexer(src)
+        let toks: List -> lex.tokenize()
+        let par: Parser -> Parser.Parser(toks)
+        let ast: List -> par.parse()
+        
+        // Merge statements
+        // ZenList concat?
+        for stmt in ast {
+            all_statements.append(stmt)
+        }
+    }
+    
+    <- all_statements
+}
+
+function main() {
+    let args: List -> Sys.get_args()
+    
+    // args[0] is the script path (src/zen.zl) when run via Zen.py? 
+    // Wait, Zen.py sets execution_arguments = [source_path] + args
+    // If command is: python3 Zen.py src/zen.zl tests/simple.zl
+    // args[0] = src/zen.zl
+    // args[1] = tests/simple.zl
+    
+    when args.length() < 2 {
+        IO.write(`Usage: zen <source_file> [output_file]`)
+        Sys.exit(1)
+    }
+
+    let source_path: String -> args[1]
+    IO.write(`Compiling: `)
+    IO.write(source_path)
+
+    let source: String -> IO.read_file(source_path)
+    // IO.read_file returns string or raises error? 
+    // The current implementation in Runtime seems to raise error if file not found (python open throws).
+    // Usually we wrap it or check exists.
+    
+    let root_path: String -> get_dirname(source_path)
+    
+    // Initialize Resolver
+    let resolver: Resolver -> Resolver.Resolver(root_path)
+    let graph: DependencyGraph -> DependencyGraph.DependencyGraph()
+    
+    // Parse recursively
+    let statements: List -> parse_recursive(source_path, resolver, graph)
+    
+    let transpiler: Transpiler -> CTranspiler.Transpiler(statements)
+    let out_path: String -> `out.c`
+    when args.length() > 2 {
+        out_path -> args[2]
+    }
+    
+    // Calculate header path and check names
+    let header_path -> Str.replace(out_path, `.c`, `.h`)
+    
+    // Extract basename for guard: build/Token.c -> TOKEN_H
+    let parts: List -> Str.split(out_path, `/`)
+    let filename: String -> parts[parts.length() - 1]
+    let base_name: String -> Str.replace(filename, `.c`, ``)
+    let guard_name: String -> Str.to_upper(base_name) + `_H`
+    let include_name: String -> Str.replace(filename, `.c`, `.h`)
+
+    let header_code: String -> transpiler.transpile_header(guard_name)
+    let source_code: String -> transpiler.transpile_source(include_name)
+    
+    IO.write_file(header_path, header_code)
+    IO.write(`Header written to: ` + header_path)
+    
+    IO.write_file(out_path, source_code)
+    IO.write(`Source written to: ` + out_path)
+}

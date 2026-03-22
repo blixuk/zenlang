@@ -1,0 +1,20 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function test_loops() {
+    let i -> 0
+    let sum -> 0
+    do while i < 5 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    write(`Loops Passed`)
+}
+
+test_loops()

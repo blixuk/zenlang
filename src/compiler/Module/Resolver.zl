@@ -1,0 +1,40 @@
+import `lib/zen/io` as IO
+import `lib/zen/string` as Str
+import `lib/zen/sys` as Sys
+
+class Resolver {
+    let root_path: String
+    let search_paths: List
+
+    function init(root_path: String) {
+        self.root_path -> root_path
+        self.search_paths -> [root_path, `.`, `lib`, `../lib`]
+        
+        // IO.write(`DEBUG [Resolver]: Search paths: ` + Str.join(self.search_paths, `, `))
+        
+        let zen_path: String -> Sys.get_env(`ZEN_PATH`)
+        when (zen_path != nothing) {
+             let paths: List -> Str.split(zen_path, `:`)
+             // ZenLang doesn't have extend yet? Use loop or manual append.
+             // Types.zl shows join/split.
+             for path in paths {
+                 self.search_paths.append(path)
+             }
+        }
+    }
+
+    function resolve(import_path: String) : String {
+        let relative_path: String -> Str.replace(import_path, `.`, `/`)
+        
+        for base_path in self.search_paths {
+            let candidate: String -> base_path + `/` + relative_path + `.zl`
+            when (IO.file_exists(candidate)) {
+                <- candidate
+            }
+        }
+        
+        IO.error(`Result: Module '` + import_path + `' not found in search paths.`)
+        Sys.exit(1)
+        <- ``
+    }
+}

@@ -1,0 +1,61 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Token import TokenType
+from zen.io import write
+import zen.string as s
+
+function main() {
+    write(`Running Comprehensive Lexer Test...`)
+
+    let source -> `
+    // Keywords
+    function class structure enumerator let return when or while break continue import from as
+    
+    // Types
+    Integer Decimal String Boolean Void Variant List
+
+    // Operators & Delimiters
+    + - * / % ^ = == != < > <= >= -> <- :> : ++ -- !
+    ( ) { } [ ] , . ;
+    
+    // Literals
+    123 456.789
+    \`Hello world\` \`Escapes: \\n \\t \\\\ \`\`\`
+    'a' '\\n'
+    
+    // Block Comment
+    /* 
+       Multi
+       Line
+    */
+    `
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    write(`Tokens found: ` + s.length(tokens))
+    
+    let expected_count -> 60 // Approximate, let's just inspect them
+    
+    do for token in tokens {
+        let type_str -> ``
+        
+        // Manual mapping for now until we have proper enum to string or introspection
+        when (token.kind = TokenType.KEYWORD) { type_str -> `KEYWORD` }
+        or when (token.kind = TokenType.IDENTIFIER) { type_str -> `IDENTIFIER` }
+        or when (token.kind = TokenType.LITERAL) { type_str -> `LITERAL` }
+        or when (token.kind = TokenType.INTEGER) { type_str -> `INTEGER` }
+        or when (token.kind = TokenType.DECIMAL) { type_str -> `DECIMAL` }
+        or when (token.kind = TokenType.STRING) { type_str -> `STRING` }
+        or when (token.kind = TokenType.RUNE) { type_str -> `RUNE` }
+        or when (token.kind = TokenType.TYPE) { type_str -> `TYPE` }
+        or when (token.kind = TokenType.OPERATOR) { type_str -> `OPERATOR` }
+        or when (token.kind = TokenType.ERROR) { type_str -> `ERROR` }
+        or { type_str -> `OTHER (` + token.kind + `)` }
+        
+        write(`[` + type_str + `] ` + token.value)
+    }
+    
+    write(`Test Complete.`)
+}
+
+main()

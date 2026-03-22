@@ -1,0 +1,52 @@
+import `../../src/compiler/Lexer` as Lexer
+import `../../src/compiler/Parser` as Parser
+import `../../src/compiler/CTranspiler` as CTranspiler
+import `../../lib/zen/io` as IO
+import `../../lib/zen/string` as Str
+
+function test_transpiler_spec {
+    IO.write(`Testing C Transpiler Spec Alignment...`)
+    
+    let source -> `
+import "math"
+import Utils
+
+class Test {
+    let a: Integer[64]
+    let b: String
+    
+    function logic() {
+        do {
+            a -> a + 1
+        } while a < 10
+        
+        do for i in list {
+            b -> "test"
+        }
+    }
+}
+`
+    IO.write(`Source Code:`)
+    IO.write(source)
+
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    let p -> Parser.Parser(tokens)
+    let ast -> p.parse()
+    
+    let t -> CTranspiler.Transpiler(ast)
+    let c_code -> t.transpile()
+    
+    IO.write(`--- Generated C Code ---`)
+    IO.write(c_code)
+    IO.write(`------------------------`)
+    
+    // Simple String checks using native string methods (assuming they exist or using visual verification first)
+    // verification checks:
+    // 1. #include "math.h"
+    // 2. int64_t a;
+    // 3. do { ... } while (...);
+    // 4. for (int ... ) 
+}
+
+test_transpiler_spec()

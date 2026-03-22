@@ -1,0 +1,26 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from zen.io import write
+import zen.string as s
+// import zen.list as l
+
+function main() {
+    let source -> `
+    function hello() {
+        let x -> 1
+    }
+
+    function add(a: Integer, b: Integer) : Integer {
+        return a + b;
+    }
+    `
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    write(`Parsed Function Statements:`)
+    // Returning statements list to print it via Zen interpreter's auto-print
+    <- statements
+}

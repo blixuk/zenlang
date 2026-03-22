@@ -1,0 +1,40 @@
+{
+    "name": "zenlang",
+    "displayName": "ZenLang",
+    "description": "Syntax highlighting and language support for ZenLang",
+    "version": "0.0.2",
+    "engines": {
+        "vscode": "^1.75.0"
+    },
+    "publisher": "zenlang",
+    "main": "./src/extension.js",
+    "contributes": {
+        "languages": [
+            {
+                "id": "zenlang",
+                "aliases": [
+                    "ZenLang",
+                    "zen"
+                ],
+                "extensions": [
+                    ".zl",
+                    ".zs"
+                ],
+                "configuration": "./language-configuration.json"
+            }
+        ],
+        "grammars": [
+            {
+                "language": "zenlang",
+                "scopeName": "source.zenlang",
+                "path": "./syntaxes/zen.tmLanguage.json"
+            }
+        ],
+        "snippets": [
+            {
+                "language": "zenlang",
+                "path": "./snippets.json"
+            }
+        ]
+    }
+}

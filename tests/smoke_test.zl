@@ -1,0 +1,106 @@
+// tests/smoke_test.zl
+
+// 1. Comments
+// Single line
+/* Multi
+   Line */
+
+
+import zen.io
+
+
+// 2. Variables
+
+// Typed Tests
+let a : Integer -> 30
+let b : Decimal -> 3.14
+let c : Boolean -> True
+let d : String -> `Hello`
+let e : Rune -> `a`
+//let f : Variant -> Nothing
+
+// Untyped Tests
+let x -> 10
+let y : Integer -> 20
+
+// 3. Control Flow
+when x == 10 {
+    y -> 30
+} or {
+    y -> 40
+}
+
+do while x > 0 {
+    x -> x - 1
+}
+
+// 4. Functions
+function add(a: Integer, b: Integer) : Integer {
+    <- a + b
+}
+
+function sub(a: Integer, b: Integer) : Integer {
+    <- a - b
+}
+
+// 5. Structure
+structure MyVector {
+    x: Integer,
+    y: Integer
+}
+
+structure MyOtherVector {
+    x: Integer,
+    y: Integer
+}
+
+let my_other_vector -> MyOtherVector
+my_other_vector.x -> 10
+my_other_vector.y -> 20
+
+// 6. Scope
+scope MyScope {
+    let z -> 100
+}
+
+scope level_1 {
+    let level -> `level_1`
+    scope level_2 {
+        let level -> `level_2`
+    }
+}
+
+
+io.write(`\nvariable: x: `)
+io.write_int(x) // Should display '0'
+io.write(`\nvariable: y: `)
+io.write_int(y) // Should display '30'
+
+io.write(`\nfunction: add: `)
+io.write_int(add(50, 10)) // Should display '60'
+
+io.write(`\nfunction: sub: `)
+io.write_int(sub(50, 10)) // Should display '40'
+
+io.write(`\nstructure: MyVector: `)
+io.write(`MyVector`) // need a way to display structures
+io.write(`\nstructure: MyVector.x: `)
+io.write(MyVector.x) // Should display 'Nothing'
+io.write(`\nstructure: MyVector.y: `)
+io.write(MyVector.y) // Should display 'Nothing'
+
+io.write(`\nstructure: MyOtherVector: `)
+io.write(`MyOtherVector`) // need a way to display structures
+io.write(`\nstructure: MyOtherVector.x: `)
+io.write(MyOtherVector.x) // Should display '10'
+io.write(`\nstructure: MyOtherVector.y: `)
+io.write(MyOtherVector.y) // Should display '20'
+
+io.write(`\nscope: MyScope.z: `)
+io.write(MyScope.z) // Should display '100'
+
+io.write(`\nscope: level_1.level: `)
+io.write(level_1.level) // Should display 'level_1'
+io.write(`\nscope: level_2.level: `)
+io.write(level_1.level_2.level) // Should display 'level_2'
+io.write(`\n`)

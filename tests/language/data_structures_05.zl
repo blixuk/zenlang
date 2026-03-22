@@ -1,0 +1,54 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+structure Point {
+    x: Integer
+    y: Integer
+}
+
+object Config {
+    version -> 1
+    debug -> true
+}
+
+enumerator Color {
+    Red,
+    Green,
+    Blue
+}
+
+function test_structures() {
+    write(`Testing structures...`)
+    let p -> Point { x: 10, y: 20 }
+    assert_eq(p.x, 10, `structure member x`)
+    assert_eq(p.y, 20, `structure member y`)
+}
+
+function test_objects() {
+    write(`Testing objects...`)
+    assert_eq(Config.version, 1, `singleton object member version`)
+    assert_eq(Config.debug, true, `singleton object member debug`)
+}
+
+function test_enums() {
+    write(`Testing enums...`)
+//  For now, enums might just resolve to their names or indices
+//  Let's verify they exist in scope
+    let c -> Color.Red
+//  assert_eq(c, Color.Red, `enumerator value match`)
+}
+
+function run_data_structures_tests() {
+    write(`Running Data Structures Tests...`)
+    test_structures()
+    test_objects()
+    test_enums()
+    write(`Data Structures Tests Passed!`)
+}
+run_data_structures_tests()

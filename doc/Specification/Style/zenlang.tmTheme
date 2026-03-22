@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+	<dict>
+		<key>name</key>
+		<string>ZenLang Nord</string>
+		<key>settings</key>
+		<array>
+			<dict>
+				<key>settings</key>
+				<dict>
+					<key>background</key>
+					<string>#2e3440</string>
+					<key>foreground</key>
+					<string>#d8dee9</string>
+					<key>selection</key>
+					<string>#434c5e</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>comment.line.zenlang</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#a3be8c</string>
+					<key>fontStyle</key>
+					<string>italic</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>comment.block.zenlang</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#a3be8c</string>
+					<key>fontStyle</key>
+					<string>italic</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>comment.doc.zenlang</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#b48ead</string>
+					<key>fontStyle</key>
+					<string>italic</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>string</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#a3be8c</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>constant.numeric, constant.language</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#b48ead</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>keyword</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#81a1c1</string>
+					<key>fontStyle</key>
+					<string>bold</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>storage.type, support.type</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#8fbcbb</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>entity.name.function, support.function</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#88c0d0</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>keyword.operator</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#81a1c1</string>
+				</dict>
+			</dict>
+
+			<dict>
+				<key>scope</key>
+				<string>punctuation.definition.generic</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#d8dee9</string>
+				</dict>
+			</dict>
+
+		</array>
+	</dict>
+</plist>

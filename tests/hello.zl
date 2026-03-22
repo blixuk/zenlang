@@ -1,0 +1,5 @@
+import `lib/zen/io` as IO
+
+function main() {
+    IO.write(`Hello from Self-Hosted Zen!\n`)
+}

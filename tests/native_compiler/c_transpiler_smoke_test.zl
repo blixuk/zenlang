@@ -1,0 +1,40 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/CTranspiler import Transpiler
+from zen.io import write
+import zen.string as Str
+
+function main() {
+    let source -> `
+function add(a: Integer, b: Integer) {
+    return a + b;
+}
+let res -> add(1, 2);
+`
+    write(`Source: ` + source)
+
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    write(`Inspecting AST...`)
+    let i -> 0
+    for stmt in statements {
+        write(`Statement ` + i + `: ` + stmt.kind)
+        i -> i + 1
+    }
+    write(`Total count: ` + i)
+
+    let transpiler -> Transpiler(statements)
+    let c_code -> transpiler.transpile()
+    
+    write(`--- Generated C Code ---`)
+    write(c_code)
+    write(`------------------------`)
+
+    from zen.io import write_file
+    write_file(`output.c`, c_code)
+    write(`Wrote C code to output.c`)
+}

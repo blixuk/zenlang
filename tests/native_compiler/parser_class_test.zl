@@ -1,0 +1,33 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from zen.io import write
+
+// Need to allow proper printing
+function main() {
+    let source -> `
+    class Animal {
+        name: String
+        
+        function make_sound() {
+            // ...
+        }
+    }
+    
+    class Dog(Animal) {
+        breed: String
+        
+        function bark() {
+            // ...
+        }
+    }
+    `
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    write(`Parsed Class Statements:`)
+    <- statements
+}

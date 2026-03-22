@@ -1,0 +1,11 @@
+from zen.io import write
+class Test {
+    let x -> 10
+    function hi() {
+        write(`Hi`)
+    }
+}
+
+let t -> Test()
+write(t.x)
+t.hi()

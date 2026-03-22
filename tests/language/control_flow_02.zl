@@ -1,0 +1,89 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function test_when() {
+    write(`Testing when...`)
+    let x -> 10
+    let result -> 0
+    
+    when x = 10 {
+        result -> 1
+    } or x = 20 {
+        result -> 2
+    } or {
+        result -> 3
+    }
+    assert_eq(result, 1, `when true`)
+    
+    x -> 20
+    when x = 10 {
+        result -> 1
+    } or x = 20 {
+        result -> 2
+    } or {
+        result -> 3
+    }
+    assert_eq(result, 2, `when or-when`)
+    
+    x -> 30
+    when x = 10 {
+        result -> 1
+    } or x = 20 {
+        result -> 2
+    } or {
+        result -> 3
+    }
+    assert_eq(result, 3, `when or`)
+}
+
+function test_loops() {
+    write(`Testing loops...`)
+    let i -> 0
+    let sum -> 0
+    
+    do while i < 5 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    assert_eq(sum, 10, `do while`)
+    
+    i -> 0
+    sum -> 0
+    do until i = 5 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    assert_eq(sum, 10, `do until`)
+    
+    sum -> 0
+    let list -> [1, 2, 3, 4, 5]
+    do for x in list {
+        sum -> sum + x
+    }
+    assert_eq(sum, 15, `do for list`)
+}
+
+function test_when_expressions() {
+    write(`Testing when expressions...`)
+    let x -> 10
+    let val -> when x = 10 { <- `ten` } or { <- `other` }
+    assert_eq(val, `ten`, `when block expression`)
+//    
+    let val_inline -> (x = 10 ? `ten` : `other`)
+    assert_eq(val_inline, `ten`, `when inline expression`)
+}
+
+function run_control_flow_tests() {
+    write(`Running Control Flow Tests...`)
+    test_when()
+    test_loops()
+    test_when_expressions()
+    write(`Control Flow Tests Passed!`)
+}
+run_control_flow_tests()

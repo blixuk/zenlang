@@ -1,0 +1,9 @@
+
+// tests/modules/test_import.zl
+import tests.modules.MyLib
+
+// The parser/interpreter should handle dots in path and look up relative/absolute?
+// Let's try to access members.
+
+print(MyLib.greet(`World`))
+print(MyLib.Math.square(5))

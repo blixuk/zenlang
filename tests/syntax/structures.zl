@@ -1,0 +1,60 @@
+from zen.io import write
+
+// Structures
+//structure a1 { x, y }
+//write(a1.x)
+
+//structure a2 { x -> 1, y -> 10 }
+//write(a2.y)
+//a2.x
+//write(a2.x)
+
+//a2.x -> 100
+//write(a2.x)
+
+//let a3 -> a2
+//write(a3.x)
+
+//structure a3 { x :> 0, y :> 0 }
+
+//structure a4 { x : Integer, y : Integer }
+
+//structure a5 { x : Integer -> 0, y : Integer -> 0 }
+//write(a5.x)
+
+//structure b2 { 
+//	x : Integer -> 0,
+//	y : Integer -> 0,
+//	z : Float -> 0.0
+//}
+
+// Anonymous Structure
+//let a -> structure { x, y }
+
+//structure XYZ { 
+//	x -> 0.0,
+//	y -> 0.0,
+//	z -> 0.0,
+//	sum -> function { <- x + y + z }
+//}
+//
+//XYZ.x -> 1.0
+//XYZ.y -> 2.0
+//XYZ.z -> 3.0
+//
+//write(XYZ.sum())
+
+//structure c2 { 
+//	x : Integer -> 0,
+//	y : Integer -> 0,
+//	sum : Integer -> function : Integer { <- ( x + y ) }
+//}
+
+structure XYZ { 
+	x -> 0.0,
+	y -> 0.0,
+	z -> 0.0,
+	sum -> function (a) { <- a * x }
+}
+XYZ.x -> 10.0
+write(XYZ.sum(2))

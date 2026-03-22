@@ -1,0 +1,27 @@
+function read(path) {
+    <- __builtin_file.read(path)
+}
+
+function write(path, content) {
+    <- __builtin_file.write(path, content)
+}
+
+function append(path, content) {
+    <- __builtin_file.append(path, content)
+}
+
+function exists(path) {
+    <- __builtin_file.exists(path)
+}
+
+function remove(path) {
+    <- __builtin_file.remove(path)
+}
+
+function is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function is_dir(path) {
+    <- __builtin_file.is_dir(path)
+}

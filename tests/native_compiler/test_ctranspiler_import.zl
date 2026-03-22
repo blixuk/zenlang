@@ -1,0 +1,6 @@
+import `../../lib/zen/io` as IO
+from ../../src/compiler/CTranspiler import Transpiler
+
+function main() {
+    IO.write(`Imported Transpiler`)
+}

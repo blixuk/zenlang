@@ -1,0 +1,49 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function test_variables() {
+    write(`Testing variables...`)
+    let x -> 10
+    assert_eq(x, 10, `let assignment`)
+    
+    x -> 20
+    assert_eq(x, 20, `set reassignment`)
+    
+    let s -> `hello`
+    assert_eq(s, `hello`, `string let`)
+}
+
+function test_arithmetic() {
+    write(`Testing arithmetic...`)
+    assert_eq(5 + 5, 10, `addition`)
+    assert_eq(10 - 3, 7, `subtraction`)
+    assert_eq(4 * 4, 16, `multiplication`)
+    assert_eq(20 / 5, 4, `division`)
+    assert_eq(10 % 3, 1, `modulo`)
+    assert_eq(2 ** 3, 8, `exponentiation`)
+}
+
+function test_comparisons() {
+    write(`Testing comparisons...`)
+    assert_eq(1 = 1, true, `equal`)
+    assert_eq(1 != 2, true, `not equal`)
+    assert_eq(5 > 3, true, `greater than`)
+    assert_eq(3 < 5, true, `less than`)
+    assert_eq(5 >= 5, true, `greater than or equal`)
+    assert_eq(3 <= 3, true, `less than or equal`)
+}
+
+function run_basics_tests() {
+    write(`Running Basics Tests...`)
+    test_variables()
+    test_arithmetic()
+    test_comparisons()
+    write(`Basics Tests Passed!`)
+}
+run_basics_tests()

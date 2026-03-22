@@ -1,0 +1,41 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function test_string_builtins() {
+    write(`Testing string builtins...`)
+    let s -> `hello world`
+    assert_eq(string.length(s), 11, `string.length`)
+    assert_eq(string.to_upper(s), `HELLO WORLD`, `string.to_upper`)
+//  assert_eq(string.split(s, ` `)[0], `hello`, `string.split`)
+}
+
+function test_file_builtins() {
+    write(`Testing file builtins...`)
+    let test_file -> `temp_test.txt`
+    file.write(test_file, `content`)
+    assert_eq(file.exists(test_file), true, `file.exists`)
+    assert_eq(file.read(test_file), `content`, `file.read`)
+//  Remove file or leave for cleanup? 
+//  file.delete(test_file) -> when supported
+}
+
+function test_sys_builtins() {
+    write(`Testing sys builtins...`)
+    let args -> sys.get_args()
+//  assert_eq(args.length() > 0, true, `sys.get_args`)
+}
+
+function run_builtins_tests() {
+    write(`Running Builtins Tests...`)
+    test_string_builtins()
+    test_file_builtins()
+    test_sys_builtins()
+    write(`Builtins Tests Passed!`)
+}
+run_builtins_tests()

@@ -1,0 +1,15 @@
+from zen.io import write
+import zen.sys as sys
+import zen.string as s
+
+let args -> sys.get_args()
+write(`Arguments count: ` + s.length(args))
+
+// Usually first arg is the script path
+when s.length(args) > 0 {
+    write(`Script path: ` + args[0])
+}
+
+// write(`Exiting...`)
+// sys.exit(0)
+// write(`This should not be printed`)

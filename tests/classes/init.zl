@@ -1,0 +1,18 @@
+from zen.io import write
+class Person {
+    let name -> `Unknown`
+    let age -> 0
+
+    function init(n, a) {
+        set name -> n
+        set age -> a
+        write(`Initialized ` + name)
+    }
+
+    function greet() {
+        write(`Hello, my name is ` + name + ` and I am ` + age + ` years old.`)
+    }
+}
+
+let p -> Person(`Alice`, 30)
+p.greet()

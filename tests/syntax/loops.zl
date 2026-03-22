@@ -1,0 +1,106 @@
+from zen.io import write
+// Loops
+
+// Do Basic
+write(`Do Basic`)
+do {
+    write(`Done`)
+}
+
+write(`-------------------------------------------------`)
+
+// Do If
+write(`Do If`)
+when True {
+    write(`Done`)
+}
+
+write(`-------------------------------------------------`)
+
+// Do While
+write(`Do While`)
+let a -> 0
+do while a < 3 {
+    write(a)
+    a -> a + 1
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do While Post
+write(`Do While Post`)
+let z -> 0
+do {
+    write(z)
+    z -> z + 1
+} while z == 1
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do While Else
+write(`Do While Else`)
+let b -> 0
+do while b < 3 {
+    write(b)
+    b -> b + 1
+} or {
+    write(`Else`)
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do Until
+write(`Do Until`)
+let c -> 0
+do until c == 3 {
+    write(c)
+    c -> c + 1
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do Until Post
+write(`Do Until Post`)
+let x -> 0
+do until x == 1 {
+    write(x)
+    x -> x + 1
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do When
+write(`Do When`)
+let d -> 0
+do when d == 0 {
+    write(d)
+    d -> d + 1
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do For
+write(`Do For`)
+do for i in [1, 2, 3, 4] {
+    write(i)
+} or {
+    write(`empty`)
+}
+write(`Done`)
+
+write(`-------------------------------------------------`)
+
+// Do For Else
+write(`Do For Else`)
+do for i in [] {
+    write(i)
+} or {
+    write(`empty`)
+}
+write(`Done`)

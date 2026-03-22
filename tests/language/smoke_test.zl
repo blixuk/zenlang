@@ -1,0 +1,65 @@
+from zen.io import out
+
+function factorial ( n : Integer ) : Integer {
+    when (n <= 1) {
+        <- 1
+    }
+    <- n * factorial(n - 1)
+}
+
+structure Base {
+    let id -> 100
+}
+
+structure Derived extends Base {
+    let value -> 200
+}
+
+function test_logic() {
+    let a -> 10
+    let b -> 12
+    
+    // Bitwise XOR: 10 ^ 12 = 6
+    let xor_res -> a ^^ b
+    out.write(`Bitwise XOR of `)
+    out.write(a)
+    out.write(` and `)
+    out.write(b)
+    out.write(` is `)
+    out.write(xor_res)
+    out.write(`\n`)
+    
+    // Logical XOR
+    let t -> true
+    let f -> false
+    out.write(`true xor false is `)
+    out.write(t xor f)
+    out.write(`\n`)
+    out.write(`true xor true is `)
+    out.write(t xor t)
+    out.write(`\n`)
+}
+
+function test_inheritance() {
+    let derived_inst -> Derived{}
+    out.write(`Derived id: `)
+    out.write(derived_inst.id)
+    out.write(` (inherited)\n`)
+    out.write(`Derived value: `)
+    out.write(derived_inst.value)
+    out.write(` (own)\n`)
+}
+
+function main() {
+    out.write(`--- Zenlang Smoke Test ---\n`)
+    
+    let fact5 -> factorial(5)
+    out.write(`Factorial of 5 is `)
+    out.write(fact5)
+    out.write(`\n`)
+    
+    test_logic()
+    test_inheritance()
+    
+    out.write(`--- Test Complete ---\n`)
+}

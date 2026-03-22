@@ -1,0 +1,6 @@
+from zen.io import write
+function hello() {
+    write(`Hello from utils!`)
+}
+
+let x -> 100

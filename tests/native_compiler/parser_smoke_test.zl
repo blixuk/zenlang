@@ -1,0 +1,39 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/Token import TokenType
+from zen.io import write
+import zen.string as s
+
+function main() {
+    let source -> `x -> 10`
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    // Print token count
+    write(`Token count: ` + s.length(tokens))
+    
+    let id_type -> TokenType.IDENTIFIER
+    let eof_type -> TokenType.EOF
+    write(`TokenType.IDENTIFIER = ` + id_type + `, TokenType.EOF = ` + eof_type)
+
+    let i -> 0
+    while (i < s.length(tokens)) {
+       let t -> tokens[i]
+       write(`Token ` + i + ` Kind: ` + t.kind + ` Value: ` + t.value)
+       i -> i + 1
+    }
+
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    write(`Statement count: ` + s.length(statements))
+    
+    when s.length(statements) > 0 {
+        // Try to access line property to verify it's a structure
+        let stmt -> statements[0]
+        write(`Statement line: ` + stmt.line)
+    }
+    
+    <- statements
+}

@@ -1,0 +1,41 @@
+import `../../src/compiler/Lexer` as Lexer
+import `../../src/compiler/Parser` as Parser
+import `../../src/compiler/CTranspiler` as CTranspiler
+import `../../src/compiler/Token` as TokenRec
+import `../../lib/zen/io` as IO
+import `../../lib/zen/string` as Str
+
+function transpile_file(path, output_path) {
+    IO.write(`DEBUG: TokenType.COMMA = ` + Str.str(TokenRec.TokenType.COMMA))
+    IO.write(`DEBUG: TokenType.LEFT_BRACKET = ` + Str.str(TokenRec.TokenType.LEFT_BRACKET))
+    IO.write(`DEBUG: TokenType.TK_LIST = ` + Str.str(TokenRec.TokenType.TK_LIST))
+    IO.write(`DEBUG: TokenType.TK_SET = ` + Str.str(TokenRec.TokenType.TK_SET))
+    IO.write(`--- Transpiling ` + path + ` ---`)
+    let source -> IO.read_file(path)
+    
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    
+    let p -> Parser.Parser(tokens)
+    let ast -> p.parse()
+    
+    let t -> CTranspiler.Transpiler(ast)
+    let c_code -> t.transpile()
+    
+    IO.write(`Writing output to ` + output_path)
+    IO.write_file(output_path, c_code)
+    IO.write(`Success!`)
+}
+
+function verify_compiler {
+    // Transpile Lexer
+    transpile_file(`src/compiler/Lexer.zl`, `out/Lexer.c`)
+    
+    // Transpile Parser
+    transpile_file(`src/compiler/Parser.zl`, `out/Parser.c`)
+    
+    // Transpile CTranspiler
+    transpile_file(`src/compiler/CTranspiler.zl`, `out/CTranspiler.c`)
+}
+
+verify_compiler()

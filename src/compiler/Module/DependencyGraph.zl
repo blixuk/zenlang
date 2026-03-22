@@ -1,0 +1,96 @@
+import `lib/zen/io` as IO
+import `lib/zen/string` as Str
+
+class GraphNode {
+    let path: String
+    let dependencies: List
+
+    function init(path: String) {
+        self.path -> path
+        self.dependencies -> []
+    }
+}
+
+class DependencyGraph {
+    let nodes: List // List of GraphNode
+
+    function init() {
+        self.nodes -> []
+    }
+    
+    function get_node(path: String) : GraphNode {
+        for gn in self.nodes {
+            // Need cast?
+            let n: GraphNode -> gn
+            when (n.path = path) {
+                <- n
+            }
+        }
+        <- nothing
+    }
+
+    function add_node(path: String) {
+        when (self.get_node(path) = nothing) {
+            let node: GraphNode -> GraphNode(path)
+            self.nodes.append(node)
+        }
+    }
+
+    function add_edge(from_path: String, to_path: String) {
+        self.add_node(from_path)
+        self.add_node(to_path)
+        
+        let node: GraphNode -> self.get_node(from_path)
+        node.dependencies.append(to_path)
+    }
+    
+    function has_node(path: String) : Boolean {
+        when (self.get_node(path) != nothing) {
+            <- True
+        }
+        <- False
+    }
+
+    function get_compilation_order() : List {
+        let visited: List -> []
+        let order: List -> []
+        
+        for graph_node in self.nodes {
+            let n: GraphNode -> graph_node
+            self.visit(n.path, visited, order)
+        }
+        
+        <- order
+    }
+    
+    function visit(path: String, visited: List, order: List) {
+        // Check if path in visited
+        // ZenList doesn't have `contains`.
+        // Implement manual check
+        let is_visited: Boolean -> False
+        for v in visited {
+             // Type check?
+             // Cast v to String
+             let s: String -> v
+             when (s = path) {
+                 is_visited -> True
+             }
+        }
+        
+        when (is_visited) {
+            // Already visited
+        } or {
+            visited.append(path)
+            
+            let node: GraphNode -> self.get_node(path)
+            when (node != nothing) {
+                for dep in node.dependencies {
+                    let d: String -> dep
+                    self.visit(d, visited, order)
+                }
+            }
+            
+            order.append(path)
+        }
+    }
+}

@@ -1,0 +1,56 @@
+// tests/feature_parity.zl
+
+function main() {
+    print(`Starting Feature Parity Test\n`)
+
+    // 1. object (declaration)
+    object Person {
+        name: String -> `Zen`,
+        age: Integer -> 1
+    }
+    print(`Object Person declared\n`)
+
+    // 2. defer
+    defer {
+        print(`Executing deferred block (should be last)\n`)
+    }
+    print(`Deferred block registered\n`)
+
+    // 3. check & raise (statement)
+    print(`Testing check & raise statements...\n`)
+    check {
+        print(`Inside check block\n`)
+        raise `TestError`
+        print(`This should NOT print\n`)
+    } or {
+        print(`Caught error in or block (correct!)\n`)
+    }
+
+    // 4. check & raise (expression)
+    let val -> ? {
+        raise `ExprError`
+    } or `DefaultValue`
+    print(`Check expression result: `)
+    print(val)
+    print(`\n`)
+
+    // 5. assert
+    print(`Testing assertions...\n`)
+    ! 1 == 1
+    print(`Assertion ! 1 == 1 passed\n`)
+    
+    // assert with ^
+    assert 2 == 2 ^ `Assert failed`
+    print(`Assertion assert 2 == 2 passed\n`)
+
+    // 6. object usage
+    let p -> Person {
+        name -> `Alice`,
+        age -> 30
+    }
+    print(`Object instance created: `)
+    print(p.name)
+    print(`\n`)
+
+    print(`Main block finishing...\n`)
+}

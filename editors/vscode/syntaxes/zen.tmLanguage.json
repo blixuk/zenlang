@@ -1,0 +1,281 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "ZenLang",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#decorators"
+        },
+        {
+            "include": "#imports"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#constants"
+        },
+        {
+            "include": "#types"
+        },
+        {
+            "include": "#functions"
+        },
+        {
+            "include": "#properties"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#punctuations"
+        },
+        {
+            "include": "#identifiers"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.zenlang",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.zenlang",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "decorators": {
+            "patterns": [
+                {
+                    "name": "storage.type.annotation.zenlang",
+                    "match": "@\\[[^\\]]+\\]"
+                }
+            ]
+        },
+        "imports": {
+            "patterns": [
+                {
+                    "match": "\\b(from|import)\\s+([a-zA-Z0-9_][a-zA-Z0-9_\\.]*)",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.control.import.zenlang"
+                        },
+                        "2": {
+                            "name": "entity.name.namespace.zenlang"
+                        }
+                    }
+                },
+                {
+                    "match": "\\b(from|import)\\s+`([^`]+)`",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.control.import.zenlang"
+                        },
+                        "2": {
+                            "name": "string.quoted.other.zenlang"
+                        }
+                    }
+                },
+                {
+                    "match": "\\b(as)\\s+([a-zA-Z0-9_]+)",
+                    "captures": {
+                        "1": {
+                            "name": "keyword.control.import.zenlang"
+                        },
+                        "2": {
+                            "name": "entity.name.namespace.zenlang"
+                        }
+                    }
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.other.zenlang",
+                    "begin": "([a-zA-Z_][a-zA-Z0-9_]*)?(`)",
+                    "beginCaptures": {
+                        "1": {
+                            "name": "keyword.other.zenlang"
+                        },
+                        "2": {
+                            "name": "punctuation.definition.string.begin.zenlang"
+                        }
+                    },
+                    "end": "`",
+                    "endCaptures": {
+                        "0": {
+                            "name": "punctuation.definition.string.end.zenlang"
+                        }
+                    },
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.zenlang",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "constant.character.rune.zenlang",
+                    "match": "'(\\\\.|[^'])'"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.zenlang",
+                    "match": "\\b(while|for|return|when|or|and|not|xor|nor|nand|xnor|do|break|continue|in|extends|extend|object|defer|raise|check|assert|until|case|with|export|is|scope|as|type|task)\\b"
+                },
+                {
+                    "name": "storage.type.zenlang",
+                    "match": "\\b(let|set|function|class|structure|enumerator|import|from|auto)\\b"
+                },
+                {
+                    "name": "variable.language.zenlang",
+                    "match": "\\b(self|parent)\\b"
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.zenlang",
+                    "match": "\\b(True|False|true|false)\\b"
+                },
+                {
+                    "name": "constant.language.null.zenlang",
+                    "match": "\\b(Void|Nothing|nothing)\\b"
+                }
+            ]
+        },
+        "types": {
+            "patterns": [
+                {
+                    "name": "support.type.zenlang",
+                    "match": "\\b(Void|Nothing|Variant|Integer|Decimal|String|Boolean|Rune|List|Dictionary|Tuple|Vector|Set|Iterable|Iterator|Auto|Function|Structure|Class|Object|Enumerator)\\b"
+                },
+                {
+                    "name": "support.type.custom.zenlang",
+                    "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "match": "\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*\\(",
+                    "captures": {
+                        "1": {
+                            "name": "entity.name.function.zenlang"
+                        }
+                    }
+                }
+            ]
+        },
+        "properties": {
+            "patterns": [
+                {
+                    "match": "(\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
+                    "captures": {
+                        "1": {
+                            "name": "punctuation.accessor.zenlang"
+                        },
+                        "2": {
+                            "name": "variable.other.property.zenlang"
+                        }
+                    }
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.zenlang",
+                    "match": "<<=|>>=|&=|\\|=|^=|%=|->|<-|:>|[=?:^!]"
+                },
+                {
+                    "name": "keyword.operator.comparison.zenlang",
+                    "match": "==|!=|>=|<=|>|<"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.zenlang",
+                    "match": "\\+\\+|\\-\\-|\\*\\*|//|\\+|\\-|\\*|/|%|%%"
+                },
+                {
+                    "name": "keyword.operator.logical.zenlang",
+                    "match": "&&|\\|\\||!!|\\^\\^|!\\||!&|!\\^|<<|>>"
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.hex.zenlang",
+                    "match": "\\b0x[0-9a-fA-F]+\\b"
+                },
+                {
+                    "name": "constant.numeric.decimal.zenlang",
+                    "match": "\\b\\d+\\.\\d+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.zenlang",
+                    "match": "\\b\\d+\\b"
+                }
+            ]
+        },
+        "punctuations": {
+            "patterns": [
+                {
+                    "name": "punctuation.separator.zenlang",
+                    "match": "[,;]"
+                },
+                {
+                    "name": "punctuation.section.block.begin.zenlang",
+                    "match": "\\{"
+                },
+                {
+                    "name": "punctuation.section.block.end.zenlang",
+                    "match": "\\}"
+                },
+                {
+                    "name": "punctuation.section.parens.begin.zenlang",
+                    "match": "\\("
+                },
+                {
+                    "name": "punctuation.section.parens.end.zenlang",
+                    "match": "\\)"
+                },
+                {
+                    "name": "punctuation.section.brackets.begin.zenlang",
+                    "match": "\\["
+                },
+                {
+                    "name": "punctuation.section.brackets.end.zenlang",
+                    "match": "\\]"
+                }
+            ]
+        },
+        "identifiers": {
+            "patterns": [
+                {
+                    "name": "variable.other.zenlang",
+                    "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+                }
+            ]
+        }
+    },
+    "scopeName": "source.zenlang"
+}

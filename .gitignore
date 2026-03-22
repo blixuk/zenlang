@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Build and Output
+output/
+build/
+self_hosted_output.c
+self_hosted_test.c
+
+# Logs and Debugging
+log.txt
+debug_*.txt
+temp_test.txt
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo

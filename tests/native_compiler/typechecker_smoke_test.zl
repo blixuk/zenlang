@@ -1,0 +1,36 @@
+import ../../src/compiler/Parser as Parser
+import ../../src/compiler/Lexer as Lexer
+import ../../src/compiler/TypeChecker as TypeChecker
+import ../../src/compiler/Types as Types
+from ../../lib/zen/io import write
+
+function main() {
+    write(`starting typechecker test`)
+    let source -> `let x -> 10;`
+    let lexer -> Lexer.Lexer(source, `test`)
+    let tokens -> lexer.tokenize()
+    let parser -> Parser.Parser(tokens)
+    let ast -> parser.parse()
+    
+    write(`Parsed AST, running typechecker...`)
+
+    let checker -> TypeChecker.Checker(ast, `test`)
+    checker.check_program()
+    
+    // Inspect scope
+    let symbol -> checker.scope.lookup(`x`)
+    when symbol {
+        write(`Found symbol: ` + symbol.name)
+        // Check type by printing
+        write(`Symbol Type Kind: `)
+        write(symbol.data_type.kind)
+        
+        when symbol.data_type.kind = 0 {
+            write(`Type is Integer: YES`)
+        } or when True {
+            write(`Type is Integer: NO`)
+        }
+    } or when True {
+        write(`Symbol 'x' not found!`)
+    }
+}

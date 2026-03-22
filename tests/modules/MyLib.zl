@@ -1,0 +1,16 @@
+
+// tests/modules/MyLib.zl
+
+function greet(name: String) : String {
+    // This uses string interpolation? Or concat?
+    // Let's use simple return for now
+    <- `Hello, ` // + name
+}
+
+structure Math {
+    pi: Decimal
+}
+
+function square(x: Integer) : Integer {
+    <- x * x
+}

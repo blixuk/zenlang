@@ -1,0 +1,1383 @@
+import `lib/zen/io` as IO
+from `compiler/Token` import Token, TokenType
+from `compiler/AST` import ASTKind, ASTNode, BinaryExpression, UnaryExpression, LiteralExpression, GroupingExpression, VariableExpression, CallExpression, GetExpression, SetExpression, IndexExpression, AssignmentExpression, LogicalExpression, CheckExpression, RaiseExpression, ListLiteralExpression, StructureInitializationExpression, StructureInitField, StructureStatement, StructureMember, ClassStatement, EnumeratorStatement, FunctionStatement, Parameter, ReturnStatement, WhenStatement, WhileStatement, DoWhileStatement, ForStatement, BlockStatement, CaseClause, DeferStatement, ImportStatement, FromImportStatement, ReassignmentStatement, ExpressionStatement, LetStatement
+import `compiler/Lexer` as Lexer
+import `lib/zen/string` as Str
+
+
+let sentinel : Token -> nothing
+
+class Parser {
+    let tokens: List
+    let curr_idx: Integer
+
+    function init(tokens: List) {
+        self.tokens -> tokens
+        self.curr_idx -> 0
+    }
+
+
+    function parse() : List {
+        let statements : List -> []
+        while not self.is_at_end() {
+            let decl : Variant -> self.declaration()
+            when (decl = nothing) {
+                 IO.write(`CRITICAL PARSER ERROR: Declaration returned NOTHING at token: ` + self.peek().value + `\n`)
+            }
+            statements.append(decl)
+        }
+        <- statements
+    }
+
+    function declaration() : Variant {
+        // Safe check for 'let' keyword
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `let` {
+             self.advance()
+             <- self.let_declaration()
+        }
+
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `function` {
+             self.advance()
+             <- self.function_declaration()
+        }
+
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `structure` {
+             self.advance()
+             <- self.structure_declaration()
+        }
+
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `enumerator` {
+             self.advance()
+             <- self.enumerator_declaration()
+        }
+
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `class` {
+             self.advance()
+             <- self.class_declaration()
+        }
+        
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `import` {
+             self.advance()
+             <- self.import_statement()
+        }
+
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `from` {
+             self.advance()
+             <- self.from_import_statement()
+        }
+        
+        when self.match(TokenType.TYPE_LET) {
+             <- self.let_declaration()
+        }
+        
+        <- self.statement()
+    }
+
+    function statement() : Variant {
+        when self.match(TokenType.TK_ASSERT) or self.match(TokenType.ASSERT) {
+             <- self.assert_statement()
+        }
+
+        when self.match(TokenType.RETURN) {
+             <- self.return_statement()
+        }
+
+        when self.check_token(TokenType.KEYWORD) {
+            let val : String -> self.peek().value
+            when val = `when` {
+                self.advance()
+                <- self.when_statement()
+            }
+            when val = `while` {
+                self.advance()
+                <- self.while_statement()
+            }
+            when val = `for` {
+                self.advance()
+                <- self.do_for_statement()
+            }
+            when val = `do` {
+                self.advance()
+                <- self.do_statement()
+            }
+            when val = `return` {
+                self.advance()
+                <- self.return_statement()
+            }
+            when val = `assert` {
+                 self.advance()
+                 <- self.assert_statement()
+            }
+            when val = `defer` {
+                 self.advance()
+                 <- self.defer_statement()
+            }
+        }
+
+        when self.match(TokenType.LEFT_BRACE) {
+            <- BlockStatement {
+                kind: ASTKind.BLOCK_STATEMENT,
+                statements: self.block(),
+                line: self.previous().line,
+                column: self.previous().column
+            }
+        }
+
+        <- self.expression_statement()
+    }
+
+    function let_declaration() : Variant {
+        let keyword : Token -> self.previous()
+        let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected variable name.`)
+
+        let type_annotation : Variant -> nothing
+        when self.match(TokenType.TYPE_SET) {
+            type_annotation -> self.parse_type()
+        }
+
+        let initializer : Variant -> nothing
+        when self.match(TokenType.ASSIGNMENT) or self.match(TokenType.EQUAL) { 
+             initializer -> self.expression()
+        }
+
+        self.match(TokenType.SEMICOLON) 
+
+        <- LetStatement {
+            kind: ASTKind.LET_STATEMENT,
+            name: name,
+            initializer: initializer,
+            type_annotation: type_annotation,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function function_declaration() : Variant {
+        let keyword : Token -> self.previous()
+        let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected function name.`)
+        
+        self.consume(TokenType.LEFT_PAREN, `Expected '(' after function name.`)
+        let parameters : List -> []
+        when not self.check_token(TokenType.RIGHT_PAREN) {
+            let param_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected parameter name.`)
+            
+            let param_type : Variant -> nothing
+            when self.match(TokenType.TYPE_SET) {
+                param_type -> self.parse_type()
+            }
+            
+            parameters.append(Parameter {
+                kind: ASTKind.PARAMETER,
+                name: param_name,
+                type_annotation: param_type,
+                line: param_name.line,
+                column: param_name.column
+            }) 
+            
+            while self.match(TokenType.COMMA) {
+                let p_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected parameter name.`)
+                
+                let p_type : Variant -> nothing
+                when self.match(TokenType.TYPE_SET) {
+                    p_type -> self.parse_type()
+                }
+                
+                parameters.append(Parameter {
+                    kind: ASTKind.PARAMETER,
+                    name: p_name,
+                    type_annotation: p_type,
+                    line: p_name.line,
+                    column: p_name.column
+                })
+            }
+        }
+        self.consume(TokenType.RIGHT_PAREN, `Expected ')' after parameters.`)
+
+        let return_type : Variant -> nothing
+        when self.match(TokenType.TYPE_SET) {
+            return_type -> self.parse_type()
+        }
+
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' before function body.`)
+        let body : BlockStatement -> BlockStatement {
+            kind: ASTKind.BLOCK_STATEMENT,
+            statements: self.block(),
+            line: self.previous().line,
+            column: self.previous().column
+        }
+
+        <- FunctionStatement {
+            kind: ASTKind.FUNCTION_STATEMENT,
+            name: name,
+            parameters: parameters, 
+            return_type: return_type,
+            body: body,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function class_declaration() : Variant {
+        let keyword : Token -> self.previous()
+        let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected class name.`)
+        
+        let parent_class_token : Token -> sentinel
+        when self.match(TokenType.LEFT_PAREN) {
+            parent_class_token -> self.consume(TokenType.IDENTIFIER, `Expected parent class name.`)
+            self.consume(TokenType.RIGHT_PAREN, `Expected ')' after parent class name.`)
+        }
+
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' before class body.`)
+        
+        let members : List -> []
+        let methods : List -> []
+        
+        while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+            when self.check_token(TokenType.KEYWORD) and self.peek().value = `function` {
+                self.advance()
+                let result_decl : FunctionStatement -> self.function_declaration()
+                methods.append(result_decl)
+            } or {
+                let is_mutable : Boolean -> True
+                let declared_keyword : Token -> nothing
+                
+                // Check for let/set
+                when self.check_token(TokenType.KEYWORD) and (self.peek().value = `let` or self.peek().value = `set`) {
+                    declared_keyword -> self.advance()
+                    is_mutable -> declared_keyword.value = `let`
+                }
+                
+                
+                let m_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected member or method name.`)
+                
+                let m_type : Variant -> `Variant`
+                when self.match(TokenType.TYPE_SET) {
+                    m_type -> self.parse_type()
+                }
+                
+                let m_value : Variant -> nothing
+                when self.match(TokenType.ASSIGNMENT) {
+                    m_value -> self.expression()
+                }
+                
+                members.append(StructureMember {
+                    kind: ASTKind.STRUCTURE_MEMBER,
+                    name: m_name,
+                    value: m_value,
+                    declared_type: m_type,
+                    mutable: is_mutable,
+                    line: m_name.line,
+                    column: m_name.column
+                })
+                
+                // Optional semicolon or comma (though spec usually implies newline or comma, parser often lenient)
+                self.match(TokenType.COMMA)
+                self.match(TokenType.SEMICOLON)
+            }
+        }
+        
+        self.consume(TokenType.RIGHT_BRACE, `Expected '}' after class body.`)
+        
+        <- ClassStatement {
+            kind: ASTKind.CLASS_STATEMENT,
+            name: name,
+            parent: parent_class_token,
+            members: members,
+            methods: methods,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function structure_declaration() : Variant {
+        let keyword : Token -> self.previous()
+        let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected structure name.`)
+        
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' before structure body.`)
+        
+        let members : List -> []
+        while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+            let m_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected member name.`)
+            self.consume(TokenType.TYPE_SET, `Expected ':' after member name.`)
+            let m_type : Variant -> self.parse_type()
+            
+            let m_value : Variant -> nothing
+            self.match(TokenType.COMMA) 
+
+            members.append(StructureMember {
+                kind: ASTKind.STRUCTURE_MEMBER,
+                name: m_name,
+                value: m_value,
+                declared_type: m_type,
+                mutable: True,
+                line: m_name.line,
+                column: m_name.column
+            })
+        }
+        
+        self.consume(TokenType.RIGHT_BRACE, `Expected '}' after structure body.`)
+        
+        <- StructureStatement {
+            kind: ASTKind.STRUCTURE_STATEMENT,
+            name: name,
+            members: members,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function enumerator_declaration() : Variant {
+        let keyword : Token -> self.previous()
+        let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected enumerator name.`)
+        
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' before enumerator body.`)
+        
+        let members : List -> []
+        while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+             let m_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected member name.`)
+             when self.match(TokenType.ASSIGNMENT) {
+                  self.expression()
+             }
+             members.append(m_name.value)
+             self.match(TokenType.COMMA) 
+        }
+        
+        self.consume(TokenType.RIGHT_BRACE, `Expected '}' after enumerator body.`)
+        
+        <- EnumeratorStatement {
+            kind: ASTKind.ENUMERATOR_STATEMENT,
+            name: name,
+            members: members,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function import_statement() : Variant {
+        let keyword : Token -> self.previous()
+        // Support Simple Identifier or String
+        let path : Token -> nothing
+        when self.check_token(TokenType.STRING) {
+             path -> self.consume(TokenType.STRING, `Expected import path string.`)
+        } or {
+             path -> self.consume(TokenType.IDENTIFIER, `Expected import path identifier.`)
+        }
+        
+        let alias : Token -> nothing
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `as` {
+             self.advance()
+             alias -> self.consume(TokenType.IDENTIFIER, `Expected alias name.`)
+        }
+        
+        <- ImportStatement {
+            kind: ASTKind.IMPORT_STATEMENT,
+            path: path,
+            alias: alias,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function from_import_statement() : Variant {
+        let keyword : Token -> self.previous()
+        
+        let path : Token -> nothing
+        when self.check_token(TokenType.STRING) {
+             path -> self.consume(TokenType.STRING, `Expected from path string.`)
+        } or {
+             path -> self.consume(TokenType.IDENTIFIER, `Expected from path identifier.`)
+        }
+        
+        // Expect 'import' keyword
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `import` {
+             self.advance()
+        } or {
+             // Trigger error
+             self.consume(TokenType.LEFT_BRACE, `Expected 'import' after from path.`) // Sentinel error
+        }
+        
+        let imports : List -> []
+        while not self.is_at_end() { 
+             let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected imported name.`)
+             let alias : Token -> nothing
+             when self.check_token(TokenType.KEYWORD) and self.peek().value = `as` {
+                 self.advance()
+                 alias -> self.consume(TokenType.IDENTIFIER, `Expected alias.`)
+             }
+             
+             imports.append(name)
+             
+             when not self.match(TokenType.COMMA) {
+                 break
+             }
+        }
+        
+        <- FromImportStatement {
+            kind: ASTKind.FROM_IMPORT_STATEMENT,
+            path: path,
+            imports: imports,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function do_statement() : Variant {
+        let keyword : Token -> self.previous()
+        
+        // do when ...
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `when` {
+             self.advance()
+             <- self.when_statement()
+        }
+        
+        // do for ...
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `for` {
+             self.advance()
+             <- self.do_for_statement()
+        }
+        
+        // do while ... (pre check)
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `while` {
+             self.advance()
+             <- self.while_statement()
+        }
+        
+        // do until ... (pre check)
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `until` {
+             self.advance()
+             let condition : Variant -> self.expression()
+             
+             // Negate logic (Not implemented fully as synth token, simplified for now: just parse as 'until' semantics if backend supports it?
+             // Or synthesize Not expr.
+             let not_token : Token -> Token { kind: TokenType.KEYWORD, value: `not`, line: keyword.line, column: keyword.column }
+             let not_cond : Variant -> UnaryExpression {
+                 kind: ASTKind.UNARY_EXPRESSION,
+                 operator: not_token,
+                 right: condition,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+             
+             self.consume(TokenType.LEFT_BRACE, `Expected '{' after condition.`)
+             let body : List -> self.block()
+             let body_stmt : BlockStatement -> BlockStatement {
+                 kind: ASTKind.BLOCK_STATEMENT,
+                 statements: body,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+             
+             <- WhileStatement {
+                 kind: ASTKind.WHILE_STATEMENT,
+                 condition: not_cond,
+                 body: body_stmt,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+        }
+        
+        // do { ... } 
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' after do.`)
+        let body : List -> self.block()
+        let body_stmt : BlockStatement -> BlockStatement {
+            kind: ASTKind.BLOCK_STATEMENT,
+            statements: body,
+            line: keyword.line,
+            column: keyword.column
+        }
+        
+        // do { ... } while cond
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `while` {
+             self.advance()
+             let condition : Variant -> self.expression()
+             <- DoWhileStatement {
+                 kind: ASTKind.DO_WHILE_STATEMENT,
+                 condition: condition,
+                 body: body_stmt,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+        }
+        
+        // do { ... } until cond
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `until` {
+             self.advance()
+             let condition : Variant -> self.expression()
+             let not_token : Token -> Token { kind: TokenType.KEYWORD, value: `not`, line: keyword.line, column: keyword.column }
+             let not_cond : Variant -> UnaryExpression {
+                 kind: ASTKind.UNARY_EXPRESSION,
+                 operator: not_token,
+                 right: condition,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+             <- DoWhileStatement {
+                 kind: ASTKind.DO_WHILE_STATEMENT,
+                 condition: not_cond,
+                 body: body_stmt,
+                 line: keyword.line,
+                 column: keyword.column
+             }
+        }
+        
+        <- body_stmt
+    }
+
+    function do_for_statement() : Variant {
+        let keyword : Token -> self.previous()
+        let var_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected variable name.`)
+        
+        let in_valid -> False
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `in` {
+             self.advance()
+             in_valid -> True
+        }
+        when not in_valid {
+             self.consume(TokenType.KEYWORD, `Expected 'in'.`)
+        }
+        
+        let iterable : Variant -> self.expression()
+        
+        self.consume(TokenType.LEFT_BRACE, `Expected '{'.`)
+        let body : List -> self.block()
+        let body_stmt : BlockStatement -> BlockStatement {
+            kind: ASTKind.BLOCK_STATEMENT,
+            statements: body,
+            line: keyword.line,
+            column: keyword.column
+        }
+        
+        <- ForStatement {
+            kind: ASTKind.FOR_STATEMENT,
+            variable: var_name,
+            iterable: iterable,
+            body: body_stmt,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function block() : List {
+        let statements : List -> []
+        while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+            statements.append(self.declaration())
+        }
+        self.consume(TokenType.RIGHT_BRACE, `Expected '}' after block.`)
+        <- statements
+    }
+
+    function expression_statement() : Variant {
+        let expr : Variant -> self.expression()
+        self.match(TokenType.SEMICOLON)
+        <- ExpressionStatement {
+            kind: ASTKind.EXPRESSION_STATEMENT,
+            expression: expr,
+            line: self.get_line(expr),
+            column: self.get_column(expr)
+        }
+    }
+
+    function expression() : Variant {
+        <- self.assignment()
+    }
+
+    function assignment() : Variant {
+        let expr : Variant -> self.logical_or()
+        let node_check : ASTNode -> expr
+
+        when self.match(TokenType.ASSIGNMENT) {
+            let equals : Token -> self.previous()
+            let value : Variant -> self.assignment()
+
+            when node_check.kind = ASTKind.VARIABLE_EXPRESSION {
+                let v_expr : VariableExpression -> expr
+                let name : Token -> v_expr.name
+                <- AssignmentExpression {
+                    kind: ASTKind.ASSIGNMENT_EXPRESSION,
+                    name: name,
+                    value: value,
+                    line: equals.line,
+                    column: equals.column
+                }
+            } or when node_check.kind = ASTKind.GET_EXPRESSION {
+                let get_expr : GetExpression -> expr
+                <- SetExpression {
+                    kind: ASTKind.SET_EXPRESSION,
+                    object: get_expr.object,
+                    name: get_expr.name,
+                    value: value,
+                    line: equals.line,
+                    column: equals.column
+                }
+            }
+        }
+
+        <- expr
+    }
+
+    function logical_or() : Variant {
+        let expr : Variant -> self.logical_and()
+
+        while self.match(TokenType.OR) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.logical_and()
+            expr -> LogicalExpression {
+                kind: ASTKind.LOGICAL_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- expr
+    }
+
+    function logical_and() : Variant {
+        let expr : Variant -> self.bitwise_or()
+
+        while self.match(TokenType.AND) {
+             let operator : Token -> self.previous()
+             let right : Variant -> self.bitwise_or()
+             expr -> LogicalExpression {
+                 kind: ASTKind.LOGICAL_EXPRESSION,
+                 left: expr,
+                 operator: operator,
+                 right: right,
+                 line: operator.line,
+                 column: operator.column
+             }
+        }
+
+        <- expr
+    }
+
+    function bitwise_or() : Variant {
+        let expr : Variant -> self.bitwise_xor()
+
+        while self.match(TokenType.BITWISE_OR) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.bitwise_xor()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+        <- expr
+    }
+
+    function bitwise_xor() : Variant {
+        let expr : Variant -> self.bitwise_and()
+
+        while self.match(TokenType.BITWISE_XOR) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.bitwise_and()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+        <- expr
+    }
+
+    function bitwise_and() : Variant {
+        let expr : Variant -> self.equality()
+
+        while self.match(TokenType.BITWISE_AND) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.equality()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+        <- expr
+    }
+
+    function equality() : Variant {
+        let expr : Variant -> self.comparison()
+
+        while self.match(TokenType.EQUAL_EQUAL) or self.match(TokenType.NOT_EQUAL) or self.match(TokenType.EQUAL) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.comparison()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- expr
+    }
+
+    function comparison() : Variant {
+        let expr : Variant -> self.term()
+
+        while self.match(TokenType.GREATER_THAN) or self.match(TokenType.GREATER_THAN_OR_EQUAL) or self.match(TokenType.LESS_THAN) or self.match(TokenType.LESS_THAN_OR_EQUAL) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.term()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- expr
+    }
+
+    function term() : Variant {
+        let expr : Variant -> self.factor()
+
+        while self.match(TokenType.SUBTRACTION) or self.match(TokenType.ADDITION) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.factor()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- expr
+    }
+
+    function factor() : Variant {
+        let expr : Variant -> self.unary()
+
+        while self.match(TokenType.DIVISION) or self.match(TokenType.MULTIPLICATION) or self.match(TokenType.MODULO) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.unary()
+            expr -> BinaryExpression {
+                kind: ASTKind.BINARY_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- expr
+    }
+
+    function unary() : Variant {
+        when self.match(TokenType.NOT) or self.match(TokenType.SUBTRACTION) or self.match(TokenType.BITWISE_NOT) or self.match(TokenType.ASSERT) {
+            let operator : Token -> self.previous()
+            let right : Variant -> self.unary()
+            <- UnaryExpression {
+                kind: ASTKind.UNARY_EXPRESSION,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+
+        <- self.power()
+    }
+
+    function power() : Variant {
+        let expr : Variant -> self.call()
+
+        while self.match(TokenType.POWER) {
+             let operator : Token -> self.previous()
+             let right : Variant -> self.unary()
+             expr -> BinaryExpression {
+                 kind: ASTKind.BINARY_EXPRESSION,
+                 left: expr,
+                 operator: operator,
+                 right: right,
+                 line: operator.line,
+                 column: operator.column
+             }
+        }
+
+        <- expr
+    }
+    
+    function call() : Variant {
+        let expr : Variant -> self.primary()
+
+        while True {
+            when self.match(TokenType.LEFT_PAREN) {
+                expr -> self.finish_call(expr)
+            } or when self.match(TokenType.DOT) {
+                let name : Token -> self.consume(TokenType.IDENTIFIER, `Expected property name after '.'.`)
+                expr -> GetExpression {
+                    kind: ASTKind.GET_EXPRESSION,
+                    object: expr,
+                    name: name,
+                    line: name.line,
+                    column: name.column
+                }
+            } or when self.match(TokenType.LEFT_BRACKET) {
+                let index : Variant -> self.expression() // Annotated
+                let bracket : Token -> self.consume(TokenType.RIGHT_BRACKET, `Expected ']' after index.`)
+                expr -> IndexExpression {
+                    kind: ASTKind.INDEX_EXPRESSION,
+                    object: expr,
+                    index: index,
+                    line: bracket.line,
+                    column: bracket.column
+                }
+            } or {
+                 let node_check : ASTNode -> expr
+                 when self.check_token(TokenType.LEFT_BRACE) and node_check.kind = ASTKind.VARIABLE_EXPRESSION {
+                     // Check for structure init: { identifier :
+                     let t1 : Token -> self.peek_token(1)
+                     let t2 : Token -> self.peek_token(2)
+                     
+                     // IO.write(`DEBUG: Lookahead 1: ` + t1.kind + ` 2: ` + t2.kind) 
+                     
+                     when t1.kind = TokenType.IDENTIFIER and t2.kind = TokenType.TYPE_SET {
+                         self.advance() // consume {
+                         expr -> self.finish_structure_initialization(expr)
+                     } or {
+                         break
+                     }
+                } or {
+                    break
+                }
+            }
+        }
+
+        <- expr
+    }
+
+    function finish_call(callee: Variant) : Variant {
+        let arguments : List -> []
+        when not self.check_token(TokenType.RIGHT_PAREN) {
+            arguments.append(self.expression())
+            while self.match(TokenType.COMMA) {
+                arguments.append(self.expression())
+            }
+        }
+
+        let paren : Token -> self.consume(TokenType.RIGHT_PAREN, `Expected ')' after arguments.`)
+
+        <- CallExpression {
+            kind: ASTKind.CALL_EXPRESSION,
+            callee: callee,
+            arguments: arguments,
+            line: paren.line,
+            column: paren.column
+        }
+    }
+
+    function finish_structure_initialization(name_expr: Variant) : Variant {
+         // IO.write(`DEBUG: Parsing Structure Init for ` + name_expr.name.value)
+         let name_expr_typed : VariableExpression -> name_expr
+         let fields : List -> []
+         while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+             let field_name : Token -> self.consume(TokenType.IDENTIFIER, `Expected field name.`)
+             self.consume(TokenType.TYPE_SET, `Expected ':' after field name.`)
+             let value : Variant -> self.expression()
+             
+             fields.append(StructureInitField {
+                 kind: ASTKind.STRUCTURE_INIT_FIELD,
+                 name: field_name,
+                 value: value,
+                 line: field_name.line,
+                 column: field_name.column
+             })
+             
+             self.match(TokenType.COMMA)
+         }
+         
+         let brace : Token -> self.consume(TokenType.RIGHT_BRACE, `Expected '}' after structure fields.`)
+         
+         <- StructureInitializationExpression {
+             kind: ASTKind.STRUCTURE_INITIALIZATION_EXPRESSION,
+             structure_name: name_expr_typed.name, // Extract Token from VariableExpression
+             fields: fields,
+             line: name_expr_typed.line,
+             column: name_expr_typed.column
+         }
+    }
+
+    function primary() : Variant {
+        // True/False/nothing are handled as identifiers for now due to lexer behavior
+
+        when self.match(TokenType.INTEGER) or self.match(TokenType.DECIMAL) {
+             <- LiteralExpression { 
+                kind: ASTKind.LITERAL_EXPRESSION,
+                value: self.previous().value, 
+                is_string: False,
+                line: self.previous().line, 
+                column: self.previous().column 
+            }
+        } or when self.match(TokenType.STRING) {
+             <- LiteralExpression { 
+                kind: ASTKind.LITERAL_EXPRESSION,
+                value: self.previous().value, 
+                is_string: True,
+                line: self.previous().line, 
+                column: self.previous().column 
+            }
+        }
+
+        when self.match(TokenType.IDENTIFIER) {
+            <- VariableExpression { 
+                kind: ASTKind.VARIABLE_EXPRESSION,
+                name: self.previous(), 
+                line: self.previous().line, 
+                column: self.previous().column 
+            }
+        }
+
+        when self.match(TokenType.KEYWORD) {
+            let val : String -> self.previous().value
+            let is_bool : Boolean -> val = `true` or val = `false`
+            let val_lit : Variant -> nothing
+            
+            when val = `nothing` {
+                 val_lit -> nothing
+            } or {
+                 val_lit -> val
+            }
+            
+            <- LiteralExpression {
+                kind: ASTKind.LITERAL_EXPRESSION,
+                value: val_lit,
+                is_string: False,
+                line: self.previous().line,
+                column: self.previous().column
+            }
+        }
+
+        when self.match(TokenType.LEFT_BRACKET) {
+            let elements : List -> []
+            when not self.check_token(TokenType.RIGHT_BRACKET) {
+                elements.append(self.expression())
+                while self.match(TokenType.COMMA) {
+                    elements.append(self.expression())
+                }
+            }
+            self.consume(TokenType.RIGHT_BRACKET, `Expected ']' after list elements.`)
+            <- ListLiteralExpression {
+                kind: ASTKind.LIST_LITERAL_EXPRESSION,
+                elements: elements,
+                line: self.previous().line,
+                column: self.previous().column
+            }
+        }
+
+        when self.match(TokenType.LEFT_PAREN) {
+            let expr : Variant -> self.expression()
+            self.consume(TokenType.RIGHT_PAREN, `Expected ')' after expression.`)
+            <- GroupingExpression { 
+                kind: ASTKind.GROUPING_EXPRESSION,
+                expression: expr, 
+                line: self.previous().line, 
+                column: self.previous().column 
+            }
+        }
+
+        when self.match(TokenType.CHECK) or self.match(TokenType.TK_CHECK) {
+             <- self.check_expression()
+        }
+
+        when self.match(TokenType.RAISE) or self.match(TokenType.TK_RAISE) {
+             <- self.raise_expression()
+        }
+
+        // Error handling for unexpected tokens
+        let invalid_token : Token -> self.advance()
+        // IO.write(`DEBUG PRIMARY: Unexpected token consumed: ` + invalid_token.value + ` (` + invalid_token.kind + `)`)
+        <- LiteralExpression { 
+            kind: ASTKind.LITERAL_EXPRESSION,
+            value: nothing, 
+            is_string: False,
+            line: invalid_token.line, 
+            column: invalid_token.column 
+        }
+    }
+
+    function when_statement() : Variant {
+        let condition : Variant -> self.expression()
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' after when condition.`)
+        let then_branch : BlockStatement -> BlockStatement {
+                kind: ASTKind.BLOCK_STATEMENT,
+                statements: self.block(),
+                line: self.previous().line,
+                column: self.previous().column
+        }
+        
+        let else_branch : Variant -> nothing
+        when self.check_token(TokenType.KEYWORD) and self.peek().value = `or` {
+            self.advance()
+            // Check for 'or when'
+             when self.check_token(TokenType.KEYWORD) and self.peek().value = `when` {
+                 self.advance()
+                 else_branch -> self.when_statement()
+             } or {
+                 self.consume(TokenType.LEFT_BRACE, `Expected '{' after or.`)
+                 else_branch -> BlockStatement {
+                    kind: ASTKind.BLOCK_STATEMENT,
+                    statements: self.block(),
+                    line: self.previous().line,
+                    column: self.previous().column
+                }
+             }
+        }
+        
+        <- WhenStatement {
+            kind: ASTKind.WHEN_STATEMENT,
+            condition: condition,
+            then_branch: then_branch,
+            else_branch: else_branch,
+            line: self.previous().line,
+            column: self.previous().column
+        }
+    }
+
+    function while_statement() : Variant {
+        let condition : Variant -> self.expression()
+        self.consume(TokenType.LEFT_BRACE, `Expected '{' after while condition.`)
+        let body : BlockStatement -> BlockStatement {
+            kind: ASTKind.BLOCK_STATEMENT,
+            statements: self.block(),
+            line: self.previous().line,
+            column: self.previous().column
+        }
+
+        <- WhileStatement {
+            kind: ASTKind.WHILE_STATEMENT,
+            condition: condition,
+            body: body,
+            line: self.previous().line,
+            column: self.previous().column
+        }
+    }
+
+    function return_statement() : Variant {
+        let keyword : Token -> self.previous()
+        let value : Variant -> nothing
+        when not self.check_token(TokenType.SEMICOLON) {
+            value -> self.expression()
+        }
+
+        self.match(TokenType.SEMICOLON)
+        <- ReturnStatement {
+            kind: ASTKind.RETURN_STATEMENT,
+            keyword: keyword,
+            value: value,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function parse_type() : String {
+        let base_type : String -> ``
+        
+        when self.check_token(TokenType.IDENTIFIER) {
+             base_type -> self.consume(TokenType.IDENTIFIER, `Expected type identifier.`).value
+        } or when self.check_token(TokenType.TYPE) {
+             base_type -> self.consume(TokenType.TYPE, `Expected type identifier.`).value
+        } or {
+             // Trigger error
+             self.consume(TokenType.IDENTIFIER, `Expected type identifier.`)
+        }
+        
+        // Handle Sized Types: Type[Size]
+        when self.match(TokenType.LEFT_BRACKET) {
+             let size : String -> self.consume(TokenType.INTEGER, `Expected size integer.`).value
+             self.consume(TokenType.RIGHT_BRACKET, `Expected ']' after size.`)
+             base_type -> base_type + `[` + size + `]`
+        }
+        
+        // Handle Generics: Type<Arg>
+        when self.match(TokenType.LESS_THAN) {
+             let arg_type : String -> self.parse_type()
+             while self.match(TokenType.COMMA) {
+                 arg_type -> arg_type + `, ` + self.parse_type()
+             }
+             self.consume(TokenType.GREATER_THAN, `Expected '>' after generic arguments.`)
+             base_type -> base_type + `<` + arg_type + `>`
+        }
+        
+        <- base_type
+    }
+
+    function assert_statement() : Variant {
+        let keyword : Token -> self.previous()
+        let condition : Variant -> self.expression()
+        let message : Variant -> nothing
+        
+        // Optional message: assert cond, "msg" or assert cond raise "error"
+        when self.match(TokenType.CHECK) or self.match(TokenType.TK_CHECK) {
+            // Deprecated syntax? Or 'assert cond ? default' - not in spec. 
+            // Spec says: ! condition ^ error
+        }
+
+        when self.match(TokenType.RAISE) or self.match(TokenType.TK_RAISE) {
+             message -> self.expression()
+        }
+        
+        self.match(TokenType.SEMICOLON)
+        <- AssertStatement {
+            kind: ASTKind.ASSERT_STATEMENT,
+            condition: condition,
+            message: message,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function check_expression() : Variant {
+        let keyword : Token -> self.previous()
+        let value : Variant -> self.expression()
+        let cases : List -> []
+        let else_branch : Variant -> nothing
+        
+        // check value { case ... }
+        when self.match(TokenType.LEFT_BRACE) {
+             while not self.check_token(TokenType.RIGHT_BRACE) and not self.is_at_end() {
+                 self.consume(TokenType.TK_CASE, `Expected 'case'.`)
+                 
+                 let case_val : Variant -> self.expression()
+                 
+                 let body : Variant -> nothing
+                 when self.match(TokenType.LEFT_BRACE) {
+                     body -> self.block()
+                 } or {
+                     when self.match(TokenType.RETURN) or self.match(TokenType.ASSIGNMENT) {
+                          body -> self.expression()
+                     } or {
+                          body -> self.expression()
+                     }
+                     self.match(TokenType.SEMICOLON)
+                     self.match(TokenType.COMMA) 
+                 }
+                 
+                 cases.append(CaseClause {
+                     kind: ASTKind.CASE_CLAUSE,
+                     value: case_val,
+                     condition: nothing,
+                     body: body,
+                     line: keyword.line, 
+                     column: keyword.column
+                 })
+             }
+             self.consume(TokenType.RIGHT_BRACE, `Expected '}' after check cases.`)
+        }
+        
+        // check ... or ...
+        let current : Token -> self.peek()
+        when current.kind = TokenType.KEYWORD and current.value = `or` {
+             self.advance()
+             when self.match(TokenType.LEFT_BRACE) {
+                 else_branch -> BlockStatement {
+                     kind: ASTKind.BLOCK_STATEMENT,
+                     statements: self.block(),
+                     line: self.previous().line,
+                     column: self.previous().column
+                 }
+             } or {
+                 else_branch -> self.expression()
+             }
+        }
+        
+        <- CheckExpression {
+            kind: ASTKind.CHECK_EXPRESSION,
+            value: value,
+            cases: cases,
+            else_branch: else_branch,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function raise_expression() : Variant {
+        let keyword : Token -> self.previous()
+        let value : Variant -> self.expression()
+        
+        <- RaiseExpression {
+            kind: ASTKind.RAISE_EXPRESSION,
+            value: value,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    function defer_statement() : Variant {
+        let keyword : Token -> self.previous()
+        let stmt : Variant -> self.statement()
+        <- DeferStatement {
+            kind: ASTKind.DEFER_STATEMENT,
+            statement: stmt,
+            line: keyword.line,
+            column: keyword.column
+        }
+    }
+
+    // Helpers
+    
+    function get_line(node: Variant) : Integer {
+        let base : ASTNode -> node
+        when base.kind = ASTKind.BINARY_EXPRESSION { let n: BinaryExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.UNARY_EXPRESSION { let n: UnaryExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.LITERAL_EXPRESSION { let n: LiteralExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.GROUPING_EXPRESSION { let n: GroupingExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.VARIABLE_EXPRESSION { let n: VariableExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.CALL_EXPRESSION { let n: CallExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.GET_EXPRESSION { let n: GetExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.SET_EXPRESSION { let n: SetExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.INDEX_EXPRESSION { let n: IndexExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.ASSIGNMENT_EXPRESSION { let n: AssignmentExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.LOGICAL_EXPRESSION { let n: LogicalExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.CHECK_EXPRESSION { let n: CheckExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.RAISE_EXPRESSION { let n: RaiseExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.LIST_LITERAL_EXPRESSION { let n: ListLiteralExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.STRUCTURE_INITIALIZATION_EXPRESSION { let n: StructureInitializationExpression -> node
+        <- n.line }
+        when base.kind = ASTKind.DEFER_STATEMENT { let n: DeferStatement -> node
+        <- n.line }
+        // Default (unsafe but fallback)
+        <- 0
+    }
+
+    function get_column(node: Variant) : Integer {
+        let base : ASTNode -> node
+        when base.kind = ASTKind.BINARY_EXPRESSION { let n: BinaryExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.UNARY_EXPRESSION { let n: UnaryExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.LITERAL_EXPRESSION { let n: LiteralExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.GROUPING_EXPRESSION { let n: GroupingExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.VARIABLE_EXPRESSION { let n: VariableExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.CALL_EXPRESSION { let n: CallExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.GET_EXPRESSION { let n: GetExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.SET_EXPRESSION { let n: SetExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.INDEX_EXPRESSION { let n: IndexExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.ASSIGNMENT_EXPRESSION { let n: AssignmentExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.LOGICAL_EXPRESSION { let n: LogicalExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.CHECK_EXPRESSION { let n: CheckExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.RAISE_EXPRESSION { let n: RaiseExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.LIST_LITERAL_EXPRESSION { let n: ListLiteralExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.STRUCTURE_INITIALIZATION_EXPRESSION { let n: StructureInitializationExpression -> node
+        <- n.column }
+        when base.kind = ASTKind.DEFER_STATEMENT { let n: DeferStatement -> node
+        <- n.column }
+        <- 0
+    }
+
+    function is_at_end() : Boolean {
+        let peeked : Token -> self.peek()
+        <- peeked.kind == TokenType.TK_EOF
+    }
+
+    function peek() : Token {
+        let toks : List -> self.tokens
+        <- toks[self.curr_idx]
+    }
+
+    function peek_token(offset: Integer) : Token {
+        let idx -> self.curr_idx + offset
+        let toks : List -> self.tokens
+        when idx >= toks.length {
+             <- toks[toks.length - 1] // EOF ?
+        }
+        <- toks[idx]
+    }
+
+    function previous() : Token {
+        let toks : List -> self.tokens
+        <- toks[self.curr_idx - 1]
+    }
+
+    function advance() : Token {
+        when not self.is_at_end() {
+             self.curr_idx -> self.curr_idx + 1
+        // IO.write(`DEBUG: Parser advanced to index ` + Str.str(self.curr_idx) + `\n`)
+        }
+        <- self.previous()
+    }
+
+    function check_token(kind: TokenType) : Boolean {
+        when self.is_at_end() {
+            <- False
+        }
+        
+        let peeked : Token -> self.peek()
+        let result : Boolean -> peeked.kind == kind
+        <- result
+    }
+
+    function match(kind: TokenType) : Boolean {
+        // IO.write(`DEBUG: match(expected ` + Str.str(kind) + `)\n`)
+        when self.check_token(kind) {
+            self.advance()
+            <- True
+        }
+        <- False
+    }
+
+    function consume(kind: TokenType, message: String) : Token {
+        when self.check_token(kind) {
+            <- self.advance()
+        }
+        
+        // IO.error(`DEBUG: Failed consume. Kind expected: ` + kind + ` got: ` + self.peek().kind)
+        
+        let token : Token -> self.peek()
+        let val : String -> ``
+        when token.value != nothing {
+             val -> Str.str(token.value)
+        }
+        
+        IO.error(`[Parse Error] ` + message + ` (Token value: ` + val + `)`)
+        
+        // Force advance to avoid infinite loop on error, but this will likely cause cascading errors
+        <- self.advance()
+    }
+}

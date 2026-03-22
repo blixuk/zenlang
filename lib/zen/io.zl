@@ -1,0 +1,41 @@
+// Export capabilities as objects for structured access
+let out -> __builtin_output
+let in -> __builtin_input
+
+
+function write(value) {
+    out.write(value + `\n`)
+}
+
+function read(prompt) {
+    <- __builtin_input.read(prompt)
+}
+
+function info(value) {
+    __builtin_output.info(value)
+}
+
+function warn(value) {
+    __builtin_output.warn(value)
+}
+
+function error(value) {
+    __builtin_output.error(value)
+}
+
+function debug(value) {
+    __builtin_output.debug(value)
+}
+
+
+function read_file(path) {
+    <- __builtin_file.read(path)
+}
+
+function write_file(path, content) {
+    <- __builtin_file.write(path, content)
+}
+
+function file_exists(path) {
+    <- __builtin_file.exists(path)
+}

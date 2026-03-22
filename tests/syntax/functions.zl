@@ -1,0 +1,5 @@
+from zen.io import write
+// Functions
+
+function test { <- 1000 }
+write(test())

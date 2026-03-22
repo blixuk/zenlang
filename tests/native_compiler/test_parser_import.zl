@@ -1,0 +1,6 @@
+from ../../src/compiler/Parser import Parser
+from ../../lib/zen/io import write
+
+function main() {
+    write(`Imported Parser`)
+}

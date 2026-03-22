@@ -1,0 +1,74 @@
+%YAML 1.2
+---
+name: ZenLang
+file_extensions:
+  - zl
+  - zs
+scope: source.zenlang
+
+contexts:
+  main:
+    # Comments
+    - match: '//.*$'
+      scope: comment.line.zenlang
+
+    - match: '/\*'
+      push: block_comment
+
+    # Strings (backticks)
+    - match: '`'
+      push: backtick_string
+
+    # Characters
+    - match: "'[^']'"
+      scope: string.character.zenlang
+
+    # Numbers
+    - match: '\b\d+(\.\d+)?\b'
+      scope: constant.numeric.zenlang
+
+    # Booleans
+    - match: '\b(True|False)\b'
+      scope: constant.language.boolean.zenlang
+
+    # Keywords
+    - match: '\b(if|else|do|for|while|until|when|break|continue|in|and|or|not|let|set|function|class|structure|type|return|nothing)\b'
+      scope: keyword.control.zenlang
+
+    # Types
+    - match: '\b(Void|Variant|Integer|Float|String|Character|Boolean|Structure|Function|Class|Dictionary|Vector|List|Tuple|Set|Iterator|Iterable)\b'
+      scope: storage.type.zenlang
+
+    # Operators
+    - match: '->|<-|:>|==|!=|>=|<=|\+\+|--|[+\-*/%^=<>:]'
+      scope: keyword.operator.zenlang
+
+  block_comment:
+    - meta_scope: comment.block.zenlang
+    - match: '\*/'
+      pop: true
+    - match: '.'
+      scope: comment.block.zenlang
+
+  backtick_string:
+    - meta_scope: string.quoted.other.zenlang
+    - match: '`'
+      pop: true
+    - match: '.'
+      scope: string.quoted.other.zenlang
+
+#let zenlang-theme = (
+  "comment.line": (fill: rgb("#6a9955")),
+  "comment.block": (fill: rgb("#6a9955")),
+  "string": (fill: rgb("#ce9178")),
+  "number": (fill: rgb("#b5cea8")),
+  "keyword": (fill: rgb("#569cd6"), weight: "bold"),
+)
+
+#show raw.where(lang: "zenlang"): it => raw(
+  it.text,
+  lang: "zenlang",
+  block: it.block,
+  syntaxes: (zenlang: zenlang-syntax),
+  theme: zenlang-theme,
+)

@@ -1,0 +1,11 @@
+function get_args() {
+    <- __builtin_sys.get_args()
+}
+
+function exit(code) {
+    <- __builtin_sys.exit(code)
+}
+
+function get_env(key) : String {
+    <- __builtin_sys.get_env(key)
+}

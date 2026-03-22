@@ -1,0 +1,34 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from zen.io import write
+import zen.string as s
+// import zen.list as l // Module doesn't exist
+
+function main() {
+    let source -> `
+    let x -> 10
+    x -> x + 1
+    when (x == 11 and x > 5) {
+        x -> 0
+    }
+    `
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+
+    // write(`Tokens:`)
+    // let i -> 0
+    // while (i < s.length(tokens)) {
+    //    let t -> tokens[i]
+    //    write(t)
+    //    i -> i + 1
+    // }
+    
+    let parser -> Parser(tokens)
+    
+    // Parse full program statements
+    let statements -> parser.parse()
+    
+    write(`Parsed Statements:`)
+    // Returning statements list to print it
+    <- statements
+}

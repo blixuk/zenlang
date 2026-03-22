@@ -1,0 +1,88 @@
+from zen.io import write
+import zen.string as Str
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/CTranspiler import Transpiler
+
+function main() {
+    let source -> `
+structure Point {
+    x: Integer,
+    y: Integer
+}
+
+function test_point() {
+    // Assuming we have a constructor or helper function 'create_point' that returns Point*
+    // For this smoke test, since we don't code-gen constructors yet, 
+    // we will rely on C's casting or external linkage, OR simply trust that
+    // 'create_point' returns 'Point*'.
+    
+    let p: Point -> create_point(10, 20);
+    p.x -> 30;
+    
+    let y_val: Integer -> p.y;
+    return y_val;
+}
+
+// Dummy main wrapper
+function main_wrapper() {
+    test_point();
+    return 0;
+}
+`
+    write(`Source: ` + source)
+
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    let transpiler -> Transpiler(statements)
+    let c_code -> transpiler.transpile()
+    
+    // Inject the create_point prototype early to fix implicit declaration
+    let prototype -> `Point* create_point(long long x, long long y);`
+    // Simple hack: inject after stdbool.h
+    // Note: This relies on exact string match of the include.
+    // Also need to ensure Point is defined. Point is defined AFTER headers. 
+    // So usually prototype needs Point struct defined. 
+    // Point struct is emitted after headers. 
+    // So we should inject AFTER Point definition? 
+    // We don't know exactly where Point is defined without parsing C.
+    // But we know 'typedef struct ... point;'
+    // Let's inject at the VERY END, but that's too late.
+    
+    // Alternative: Forward declare struct Point?
+    // typedef struct Point Point; ? (generated code uses typedef struct { } Point;)
+    
+    // Better: Inject the helper definition explicitly as a 'native string' via some mechanism? 
+    // Or just make create_point return void* and cast it? 
+    // C allows void* implicit cast? 
+    // But getting it *into* the right place is tricky with just string ops.
+    
+    // Let's try splitting by 'Point;' (end of struct def).
+    // Or just putting 'Point* create_point(...);' right before 'test_point'.
+    // We can find 'long long test_point'.
+    
+    let parts -> Str.split(c_code, `long long test_point`)
+    let final_c_code -> parts[0] + prototype + `\nlong long test_point` + parts[1]
+
+    // And append implementation
+    final_c_code -> final_c_code + `
+// Helper injection for testing
+Point* create_point(long long x, long long y) {
+    Point* p = malloc(sizeof(Point));
+    p->x = x;
+    p->y = y;
+    return p;
+}
+`
+    
+    write(`--- Generated C Code ---`)
+    write(final_c_code)
+    write(`------------------------`)
+    
+    from zen.io import write_file
+    write_file(`structure_output.c`, final_c_code)
+    write(`Wrote C code to structure_output.c`)
+}

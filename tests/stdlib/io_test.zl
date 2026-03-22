@@ -1,0 +1,6 @@
+from zen.io import write
+from zen.io import out, write as zwrite, in as reader
+
+out.info(`Testing selective import of multiple symbols`)
+zwrite(`Legacy print working`)
+zwrite(`Test complete`)

@@ -1,0 +1,65 @@
+
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/CTranspiler import Transpiler
+import ../../src/compiler/Token as Token
+from ../../src/compiler/Lexer import Lexer
+import ../../src/compiler/AST as AST
+from zen.io import write
+
+function main() {
+    write(`TokenType.RIGHT_BRACE = ` + Token.TokenType.RIGHT_BRACE)
+
+    let c_source -> `
+    function test_loop() {
+        let i -> 0;
+        while (i < 5) {
+            i -> i + 1;
+        }
+        return i;
+    }
+    `
+    
+    let lexer -> Lexer(c_source)
+    let tokens -> lexer.tokenize()
+    
+    from zen.io import write_file
+    let ast_dump -> ``
+    
+    ast_dump -> ast_dump + `Inspecting Tokens...\n`
+    for t in tokens {
+        ast_dump -> ast_dump + `Token: ` + t.value + ` (` + t.kind + `)\n`
+    }
+    ast_dump -> ast_dump + `\n`
+
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    ast_dump -> ast_dump + `Inspecting AST...\n`
+    for stmt in statements {
+        ast_dump -> ast_dump + `Stmt Type: ` + stmt.kind + `\n`
+        when (stmt.kind = AST.ASTKind.FUNCTION_STATEMENT) {
+            ast_dump -> ast_dump + `Function: ` + stmt.name.value + `\n`
+            for s in stmt.body.statements {
+                 ast_dump -> ast_dump + `  Body Stmt Type: ` + s.kind + `\n`
+                 when (s.kind = AST.ASTKind.WHILE_STATEMENT) {
+                     ast_dump -> ast_dump + `    While Loop found\n`
+                     for ws in s.body.statements {
+                         ast_dump -> ast_dump + `      While Body Stmt: ` + ws.kind + `\n`
+                         when (ws.kind = AST.ASTKind.EXPRESSION_STATEMENT) {
+                             ast_dump -> ast_dump + `        Expr Kind: ` + ws.expression.kind + `\n`
+                         }
+                     }
+                 }
+            }
+        }
+    }
+    
+    write_file(`ast_dump.txt`, ast_dump)
+    write(`AST Dumped to ast_dump.txt`)
+    
+    let transpiler -> Transpiler(statements)
+    let c_code -> transpiler.transpile()
+    
+    write(`--- Output ---`)
+    write(c_code)
+}

@@ -1,0 +1,210 @@
+{
+    "Function": {
+        "prefix": "function",
+        "body": [
+            "function ${1:name}(${2:params}) {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Function definition"
+    },
+    "Function with return": {
+        "prefix": "functionr",
+        "body": [
+            "function ${1:name}(${2:params}) : ${3:Type} {",
+            "    ${0}",
+            "    <- ${4:value}",
+            "}"
+        ],
+        "description": "Function with return type"
+    },
+    "Class": {
+        "prefix": "class",
+        "body": [
+            "class ${1:Name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Class definition"
+    },
+    "Structure": {
+        "prefix": "structure",
+        "body": [
+            "structure ${1:Name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Structure definition"
+    },
+    "When": {
+        "prefix": "when",
+        "body": [
+            "when (${1:condition}) {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "When statement"
+    },
+    "When Or": {
+        "prefix": "whenor",
+        "body": [
+            "when (${1:condition}) {",
+            "    ${2}",
+            "} or {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "When statement with or"
+    },
+    "Do For": {
+        "prefix": "for",
+        "body": [
+            "do for ${1:item} in ${2:iterable} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Do For loop"
+    },
+    "Do While": {
+        "prefix": "while",
+        "body": [
+            "do while (${1:condition}) {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Do While loop"
+    },
+    "Import": {
+        "prefix": "import",
+        "body": [
+            "import `${1:path}` as ${2:Alias}"
+        ],
+        "description": "Import statement"
+    },
+    "From Import": {
+        "prefix": "from",
+        "body": [
+            "from `${1:path}` import ${2:Member}"
+        ],
+        "description": "From Import statement"
+    },
+    "Main": {
+        "prefix": "main",
+        "body": [
+            "function main() {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Main function"
+    },
+    "write": {
+        "prefix": "write",
+        "body": [
+            "from zen.io import write",
+            "write(${1:message})"
+        ],
+        "description": "Write statement"
+    },
+    "object": {
+        "prefix": "object",
+        "body": [
+            "object ${1:Name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Object definition"
+    },
+    "defer": {
+        "prefix": "defer",
+        "body": [
+            "defer {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Defer block"
+    },
+    "raise": {
+        "prefix": "raise",
+        "body": [
+            "raise ${1:Exception}"
+        ],
+        "description": "Raise exception"
+    },
+    "check": {
+        "prefix": "check",
+        "body": [
+            "check ${1:condition} {",
+            "    case ${2:pattern} {",
+            "        ${0}",
+            "    }",
+            "}"
+        ],
+        "description": "Check block"
+    },
+    "assert": {
+        "prefix": "assert",
+        "body": [
+            "assert ${1:condition}, \"${2:message}\""
+        ],
+        "description": "Assert statement"
+    },
+    "task": {
+        "prefix": "task",
+        "body": [
+            "task ${1:name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Task definition"
+    },
+    "enumerator": {
+        "prefix": "enum",
+        "body": [
+            "enumerator ${1:name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Enumerator definition"
+    },
+    "Do Until": {
+        "prefix": "until",
+        "body": [
+            "do until (${1:condition}) {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Do Until loop"
+    },
+    "case": {
+        "prefix": "case",
+        "body": [
+            "case ${1:value} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Case block"
+    },
+    "scope": {
+        "prefix": "scope",
+        "body": [
+            "scope ${1:name} {",
+            "    ${0}",
+            "}"
+        ],
+        "description": "Scope block"
+    },
+    "export": {
+        "prefix": "export",
+        "body": [
+            "export ${0}"
+        ],
+        "description": "Export statement"
+    },
+    "auto": {
+        "prefix": "auto",
+        "body": [
+            "auto ${1:name} -> ${0}"
+        ],
+        "description": "Auto declaration"
+    }
+}

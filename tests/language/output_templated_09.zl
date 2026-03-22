@@ -1,0 +1,12 @@
+from zen.io import out, write
+
+function test_output() {
+    write(`Testing templated output...`)
+    
+    // Direct out.write with template
+    out.write(`Hello {name}!\n`, d{ `name` -> `Zenlang` })
+    
+    write(`Output test complete`)
+}
+
+test_output()

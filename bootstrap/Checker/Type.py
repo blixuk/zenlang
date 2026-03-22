@@ -1,0 +1,268 @@
+from dataclasses import dataclass
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional
+
+
+class SymbolOrigin(Enum):
+    BUILTIN = "BUILTIN"
+    USER = "USER"
+    EXTERNAL = "EXTERNAL"
+
+
+class SymbolKind(Enum):
+    VARIABLE = "VARIABLE"
+    CONSTANT = "CONSTANT"
+    FUNCTION = "FUNCTION"
+    STRUCTURE = "STRUCTURE"
+    ENUMERATOR = "ENUMERATOR"
+    PARAMETER = "PARAMETER"
+    MEMBER = "MEMBER"
+    ELEMENT = "ELEMENT"
+    ARGUMENT = "ARGUMENT"
+    COLLECTION = "COLLECTION"
+    CONTAINER = "CONTAINER"
+
+
+class Value:
+    pass
+
+
+@dataclass(frozen=True)
+class ValueNothing(Value):
+    pass
+
+
+class Type:
+    pass
+
+
+# Primitive Types
+
+
+@dataclass(frozen=True)
+class TypeVoid(Type):
+    name: str = "Void"
+
+
+@dataclass(frozen=True)
+class TypeVariant(Type):
+    name: str = "Variant"
+
+
+@dataclass(frozen=True)
+class TypeNothing(Type):
+    name: str = "Nothing"
+
+
+@dataclass(frozen=True)
+class TypeBoolean(Type):
+    name: str = "Boolean"
+
+
+@dataclass(frozen=True)
+class TypeInteger(Type):
+    name: str = "Integer"
+    bits: Optional[int] = 32
+    signed: Optional[bool] = False
+
+
+@dataclass(frozen=True)
+class TypeDecimal(Type):
+    name: str = "Decimal"
+    bits: Optional[int] = 32
+
+
+@dataclass(frozen=True)
+class TypeString(Type):
+    name: str = "String"
+    bits: Optional[int] = 32
+
+
+@dataclass(frozen=True)
+class TypeRune(Type):
+    name: str = "Rune"
+    bits: Optional[int] = 32
+
+
+PRIMITIVE_TYPES: Dict = {
+    "Void": TypeVoid,
+    "Nothing": TypeNothing,
+    "Variant": TypeVariant,
+    "Integer": TypeInteger,
+    "Float": TypeDecimal,
+    "Decimal": TypeDecimal,
+    "String": TypeString,
+    "Rune": TypeRune,
+    "Boolean": TypeBoolean,
+}
+
+
+# Abstract Types
+
+
+@dataclass(frozen=True)
+class TypeNumber(Type):
+    name: str = "Number"
+    bound: Type | None = None
+
+
+@dataclass(frozen=True)
+class TypeText(Type):
+    name: str = "Text"
+    bound: Type | None = None
+
+
+@dataclass(frozen=True)
+class TypeCollection(Type):
+    name: str = "Collection"
+    bound: Type | None = None
+
+
+@dataclass(frozen=True)
+class TypeContainer(Type):
+    name: str = "Container"
+    bound: Type | None = None
+
+
+ABSTRACT_TYPES: Dict = {
+    "Number": TypeNumber,
+    "Text": TypeText,
+    "Collection": TypeCollection,
+    "Container": TypeContainer,
+}
+
+# Collection Types
+
+
+@dataclass(frozen=True)
+class TypeParameter(Type):
+    name: Optional[str]
+    type: Type
+    mutable: bool = False
+
+
+@dataclass(frozen=True)
+class TypeMember(Type):
+    name: Optional[str]
+    type: Type
+    mutable: bool = False
+
+
+@dataclass(frozen=True)
+class TypeElement(Type):
+    name: Optional[str]
+    type: Type
+    mutable: bool = False
+
+
+@dataclass(frozen=True)
+class TypeArgument(Type):
+    name: Optional[str]
+    type: Type
+    mutable: bool = False
+
+
+@dataclass(frozen=True)
+class TypeList(Type):
+    name: Optional[str]
+    elements: List[TypeElement]
+
+
+@dataclass(frozen=True)
+class TypeTuple(Type):
+    name: Optional[str]
+    elements: List[TypeElement]
+
+
+@dataclass(frozen=True)
+class TypeMap(Type):
+    name: Optional[str]
+    key_type: Type
+    value_type: Type
+
+
+@dataclass(frozen=True)
+class TypeSet(Type):
+    name: Optional[str]
+    element_type: Type
+
+
+@dataclass(frozen=True)
+class TypeVector(Type):
+    name: Optional[str]
+    element_type: Type
+    size: int
+
+
+COLLECTION_TYPES: Dict = {
+    "Parameter": TypeParameter,
+    "Member": TypeMember,
+    "Element": TypeElement,
+    "Argument": TypeArgument,
+    "List": TypeList,
+    "Tuple": TypeTuple,
+    "Map": TypeMap,
+    "Dictionary": TypeMap,
+    "Set": TypeSet,
+    "Vector": TypeVector,
+}
+
+
+# Container Types
+
+
+@dataclass(frozen=True)
+class TypeFunction(Type):
+    name: str
+    parameters: Optional[List[TypeParameter]]
+    return_type: Type
+
+
+@dataclass(frozen=True)
+class TypeStructure(Type):
+    name: str
+    members: Any # Dict[str, Type]
+    parent: Optional['TypeStructure'] = None
+
+@dataclass(frozen=True)
+class TypeClass(Type):
+    name: str
+    members: Any # Dict[str, TypeVariable]
+    methods: Any # Dict[str, TypeFunction]
+    parent: Optional['TypeClass'] = None
+
+
+
+@dataclass(frozen=True)
+class TypeEnumerator(Type):
+    name: str
+    members: List[TypeMember]
+
+
+CONTAINER_TYPES: Dict = {
+    "Function": TypeFunction,
+    "Structure": TypeStructure,
+    "Enumerator": TypeEnumerator,
+}
+
+
+@dataclass
+class TypeVariable(Type):
+    id: int
+    bound: Type | None = None
+
+    def resolve(self) -> Type:
+        if isinstance(self.bound, TypeVariable):
+            return self.bound.resolve()
+
+        return self.bound or self
+
+
+@dataclass
+class Symbol:
+    name: str
+    type: Type
+    value: Value | None
+    mutable: bool
+    kind: SymbolKind
+    scope_level: int

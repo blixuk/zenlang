@@ -1,0 +1,16 @@
+import zen.io
+
+let my_list -> [1, 2, 3, 4]
+io.write(`\nList of Integers: `)
+io.write(my_list)
+
+let my_strings -> [`hello`, `world`]
+io.write(`\nList of Strings: `)
+io.write(my_strings)
+
+let mixed -> [1, `two`, 3.0, True]
+io.write(`\nMixed List: `)
+io.write(mixed)
+
+io.write(`\n`)
+

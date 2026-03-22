@@ -1,0 +1,27 @@
+from zen.io import write
+
+// Strings
+
+let a -> `Hello from A`
+write(a)
+
+a -> `Hello from A NEW`
+write(a)
+
+a -> 1
+write(a)
+
+let b : String -> `Hello from B`
+write(b)
+
+b -> `Hello from B NEW`
+write(b)
+
+b -> 1
+write(b)
+
+set c : String -> `Hello from C`
+write(c)
+
+//c -> `Hello from C NEW`
+//write(c)

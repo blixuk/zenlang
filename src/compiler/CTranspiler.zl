@@ -1,0 +1,1163 @@
+import `compiler/Token` as TokenModule
+from `compiler/AST` import ASTNode, ASTKind, FunctionStatement, StructureStatement, EnumeratorStatement, ClassStatement, ImportStatement, FromImportStatement, WhenStatement, WhileStatement, DoWhileStatement, ForStatement, ListLiteralExpression, StructureInitializationExpression, StructureInitField, GetExpression, SetExpression, VariableExpression, LiteralExpression, BinaryExpression, CallExpression, IndexExpression, UnaryExpression, GroupingExpression, LogicalExpression, AssignmentExpression, RaiseExpression, StructureMember, Parameter
+import `lib/zen/string` as Str
+import `lib/zen/io` as IO
+
+class Transpiler {
+    let statements: List
+    let output: List
+    let variable_types: List // List of pairs [name, type]
+    let class_names: List // List of strings
+    let current_class_name: String
+    let module_aliases: List // List of pairs [alias, real_name]
+    let unique_counter: Integer
+    let defer_functions: List
+    let current_base_depth_var: String
+
+    function init(statements: List) : Void {
+        self.statements -> statements
+        self.output -> []
+        self.variable_types -> [] // Initialize as empty list
+        self.class_names -> []
+        self.current_class_name -> ``
+        self.module_aliases -> [
+            [`s`, `zen.string`],
+            [`Str`, `zen.string`],
+            [`IO`, `zen.io`]
+        ]
+        self.unique_counter -> 0
+        self.defer_functions -> []
+        self.current_base_depth_var -> ``
+    }
+
+    function int_to_string(n: Integer) : String {
+        when (n = 0) { <- `0` }
+        
+        let res -> ``
+        let digits -> `0123456789`
+        let temp -> n
+        
+        while (temp > 0) {
+            let d: Integer -> temp % 10
+            let ch: String -> Str.at(digits, d)
+            res -> ch + res
+            temp -> temp / 10
+        }
+        
+        <- res
+    }
+
+    function get_unique_id() : String {
+        self.unique_counter -> self.unique_counter + 1
+        <- self.int_to_string(self.unique_counter)
+    }
+
+    function emit(line: String) : Void {
+        let out : List -> self.output
+        out.append(line)
+    }
+
+
+
+    function transpile_header(guard_name: String) : String {
+        self.output -> []
+        self.emit(`#ifndef ` + guard_name)
+        self.emit(`#define ` + guard_name)
+        self.emit(``)
+        self.emit(`#include "bootstrap_runtime.h"`)
+        self.emit(`#define True 1`)
+        self.emit(`#define False 0`)
+        self.emit(``)
+        
+        // Pass 1: Types and Prototypes
+        for stmt in self.statements {
+            let s : ASTNode -> stmt
+            when (s.kind = ASTKind.STRUCTURE_STATEMENT) {
+                self.emit_structure_statement(stmt)
+            } or when (s.kind = ASTKind.ENUMERATOR_STATEMENT) {
+                self.emit_enumerator_statement(stmt)
+            } or when (s.kind = ASTKind.CLASS_STATEMENT) {
+                let cls : ClassStatement -> stmt
+                let names : List -> self.class_names
+                names.append(cls.name.value)
+                self.emit_class_declaration(stmt)
+            }
+        }
+        
+        for stmt in self.statements {
+            let s : ASTNode -> stmt
+            when (s.kind = ASTKind.FUNCTION_STATEMENT) {
+                 self.emit_function_prototype(s)
+            }
+        }
+
+        self.emit(`#endif // ` + guard_name)
+        <- Str.join(self.output, `\n`)
+    }
+
+    function transpile_source(header_name: String) : String {
+        self.output -> []
+        self.emit_includes()
+        when (header_name != ``) {
+            self.emit(`#include "` + header_name + `"`)
+        }
+        self.emit(``)
+        
+        for stmt in self.statements {
+            // Re-populate class names for context if needed (or rely on persistent state if same instance)
+            // Ideally init clears state.
+            let s : ASTNode -> stmt
+            when (s.kind = ASTKind.CLASS_STATEMENT) {
+                 let cls : ClassStatement -> stmt
+                 let names : List -> self.class_names
+                 names.append(cls.name.value)
+            }
+        }
+
+        for stmt in self.statements {
+            let s : ASTNode -> stmt
+            self.emit_statement(s)
+        }
+        
+        let final_output : String -> Str.join(self.defer_functions, `\n`)
+        final_output -> final_output + `\n` + Str.join(self.output, `\n`)
+        <- final_output
+    }
+
+    function emit_includes() : Void {
+        self.emit(`#include "bootstrap_runtime.h"`)
+        self.emit(`#include <assert.h>`)
+        self.emit(`#define None 0`)
+        self.emit(`#include <math.h>`)
+        self.emit(`#include <stdio.h>`)
+        self.emit(`#include <stdlib.h>`)
+        self.emit(``)
+        
+        // Emit imports
+        for stmt in self.statements {
+             let s : ASTNode -> stmt
+             when (s.kind = ASTKind.IMPORT_STATEMENT) {
+                 self.emit_import_statement(s)
+             } or when (s.kind = ASTKind.FROM_IMPORT_STATEMENT) {
+                 self.emit_from_import_statement(s)
+             }
+        }
+    }
+
+    function emit_statement(stmt: Object) : Void {
+        let s : ASTNode -> stmt
+        let var_types : List -> self.variable_types
+        when (s.kind = ASTKind.FUNCTION_STATEMENT) {
+            self.emit_function(s)
+        } or when (s.kind = ASTKind.LET_STATEMENT) {
+            let let_stmt : LetStatement -> stmt
+            let val_code : String -> self.transpile_expression(let_stmt.initializer)
+            let type_name : String -> `void*`
+            
+            // Check for explicit type annotation
+            when (let_stmt.type_annotation != nothing) {
+                type_name -> self.map_type(let_stmt.type_annotation)
+                var_types.append([let_stmt.name.value, let_stmt.type_annotation])
+            } or {
+                // Infer type
+                type_name -> `ZenValue`
+                
+                // Heuristic inference
+                when (let_stmt.initializer != nothing) {
+                    let init_node : ASTNode -> let_stmt.initializer
+                    when (init_node.kind = ASTKind.LITERAL_EXPRESSION) {
+                        let lit : LiteralExpression -> let_stmt.initializer
+                        when (lit.is_string = True) { type_name -> `ZenValue` }
+                    } or when (init_node.kind = ASTKind.CALL_EXPRESSION) {
+                        let callee_node : CallExpression -> let_stmt.initializer
+                        let callee_base : ASTNode -> callee_node.callee
+                        
+                        when (callee_base.kind = ASTKind.GET_EXPRESSION) {
+                            let get_expr : GetExpression -> callee_node.callee
+                            let obj : ASTNode -> get_expr.object
+                            let prop -> get_expr.name.value
+                            when (obj.kind = ASTKind.VARIABLE_EXPRESSION) {
+                                let var_expr : VariableExpression -> get_expr.object
+                                let alias -> var_expr.name.value
+                                when (alias = `Str` or alias = `zen_string`) {
+                                    when (prop = `replace` or prop = `substring` or prop = `at` or prop = `to_lower` or prop = `to_upper` or prop = `join` or prop = `str` or prop = `concat`) {
+                                        type_name -> `ZenValue`
+                                    } or when (prop = `split`) {
+                                        type_name -> `ZenList*`
+                                    } or when (prop = `length`) {
+                                        type_name -> `ZenValue`
+                                    }
+                                } or when (alias = `IO` or alias = `zen_io`) {
+                                    when (prop = `read_file` or prop = `str`) {
+                                        type_name -> `ZenValue`
+                                    }
+                                }
+                            }
+                        } or when (callee_base.kind = ASTKind.VARIABLE_EXPRESSION) {
+                            let var_expr : VariableExpression -> callee_node.callee
+                            let func_name -> var_expr.name.value
+                            when (func_name = `Str` or func_name = `IO`) {
+                                type_name -> func_name + `*`
+                            }
+                        }
+                    } or when (init_node.kind = ASTKind.BINARY_EXPRESSION) {
+                         let bin_expr : BinaryExpression -> let_stmt.initializer
+                         let op -> bin_expr.operator.value
+                         when (op = `+`) {
+                            when (self.is_expression_string(let_stmt.initializer)) {
+                                type_name -> `char*`
+                            }
+                         }
+                    }
+                }
+                // Save inferred type
+                var_types.append([let_stmt.name.value, type_name])
+            }
+            
+            // Basic type detection for classes (overrides only if no annotation?)
+            let init_node : ASTNode -> let_stmt.initializer
+            when (init_node.kind = ASTKind.CALL_EXPRESSION) {
+                let callee_node : CallExpression -> let_stmt.initializer
+                let callee_base : ASTNode -> callee_node.callee
+                
+                when (callee_base.kind = ASTKind.VARIABLE_EXPRESSION) {
+                    let var_expr : VariableExpression -> callee_node.callee
+                    let func_name : String -> var_expr.name.value
+                    
+                    // Check if it's a known class constructor
+                    let is_constructor -> False
+                    for c_name in self.class_names {
+                        when (c_name = func_name) {
+                            is_constructor -> True
+                        }
+                    }
+
+                    when (is_constructor) {
+                         type_name -> func_name + `*`
+                         var_types.append([let_stmt.name.value, func_name])
+                    } or {
+                         // Heuristic for known classes
+                         when (func_name = `Lexer` or func_name = `Parser` or func_name = `Transpiler`) {
+                             type_name -> func_name + `*`
+                             var_types.append([let_stmt.name.value, func_name])
+                         } or when (Str.starts_with(func_name, `create_`)) {
+                             type_name -> Str.substring(func_name, 7, Str.length(func_name)) + `*`
+                             var_types.append([let_stmt.name.value, Str.substring(func_name, 7, Str.length(func_name))])
+                         }
+                    }
+                } or when (callee_base.kind = ASTKind.GET_EXPRESSION) {
+                    let get_expr : GetExpression -> callee_node.callee
+                    let prop : String -> get_expr.name.value // Property name e.g. "Lexer"
+                    // Heuristic: if property is capitalized, assume constructor
+                    when (prop = `Lexer` or prop = `Parser` or prop = `Transpiler`) {
+                        type_name -> prop + `*`
+                        var_types.append([let_stmt.name.value, prop])
+                    }
+                }
+            }
+        when (type_name = `void*`) {
+            type_name -> `ZenValue`
+        }
+
+            let s_name : String -> self.sanitize_identifier(let_stmt.name.value)
+            self.emit(`    ` + type_name + ` ` + s_name + ` = ` + val_code + `;`)
+        } or when (s.kind = ASTKind.RETURN_STATEMENT) {
+            let ret_stmt : ReturnStatement -> stmt
+            let val_code : String -> self.transpile_expression(ret_stmt.value)
+            
+            when (self.current_base_depth_var != ``) {
+                 when (val_code != ``) {
+                      self.emit(`    {`)
+                      self.emit(`        ZenValue _res = ` + val_code + `;`)
+                      self.emit(`        zen_defer_run_to(` + self.current_base_depth_var + `);`)
+                      self.emit(`        return _res;`)
+                      self.emit(`    }`)
+                 } or {
+                      self.emit(`    zen_defer_run_to(` + self.current_base_depth_var + `);`)
+                      self.emit(`    return;`)
+                 }
+            } or {
+                 self.emit(`    return ` + val_code + `;`)
+            }
+        } or when (s.kind = ASTKind.EXPRESSION_STATEMENT) {
+            let expr_stmt : ExpressionStatement -> stmt
+            let expr_code : String -> self.transpile_expression(expr_stmt.expression)
+            self.emit(`    ` + expr_code + `;`)
+        } or when (s.kind = ASTKind.WHEN_STATEMENT) {
+            self.emit_when_statement(s)
+        } or when (s.kind = ASTKind.WHILE_STATEMENT) {
+            self.emit_while_statement(s)
+        } or when (s.kind = ASTKind.DO_WHILE_STATEMENT) {
+            self.emit_do_while_statement(s)
+        } or when (s.kind = ASTKind.FOR_STATEMENT) {
+            self.emit_for_statement(s)
+        } or when (s.kind = ASTKind.IMPORT_STATEMENT) {
+        } or when (s.kind = ASTKind.FROM_IMPORT_STATEMENT) {
+            // self.emit_from_import_statement(s) // Handled in emit_includes
+        } or when (s.kind = ASTKind.ASSERT_STATEMENT) {
+            let assert_stmt : AssertStatement -> stmt
+            let cond : String -> self.transpile_expression(assert_stmt.condition)
+            when (assert_stmt.message != nothing) {
+                let msg : String -> self.transpile_expression(assert_stmt.message)
+                self.emit(`    assert(` + cond + ` && ` + msg + `);`)
+            } or {
+                self.emit(`    assert(` + cond + `);`)
+            }
+        } or when (s.kind = ASTKind.DEFER_STATEMENT) {
+            let defer_stmt : DeferStatement -> stmt
+            let defer_id : String -> self.get_unique_id()
+            let defer_func_name : String -> `defer_` + defer_id
+            
+            // Save current state to emit the defer function
+            let old_output : List -> self.output
+            self.output -> []
+            
+            self.emit(`static void ` + defer_func_name + `(void* _data) {`)
+            self.emit_statement(defer_stmt.statement)
+            self.emit(`}`)
+            
+            let def_funcs : List -> self.defer_functions
+            def_funcs.append(Str.join(self.output, `\n`))
+            
+            self.output -> old_output
+            self.emit(`    zen_defer_push(` + defer_func_name + `, NULL);`)
+        }
+    }
+
+    function is_expression_string(expr: Object) : Boolean {
+        let node : ASTNode -> expr
+        when (node.kind = ASTKind.LITERAL_EXPRESSION) {
+            let lit : LiteralExpression -> expr
+            <- lit.is_string
+        }
+        when (node.kind = ASTKind.VARIABLE_EXPRESSION) {
+             let v_expr : VariableExpression -> expr
+             let v_name -> v_expr.name.value
+             for pair in self.variable_types {
+                 when (pair[0] = v_name) {
+                     when (pair[1] = `char*` or pair[1] = `ZenString` or pair[1] = `String`) { <- True }
+                 }
+             }
+        }
+        when (node.kind = ASTKind.BINARY_EXPRESSION) {
+             let bin_expr : BinaryExpression -> expr
+             when (bin_expr.operator.value = `+`) {
+                 <- self.is_expression_string(bin_expr.left) or self.is_expression_string(bin_expr.right)
+             }
+        }
+        when (node.kind = ASTKind.CALL_EXPRESSION) {
+             let call_expr : CallExpression -> expr
+             let callee_node : ASTNode -> call_expr.callee
+             when (callee_node.kind = ASTKind.GET_EXPRESSION) {
+                    let get_expr : GetExpression -> call_expr.callee
+                    let obj_node : ASTNode -> get_expr.object
+                    when (obj_node.kind = ASTKind.VARIABLE_EXPRESSION) {
+                        let var_expr : VariableExpression -> get_expr.object
+                        let alias : String -> var_expr.name.value
+                        when (alias = `Str` or alias = `zen_string`) { <- True }
+                    }
+             }
+        }
+        <- False
+    }
+
+    function transpile_expression(expr: Object) : String {
+        let node : ASTNode -> expr
+        
+        when (node.kind = ASTKind.LITERAL_EXPRESSION) {
+            let lit : LiteralExpression -> expr
+            when (lit.is_string) {
+                <- `zen_str("` + self.escape_c_string(lit.value) + `")`
+            } or {
+                let val : String -> Str.str(lit.value)
+                when (val = `nothing`) { <- `Zen_nothing` }
+                when (val = `True`) { <- `zen_bool(1)` }
+                when (val = `False`) { <- `zen_bool(0)` }
+                <- `zen_int(` + val + `)`
+            }
+        } or when (node.kind = ASTKind.VARIABLE_EXPRESSION) {
+            let v_expr : VariableExpression -> expr
+            <- self.sanitize_identifier(v_expr.name.value)
+        } or when (node.kind = ASTKind.BINARY_EXPRESSION) {
+            let bin_expr : BinaryExpression -> expr
+            let left : String -> self.transpile_expression(bin_expr.left)
+            let right : String -> self.transpile_expression(bin_expr.right)
+            let op : String -> bin_expr.operator.value
+            
+            // Handle string concatenation
+            // Detect string operations
+            let is_string -> False
+            when (self.is_expression_string(bin_expr.left)) { is_string -> True }
+            when (self.is_expression_string(bin_expr.right)) { is_string -> True }
+
+            // Handle string concatenation
+            when (op = `+`) {
+                when (is_string) {
+                    <- `ZenString_concat(` + left + `, ` + right + `)`
+                }
+            }
+
+            // Handle string equality
+            when (op = `=` or op = `==`) {
+                 when (is_string) {
+                      <- `ZenString_equals(` + left + `, ` + right + `)`
+                 }
+                 op -> `==` 
+            }
+             
+            when (op = `!=`) {
+                 when (is_string) {
+                      <- `!ZenString_equals(` + left + `, ` + right + `)`
+                 }
+            }
+             
+            when (op = `=`) { op -> `==` }
+            when (op = `**`) { 
+                 <- `pow(` + left + `, ` + right + `)`
+            }
+            when (op = `&&`) { <- `ZenValue_and(` + left + `, ` + right + `)` }
+            when (op = `||`) { <- `ZenValue_or(` + left + `, ` + right + `)` }
+            when (op = `^^`) { <- `ZenValue_xor(` + left + `, ` + right + `)` }
+            when (op = `<<`) { <- `ZenValue_lshift(` + left + `, ` + right + `)` }
+            when (op = `>>`) { <- `ZenValue_rshift(` + left + `, ` + right + `)` }
+            when (op = `%%`) { <- `ZenValue_mod(` + left + `, ` + right + `)` }
+            when (op = `%`) { op -> `%` }
+            
+            <- `(` + left + ` ` + op + ` ` + right + `)`
+        } or when (node.kind = ASTKind.CALL_EXPRESSION) {
+            <- self.transpile_call(expr)
+        } or when (node.kind = ASTKind.GET_EXPRESSION) {
+            <- self.emit_get_expression(expr)
+        } or when (node.kind = ASTKind.SET_EXPRESSION) {
+            <- self.emit_set_expression(expr)
+        } or when (node.kind = ASTKind.INDEX_EXPRESSION) {
+             let idx_expr : IndexExpression -> expr
+             let obj : String -> self.transpile_expression(idx_expr.object)
+             let idx : String -> self.transpile_expression(idx_expr.index)
+             <- `ZenList_get(` + obj + `, ` + idx + `)`
+        } or when (node.kind = ASTKind.UNARY_EXPRESSION) {
+             let un_expr : UnaryExpression -> expr
+             let right : String -> self.transpile_expression(un_expr.right)
+             let op : String -> un_expr.operator.value
+             when (op = `not`) { op -> `!` }
+             when (op = `!!`) { <- `ZenValue_not(` + right + `)` }
+             <- op + right
+        } or when (node.kind = ASTKind.GROUPING_EXPRESSION) {
+             let group_expr : GroupingExpression -> expr
+             let inner : String -> self.transpile_expression(group_expr.expression)
+             <- `(` + inner + `)`
+        } or when (node.kind = ASTKind.LOGICAL_EXPRESSION) {
+             let log_expr : LogicalExpression -> expr
+             let left : String -> self.transpile_expression(log_expr.left)
+             let right : String -> self.transpile_expression(log_expr.right)
+             let op : String -> log_expr.operator.value
+             when (op = `and`) { op -> `&&` }
+             when (op = `or`) { op -> `||` }
+             <- `(` + left + ` ` + op + ` ` + right + `)`
+        } or when (node.kind = ASTKind.ASSIGNMENT_EXPRESSION) {
+             let assign_expr : AssignmentExpression -> expr
+             let val_code : String -> self.transpile_expression(assign_expr.value)
+             <- assign_expr.name.value + ` = ` + val_code
+        } or when (node.kind = ASTKind.STRUCTURE_INITIALIZATION_EXPRESSION) {
+             <- self.emit_structure_initialization(expr)
+        } or when (node.kind = ASTKind.LIST_LITERAL_EXPRESSION) {
+             <- self.transpile_list_literal(expr)
+        } or when (node.kind = ASTKind.CHECK_EXPRESSION) {
+             <- self.emit_check_expression(expr)
+        } or when (node.kind = ASTKind.RAISE_EXPRESSION) {
+             let raise_expr : RaiseExpression -> expr
+             let val_code : String -> self.transpile_expression(raise_expr.value)
+             <- `zen_raise(` + val_code + `)`
+        }
+        <- `/* unknown expression */`
+    }
+
+    function transpile_call(expr: Object) : String {
+        let call_expr : CallExpression -> expr
+        let callee_node : VariableExpression -> call_expr.callee
+        let callee_code -> `/* unknown callee */`
+        
+        when (callee_node.kind = ASTKind.VARIABLE_EXPRESSION) {
+             let callee_var : VariableExpression -> call_expr.callee
+             let c_name : String -> callee_var.name.value
+             let is_constructor -> False
+             for cls in self.class_names {
+                 when (cls = c_name) {
+                     is_constructor -> True
+                 }
+             }
+
+             when (is_constructor) {
+                 callee_code -> c_name + `_` + c_name
+             } or {
+                 // Heuristic for known classes
+                 when (c_name = `Lexer` or c_name = `Parser` or c_name = `Transpiler`) {
+                      callee_code -> c_name + `_` + c_name
+                 } or {
+                      callee_code -> c_name
+                 }
+             }
+        } or when (callee_node.kind = ASTKind.GET_EXPRESSION) {
+             let callee_get : GetExpression -> call_expr.callee
+             let obj_expr : ASTNode -> callee_get.object
+             let method_name : String -> callee_get.name.value
+             
+             let class_name -> `UnknownClass`
+             
+             let obj_node : VariableExpression -> obj_expr
+             when (obj_node.kind = ASTKind.VARIABLE_EXPRESSION) {
+                 let v_expr : VariableExpression -> obj_expr
+                 let v_name : String -> v_expr.name.value
+                 when (v_name = `self`) {
+                     class_name -> self.current_class_name
+                 } or {
+                     for pair in self.variable_types {
+                         when (pair[0] = v_name) {
+                             class_name -> pair[1]
+                         }
+                     }
+                     for pair in self.module_aliases {
+                         when (pair[0] = v_name) {
+                             class_name -> pair[1]
+                         }
+                     }
+                 }
+             }
+             
+             // Map built-in types to Zen runtime names
+             when (class_name = `List`) { class_name -> `ZenList` }
+             when (class_name = `String`) { class_name -> `ZenString` }
+             when (class_name = `zen.string` or class_name = `Str`) { class_name -> `ZenString` }
+             when (class_name = `zen.io` or class_name = `IO`) { class_name -> `IO` }
+             when (class_name = `__builtin_file`) { class_name -> `IO` }
+             when (class_name = `__builtin_sys`) { class_name -> `Sys` }
+             
+             when (Str.ends_with(class_name, `/string`)) { class_name -> `ZenString` }
+             when (Str.ends_with(class_name, `/io`)) { class_name -> `IO` }
+             when (Str.ends_with(class_name, `/sys`)) { class_name -> `Sys` }
+             when (Str.ends_with(class_name, `/Lexer`)) { class_name -> `Lexer` }
+             when (Str.ends_with(class_name, `/Parser`)) { class_name -> `Parser` }
+             when (Str.ends_with(class_name, `/CTranspiler`)) { class_name -> `Transpiler` }
+             
+             // Remove trailing * if present
+             when (Str.ends_with(class_name, `*`)) {
+                 class_name -> Str.substring(class_name, 0, Str.length(class_name) - 1)
+             }
+             callee_code -> class_name + `_` + method_name 
+        } or {
+             callee_code -> self.transpile_expression(call_expr.callee)
+        }
+        
+        let args_str -> ``
+        let is_first -> True
+        
+        when (callee_node.kind = ASTKind.GET_EXPRESSION) {
+            let callee_get : GetExpression -> call_expr.callee
+            let callee_obj : VariableExpression -> callee_get.object
+            let is_module_call -> False
+            
+            // Check kind processing for callee_obj
+            // Using logic from above to check if module alias
+            // Needs to check if callee_obj is variable expression
+            // But we don't have nice 'is instance' check yet on Object.
+            // But VariableExpression check logic relies on kind.
+            // Since we cast callee_obj to Object, we need cast to read kind.
+            
+            let obj_node : VariableExpression -> callee_obj
+            when (obj_node.kind = ASTKind.VARIABLE_EXPRESSION) {
+                let v_name : String -> obj_node.name.value
+                for pair in self.module_aliases {
+                    when (pair[0] = v_name) {
+                        is_module_call -> True
+                    }
+                }
+            }
+            
+            when (not is_module_call) {
+                args_str -> self.transpile_expression(callee_obj)
+                is_first -> False
+            }
+        }
+
+        for arg in call_expr.arguments {
+            when (not is_first) {
+                args_str -> args_str + `, `
+            }
+            args_str -> args_str + self.transpile_expression(arg)
+            is_first -> False
+        }
+        
+        <- callee_code + `(` + args_str + `)`
+    }
+
+
+    function emit_function_prototype(stmt: Object) : Void {
+        let func_stmt : FunctionStatement -> stmt
+        let ret_type -> `ZenValue` 
+        when (func_stmt.return_type != nothing) {
+            ret_type -> self.map_type(func_stmt.return_type)
+        }
+        let params_code -> ``
+        let is_first -> True
+        
+        for param_untyped in func_stmt.parameters {
+            let param : Parameter -> param_untyped
+            when (not is_first) {
+                params_code -> params_code + `, `
+            }
+            
+            let p_type : String -> `ZenValue`
+            when (param.type_annotation != nothing) {
+                p_type -> self.map_type(param.type_annotation)
+            }
+            
+            let s_param : String -> self.sanitize_identifier(param.name.value)
+            params_code -> params_code + p_type + ` ` + s_param
+            is_first -> False
+        }
+        
+        let s_name : String -> self.sanitize_identifier(func_stmt.name.value)
+        self.emit(ret_type + ` ` + s_name + `(` + params_code + `);`)
+    }
+
+    function emit_function(stmt: Object) : Void {
+        let func_stmt : FunctionStatement -> stmt
+        let ret_type -> `ZenValue` 
+        when (func_stmt.return_type != nothing) {
+            ret_type -> self.map_type(func_stmt.return_type)
+        }
+        let params_code -> ``
+        let is_first -> True
+        
+        for param_untyped in func_stmt.parameters {
+            let param : Parameter -> param_untyped
+            when (not is_first) {
+                params_code -> params_code + `, `
+            }
+            
+            let p_type : String -> `ZenValue`
+            when (param.type_annotation != nothing) {
+                p_type -> self.map_type(param.type_annotation)
+            }
+            
+            let s_param : String -> self.sanitize_identifier(param.name.value)
+            params_code -> params_code + p_type + ` ` + s_param
+            is_first -> False
+        }
+        
+        let s_name : String -> self.sanitize_identifier(func_stmt.name.value)
+        self.emit(ret_type + ` ` + s_name + `(` + params_code + `) {`)
+        
+        let old_base_depth : String -> self.current_base_depth_var
+        let unique_id : String -> self.get_unique_id()
+        self.current_base_depth_var -> `base_depth_` + unique_id
+        
+        self.emit(`    int ` + self.current_base_depth_var + ` = zen_defer_depth();`)
+        
+        for s in func_stmt.body.statements {
+           self.emit_statement(s)
+        }
+        
+        self.emit(`    zen_defer_run_to(` + self.current_base_depth_var + `);`)
+        self.emit(`}`)
+        self.current_base_depth_var -> old_base_depth
+        self.emit(``)
+    }
+
+    function emit_structure_statement(stmt: Object) : Void {
+        let struct_stmt : StructureStatement -> stmt
+        self.emit(`typedef struct ` + struct_stmt.name.value + ` {`)
+        for member_untyped in struct_stmt.members {
+             let member : StructureMember -> member_untyped
+             let m_type : String -> self.map_type(member.declared_type)
+             self.emit(`    ` + m_type + ` ` + member.name.value + `;`)
+        }
+        self.emit(`} ` + struct_stmt.name.value + `;`)
+        self.emit(``)
+    }
+
+    function emit_class_declaration(stmt: Object) : Void {
+        let class_stmt : ClassStatement -> stmt
+        self.current_class_name -> class_stmt.name.value
+        self.emit(`typedef struct ` + class_stmt.name.value + ` {`)
+        when (class_stmt.parent != nothing) {
+            let parent_token : Token -> class_stmt.parent
+            self.emit(`    ` + parent_token.value + ` parent;`)
+        }
+        for member_untyped in class_stmt.members {
+             let member : StructureMember -> member_untyped
+             let m_type : String -> self.map_type(member.declared_type)
+             self.emit(`    ` + m_type + ` ` + member.name.value + `;`)
+        }
+        self.emit(`} ` + class_stmt.name.value + `;`)
+        self.emit(``)
+        
+        // Find init method for constructor prototype
+        let init_method : FunctionStatement -> nothing
+        for method_untyped in class_stmt.methods {
+            let method : FunctionStatement -> method_untyped
+            when (method.name.value = `init`) { init_method -> method }
+        }
+        
+        let constructor_params -> ``
+        when (init_method != nothing) {
+            let params : List -> init_method.parameters
+            let is_first_param -> True
+            for param_untyped in params {
+                let param : Parameter -> param_untyped
+                when (not is_first_param) {
+                    constructor_params -> constructor_params + `, `
+                }
+                let p_type : String -> self.map_type(param.type_annotation)
+                constructor_params -> constructor_params + p_type + ` ` + self.sanitize_identifier(param.name.value)
+                is_first_param -> False
+            }
+        }
+        
+        self.emit(class_stmt.name.value + `* ` + class_stmt.name.value + `_` + class_stmt.name.value + `(` + constructor_params + `);`)
+        
+        // Emit methods prototypes
+        for method_untyped in class_stmt.methods {
+             let method : FunctionStatement -> method_untyped
+             self.emit_class_method_prototype(class_stmt.name.value, method)
+        }
+        self.emit(``)
+        self.current_class_name -> ``
+    }
+
+    function emit_class_method_prototype(class_name: String, method: Object) : Void {
+        let method_stmt : FunctionStatement -> method
+        let ret_type : String -> `ZenValue`
+        when (method_stmt.return_type != nothing) {
+            ret_type -> self.map_type(method_stmt.return_type)
+        }
+        
+        let params_code -> class_name + `* self`
+        for param_untyped in method_stmt.parameters {
+            let param : Parameter -> param_untyped
+            let p_type : String -> self.map_type(param.type_annotation)
+            let s_param : String -> self.sanitize_identifier(param.name.value)
+            params_code -> params_code + `, ` + p_type + ` ` + s_param
+        }
+        
+        let s_name : String -> self.sanitize_identifier(method_stmt.name.value)
+        self.emit(ret_type + ` ` + class_name + `_` + s_name + `(` + params_code + `);`)
+    }
+
+    function emit_class_statement(stmt: Object) : Void {
+        // Implementation only
+        let class_stmt : ClassStatement -> stmt
+        self.current_class_name -> class_stmt.name.value
+        for method in class_stmt.methods {
+            self.emit_class_method(class_stmt.name.value, method)
+        }
+
+        self.emit_class_constructor(stmt)
+        self.current_class_name -> ``
+    }
+
+    function emit_enumerator_statement(stmt: Object) : Void {
+        let enum_stmt : EnumeratorStatement -> stmt
+        self.emit(`typedef enum ` + enum_stmt.name.value + ` {`)
+        let is_first -> True
+        for member_untyped in enum_stmt.members {
+             let member : String -> Str.str(member_untyped)
+             when (not is_first) {
+                 self.emit(`    , ` + member)
+             } or {
+                 self.emit(`    ` + member)
+             }
+             is_first -> False
+        }
+        self.emit(`} ` + enum_stmt.name.value + `;`)
+        self.emit(``)
+    }
+
+    function emit_class_constructor(stmt: Object) : Void {
+        let class_stmt : ClassStatement -> stmt
+        let name : String -> class_stmt.name.value
+        let init_method : FunctionStatement -> nothing
+        for method_untyped in class_stmt.methods {
+            let method : FunctionStatement -> method_untyped
+            when (method.name.value = `init`) {
+                init_method -> method
+            }
+        }
+
+        let params_code : String -> ``
+        let args_code : String -> ``
+        when (init_method != nothing) {
+             let is_first -> True
+             for param_untyped in init_method.parameters {
+                 let param : Parameter -> param_untyped
+                 when (not is_first) {
+                     params_code -> params_code + `, `
+                     args_code -> args_code + `, `
+                 }
+                 
+                 let p_type : String -> `ZenValue`
+                 when (param.type_annotation != nothing) {
+                     p_type -> self.map_type(param.type_annotation)
+                 }
+
+                 let s_param : String -> self.sanitize_identifier(param.name.value)
+                 
+                 params_code -> params_code + p_type + ` ` + s_param
+                 args_code -> args_code + s_param
+                 is_first -> False
+             }
+        }
+
+        self.emit(name + `* ` + name + `_` + name + `(` + params_code + `) {`)
+        self.emit(`    ` + name + `* instance = malloc(sizeof(` + name + `));`)
+        let init_call_args : String -> ``
+        when (args_code != ``) {
+             init_call_args -> `, ` + args_code
+        }
+        
+        when (init_method != nothing) {
+            self.emit(`    ` + name + `_init(instance` + init_call_args + `);`)
+        }
+        self.emit(`    return instance;`)
+        self.emit(`}`)
+        self.emit(``)
+    }
+
+    function emit_class_method(class_name: String, stmt: Object) : Void {
+        let method_stmt : FunctionStatement -> stmt
+        let ret_type -> `ZenValue`
+        when (method_stmt.return_type != nothing) {
+            ret_type -> self.map_type(method_stmt.return_type)
+        }
+        
+        let params_code -> class_name + `* self`
+        for param_untyped in method_stmt.parameters {
+            let param : Parameter -> param_untyped
+            let p_type : String -> `ZenValue`
+            when (param.type_annotation != nothing) {
+                p_type -> self.map_type(param.type_annotation)
+            }
+            
+            let s_param : String -> self.sanitize_identifier(param.name.value)
+            params_code -> params_code + `, ` + p_type + ` ` + s_param
+        }
+        
+        let s_name : String -> self.sanitize_identifier(method_stmt.name.value)
+        self.emit(ret_type + ` ` + class_name + `_` + s_name + `(` + params_code + `) {`)
+        
+        let old_base_depth : String -> self.current_base_depth_var
+        let unique_id : String -> self.get_unique_id()
+        self.current_base_depth_var -> `base_depth_` + unique_id
+        
+        self.emit(`    int ` + self.current_base_depth_var + ` = zen_defer_depth();`)
+        
+        for s in method_stmt.body.statements {
+           self.emit_statement(s)
+        }
+        
+        self.emit(`    zen_defer_run_to(` + self.current_base_depth_var + `);`)
+        self.emit(`}`)
+        self.current_base_depth_var -> old_base_depth
+        self.emit(``)
+    }
+
+    function emit_get_expression(expr: Object) : String {
+        let get_expr : GetExpression -> expr
+        let obj_expr : VariableExpression -> get_expr.object
+        
+        // Handle Enum types (specifically TokenType and ASTKind)
+        when (obj_expr.kind = ASTKind.VARIABLE_EXPRESSION) {
+            let var_expr : VariableExpression -> obj_expr
+            when (var_expr.name.value = `TokenType` or var_expr.name.value = `ASTKind`) {
+                <- get_expr.name.value
+            }
+        }
+        
+        let obj_code : String -> self.transpile_expression(obj_expr)
+        let prop : String -> get_expr.name.value
+        
+        // Handle common methods that might be accessed as properties
+        when (prop = `length`) {
+             <- `ZenList_length(` + obj_code + `)`
+        }
+        
+        <- obj_code + `->` + prop
+    }
+
+    function emit_set_expression(expr: Object) : String {
+        let set_expr : SetExpression -> expr
+        let obj_code : String -> self.transpile_expression(set_expr.object)
+        let val_code : String -> self.transpile_expression(set_expr.value)
+        <- obj_code + `->` + Str.str(set_expr.name.value) + ` = ` + val_code
+    }
+
+    function emit_when_statement(stmt: Object) : Void {
+        let when_stmt : WhenStatement -> stmt
+        let cond : String -> self.transpile_expression(when_stmt.condition)
+        self.emit(`if ((` + cond + `).as.boolean) {`)
+        let then_block : BlockStatement -> when_stmt.then_branch
+        for s in then_block.statements {
+           self.emit_statement(s)
+        }
+        self.emit(`}`)
+
+        when (when_stmt.else_branch) {
+             self.emit(` else {`)
+             let else_check : BlockStatement -> when_stmt.else_branch
+             when (else_check.kind = ASTKind.WHEN_STATEMENT) {
+                 let else_when : WhenStatement -> when_stmt.else_branch
+                 self.emit_when_statement(else_when)
+             } 
+             
+             when (else_check.kind != ASTKind.WHEN_STATEMENT) {
+                 let else_block : BlockStatement -> when_stmt.else_branch
+                 for s in else_block.statements {
+                     self.emit_statement(s)
+                 }
+             }
+             self.emit(`}`)
+        }
+    }
+
+    function emit_while_statement(stmt: Object) : Void {
+        let while_stmt : WhileStatement -> stmt
+        let cond : String -> self.transpile_expression(while_stmt.condition)
+        self.emit(`while ((` + cond + `).as.boolean) {`)
+        let body : BlockStatement -> while_stmt.body
+        for s in body.statements {
+             self.emit_statement(s)
+        }
+        self.emit(`}`)
+    }
+
+    function emit_do_while_statement(stmt: Object) : Void {
+        let do_stmt : DoWhileStatement -> stmt
+        self.emit(`do {`)
+        let body : BlockStatement -> do_stmt.body
+        for s in body.statements {
+             self.emit_statement(s)
+        }
+        let cond : String -> self.transpile_expression(do_stmt.condition)
+        self.emit(`} while ((` + cond + `).as.boolean);`)
+    }
+
+    function emit_for_statement(stmt: Object) : Void {
+        // Generate C loop for iterating a list:
+        // ZenList* _list = (iter_expr);
+        // for (int _i = 0; _i < _list->count; _i++) {
+        //     Type var = _list->items[_i];
+        //     ...
+        // }
+        
+        let for_stmt : ForStatement -> stmt
+        let iter_code : String -> self.transpile_expression(for_stmt.iterable)
+        let unique_id : String -> self.get_unique_id()
+        let list_var -> `_list_` + unique_id
+        let idx_var -> `_i_` + unique_id
+        
+        self.emit(`    ZenList* ` + list_var + ` = ` + iter_code + `;`)
+        self.emit(`    for (int ` + idx_var + ` = 0; ` + idx_var + ` < ` + list_var + `->count; ` + idx_var + `++) {`)
+        
+        // Element access. Default void* or inferred? 
+        // Ideally we know the type T of List<T>. 
+        // But for now, use void* or long long?
+        self.emit(`        ZenValue ` + for_stmt.variable.value + ` = ` + list_var + `->items[` + idx_var + `];`)
+        
+        let body : BlockStatement -> for_stmt.body
+        for s in body.statements {
+             self.emit_statement(s)
+        }
+        self.emit(`    }`)
+    }
+
+    function emit_import_statement(stmt: Object) : Void {
+        let import_stmt : ImportStatement -> stmt
+        let path : String -> ``
+        let kind : Integer -> import_stmt.path.kind
+        when (kind = TokenType.STRING) {
+             path -> import_stmt.path.value
+        }
+        
+        let alias : String -> path
+        when (import_stmt.alias) {
+            let alias_tok : Token -> import_stmt.alias
+            alias -> Str.str(alias_tok.value)
+        }
+        
+        // Track alias mapping
+        let m_aliases : List -> self.module_aliases
+        m_aliases.append([alias, path])
+        // IO.error("DEBUG: Added module alias: " + alias + " -> " + path)
+        
+        let header_name : String -> path
+         when (Str.ends_with(path, `/Lexer`)) { header_name -> `Lexer` }
+         when (Str.ends_with(path, `/Parser`)) { header_name -> `Parser` }
+         when (Str.ends_with(path, `/CTranspiler`)) { header_name -> `CTranspiler` }
+         when (Str.ends_with(path, `/io`)) { header_name -> `zen_io` }
+         when (Str.ends_with(path, `/sys`)) { header_name -> `zen_sys` }
+         when (Str.ends_with(path, `/string`)) { header_name -> `zen_string` }
+         
+        self.emit(`#include "` + header_name + `.h"`)
+    }
+
+    function emit_from_import_statement(stmt: Object) : Void {
+        // Similar to import, but maybe include spec? 
+        // For C, we just include the header.
+        let from_stmt : FromImportStatement -> stmt
+        let path : String -> ``
+        let kind : Integer -> from_stmt.path.kind
+        when (kind = TokenType.STRING) {
+             path -> from_stmt.path.value
+        }
+        
+        let header_name : String -> path
+         when (Str.ends_with(path, `/Lexer`)) { header_name -> `Lexer` }
+         when (Str.ends_with(path, `/Parser`)) { header_name -> `Parser` }
+         when (Str.ends_with(path, `/CTranspiler`)) { header_name -> `CTranspiler` }
+         when (Str.ends_with(path, `/io`)) { header_name -> `zen_io` }
+         when (Str.ends_with(path, `/sys`)) { header_name -> `zen_sys` }
+         when (Str.ends_with(path, `/string`)) { header_name -> `zen_string` }
+         
+        self.emit(`#include "` + header_name + `.h"`)
+    }
+
+    function map_type(type_name: String) : String {
+        when (type_name = `Integer`) { <- `ZenValue` }
+        when (type_name = `Integer[64]`) { <- `int64_t` }
+        when (type_name = `Integer[32]`) { <- `int32_t` }
+        when (type_name = `Integer[16]`) { <- `int16_t` }
+        when (type_name = `Integer[8]`) { <- `int8_t` }
+        
+        when (type_name = `Float`) { <- `ZenValue` }
+        when (type_name = `String`) { <- `ZenValue` }
+        when (type_name = `Boolean`) { <- `ZenValue` }
+        when (type_name = `Void`) { <- `void` }
+        
+        // Check for List<T> generic
+        when (Str.starts_with(type_name, `List<`) or type_name = `List`) {
+             <- `ZenList*` // Assuming generic list struct or void* for now
+        }
+        
+        when (type_name = `ASTKind`) { <- `int` }
+        when (type_name = `TokenType`) { <- `int` }
+        when (type_name = `Token`) { <- `Token*` }
+        when (type_name = `Parameter`) { <- `Parameter*` }
+        when (type_name = `StructureMember`) { <- `StructureMember*` }
+        when (type_name = `ASTNode`) { <- `ASTNode*` }
+
+        // Check for user defined classes
+        for c_name in self.class_names {
+            when (c_name = type_name) {
+                <- c_name + `*`
+            }
+        }
+        
+        // Heuristic for AST nodes
+        when (Str.ends_with(type_name, `Statement`) or Str.ends_with(type_name, `Expression`) or Str.ends_with(type_name, `Field`)) {
+            <- type_name + `*`
+        }
+
+        <- `void*`
+    }
+
+    function emit_structure_initialization(expr: Object) : String {
+        // C99 Compound Literal with heap allocation: ({ Type* p = zen_alloc(sizeof(Type)); *p = (Type){ ... }; p; })
+        let init_expr : StructureInitializationExpression -> expr
+        let name_tok : Token -> init_expr.structure_name
+        let struct_name : String -> Str.str(name_tok.value)
+        
+        let literal_code -> `(` + struct_name + `){ `
+        let is_first -> True
+        for field in init_expr.fields {
+            let init_field : StructureInitField -> field
+            when (not is_first) {
+                literal_code -> literal_code + `, `
+            }
+             let val : String -> self.transpile_expression(init_field.value)
+             let token : Token -> init_field.name
+             literal_code -> literal_code + `.` + Str.str(token.value) + ` = ` + val
+             is_first -> False
+        }
+        literal_code -> literal_code + ` }`
+        
+        let code -> `({ ` + struct_name + `* _ptr = malloc(sizeof(` + struct_name + `)); *_ptr = ` + literal_code + `; _ptr; })`
+        <- code
+    }
+
+    function emit_check_expression(expr: Object) : String {
+        let check_expr : CheckExpression -> expr
+        let unique_id : String -> self.get_unique_id()
+        let temp_name : String -> `_check_res_` + unique_id
+        
+        let code : String -> `({ ZenExceptionContext _ctx; _ctx.defer_depth = zen_defer_depth(); zen_exception_push(&_ctx); `
+        code -> code + `ZenValue ` + temp_name + `; `
+        code -> code + `if (setjmp(_ctx.buf) == 0) { `
+        code -> code + temp_name + ` = ` + self.transpile_expression(check_expr.value) + `; `
+        code -> code + `zen_exception_pop(); } else { zen_exception_pop(); `
+        
+        when (check_expr.else_branch != nothing) {
+            code -> code + temp_name + ` = ` + self.transpile_expression(check_expr.else_branch) + `; `
+        } or {
+            code -> code + temp_name + ` = 0; `
+        }
+        
+        code -> code + `} ` + temp_name + `; })`
+        <- code
+    }
+
+    function transpile_list_literal(expr: Object) : String {
+        // C logic: create a list and append elements
+        let literal : ListLiteralExpression -> expr
+        let unique_id : String -> self.get_unique_id()
+        let list_var -> `_list_lit_` + unique_id
+        
+        // This is tricky because we need to return an expression.
+        // In C, we can use a compound expression or a block expression.
+        // ({ ZenList* l = ZenList_create(); ZenList_append(l, ...); l; })
+        
+        let code : String -> `({ ZenList* ` + list_var + ` = ZenList_create(); `
+        for elem in literal.elements {
+            let elem_code : String -> self.transpile_expression(elem)
+            code -> code + `ZenList_append(` + list_var + `, ` + elem_code + `); `
+        }
+        code -> code + list_var + `; })`
+        <- code
+    }
+
+    function escape_c_string(s: String) : String {
+        let res -> Str.replace(s, `\\`, `\\x5C`)
+        res -> Str.replace(res, `"`, `\\x22`)
+        res -> Str.replace(res, `\n`, `\\x0A`)
+        res -> Str.replace(res, `\r`, `\\x0D`)
+        res -> Str.replace(res, `\t`, `\\x09`)
+        <- res
+    }
+
+    function sanitize_identifier(name: String) : String {
+        when (name = `char`) { <- `_char` }
+        when (name = `int`) { <- `_int` }
+        when (name = `float`) { <- `_float` }
+        when (name = `double`) { <- `_double` }
+        when (name = `void`) { <- `_void` }
+        when (name = `short`) { <- `_short` }
+        when (name = `long`) { <- `_long` }
+        when (name = `signed`) { <- `_signed` }
+        when (name = `unsigned`) { <- `_unsigned` }
+        when (name = `struct`) { <- `_struct` }
+        when (name = `union`) { <- `_union` }
+        when (name = `enum`) { <- `_enum` }
+        when (name = `static`) { <- `_static` }
+        when (name = `extern`) { <- `_extern` }
+        when (name = `volatile`) { <- `_volatile` }
+        when (name = `register`) { <- `_register` }
+        when (name = `inline`) { <- `_inline` }
+        when (name = `restrict`) { <- `_restrict` }
+        when (name = `auto`) { <- `_auto` }
+        when (name = `goto`) { <- `_goto` }
+        when (name = `sizeof`) { <- `_sizeof` }
+        when (name = `typedef`) { <- `_typedef` }
+        when (name = `const`) { <- `_const` }
+        
+        <- name
+    }
+}

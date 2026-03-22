@@ -1,0 +1,58 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+let x : Integer -> 0
+
+function test_defer() {
+    write(`Testing defer...`)
+    do {
+        defer {
+            x -> 10
+        }
+        assert_eq(x, 0, `value before defer execution`)
+        break
+    }
+    assert_eq(x, 10, `value after defer execution`)
+}
+
+function test_raise_check() {
+    write(`Testing raise and check...`)
+    let caught -> false
+    let result -> check {
+        raise `ErrorPayload`
+    } or {
+        caught -> true
+        <- `Handled`
+    }
+    
+    assert_eq(caught, true, `exception caught by check`)
+    assert_eq(result, `Handled`, `check or-block result`)
+}
+
+function test_assert() {
+    write(`Testing assert...`)
+    assert 1 = 1
+    
+    let failed -> false
+    check {
+        assert 1 = 2
+    } or {
+        failed -> true
+    }
+    assert_eq(failed, true, `assert failure caught`)
+}
+
+function run_advanced_tests() {
+    write(`Running Advanced Tests...`)
+    test_defer()
+    test_raise_check()
+    test_assert()
+    write(`Advanced Tests Passed!`)
+}
+run_advanced_tests()

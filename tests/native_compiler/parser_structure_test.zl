@@ -1,0 +1,26 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from zen.io import write
+
+function main() {
+    let source -> `
+    structure Person {
+        name: String,
+        age: Integer
+    }
+    
+    structure Point {
+        x: Integer
+        y: Integer
+    }
+    `
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    write(`Parsed Structure Statements:`)
+    <- statements
+}

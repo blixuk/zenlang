@@ -1,0 +1,45 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+class Animal {
+    let name: String
+    
+    function init(name: String) {
+        self.name -> name
+    }
+    
+    function speak() {
+        <- `Some sound`
+    }
+}
+
+class Dog extends Animal {
+    function speak() {
+        <- `Woof!`
+    }
+    
+    function get_ancestor_speak() {
+        <- parent.speak()
+    }
+}
+
+function test_classes() {
+    write(`Testing classes...`)
+    let d -> Dog(`Buddy`)
+    assert_eq(d.name, `Buddy`, `class member access`)
+    assert_eq(d.speak(), `Woof!`, `method override`)
+    assert_eq(d.get_ancestor_speak(), `Some sound`, `parent method call`)
+}
+
+function run_oop_tests() {
+    write(`Running OOP Tests...`)
+    test_classes()
+    write(`OOP Tests Passed!`)
+}
+run_oop_tests()

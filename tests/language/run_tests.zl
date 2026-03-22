@@ -1,0 +1,33 @@
+import tests.language.basics_01
+import tests.language.control_flow_02
+import tests.language.functions_03
+import tests.language.oop_04
+import tests.language.data_structures_05
+import tests.language.advanced_06
+import tests.language.builtins_07
+from zen.io import out
+
+function main() {
+    out.write(`====================================\n`)
+    out.write(`   Zenlang Language Test Suite    \n`)
+    out.write(`====================================\n\n`)
+
+    check {
+        run_basics_tests()
+        run_control_flow_tests()
+        run_functions_tests()
+        run_oop_tests()
+        run_data_structures_tests()
+        run_advanced_tests()
+        run_builtins_tests()
+        
+        out.write(`\n====================================\n`)
+        out.write(`   ALL TESTS PASSED SUCCESSFULLY   \n`)
+        out.write(`====================================\n`)
+    } or {
+        out.write(`\n====================================\n`)
+        out.write(`       TEST SUITE FAILED!          \n`)
+        out.write(`====================================\n`)
+        sys.exit(1)
+    }
+}

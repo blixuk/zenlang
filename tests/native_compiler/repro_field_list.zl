@@ -1,0 +1,16 @@
+import zen.io
+
+class Transpiler {
+    let code: List
+
+    function init() {
+        self.code -> []
+        self.code.append(1)
+        from zen.io import write
+        write(self.code)
+    }
+}
+
+function main() {
+    let t -> Transpiler()
+}

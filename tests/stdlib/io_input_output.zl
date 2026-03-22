@@ -1,0 +1,18 @@
+from zen.io import write
+from zen.io import out, in, write, read
+
+// Test out
+out.write(`Testing Write output... \n`)
+out.info(`Testing Info output...`)
+out.warn(`Testing Warn output...`)
+out.error(`Testing Error output...`)
+out.debug(`Testing Debug output...`)
+
+// Test in
+let name -> in.read(`Enter your name: `)
+out.write(`Hello, ` + name + `! \n`)
+
+// Testing Input and Output
+write(`Testing input...`)
+name -> read(`Enter your name: `)
+write(`Testing output... Hello, ` + name + `!`)

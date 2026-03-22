@@ -1,0 +1,17 @@
+from zen.io import write
+
+write(`First`)
+
+function main (args) {
+    write(`Hello World`)
+
+    write(args)
+
+    test(10)
+}
+
+function test (a) {
+    write(a * 2)
+}
+
+test(10)

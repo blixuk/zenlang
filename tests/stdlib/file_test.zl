@@ -1,0 +1,36 @@
+from zen.io import write
+import zen.file as f
+
+let test_file -> `temp_test.txt`
+let content -> `Hello from ZenLang File API!`
+
+write(`Writing to ` + test_file)
+f.write(test_file, content)
+
+when f.exists(test_file) {
+    write(`File exists!`)
+    
+    let read_content -> f.read(test_file)
+    write(`Read content: ` + read_content)
+    
+    when read_content = content {
+        write(`Content matches!`)
+    } or {
+        write(`Content mismatch!`)
+    }
+    
+    write(`Appending more...`)
+    f.append(test_file, `\nAppended line.`)
+    
+    let updated_content -> f.read(test_file)
+    write(`Updated content:\n` + updated_content)
+    
+    write(`Removing file...`)
+    f.remove(test_file)
+    
+    when not f.exists(test_file) {
+        write(`File removed successfully.`)
+    }
+} or {
+    write(`Failed to create file!`)
+}

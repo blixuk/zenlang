@@ -1,0 +1,20 @@
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+// import ../../src/compiler/AST
+from zen.io import write
+
+function main() {
+    let source -> `1 + 2 * 3`
+    write(`Source: ` + source)
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    let parser -> Parser(tokens)
+    
+    let expr -> parser.expression()
+    
+    write(`Parsed AST:`)
+    // Returning the expression will make the interpreter print its representation
+    <- expr
+}

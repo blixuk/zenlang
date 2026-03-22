@@ -1,0 +1,61 @@
+import `lib/zen/io` as IO
+
+function assert_eq(a, b, message) {
+    when a != b {
+        IO.write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function test_bitwise() {
+    IO.write(`Testing bitwise ops...`)
+    let a -> 5  // 0101
+    let b -> 3  // 0011
+    
+    assert_eq(a && b, 1, `bitwise and`)
+    assert_eq(a || b, 7, `bitwise or`)
+    assert_eq(a ^^ b, 6, `bitwise xor`)
+    assert_eq(!!1, -2, `bitwise not`)
+    assert_eq(1 << 2, 4, `lshift`)
+    assert_eq(8 >> 1, 4, `rshift`)
+}
+
+function test_logical() {
+    IO.write(`Testing logical ops...`)
+    let t -> true
+    let f -> false
+    
+    assert_eq(t and t, true, `and true true`)
+    assert_eq(t and f, false, `and true false`)
+    assert_eq(f and t, false, `and false true`)
+    assert_eq(f and f, false, `and false false`)
+    
+    assert_eq(t or t, true, `or true true`)
+    assert_eq(t or f, true, `or true false`)
+    assert_eq(f or t, true, `or false true`)
+    assert_eq(f or f, false, `or false false`)
+    
+    assert_eq(t xor f, true, `xor true false`)
+    assert_eq(t xor t, false, `xor true true`)
+}
+
+function test_complex_expressions() {
+    IO.write(`Testing complex expressions...`)
+    let x -> 10
+    let y -> 20
+    let z -> (x + y) * 2 / 10
+    assert_eq(z, 6, `complex math`)
+    
+    let s -> `hello` + ` ` + `world`
+    assert_eq(s, `hello world`, `string concat`)
+}
+
+function main() {
+    IO.write(`Running Runtime Contract Tests...`)
+    test_bitwise()
+    test_logical()
+    test_complex_expressions()
+    IO.write(`Runtime Contract Tests Passed!`)
+}
+
+main()

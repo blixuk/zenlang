@@ -1,0 +1,72 @@
+from zen.io import write_file, write
+from ../../src/compiler/Lexer import Lexer
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/AST import ASTKind
+
+function test_error_handling() {
+    let source -> `
+    function check_math(x: Integer) {
+        assert x > 0
+        assert x != 10 ^ \`Invalid Input\`
+        
+        check x {
+            case 1 <- \`One\`
+            case 2 {
+                return \`Two\`;
+            }
+        } or {
+            raise \`Unknown\`
+        }
+    }
+    `
+    
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    // Validate Tokens exist
+    // Expected: ASSERT, IDENTIFIER, GREATER, INTEGER, ... CHECK, ... RAISE ...
+    
+    let parser -> Parser(tokens)
+    let statements -> parser.parse()
+    
+    // Manually inspect AST or dump it
+    let function_stmt -> statements[0]
+    let body -> function_stmt.body.statements
+    
+    // 1. AssertStatement
+    let assert1 -> body[0]
+    write(`Stmt 1 Kind: ` + assert1.kind) // Expected: ASSERT_STATEMENT
+    
+    // 2. Assert with raise
+    let assert2 -> body[1]
+    write(`Stmt 2 Kind: ` + assert2.kind)
+    write(`Stmt 2 Msg: ` + assert2.message.value) // Expected: `Invalid Input`
+
+    // 3. Check Expression (ExpressionStatement)
+    let check_expr_stmt -> body[2]
+    
+    let check_expr -> check_expr_stmt.expression
+    write(`Stmt 3 Kind: ` + check_expr.kind) // Expected: CHECK_EXPRESSION
+    // write(`Cases count: ` + check_expr.cases.length()) 
+    write(`Case 0 kind: ` + check_expr.cases[0].kind)
+    write(`Case 1 kind: ` + check_expr.cases[1].kind)
+    
+    let else_branch -> check_expr.else_branch
+    when else_branch = nothing {
+        write(`ERROR: else_branch is nothing!`)
+        // Debug cases count just in case iteration failed early?
+        // write(`Cases count: ` + check_expr.cases.length())
+    } or {
+        write(`Else Branch Kind: ` + else_branch.kind) // Expected: BLOCK_STATEMENT
+        
+        // 4. Raise inside else
+        // Check statements type
+        // write(`Else statements type: ` + else_branch.statements) 
+        
+        let raise_stmt -> else_branch.statements[0]
+        write(`Else Stmt Kind: ` + raise_stmt.kind) // Expected: EXPRESSION_STATEMENT (raise is expr)
+        write(`Raise inner Kind: ` + raise_stmt.expression.kind) // Expected: RAISE_EXPRESSION
+    }
+}
+
+test_error_handling()

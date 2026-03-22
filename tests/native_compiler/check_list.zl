@@ -1,0 +1,12 @@
+import zen.io
+
+function main() {
+    let l -> []
+    from zen.io import write
+    // Check if l is list by appending
+    l.append(1)
+    write(l)
+    
+    let l2 -> [1, 2]
+    write(l2)
+}

@@ -1,0 +1,14 @@
+// tests/feature_parity_simple.zl
+
+function main() {
+    print(`Starting Simple Test\n`)
+
+    check {
+        print(`Inside check block\n`)
+        raise `TestError`
+    } or {
+        print(`Caught error in or block\n`)
+    }
+
+    print(`Success!\n`)
+}

@@ -1,0 +1,47 @@
+from `zen.io` import write
+from `../../src/compiler/Lexer` import Lexer
+from `../../src/compiler/Parser` import Parser
+from `../../src/compiler/CTranspiler` import Transpiler
+import `../../lib/zen/string` as Str
+
+function test_transpiler() {
+    write(`Testing C Transpiler...`)
+
+    // Source with new features
+    let source -> `
+    function main() {
+        assert x > 0;
+        raise "Error"
+        let p -> 2 ** 3
+        let b -> 1 && 2 || 3
+        let n -> !x
+        let bn -> !!x
+        let bx -> 1 ^^ 2
+    }
+    `
+    // Note: Variable declarations for 'x' are missing but Transpiler likely doesn't check declaration existence deep enough to crash, simply emits identifiers.
+    
+    let lexer -> Lexer(source)
+    let parser -> Parser(lexer.tokenize())
+    let stmts -> parser.parse()
+    
+    let transpiler -> Transpiler(stmts)
+    let output -> transpiler.transpile()
+    
+    write(`Generated C Code Length: ` + Str.str(Str.length(output)))
+    
+    // Checks (Manual string search simulation)
+    // We expect:
+    // assert(x > 0);
+    // (fprintf(stderr, "Uncaught Exception\n"), exit(1), 0);
+    // pow(2, 3)
+    // (1 & 2) | 3  (Precendence parens form BinaryExpression)
+    // !x
+    // ~x
+    // 1 ^ 2
+    
+    write(`Output Snippet:`)
+    write(output)
+}
+
+test_transpiler()

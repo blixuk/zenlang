@@ -1,0 +1,20 @@
+from ../../src/compiler/Lexer import Lexer
+from zen.io import write
+import zen.string as s
+
+function main() {
+    let source -> `/* Comment */ let x -> 10 + 20 /*
+    Multi
+    Line
+    */`
+    let lexer -> Lexer(source)
+    let tokens -> lexer.tokenize()
+    
+    write(`Tokens found: ` + s.length(tokens))
+    
+    do for token in tokens {
+        write(`Token: ` + token.value)
+    }
+}
+
+main()

@@ -1,0 +1,13 @@
+from ../../src/compiler/Parser import Parser
+from ../../src/compiler/Lexer import Lexer
+import ../../src/compiler/Token as Token
+from zen.io import write
+
+function main() {
+    let lexer -> Lexer(``)
+    let parser -> Parser([])
+    
+    write(`Lexer.RIGHT_BRACE = ` + lexer.get_brace_value())
+    write(`Parser.RIGHT_BRACE = ` + parser.get_brace_value())
+    write(`Token.RIGHT_BRACE = ` + Token.TokenType.RIGHT_BRACE)
+}

@@ -1,0 +1,40 @@
+from zen.io import write
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function add(a, b) {
+    <- a + b
+}
+
+function factorial(n) {
+    when n <= 1 {
+        <- 1
+    }
+    <- n * factorial(n - 1)
+}
+
+function test_functions() {
+    write(`Testing functions...`)
+    assert_eq(add(5, 5), 10, `basic function call`)
+    assert_eq(factorial(5), 120, `recursive function call`)
+}
+
+function test_closures() {
+//  Zenlang functions are currently top-level or method-level, 
+//  but let's test when we can pass them around when the interpreter supports it.
+//  Actually, the interpreter has FunctionObject.
+    write(`Testing closures/high-order (when supported)...`)
+//  For now, let's stick to basic named functions.
+}
+
+function run_functions_tests() {
+    write(`Running Functions Tests...`)
+    test_functions()
+    write(`Functions Tests Passed!`)
+}
+run_functions_tests()

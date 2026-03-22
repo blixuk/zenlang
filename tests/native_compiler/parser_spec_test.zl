@@ -1,0 +1,120 @@
+import `../../src/compiler/Parser` as Parser
+import `../../src/compiler/Lexer` as Lexer
+import `../../lib/zen/io` as IO
+
+// Mocking some parts if needed, or just using imports
+// We need to run this with Zen.py
+
+function test_class_syntax {
+    IO.write(`Testing Class Syntax...`)
+    
+    // Class with let/set members
+    let source -> `
+class TestClass {
+    let a: Integer
+    set b: String -> "Init"
+    
+    function testMethod {
+        return 1
+    }
+}
+`
+    IO.write(`Source:`)
+    IO.write(source)
+
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    
+    // Debug tokens
+    // for t in tokens {
+    //    IO.write(t.kind + `: ` + t.value)
+    // }
+
+    let p -> Parser.Parser(tokens)
+    let result -> p.parse()
+    
+    IO.write(`Parse successful!`)
+    
+    // We expect 1 statement: ClassStatement
+    IO.write(`Result:`)
+    IO.write(result)
+}
+
+function test_types {
+    IO.write(`Testing Types...`)
+    let source -> `
+class TypeTest {
+    let a: Integer[64]
+    let b: List<String>
+    let c: Vector[4]<Float>
+    let d: Map<String, Integer>
+}
+`
+    IO.write(`Source: ` + source)
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    let p -> Parser.Parser(tokens)
+    let result -> p.parse()
+    
+    IO.write(`Parsed Types Result:`)
+    IO.write(result)
+}
+
+function test_imports {
+    IO.write(`Testing Imports...`)
+    let source -> `
+import "math"
+import Utils as U
+from "gui" import Button, Label
+from io import open as Open
+`
+    IO.write(`Source: ` + source)
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    let p -> Parser.Parser(tokens)
+    let result -> p.parse()
+    
+    IO.write(`Parsed Imports Result:`)
+    IO.write(result)
+}
+
+function test_control_flow {
+     IO.write(`Testing Control Flow...`)
+     let source -> `
+function test {
+    let x -> 0
+    do while x < 10 {
+        x -> x + 1
+    }
+    
+    do {
+        x -> x + 1
+    } while x < 20
+    
+    do until x > 30 {
+        x -> x + 1
+    }
+    
+    do for i in [1, 2, 3] {
+        x -> x + i
+    }
+    
+    do {
+        x -> x + 100
+    }
+}
+`
+    IO.write(`Source: ` + source)
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    let p -> Parser.Parser(tokens)
+    let result -> p.parse()
+    
+    IO.write(`Parsed Control Flow Result:`)
+    IO.write(result)
+}
+
+test_class_syntax()
+test_types()
+test_imports()
+test_control_flow()

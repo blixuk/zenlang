@@ -1,0 +1,9 @@
+class Test {
+    let x: Integer // This comment will break the parser
+    function init() {
+        self.x -> 10
+    }
+}
+
+let t -> Test {}
+__builtin_output.write(t.x)
