@@ -258,6 +258,17 @@ class TypeVariable(Type):
         return self.bound or self
 
 
+class MemoryKind(Enum):
+    UNIQUE = "UNIQUE"   # Owned, can be moved
+    SHARED = "SHARED"   # Reference counted
+    REGION = "REGION"   # Arena allocated
+    STACK = "STACK"     # Value type
+
+class SymbolState(Enum):
+    VALID = "VALID"
+    MOVED = "MOVED"
+    EXPIRED = "EXPIRED"
+
 @dataclass
 class Symbol:
     name: str
@@ -266,3 +277,6 @@ class Symbol:
     mutable: bool
     kind: SymbolKind
     scope_level: int
+    memory_kind: MemoryKind = MemoryKind.STACK
+    state: SymbolState = SymbolState.VALID
+    region: Optional[Any] = None # Will hold RegionNode

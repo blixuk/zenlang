@@ -1,3 +1,4 @@
+from typing import Optional, List, Dict, Any
 from Checker.Scope import ScopeManager
 from Checker.Type import (
     Symbol,
@@ -387,7 +388,7 @@ class TypeChecker:
             else:
                  raise e
 
-        self.scope.push()
+        self.scope.push(region_id=f"func_{statement.name}")
     
         # Define 'self' if in class context
         if self.current_class:
@@ -437,11 +438,12 @@ class TypeChecker:
         result_type: Type = TypeVoid
 
         for _statement in statement.block.statements:
-            type = self.check_statement(_statement)
-
-            if type and (not isinstance(type, TypeVoid) or isinstance(_statement, ReturnStatement)):
-                result_type = type
+            _type = self.check_statement(_statement)
+            if isinstance(_statement, ReturnStatement):
+                result_type = _type
                 break
+            result_type = _type # Last statement determines function return type if no explicit return? 
+                                # (Actually Zen might require explicit return for some cases, but for now this is fine)
         
         statement.return_type = result_type or TypeVoid()
         self.scope.pop()
@@ -472,23 +474,21 @@ class TypeChecker:
         statement.resolved_type = resolved_type
         return resolved_type
 
-    def check_block_statement(self, statement: BlockStatement):
+    def check_block_statement(self, statement: BlockStatement, region_id: Optional[str] = None):
         self.logger.debug("check_block_statement", statement)
 
-        self.scope.push()
+        self.scope.push(region_id=region_id or f"block_{statement.line}")
 
         result_type: Type = TypeVoid
 
         for _statement in statement.statements:
-            type: Type = self.check_statement(_statement)
-
-            if type and (not isinstance(type, TypeVoid) or isinstance(_statement, ReturnStatement)):
-                result_type = type
+            _type: Type = self.check_statement(_statement)
+            result_type = _type
+            if isinstance(_statement, ReturnStatement):
                 self.scope.pop()
                 return result_type
 
-            result_type = TypeVoid
-            statement.return_type = result_type
+        statement.return_type = result_type
 
         self.scope.pop()
         return result_type
@@ -698,7 +698,7 @@ class TypeChecker:
             # TODO: Infer element type from iterable_type
             element_type = PRIMITIVE_TYPES["Variant"]()
             
-            self.scope.push()
+            self.scope.push(region_id=f"loop_{statement.line}")
             print(f"[DEBUG] check_do: Defining iterator '{statement.iterator}' in scope level {self.scope.level}")
             symbol = Symbol(
                 statement.iterator,
