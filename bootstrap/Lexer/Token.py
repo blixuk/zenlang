@@ -12,6 +12,7 @@ class TokenType(Enum):
     TYPE = "TYPE"
     UNKNOWN = "UNKNOWN"
     COMMENT = "COMMENT"
+    DOC_COMMENT = "DOC_COMMENT"
 
     VOID = "VOID"
     NOTHING = "NOTHING"
@@ -37,7 +38,7 @@ class TokenType(Enum):
     LIST = "LIST"
     TUPLE = "TUPLE"
     VECTOR = "VECTOR"
-    DICTIONARY = "DICTIONARY"
+    MAP = "MAP"
     SET = "SET"
     ITERATOR = "ITERATOR"
     ITERABLE = "ITERABLE"
@@ -206,6 +207,7 @@ KEYWORDS: list = [
 
 TYPES: list = [
     "Void",
+    "Nothing",
     "Variant",
     "Integer",
     "Decimal",
@@ -215,14 +217,20 @@ TYPES: list = [
     "Structure",
     "Function",
     "Class",
-    "Dictionary",
+    "Map",
     "Vector",
     "List",
     "Tuple",
     "Set",
+    "V",  # Vector abbreviation
+    "L",  # List abbreviation
+    "S",  # Set abbreviation
+    "T",  # Tuple abbreviation
+    "M",  # Map abbreviation
     "Iterator",
     "Iterable",
     "Enumerator",
+    "Error",
 ]
 
 TYPE_TOKENS: list = [
@@ -239,7 +247,7 @@ TYPE_TOKENS: list = [
     TokenType.CLASS,
     TokenType.LIST,
     TokenType.TUPLE,
-    TokenType.DICTIONARY,
+    TokenType.MAP,
     TokenType.VECTOR,
     TokenType.SET,
     TokenType.ITERATOR,

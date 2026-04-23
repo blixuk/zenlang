@@ -1,0 +1,31 @@
+import zen.io as IO
+import zen.time as Time
+import zen.string as Str
+
+function test_time_functions() {
+    IO.info(`--- Testing zen.time module ---`)
+    
+    let start -> Time.now()
+    IO.info(`  Start time: ` + Str.to_string(start))
+    
+    IO.info(`  Sleeping for 1 second...`)
+    Time.sleep(1)
+    
+    let end -> Time.now()
+    IO.info(`  End time: ` + Str.to_string(end))
+    
+    let elapsed -> end - start
+    IO.info(`  Elapsed time: ` + Str.to_string(elapsed))
+    
+    when elapsed >= 1.0 {
+        IO.info(`  Verification: Sleep worked!`)
+    } or {
+        IO.error(`  Verification: Sleep failed or was too fast!`)
+    }
+    
+    IO.info(`--- zen.time tests complete ---`)
+}
+
+function zen_entry() {
+    test_time_functions()
+}

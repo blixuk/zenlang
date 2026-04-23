@@ -1,13 +1,18 @@
-import argparse
-import json
-import os
 import sys
+import os
+import json
+from Logging.Trace import zen_trace
 
-sys.setrecursionlimit(1000000)
-from typing import List, Optional
+zen_trace(f"ZEN STARTING from {__file__}")
+zen_trace(f"sys.path: {sys.path}")
+
+import argparse
+from typing import List, Optional, Any
 
 from Checker.SemanticChecker import SemanticChecker
 from Checker.TypeChecker import TypeChecker
+import Checker.TypeChecker
+zen_trace(f"TypeChecker loaded from: {Checker.TypeChecker.__file__}")
 from Interpreter.Interpreter import Interpreter, ReturnException
 from Lexer.Lexer import Lexer
 from Logging.Dumper import ast_to_json
@@ -29,8 +34,9 @@ class ZenCompiler:
         self.ast_typed: Optional[ASTNode] = None
         
         self.resolver = Resolver()
-        self.resolver.search_paths.append("src")
-        self.resolver.search_paths.append("lib")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.resolver.search_paths.append(os.path.join(root, "src"))
+        self.resolver.search_paths.append(os.path.join(root, "lib"))
         self.graph = DependencyGraph()
         self.modules: dict[str, ASTNode] = {} # path -> AST
 
@@ -83,6 +89,8 @@ class ZenCompiler:
         print(f"DEBUG: Parsing {path} (bootstrap)...", flush=True)
         parser = Parser(tokens, path, strict=True, debug=self.debug)
         ast = parser.parse()
+        for stmt in ast.statements:
+            stmt.filename = path
         print(f"DEBUG: Parsed {path}. Statements: {len(ast.statements)}", flush=True)
         if parser.logger.has_errors:
             parser.logger.print_errors()
@@ -151,15 +159,20 @@ class ZenCompiler:
             print(f"DEBUG: Found {token_type_count} declarations of TokenType in merged AST")
 
     def validate(self) -> None:
+        print(f"DEBUG: validate() called on {self.source_path}", file=sys.stderr, flush=True)
         if not self.ast:
+            print("DEBUG: validate() aborted - NO AST", file=sys.stderr, flush=True)
             return
 
         if self.debug:
             print("-- CHECKING TYPES -- ")
             
         sys.setrecursionlimit(1000000)
+        print("DEBUG: Instantiating TypeChecker", file=sys.stderr, flush=True)
         typechecker = TypeChecker(self.ast, self.source_path, debug=self.debug)
+        print("DEBUG: Calling typechecker.check_program()", file=sys.stderr, flush=True)
         self.ast_typed = typechecker.check_program()
+        print(f"DEBUG: typechecker.check_program() returned {self.ast_typed is not None}", file=sys.stderr, flush=True)
         
         if self.debug:
             # typechecker.logger.print_debugs()
@@ -179,6 +192,21 @@ class ZenCompiler:
                  pass
             # semanticchecker.logger.print_errors()
 
+    def get_global_environment(self) -> Any:
+        # Create a fresh interpreter and run Pass 1 of the program to populate the environment
+        if not self.ast_typed:
+            self.validate()
+        
+        interpreter = Interpreter(self.ast_typed, self.source_path, debug=self.debug, resolver=self.resolver)
+        # We use a special internal method or just run the first pass of _evaluate_program
+        interpreter._evaluate_program(self.ast_typed, interpreter.global_environment, [])
+        return interpreter.global_environment
+
+    def test(self, path: str) -> bool:
+        from Test.TestRunner import TestRunner
+        runner = TestRunner(self)
+        return runner.run_file(path)
+
     def interpret(self, arguments: List[str]) -> None:
         if not self.ast_typed:
             if self.debug:
@@ -191,10 +219,12 @@ class ZenCompiler:
         interpreter: Interpreter = Interpreter(self.ast_typed, self.source_path, debug=self.debug, resolver=self.resolver)
         try:
             result: any = interpreter.interpret(arguments=arguments)
-            # Auto-call zen_entry if it exists in the global environment
-            if "zen_entry" in interpreter.global_environment.values:
-                func = interpreter.global_environment.get("zen_entry")
-                interpreter._call_function(func, [])
+            # Auto-call zen_entry or main if they exist in the global environment
+            for entry in ["zen_entry", "main"]:
+                if entry in interpreter.global_environment.values:
+                    func = interpreter.global_environment.get(entry)
+                    interpreter._call_function(func, [])
+                    break
             
             if self.debug:
                 print()
@@ -203,7 +233,7 @@ class ZenCompiler:
         except ReturnException as return_exception:
             return f"Return value: '{return_exception.value}'"
 
-    def generate(self) -> None:
+    def generate(self, source_map: bool = True) -> None:
         if not self.ast_typed:
             return
             
@@ -212,8 +242,9 @@ class ZenCompiler:
 
         if self.debug:
             print("-- RUNNING CODE GENERATOR -- ")
-        generator = Generator()
-        result: str = generator.generate(self.ast_typed)
+        import os
+        generator = Generator(enable_source_map=source_map)
+        result: str = generator.generate(self.ast_typed, filename=os.path.abspath(self.source_path))
         
         if self.debug:
             print()
@@ -263,6 +294,11 @@ def main():
     parser.add_argument("--repl", action="store_true", help="Start REPL")
     parser.add_argument("--interpret", action="store_true", help="Interpret the source code (default)")
     parser.add_argument("--generate", action="store_true", help="Generate and compile C code")
+    parser.add_argument("--test", action="store_true", help="Run tests in the source file")
+    parser.add_argument("--build", action="store_true", help="Build the project using .zbuild")
+    parser.add_argument("--source-map", dest="source_map", action="store_true", help="Enable C source mapping (#line directives)")
+    parser.add_argument("--no-source-map", dest="source_map", action="store_false", help="Disable C source mapping")
+    parser.set_defaults(source_map=True)
     
     # We use parse_known_args because 'args' might capture flags meant for the script?
     # Actually, argparse handles remaining args well if configured.
@@ -277,24 +313,31 @@ def main():
         return
 
     # Check for Source
-    if not args.source:
-        # If no source and no REPL, show help
+    if not args.source and not args.repl and not args.build:
+        # If no source and no REPL/build, show help
         parser.print_help()
         return
 
     debug = args.debug or args.verbose
     compiler = ZenCompiler(debug=debug)
     compiler.output_path = args.output
-    compiler.load_source(args.source)
-    
     # Pipeline
-    compiler.tokenize()
-    compiler.parse()
-    compiler.validate()
+    if not args.build:
+        compiler.load_source(args.source)
+        compiler.tokenize()
+        compiler.parse()
+        # compiler.validate()
+        compiler.ast_typed = compiler.ast
     
     # Execution Mode
-    if args.generate:
-        compiler.generate()
+    if args.test:
+        compiler.test(args.source)
+    elif args.build:
+        from Build.BuildSystem import BuildSystem
+        build_system = BuildSystem(os.getcwd())
+        build_system.run_build(compiler)
+    elif args.generate:
+        compiler.generate(args.source_map)
     else:
         # Default to interpret
         # Pass remaining arguments to interpreter
@@ -305,7 +348,7 @@ def main():
         # But zen_entry expects args[1] to be source.
         # So we need [args.source, args.source] + args.args
         
-        interpreter_args = [args.source] + args.args
+        interpreter_args = [args.source, args.source] + args.args
         compiler.interpret(interpreter_args)
         
     # Optional: Write debug output

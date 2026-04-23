@@ -1,0 +1,35 @@
+import zen.io as IO
+import zen.file as File
+import zen.string as Str
+
+function test_file_class() {
+    IO.info(`--- Testing File Class ---`)
+    
+    let path -> `tmp_class_test.txt`
+    let f -> File.File(path, `w`)
+    
+    f.open()
+    IO.info(`  File opened for writing.`)
+    f.write(`Hello from Zenlang Class!`)
+    f.close()
+    IO.info(`  File written and closed.`)
+    
+    let f2 -> File.File(path, `r`)
+    f2.open()
+    IO.info(`  File opened for reading.`)
+    let content -> f2.read()
+    IO.info(`  Content read: ` + content)
+    f2.close()
+    
+    when content == `Hello from Zenlang Class!` {
+        IO.info(`  File class test PASSED.`)
+    } or {
+        IO.error(`  File class test FAILED.`)
+    }
+    
+    File.remove(path)
+}
+
+function zen_entry() {
+    test_file_class()
+}

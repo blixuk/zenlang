@@ -1,0 +1,36 @@
+import zen.io as io
+
+function divide(a, b) {
+    when b == 0 {
+        <- __builtin.error(`Division by zero`)
+    }
+    <- a / b
+}
+
+function main() {
+    io.write(`CASE 0: Testing Error Handling:`)
+    
+    // Case 1: Successful division
+    let r1 -> check divide(10, 2) or {
+        io.error(`Failed to divide 10 by 2`)
+        -1
+    }
+    io.write(`CASE 1: 10 / 2 = ` + r1)
+    
+    // Case 2: Division by zero handled by 'or' block
+    let r2 -> check divide(10, 0) or {
+        io.warn(`CASE 2: Caught expected error: Division by zero`)
+        0
+    }
+    io.write(`CASE 2: 10 / 0 handled, result is: ` + r2)
+    
+    // Case 3: Error object and 'is Error'
+    let err -> __builtin.error_literal(`Literal error`)
+    when err is Error {
+        io.info(`CASE 3: Correctly identified Error type for literal`)
+    } or {
+        io.error(`CASE 3: Failed to identify Error type`)
+    }
+    
+    io.write(`TEST END: Error Handling Test Complete.`)
+}

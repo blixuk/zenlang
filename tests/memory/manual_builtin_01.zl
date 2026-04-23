@@ -1,0 +1,7 @@
+function main() {
+    let a -> __builtin_memory.create_arena(1024)
+    __builtin_memory.push_arena(a)
+    print(`Builtin Success`)
+    __builtin_memory.pop_arena()
+    __builtin_memory.free_arena(a)
+}

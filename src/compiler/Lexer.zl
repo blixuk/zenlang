@@ -44,10 +44,12 @@ class Lexer {
     }
 
     function is_digit(c: String) : Boolean {
+        when c = `` { <- False }
         <- Str.index_of(`0123456789`, c) != -1
     }
 
     function is_alpha(c: String) : Boolean {
+        when c = `` { <- False }
         <- Str.index_of(`abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_`, c) != -1
     }
 
@@ -134,6 +136,18 @@ class Lexer {
                     }
                     self.advance()
                 }
+            } or when self.peek(0) = `!` {
+                self.advance() // consume !
+                let value : String -> ``
+                while not self.is_at_end() {
+                    when self.peek(0) = `!` and self.peek(1) = `/` {
+                        self.advance() // !
+                        self.advance() // /
+                        break
+                    }
+                    value -> value + self.advance()
+                }
+                self.add_token(TokenType.DOC_COMMENT, value)
             } or {
                 self.add_token(TokenType.DIVISION, `/`)
             }
@@ -233,6 +247,7 @@ class Lexer {
             } or when self.is_alpha(char) {
                 self.identifier(char)
             } or {
+                IO.write(`[DEBUG Lexer] Unexpected character: ` + char + ` at line ` + Str.to_string(self.line) + `\n`)
                 self.add_token(TokenType.ERROR, `Unexpected character: ` + char)
             }
         }

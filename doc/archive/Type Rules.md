@@ -87,36 +87,36 @@ Default Type Container: [Type]{ ... } or [T]{ ... }
 This will only work for literals that have to be assigned to an identifier.
 
 let a : Vector -> {1, 2, 3}
-let a :> [Vector]{1, 2, 3}
-let a :> [V]{1, 2, 3}
-let a -> [Vector]{1, 2, 3}
-let a -> [V]{1, 2, 3}
+let a :> Vector{1, 2, 3}
+let a :> V{1, 2, 3}
+let a -> Vector{1, 2, 3}
+let a -> V{1, 2, 3}
 
 let a : List -> {1, 2, 3}
-let a :> [List]{1, 2, 3}
-let a :> [L]{1, 2, 3}
-let a -> [List]{1, 2, 3}
-let a -> [L]{1, 2, 3}
+let a :> List{1, 2, 3}
+let a :> L{1, 2, 3}
+let a -> List{1, 2, 3}
+let a -> L{1, 2, 3}
 
 let a : Set -> {1, 2, 3}
-let a :> [Set]{1, 2, 3}
-let a :> [S]{1, 2, 3}
-let a -> [Set]{1, 2, 3}
-let a -> [S]{1, 2, 3}v
+let a :> Set{1, 2, 3}
+let a :> S{1, 2, 3}
+let a -> Set{1, 2, 3}
+let a -> S{1, 2, 3}v
 
 let a : Tuple -> {1, 2, 3}
 let a : Tuple -> {a -> 1, b -> 2, c -> 3}
-let a :> [Tuple]{1, 2, 3}
-let a :> [Tuple]{a -> 1, b -> 2, c -> 3}
-let a :> [T]{1, 2, 3}
-let a -> [Tuple]{1, 2, 3}
-let a -> [T]{1, 2, 3}
+let a :> Tuple{1, 2, 3}
+let a :> Tuple{a -> 1, b -> 2, c -> 3}
+let a :> T{1, 2, 3}
+let a -> Tuple{1, 2, 3}
+let a -> T{1, 2, 3}
 
 let a : Map -> {`a` -> 1, `b` -> 2}
-let a :> [Map]{`a` -> 1, `b` -> 2}
-let a :> [M]{`a` -> 1, `b` -> 2}
-let a -> [Map]{`a` -> 1, `b` -> 2}
-let a -> [M]{`a` -> 1, `b` -> 2}
+let a :> Map{`a` -> 1, `b` -> 2}
+let a :> M{`a` -> 1, `b` -> 2}
+let a -> Map{`a` -> 1, `b` -> 2}
+let a -> M{`a` -> 1, `b` -> 2}
 
 
 -------------------------
@@ -244,47 +244,47 @@ String literals are both enclosed in backticks. A single-code-point backtick lit
 
 // Vector literals
 
-[Vector]{}                  // Empty vector
-[Vector]{1, 2, 3, 4}        // Vector of numbers
-[Vector]{1, 2, 3, 4}        // Vector are fixed size and can only have one type no mixed types
+Vector{}                  // Empty vector
+Vector{1, 2, 3, 4}        // Vector of numbers
+Vector{1, 2, 3, 4}        // Vector are fixed size and can only have one type no mixed types
 
 // List literals
 
-[List]{}                      // Empty list
-[List]{1, 2, 3, 4}            // List of numbers
-[List]{1, `a`, True}          // List of mixed types
+List{}                      // Empty list
+List{1, 2, 3, 4}            // List of numbers
+List{1, `a`, True}          // List of mixed types
 
 // Set literals
 
-[Set]{}                      // Empty set
-[Set]{1, 2, 3, 4}            // Set can only have one type no mixed types
-[Set]{5, 6, 7, 8}            // Set can't have 2 of them same only unique values
+Set{}                      // Empty set
+Set{1, 2, 3, 4}            // Set can only have one type no mixed types
+Set{5, 6, 7, 8}            // Set can't have 2 of them same only unique values
 
 // Tuple literals
 
-[Tuple]{}                      // Empty tuple
-[Tuple]{1, 2, 3}               // Tuple of numbers
-[Tuple]{1, `a`, True}          // Tuple of mixed types
-[Tuple]{a -> 1, b -> 2}        // Named tuple
+Tuple{}                      // Empty tuple
+Tuple{1, 2, 3}               // Tuple of numbers
+Tuple{1, `a`, True}          // Tuple of mixed types
+Tuple{a -> 1, b -> 2}        // Named tuple
 
 // Map literals
 
-[Map]{}                     // Empty map
-[Map]{ `a` -> 1, `b` -> 2 }  // Map of Key: String and Value: Number
+Map{}                     // Empty map
+Map{ `a` -> 1, `b` -> 2 }  // Map of Key: String and Value: Number
 
 // Generic literals
 
-[Vector]{1, 2, 3, 4}        // Vector of numbers
-[List]{1, 2, 3, 4}          // List of numbers
-[Set]{1, 2, 3, 4}           // Set of numbers
-[Tuple]{1, 2, 3, 4}         // Tuple of numbers
-[Tuple]{a -> 1, b -> 2}     // Tuple (Named)
-[Map]{`a` -> 1, `b` -> 2}   // Map of Key: String and Value: Number
+Vector{1, 2, 3, 4}        // Vector of numbers
+List{1, 2, 3, 4}          // List of numbers
+Set{1, 2, 3, 4}           // Set of numbers
+Tuple{1, 2, 3, 4}         // Tuple of numbers
+Tuple{a -> 1, b -> 2}     // Tuple (Named)
+Map{`a` -> 1, `b` -> 2}   // Map of Key: String and Value: Number
 
-[V]{1, 2, 3}              // Vector
-[L]{1, 2, 3}              // List
-[S]{1, 2, 3}              // Set
-[T]{1, 2, 3}              // Tuple
-[T]{a -> 1, b -> 2}       // Tuple (Named)
-[M]{`a` -> 1, `b` -> 2}   // Map
+V{1, 2, 3}              // Vector
+L{1, 2, 3}              // List
+S{1, 2, 3}              // Set
+T{1, 2, 3}              // Tuple
+T{a -> 1, b -> 2}       // Tuple (Named)
+M{`a` -> 1, `b` -> 2}   // Map
 

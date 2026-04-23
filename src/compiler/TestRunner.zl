@@ -1,0 +1,106 @@
+import `lib/zen/io` as IO
+import `lib/zen/sys` as Sys
+import `lib/zen/string` as Str
+import `compiler/Lexer` as Lexer
+import `compiler/Parser` as Parser
+from `compiler/AST` import ASTNode, ASTKind, FunctionStatement
+
+class TestRunner {
+    function init() {
+    }
+
+    function run(directory: String) {
+        IO.write(`\n=== Zenlang Test Runner ===\n`)
+        IO.write(`Scanning directory: ` + directory + `\n\n`)
+
+        let files: List -> IO.list_dir(directory)
+        let test_files: List -> []
+        for f in files {
+            let file_name: String -> f
+            when (Str.ends_with(file_name, `.zl`)) {
+                 test_files.append(directory + `/` + file_name)
+            }
+        }
+
+        let runner_code: String -> `// Auto-generated test runner\n`
+        runner_code -> runner_code + `import \`lib/zen/io\` as IO\n`
+        runner_code -> runner_code + `import \`lib/zen/sys\` as Sys\n\n`
+        
+        let test_functions: List -> []
+        let module_prefix: String -> `TestModule_`
+
+        let i: Integer -> 0
+        for f in test_files {
+             let path: String -> f
+             let src: String -> IO.read_file(path)
+             when (src = nothing) {
+                 IO.error(`Error: Could not read ` + path + `\n`)
+             } or {
+                 let lexer: Lexer -> Lexer.Lexer(src)
+                 let tokens: List -> lexer.tokenize()
+                 let parser: Parser -> Parser.Parser(tokens, path)
+                 let ast: List -> parser.parse()
+
+                 let test_count: Integer -> 0
+                 
+                 for stmt in ast {
+                     let s: ASTNode -> stmt
+                     when (s.kind = ASTKind.FUNCTION_STATEMENT) {
+                          let fn: FunctionStatement -> stmt
+                          when (fn.doc_comment != nothing) {
+                               let doc: String -> fn.doc_comment
+                               when (Str.index_of(doc, `@test`) != -1) {
+                                    let fn_name: String -> fn.name.value
+                                    let full_name: String -> module_prefix + Str.to_string(i) + `.` + fn_name
+                                    test_functions.append(full_name)
+                                    test_count -> test_count + 1
+                               }
+                          }
+                     }
+                 }
+                 when (test_count > 0) {
+                     let import_path: String -> Str.replace(path, `.zl`, ``)
+                     import_path -> Str.replace(import_path, `/`, `.`)
+                     runner_code -> runner_code + `import \`` + import_path + `\` as ` + module_prefix + Str.to_string(i) + `\n`
+                 }
+             }
+             i -> i + 1
+        }
+
+        when (test_functions.length = 0) {
+             IO.write(`No tests found.\n`)
+             return nothing
+        }
+
+        runner_code -> runner_code + `\nfunction main() {\n`
+        runner_code -> runner_code + `    IO.write(\`\\nRunning \` + Str.to_string(` + Str.to_string(test_functions.length) + `) + \` tests...\\n\\n\`)\n`
+        
+        for name in test_functions {
+            let func: String -> name
+            runner_code -> runner_code + `    IO.write(\`Running ` + func + `... \`)\n`
+            runner_code -> runner_code + `    ` + func + `()\n`
+            runner_code -> runner_code + `    IO.write(\`[OK]\\n\`)\n`
+        }
+
+        runner_code -> runner_code + `    IO.write(\`\\nAll tests passed!\\n\`)\n`
+        runner_code -> runner_code + `}\n`
+
+        let runner_path: String -> `.zen_test_runner.zl`
+        IO.write_file(runner_path, runner_code)
+        
+        // Execute compilation of the runner test suite
+        IO.write(`Compiling tests...\n`)
+        let res: Integer -> Sys.exec(`bin/zen .zen_test_runner.zl .zen_test_runner.c`)
+        when (res != 0) {
+            IO.error(`Failed to transpile test runner.\n`)
+            return nothing
+        }
+        res -> Sys.exec(`gcc -g -O0 -o bin/.zen_test_runner .zen_test_runner.c runtime/main_wrapper.c runtime/io/io_default.c runtime/sys/sys_default.c runtime/object/string.c runtime/object/list.c runtime/memory/allocator_default.c -I build -I runtime -I runtime/sys -I runtime/io -I runtime/object -I runtime/memory`)
+        when (res != 0) {
+            IO.error(`Failed to compile test runner native binary.\n`)
+            return nothing
+        }
+        IO.write(`Executing tests natively...\n`)
+        Sys.exec(`./bin/.zen_test_runner`)
+    }
+}

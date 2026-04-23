@@ -10,6 +10,8 @@ env/
 # Build and Output
 output/
 build/
+out/
+bin/
 self_hosted_output.c
 self_hosted_test.c
 

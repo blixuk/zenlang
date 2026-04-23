@@ -4,9 +4,10 @@
 #include <ctype.h>
 #include <stdio.h>
 
-int ZenString_length(ZenString s) {
-    if (!s) return 0;
-    return (int)strlen(s);
+ZenValue ZenString_count(ZenValue s) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    if (!ps) return zen_int(0);
+    return zen_int((int)strlen(ps));
 }
 
 ZenString ZenString_create(const char* s) {
@@ -17,52 +18,56 @@ ZenString ZenString_create(const char* s) {
     return res;
 }
 
-ZenString ZenString_at(ZenString s, int index) {
-    if (!s || index < 0 || index >= (int)strlen(s)) return "";
+ZenValue ZenString_at(ZenValue s, ZenValue index) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    int idx = ZEN_UNBOX(index, (int)0);
+    if (!ps || idx < 0 || idx >= (int)strlen(ps)) return zen_str("");
     char* res = (char*)zen_alloc(2);
-    res[0] = s[index];
+    res[0] = ps[idx];
     res[1] = '\0';
-    return res;
+    return zen_str(res);
 }
 
-ZenString ZenString_substring(ZenString s, int start, int end) {
-    if (!s) return "";
-    int len = (int)strlen(s);
-    if (start < 0) start = 0;
-    if (end > len) end = len;
-    if (start >= end) return "";
+ZenValue ZenString_substring(ZenValue s, ZenValue start, ZenValue end) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    int istart = ZEN_UNBOX(start, (int)0);
+    int iend = ZEN_UNBOX(end, (int)0);
+    if (!ps) return zen_str("");
+    int len = (int)strlen(ps);
+    if (istart < 0) istart = 0;
+    if (iend > len) iend = len;
+    if (istart >= iend) return zen_str("");
 
-    int sub_len = end - start;
+    int sub_len = iend - istart;
     char* res = (char*)zen_alloc(sub_len + 1);
-    memcpy(res, s + start, sub_len);
+    memcpy(res, ps + istart, sub_len);
     res[sub_len] = '\0';
-    return res;
+    return zen_str(res);
 }
 
-ZenList* ZenString_split(ZenString s, ZenString sep) {
+ZenValue ZenString_split(ZenValue s, ZenValue sep) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    char* psep = ZEN_UNBOX(sep, (char*)0);
     ZenList* list = ZenList_create();
-    if (!s) return list;
+    if (!ps || !psep) return zen_val_list(list);
     
-    char* copy = strdup(s); // standard libc, maybe replace later if we want total control
-    char* token = strtok(copy, sep);
+    char* copy = strdup(ps);
+    char* token = strtok(copy, psep);
     while (token != NULL) {
         ZenList_append(list, zen_str(strdup(token)));
-        token = strtok(NULL, sep);
+        token = strtok(NULL, psep);
     }
-    // Note: copy is malloced by strdup, so we should free it.
-    // Also strdup uses standard malloc. Ideally we should have zen_strdup.
-    free(copy); // Using standard free because strdup used standard malloc
-    return list;
+    free(copy);
+    return zen_val_list(list);
 }
 
-ZenString ZenString_join(ZenList* parts, ZenString sep) {
-    if (!parts || parts->count == 0) return "";
+ZenValue ZenString_join(ZenList* parts, ZenValue sep) {
+    char* psep = ZEN_UNBOX(sep, (char*)0);
+    if (!parts || parts->count == 0) return zen_str("");
     
-    int sep_len = (int)strlen(sep);
+    int sep_len = (int)strlen(psep);
     int total_len = 0;
     for (int i = 0; i < parts->count; i++) {
-        // Assert type is STRING or convert?
-        // For now assume string
         total_len += strlen(parts->items[i].as.string);
         if (i < parts->count - 1) total_len += sep_len;
     }
@@ -71,126 +76,134 @@ ZenString ZenString_join(ZenList* parts, ZenString sep) {
     res[0] = '\0';
     for (int i = 0; i < parts->count; i++) {
         strcat(res, parts->items[i].as.string);
-        if (i < parts->count - 1) strcat(res, sep);
+        if (i < parts->count - 1) strcat(res, psep);
     }
-    return res;
+    return zen_str(res);
 }
 
-ZenString ZenString_concat(ZenString s1, ZenString s2) {
-    if (!s1) return s2 ? s2 : "";
-    if (!s2) return s1;
-    int len1 = strlen(s1);
-    int len2 = strlen(s2);
+ZenValue ZenString_concat(ZenValue s1, ZenValue s2) {
+    char* ps1 = ZEN_UNBOX(s1, (char*)0);
+    char* ps2 = ZEN_UNBOX(s2, (char*)0);
+    if (!ps1) return s2;
+    if (!ps2) return s1;
+    int len1 = strlen(ps1);
+    int len2 = strlen(ps2);
     char* res = (char*)zen_alloc(len1 + len2 + 1);
-    strcpy(res, s1);
-    strcat(res, s2);
-    return res;
+    strcpy(res, ps1);
+    strcat(res, ps2);
+    return zen_str(res);
 }
 
-ZenString ZenString_replace(ZenString s, ZenString old_s, ZenString new_s) {
-    if (!s || !old_s || !new_s) return s;
+ZenValue ZenString_replace(ZenValue s, ZenValue old_s, ZenValue new_s) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    char* pold = ZEN_UNBOX(old_s, (char*)0);
+    char* pnew = ZEN_UNBOX(new_s, (char*)0);
+    if (!ps || !pold || !pnew) return s;
     char *result;
     int i, cnt = 0;
-    int newlen = strlen(new_s);
-    int oldlen = strlen(old_s);
-    for (i = 0; s[i] != '\0'; i++) {
-        if (strstr(&s[i], old_s) == &s[i]) {
+    int newlen = strlen(pnew);
+    int oldlen = strlen(pold);
+    for (i = 0; ps[i] != '\0'; i++) {
+        if (strstr(&ps[i], pold) == &ps[i]) {
             cnt++;
             i += oldlen - 1;
         }
     }
     result = (char*)zen_alloc(i + cnt * (newlen - oldlen) + 1);
     i = 0;
-    while (*s) {
-        if (strstr(s, old_s) == s) {
-            strcpy(&result[i], new_s);
+    char* temp_s = ps;
+    while (*temp_s) {
+        if (strstr(temp_s, pold) == temp_s) {
+            strcpy(&result[i], pnew);
             i += newlen;
-            s += oldlen;
+            temp_s += oldlen;
         } else
-            result[i++] = *s++;
+            result[i++] = *temp_s++;
     }
     result[i] = '\0';
-    return result;
+    return zen_str(result);
 }
 
-ZenString ZenString_to_upper(ZenString s) {
-    if (!s) return "";
-    int len = strlen(s);
+ZenValue ZenString_to_upper(ZenValue s) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    if (!ps) return zen_str("");
+    int len = strlen(ps);
     char* res = (char*)zen_alloc(len + 1);
     for (int i = 0; i < len; i++) {
-        res[i] = toupper(s[i]);
+        res[i] = toupper(ps[i]);
     }
     res[len] = '\0';
-    return res;
+    return zen_str(res);
 }
 
-ZenString ZenString_str(ZenVariant x) {
+ZenValue ZenString_str(ZenValue x) {
     char buf[128];
     switch (x.type) {
         case ZEN_INTEGER:
             sprintf(buf, "%lld", x.as.integer);
-            return ZenString_create(buf);
+            return zen_str(strdup(buf));
         case ZEN_DECIMAL:
             sprintf(buf, "%f", x.as.decimal);
-            return ZenString_create(buf);
+            return zen_str(strdup(buf));
         case ZEN_BOOLEAN:
-            return ZenString_create(x.as.boolean ? "true" : "false");
+            return zen_str(x.as.boolean ? "true" : "false");
         case ZEN_STRING:
-            return ZenString_create(x.as.string ? x.as.string : "null");
+            return x; 
         case ZEN_LIST: {
             ZenList* list = x.as.list;
-            if (!list) return ZenString_create("[]");
-            
-            // Initial implementation: join elements
-            // Note: This is inefficient but functional for now
-            // Need a StringBuilder in future
-            char* res = (char*)zen_alloc(1024); // simplistic
+            if (!list) return zen_str("[]");
+            char* res = (char*)zen_alloc(1024); 
             strcpy(res, "[");
-            
             for (int i=0; i < list->count; i++) {
-                ZenVariant item = list->items[i];
-                ZenString item_str = ZenString_str(item);
+                ZenValue item = list->items[i];
+                ZenValue item_val = ZenString_str(item);
+                char* item_str = ZEN_UNBOX(item_val, (char*)0);
                 strcat(res, item_str);
-                
-                if (i < list->count - 1) {
-                    strcat(res, ", ");
-                }
+                if (i < list->count - 1) strcat(res, ", ");
             }
             strcat(res, "]");
-            return res;
+            return zen_str(res);
         }
         case ZEN_NOTHING:
-            return ZenString_create("Nothing");
+            return zen_str("Nothing");
         default:
-            return ZenString_create("Unknown");
+            return zen_str("Unknown");
     }
 }
 
-int ZenString_starts_with(ZenString s, ZenString prefix) {
-    if (!s || !prefix) return 0;
-    size_t len_s = strlen(s);
-    size_t len_p = strlen(prefix);
-    if (len_p > len_s) return 0;
-    return strncmp(s, prefix, len_p) == 0;
+ZenValue ZenString_starts_with(ZenValue s, ZenValue prefix) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    char* ppre = ZEN_UNBOX(prefix, (char*)0);
+    if (!ps || !ppre) return zen_bool(false);
+    size_t len_s = strlen(ps);
+    size_t len_p = strlen(ppre);
+    if (len_p > len_s) return zen_bool(false);
+    return zen_bool(strncmp(ps, ppre, len_p) == 0);
 }
 
-int ZenString_ends_with(ZenString s, ZenString suffix) {
-    if (!s || !suffix) return 0;
-    size_t len_s = strlen(s);
-    size_t len_p = strlen(suffix);
-    if (len_p > len_s) return 0;
-    return strcmp(s + len_s - len_p, suffix) == 0;
+ZenValue ZenString_ends_with(ZenValue s, ZenValue suffix) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    char* psuf = ZEN_UNBOX(suffix, (char*)0);
+    if (!ps || !psuf) return zen_bool(false);
+    size_t len_s = strlen(ps);
+    size_t len_p = strlen(psuf);
+    if (len_p > len_s) return zen_bool(false);
+    return zen_bool(strcmp(ps + len_s - len_p, psuf) == 0);
 }
 
-int ZenString_equals(ZenString s1, ZenString s2) {
-    if (s1 == s2) return 1;
-    if (!s1 || !s2) return 0;
-    return strcmp(s1, s2) == 0;
+ZenValue ZenString_equals(ZenValue s1, ZenValue s2) {
+    char* ps1 = ZEN_UNBOX(s1, (char*)0);
+    char* ps2 = ZEN_UNBOX(s2, (char*)0);
+    if (ps1 == ps2) return zen_bool(true);
+    if (!ps1 || !ps2) return zen_bool(false);
+    return zen_bool(strcmp(ps1, ps2) == 0);
 }
 
-int ZenString_index_of(ZenString s, ZenString sub) {
-    if (!s || !sub) return -1;
-    char* pos = strstr(s, sub);
-    if (!pos) return -1;
-    return (int)(pos - s);
+ZenValue ZenString_index_of(ZenValue s, ZenValue sub) {
+    char* ps = ZEN_UNBOX(s, (char*)0);
+    char* psub = ZEN_UNBOX(sub, (char*)0);
+    if (!ps || !psub) return zen_int(-1);
+    char* pos = strstr(ps, psub);
+    if (!pos) return zen_int(-1);
+    return zen_int((int)(pos - ps));
 }

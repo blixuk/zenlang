@@ -28,7 +28,7 @@ function test_transpiler() {
     let transpiler -> Transpiler(stmts)
     let output -> transpiler.transpile()
     
-    write(`Generated C Code Length: ` + Str.str(Str.length(output)))
+    write(`Generated C Code Length: ` + Str.to_string(Str.length(output)))
     
     // Checks (Manual string search simulation)
     // We expect:

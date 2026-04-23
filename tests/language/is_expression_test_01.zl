@@ -1,0 +1,21 @@
+let x -> `Hello`
+__builtin_output.write(`x is String: ` + (x is String))      // true
+__builtin_output.write(`x is Integer: ` + (x is Integer))    // false
+
+when x is String {
+    __builtin_output.write(`Condition: It is a string!`)
+}
+
+let y -> 123
+__builtin_output.write(`y is Integer: ` + (y is Integer))    // true
+__builtin_output.write(`y is Decimal: ` + (y is Decimal))    // false
+
+check {
+    let e -> __builtin.error(`err`)
+    __builtin_output.write(`e is Error: ` + (e is Error))
+} or {
+    __builtin_output.write(`Caught Error and verified 'is Error' inside check would be redundant but let's test a variable`)
+}
+
+let err_val -> __builtin.error_literal(`Manual Error`)
+__builtin_output.write(`err_val is Error: ` + (err_val is Error))

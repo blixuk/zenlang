@@ -1,0 +1,7 @@
+function main() {
+    print(`One`)
+    print(`Two`)
+    when true {
+        print(`Three`)
+    }
+}

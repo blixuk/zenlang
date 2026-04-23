@@ -1,27 +1,142 @@
+/!
+ File operations module.
+ Provides functions for interacting with the file system.
+ !/
+
+import zen.string as Str
+
+/!
+ Represents an open file stream.
+ !/
+class File {
+    let _instance
+    let _path
+    let _mode
+
+    /!
+     Initializes a file reference.
+     @param path The path to the file.
+     @param mode The open mode ('r', 'w', 'a').
+     !/
+    function init(path, mode) {
+        self._path -> path
+        self._mode -> mode
+        self._instance -> nothing
+    }
+
+    /!
+     Opens the file.
+     !/
+    function open() {
+        self._instance -> __builtin_file.open(self._path, self._mode)
+    }
+
+    /!
+     Reads the content of the file.
+     @return The file content as a string.
+     !/
+    function read() {
+        when self._instance == nothing { raise `FileNotOpen` }
+        <- self._instance.read()
+    }
+
+    /!
+     Writes content to the file.
+     @param content The content to write.
+     !/
+    function write(content) {
+        when self._instance == nothing { raise `FileNotOpen` }
+        self._instance.write(content)
+    }
+
+    /!
+     Closes the file.
+     !/
+    function close() {
+        when self._instance == nothing { raise `FileNotOpen` }
+        self._instance.close()
+        self._instance -> nothing
+    }
+}
+
+/!
+ Reads the entire content of a file.
+ @param path The path to the file.
+ @return The content of the file as a string.
+!/
 function read(path) {
     <- __builtin_file.read(path)
 }
 
+/!
+ Reads a file and returns its content as a list of lines.
+ @param path The path to the file.
+ @return A list of strings representing the lines.
+ !/
+function read_lines(path) {
+    let content -> read(path)
+    <- Str.split(content, `\n`)
+}
+
+/!
+ Writes content to a file, overwriting its current content.
+ @param path The path to the file.
+ @param content The content to write.
+!/
 function write(path, content) {
     <- __builtin_file.write(path, content)
 }
 
+/!
+ Writes a list of strings to a file as separate lines.
+ @param path The path to the file.
+ @param lines The list of strings to write.
+ !/
+function write_lines(path, lines) {
+    let content -> Str.join(lines, `\n`)
+    write(path, content)
+}
+
+/!
+ Appends content to the end of a file.
+ @param path The path to the file.
+ @param content The content to append.
+!/
 function append(path, content) {
     <- __builtin_file.append(path, content)
 }
 
+/!
+ Checks if a file or directory exists at the given path.
+ @param path The path to check.
+ @return True if it exists, False otherwise.
+!/
 function exists(path) {
     <- __builtin_file.exists(path)
 }
 
+/!
+ Removes a file or directory.
+ @param path The path to remove.
+!/
 function remove(path) {
     <- __builtin_file.remove(path)
 }
 
+/!
+ Checks if the given path is a file.
+ @param path The path to check.
+ @return True if it's a file, False otherwise.
+!/
 function is_file(path) {
     <- __builtin_file.is_file(path)
 }
 
+/!
+ Checks if the given path is a directory.
+ @param path The path to check.
+ @return True if it's a directory, False otherwise.
+!/
 function is_dir(path) {
     <- __builtin_file.is_dir(path)
 }

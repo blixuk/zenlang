@@ -1,0 +1,37 @@
+import zen.io as IO
+import zen.test as T
+
+function test_addition() {
+    <- T.assert_equal(2 + 2, 4, `2 + 2 should be 4`)
+}
+
+function test_logic() {
+    let combined -> T.assert_true(true, `true is true`)
+    combined -> combined and T.assert_false(false, `false is false`)
+    <- combined
+}
+
+function test_failure() {
+    // This one is intended to fail to show the error message
+    <- T.assert_equal(1 + 1, 3, `1 + 1 should be 2`)
+}
+
+function zen_entry() {
+    IO.info(`--- Testing zen.test framework ---`)
+    
+    let tests -> [
+        d{`name` -> `Addition`, `fn` -> test_addition},
+        d{`name` -> `Logic`, `fn` -> test_logic},
+        d{`name` -> `Expected Failure`, `fn` -> test_failure}
+    ]
+    
+    let all_passed -> T.run_suite(`Basic Math & Logic`, tests)
+    
+    when all_passed {
+        IO.info(`T.run_suite returned true (unexpected since one failed)`)
+    } or {
+        IO.info(`T.run_suite returned false (expected)`)
+    }
+    
+    IO.info(`--- zen.test tests complete ---`)
+}

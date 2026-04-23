@@ -19,13 +19,17 @@ class Parser:
         self.strict: bool = strict
         self.tokens: list = tokens
         self.source_path: str = source_path
+        from Logging.Trace import zen_trace
+        zen_trace(f"PARSER INIT: {len(self.tokens)} tokens")
+        for i, t in enumerate(self.tokens):
+            zen_trace(f"  token[{i}]: {t}")
 
         self.logger: ParserLogger = ParserLogger(self.source_path)
 
         self.token_handler: TokenHandler = TokenHandler(self.tokens, self.logger)
 
         self.statement_handler: StatementHandler = StatementHandler(
-            self.token_handler, self.logger
+            self.token_handler, self.logger, filename=self.source_path
         )
 
         self.statements: list[ASTNode] = []
@@ -42,9 +46,12 @@ class Parser:
         while not self.token_handler.at_end():
             try:
                 statement: ASTNode | None = self.statement_handler.statement()
+                from Logging.Trace import zen_trace
+                zen_trace(f"PARSER LOOP: parsed {type(statement).__name__ if statement else 'None'}, next peek={self.token_handler.peek()}, current_token={self.token_handler.current_token}")
 
                 if statement:
-                    # print(f"DEBUG: Parsed {statement.__class__.__name__} at line {getattr(statement, 'line', '?')}")
+                    from Logging.Trace import zen_trace
+                    zen_trace(f"PARSER: Added {type(statement).__name__} at line {getattr(statement, 'line', '?')}")
                     self.statements.append(statement)
 
             except Exception as error:

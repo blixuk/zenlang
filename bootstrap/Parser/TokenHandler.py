@@ -180,5 +180,7 @@ class TokenHandler:
 
     def at_end(self) -> bool | None:
         token: Token | None = self.peek()
-
-        return token is None or token.type == TokenType.EOF
+        res = token is None or token.type == TokenType.EOF
+        from Logging.Trace import zen_trace
+        zen_trace(f"AT_END: {res} (peek={token})")
+        return res

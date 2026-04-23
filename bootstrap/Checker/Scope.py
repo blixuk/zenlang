@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+from Logging.Trace import zen_trace
+zen_trace("SCOPE.PY LOADED")
 
 @dataclass
 class RegionNode:
@@ -16,6 +18,20 @@ class RegionNode:
             curr = curr.parent
         return False
 
+    def find(self, id: str) -> Optional['RegionNode']:
+        if self.id == id:
+            return self
+        for child in self.children:
+            res = child.find(id)
+            if res:
+                return res
+        return None
+
+    def print_tree(self, level: int = 0):
+        print("  " * level + f"Region: {self.id}")
+        for child in self.children:
+            child.print_tree(level + 1)
+
 class Scope:
     def __init__(self, parent=None, region: Optional[RegionNode] = None) -> None:
         self.parent: Scope | None = parent
@@ -23,10 +39,13 @@ class Scope:
         self.region: RegionNode | None = region
 
     def define(self, symbol: 'Symbol'):
+        from Zen import zen_trace
+        # zen_trace(f"SCOPE DEFINE: {symbol.name} in scope {id(self)}")
         if symbol.name in self.symbols:
             raise Exception(f"redeclaration: {symbol.name}")
 
         self.symbols[symbol.name] = symbol
+        # zen_trace(f"SCOPE DEFINE: {symbol.name} DONE")
 
     def lookup(self, name: str, current_scope_only: bool = False):
         if current_scope_only:
@@ -75,7 +94,10 @@ class ScopeManager:
         self.level -= 1
 
     def define(self, symbol: 'Symbol'):
+        from Zen import zen_trace
+        zen_trace(f"SCOPEMANAGER DEFINE: {symbol.name}")
         self.current_scope.define(symbol)
+        zen_trace(f"SCOPEMANAGER DEFINE DONE: {symbol.name}")
 
     def lookup(self, name: str, current_scope_only: bool = False):
         return self.current_scope.lookup(name, current_scope_only)

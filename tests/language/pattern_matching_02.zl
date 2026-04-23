@@ -1,0 +1,27 @@
+import zen.io
+
+function main() {
+    io.write(`Testing Complex Map Pattern...\n`)
+    
+    let user -> {
+        `id` -> 101,
+        `profile` -> {
+            `name` -> `Alice`,
+            `role` -> `Admin`
+        },
+        `tags` -> [`active`, `internal`]
+    }
+    
+    when user is {`id` -> 101, `profile` -> {`name` -> n, `role` -> r}, `tags` -> [t1, t2]} {
+        io.write(`Matched User!\n`)
+        io.write(`Name: `)
+        io.write(n)
+        io.write(`\nRole: `)
+        io.write(r)
+        io.write(`\nFirst Tag: `)
+        io.write(t1)
+        io.write(`\n`)
+    } or {
+        io.write(`Failed to match complex user\n`)
+    }
+}

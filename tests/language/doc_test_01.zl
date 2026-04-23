@@ -1,0 +1,41 @@
+import zen.io as io
+import zen.error as error
+
+function test_div(a, b) {
+    when b == 0 {
+        raise error.new(`Custom division by zero error`)
+    }
+    <- a / b
+}
+
+function main() {
+    io.info(`Testing documented features...`)
+    
+    // Test logging levels
+    io.info(`This is info`)
+    io.warn(`This is a warning`)
+    io.error(`This is an error`)
+    io.debug(`This is debug`)
+    
+    // Test zen.error wrapper and check/raise
+    let r1 -> check test_div(10, 2) or {
+        io.error(`Should not fail`)
+        0
+    }
+    io.write(`10 / 2 = ` + r1)
+    
+    let r2 -> check test_div(10, 0) or {
+        io.warn(`Caught expected error from test_div(10, 0)`)
+        let result -> 0 - 1
+        result
+    }
+    io.write(`Handled result: ` + r2)
+    
+    // Test error.literal
+    let err_lit -> error.literal(`Literal error message`)
+    when err_lit is Error {
+        io.info(`Verified error.literal works`)
+    }
+    
+    io.write(`Documentation Test Complete.`)
+}

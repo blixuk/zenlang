@@ -1,12 +1,12 @@
-This is a good moment to step back and treat **“print” not as a function, but as a legacy abstraction**. In ZenLang’s context—especially given your goals around scripting, tooling, TUIs, games, and future GUIs—`print` should be *decomposed*, not merely renamed.
+This is a good moment to step back and treat **“write” not as a function, but as a legacy abstraction**. In ZenLang’s context—especially given your goals around scripting, tooling, TUIs, games, and future GUIs—`write` should be *decomposed*, not merely renamed.
 
 Below is a structured reconceptualization that aligns with modern execution environments and your existing architecture (AST → type checker → multiple backends).
 
 ---
 
-## 1. The Core Problem with `print`
+## 1. The Core Problem with `write`
 
-Historically, `print` implies:
+Historically, `write` implies:
 
 * A **single global output device**
 * **Immediate side effects**
@@ -37,7 +37,7 @@ ZenLang should treat output as:
 
 ---
 
-## 3. Replace `print` with an Output Model
+## 3. Replace `write` with an Output Model
 
 ### 3.1 Conceptual Layers
 
@@ -57,7 +57,7 @@ ZenLang should treat output as:
 
 ### 4.1 `out` — The Canonical Output Stream
 
-Instead of `print(x)`:
+Instead of `write(x)`:
 
 ```zen
 out.write(`Hello`)
@@ -86,7 +86,7 @@ out : OutputStream
 
 ### 4.2 Structured Variants (Intent-Based Output)
 
-Rather than overloading `print`, introduce **semantic output channels**:
+Rather than overloading `write`, introduce **semantic output channels**:
 
 ```zen
 out.info(`Server started`)
@@ -179,20 +179,20 @@ This:
 
 ---
 
-## 8. What Happens to `print`?
+## 8. What Happens to `write`?
 
 ### Remove from Core, Keep in Stdlib
 
 ```zen
-from `std.io` import `print`
+from `std.io` import `write`
 
-print(`Hello`)
+write(`Hello`)
 ```
 
 Internally:
 
 ```zen
-function print(x) {
+function write(x) {
     out.write(x)
 }
 ```

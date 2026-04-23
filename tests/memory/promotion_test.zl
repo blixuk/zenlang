@@ -1,0 +1,10 @@
+function create_data(name) {
+    let d -> name
+    return d
+}
+
+function main() {
+    let s -> `Escaping String`
+    let data -> create_data(s)
+    print(data)
+}

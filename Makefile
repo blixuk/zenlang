@@ -31,7 +31,7 @@ $(BIN_DIR)/zen: $(ZEN_DRIVER_C) $(COMPONENTS_C) $(COMPONENTS_H) $(RUNTIME_C)
 
 $(ZEN_DRIVER_C): $(ZEN_SRC)
 	@mkdir -p $(BUILD_DIR)
-	cd $(BOOTSTRAP_DIR) && $(PYTHON) Zen.py ../$(ZEN_SRC) ../$(ZEN_DRIVER_C)
+	cd $(BOOTSTRAP_DIR) && $(PYTHON) Zen.py ../$(ZEN_SRC) ../$(ZEN_SRC) ../$(ZEN_DRIVER_C)
 
 
 

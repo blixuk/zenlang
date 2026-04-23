@@ -1,4 +1,5 @@
-from typing import Union, List, Optional, Any
+import os
+from typing import Union, List, Optional, Any, Set
 from Checker.Type import (
     SymbolKind,
     Type,
@@ -64,17 +65,25 @@ from Parser.AST import (
     TypeLiteral,
     BreakStatement,
     ContinueStatement,
-    DictionaryLiteral,
+    WhenStatement,
+    TypeLiteral,
+    BreakStatement,
+    ContinueStatement,
+    MapLiteral,
     SetLiteral,
     VectorLiteral,
     TupleLiteral,
 )
+from Transpiler.MIR import *
+from Transpiler.SMIRGenerator import SMIRGenerator
+from Transpiler.SMIRAnalyzer import SMIRAnalyzer
+from Transpiler.SMIRLowerer import SMIRLowerer
 
 
 class Generator:
-    def __init__(self):
+    def __init__(self, enable_source_map: bool = False):
+        self.enable_source_map = enable_source_map
         self.AST: ASTNode | None = None
-
         self.indent_level: int = 0
         self.temp_counter: int = 0
         self.defer_counter: int = 0
@@ -88,7 +97,17 @@ class Generator:
         self.is_in_condition = False
         self.current_function = None
         self.singletons = []
+        self.init_singletons_code = []
         self.scope_defer_stack = []
+        self.global_classes = set()
+        self.symbol_allocs = {} # Map target -> Alloc instruction
+        self.last_emitted_line = -1
+        self.last_emitted_file = None
+        self.source_mapping = True
+
+    def emit_line_directive(self, node: ASTNode):
+        if self.enable_source_map and hasattr(node, "line") and getattr(node, "filename", None):
+            self.code.append(f"#line {node.line} \"{node.filename}\"")
 
     def sanitize_name(self, name: str) -> str:
         if name in ("exit", "free", "malloc", "realloc", "calloc", "write", "read", "open", "close", "abs", "sin", "cos", "tan", "log", "exp", "sqrt"):
@@ -146,6 +165,7 @@ class Generator:
         if isinstance(node, DecimalLiteral) or node.__class__.__name__ == "DecimalLiteral": return TypeDecimal()
         if isinstance(node, BooleanLiteral) or node.__class__.__name__ == "BooleanLiteral": return TypeBoolean()
         if isinstance(node, StringLiteral) or node.__class__.__name__ == "StringLiteral": return TypeString()
+        if isinstance(node, MapLiteral) or node.__class__.__name__ == "MapLiteral": return TypeMap()
 
         if isinstance(node, Identifier) or node.__class__.__name__ == "Identifier":
             # Check function parameters first (CRITICAL for recursive calls like factorial)
@@ -268,7 +288,358 @@ class Generator:
             return "ZenString"
 
         return "ZenValue"
-    def generate(self, program: Program) -> str:
+
+    def emit_lmir(self, instructions: List[MIRInstruction], pre_allocated: Set[str] = None, auto_arena: bool = True):
+        if pre_allocated is None: pre_allocated = set()
+        local_types = {}
+        call_return_types = {}
+        current_arena = None
+        for instr in instructions:
+            if self.source_mapping and instr.line > 0:
+                if instr.line != self.last_emitted_line or instr.filename != self.last_emitted_file:
+                    fname = instr.filename if instr.filename else "unknown"
+                    self.emit(f'#line {instr.line} "{fname}"')
+                    self.last_emitted_line = instr.line
+                    self.last_emitted_file = instr.filename
+
+            if isinstance(instr, Try):
+                self.emit("{")
+                self.indent_level += 1
+                self.emit("ZenExceptionContext ctx;")
+                self.emit("ctx.defer_depth = zen_defer_depth();")
+                self.emit("zen_exception_push(&ctx);")
+                self.emit("if (setjmp(ctx.buf) == 0) {")
+                self.indent_level += 1
+            elif isinstance(instr, Catch):
+                self.emit("zen_exception_pop();")
+                self.indent_level -= 1
+                self.emit("} else {")
+                self.indent_level += 1
+                self.emit("zen_exception_pop();")
+            elif isinstance(instr, EndTry):
+                self.indent_level -= 1
+                self.emit("}")
+                self.indent_level -= 1
+                self.emit("}")
+            elif isinstance(instr, Raise):
+                self.emit(f"zen_raise({instr.value});")
+            elif isinstance(instr, Enumerator):
+                # Enumerator definitions are handled globally in setup_global_structures
+                pass
+            elif isinstance(instr, ArenaCreate):
+                current_arena = instr.arena_id
+                if auto_arena:
+                    self.emit(f"ZenArena* {self.sanitize_name(instr.arena_id)} = zen_arena_create(0);")
+                    self.emit(f"zen_arena_push({self.sanitize_name(instr.arena_id)});")
+            elif isinstance(instr, ArenaReset):
+                self.emit(f"zen_arena_reset({self.sanitize_name(instr.arena_id)});")
+            elif isinstance(instr, ArenaFree):
+                if auto_arena:
+                    self.emit(f"zen_arena_pop();")
+                    self.emit(f"zen_arena_free({self.sanitize_name(instr.arena_id)});")
+            elif isinstance(instr, ArenaAlloc):
+                ctype = self.map_type(instr.type)
+                if instr.target not in pre_allocated:
+                    self.emit(f"ZenValue {instr.target};")
+                    self.emit(f"{instr.target} = Zen_nothing; // Region: {instr.arena_id}")
+                    pre_allocated.add(instr.target)
+            elif isinstance(instr, HeapAlloc):
+                if instr.target not in pre_allocated:
+                    self.emit(f"ZenValue {instr.target};")
+                    self.emit(f"{instr.target} = Zen_nothing; // Heap")
+                    pre_allocated.add(instr.target)
+            elif isinstance(instr, PointerCopy):
+                self.emit(f"{instr.dest} = {instr.src};")
+            elif isinstance(instr, (Alloc, HeapAlloc, ArenaAlloc)):
+                # Standard variable declaration
+                if not instr.target.startswith("tmp_"):
+                    self.emit(f"ZenValue {instr.target} = Zen_nothing;")
+                    pre_allocated.add(instr.target)
+                    
+                if instr.type:
+                    print(f"DEBUG [CG]: Alloc {instr.target} type={instr.type} ({type(instr.type)})")
+                    # Extract the most specific type name
+                    tname = "ZenValue"
+                    if hasattr(instr.type, "name") and instr.type.name:
+                         tname = str(instr.type.name)
+                    elif isinstance(instr.type, str):
+                         tname = instr.type
+                    
+                    if tname in ("None", "Variant", "Any", "ZenValue", "ZenList", "ZenString"):
+                         tname = "ZenObject"
+                    
+                    local_types[instr.target] = tname
+                    print(f"DEBUG [CG]: Associated {instr.target} with type {tname}")
+            elif isinstance(instr, (Move, PointerCopy)):
+                dest = instr.dest
+                print(f"DEBUG [CG]: {type(instr).__name__} dest={dest} src={instr.src}, src_in_call_return_types={instr.src in call_return_types}")
+                if instr.src in call_return_types:
+                    local_types[dest] = call_return_types[instr.src]
+                    print(f"DEBUG [CG]: {type(instr).__name__} {instr.src} -> {dest} promoted to {local_types[dest]}")
+                
+                if "." in dest:
+                    obj, prop_raw = dest.split(".", 1)
+                    prop = self.sanitize_name(prop_raw)
+                    if obj == "self":
+                        self.emit(f"self->{prop} = {instr.src};")
+                    else:
+                        tname = local_types.get(obj, "ZenObject")
+                        self.emit(f"((struct {tname}*){obj}.as.object)->{prop} = {instr.src};")
+                else:
+                    self.emit(f"{dest} = {instr.src};")
+            elif isinstance(instr, GetAttr):
+                prefix = ""
+                if instr.target not in pre_allocated and instr.target not in self.symbol_allocs:
+                    prefix = "ZenValue "
+                    pre_allocated.add(instr.target)
+                
+                if instr.obj == "self":
+                    self.emit(f"{prefix}{instr.target} = self->{self.sanitize_name(instr.prop)};")
+                elif instr.obj[0].isupper() and instr.prop[0].isupper() and instr.obj != "Sys":
+                    # ADT Variant Constant
+                    self.emit(f"{prefix}{instr.target} = ZenVariant_{instr.obj}_{instr.prop};")
+                else:
+                    tname = local_types.get(instr.obj, "ZenObject")
+                    # Don't sanitize prop if it's a path (dots)
+                    prop_path = instr.prop
+                    if "." not in prop_path: 
+                         prop_path = self.sanitize_name(prop_path)
+                    
+                    # If it's a method call, we might need a specific class name
+                    # But for GetAttr, we use the struct type
+                    self.emit(f"{prefix}{instr.target} = ((struct {tname}*){instr.obj}.as.object)->{prop_path};")
+            elif isinstance(instr, SetAttr):
+                if instr.obj == "self":
+                    self.emit(f"self->{self.sanitize_name(instr.prop)} = {instr.value};")
+                else:
+                    tname = local_types.get(instr.obj, "ZenObject")
+                    prop_path = instr.prop
+                    if "." not in prop_path: prop_path = self.sanitize_name(prop_path)
+                    self.emit(f"((struct {tname}*){instr.obj}.as.object)->{prop_path} = {instr.value};")
+            elif isinstance(instr, Nullify):
+                self.emit(f"{instr.target} = Zen_nothing;")
+            elif isinstance(instr, Compute):
+                variant_ops = {
+                    "+": "ZenValue_add", "-": "ZenValue_sub", "*": "ZenValue_mul", 
+                    "/": "ZenValue_div", "%": "ZenValue_mod", "**": "ZenValue_pow",
+                    "==": "ZenValue_equals", "!=": "ZenValue_not_equals", 
+                    "<": "ZenValue_less_than", ">": "ZenValue_greater_than",
+                    "<=": "ZenValue_less_than_or_equal", ">=": "ZenValue_greater_than_or_equal",
+                    "xor": "ZenValue_xor", "and": "ZenValue_and", "or": "ZenValue_or",
+                    "&": "ZenValue_bitwise_and", "|": "ZenValue_bitwise_or", "^": "ZenValue_bitwise_xor"
+                }
+                if instr.left == "":
+                    unary_ops = {"-": "ZenValue_neg", "not": "ZenValue_not", "~": "ZenValue_bitwise_not"}
+                    vop = unary_ops.get(instr.op, "ZenValue_neg")
+                else:
+                    vop = variant_ops.get(instr.op, "ZenValue_add")
+                
+                # Promotion logic
+                target_region = None
+                if instr.target in self.symbol_allocs:
+                     target_region = self.symbol_allocs[instr.target].region
+                
+                pushed = False
+                if target_region and target_region != current_arena and vop in ("ZenValue_add", "ZenString_concat"):
+                     # Only need to promote if it's an allocation
+                     # print(f"DEBUG [CG]: Promoting {instr.target} to {target_region} (current={current_arena})")
+                     if target_region == "global":
+                          self.emit("zen_arena_push(NULL);")
+                     else:
+                          name = self.sanitize_name(target_region)
+                          if not name.startswith("block_"):
+                               self.emit(f"zen_arena_push(({name}).as.arena);")
+                          else:
+                               self.emit(f"zen_arena_push({name});")
+                     pushed = True
+                
+                if instr.left == "":
+                    self.emit(f"{instr.target} = {vop}({instr.right});")
+                else:
+                    self.emit(f"{instr.target} = {vop}({instr.left}, {instr.right});")
+                
+                if pushed:
+                     self.emit("zen_arena_pop();")
+            elif isinstance(instr, RegionEnter):
+                self.emit(f"zen_arena_push(({instr.id}).as.arena);")
+            elif isinstance(instr, RegionExit):
+                self.emit("zen_arena_pop();")
+            elif isinstance(instr, Label):
+                self.emit(f"{instr.name}:;")
+            elif isinstance(instr, Assert):
+                msg = f'"{instr.message}"' if instr.message else "NULL"
+                self.emit(f"if (!({instr.condition}.as.boolean)) {{ fprintf(stderr, \"Assertion failed at %s:%d\\n\", \"{instr.filename}\", {instr.line}); exit(1); }}")
+            elif isinstance(instr, Jump):
+                self.emit(f"goto {instr.target};")
+            elif isinstance(instr, Branch):
+                # Extract boolean check. SMIRGenerator uses ZenValue operands.
+                self.emit(f"if (({instr.condition}).as.boolean) {{")
+                if instr.true_label:
+                    self.indent_level += 1
+                    self.emit(f"goto {instr.true_label};")
+                    self.indent_level -= 1
+                self.emit("}")
+                if instr.false_label:
+                    self.emit(f"else {{ goto {instr.false_label}; }}")
+            elif isinstance(instr, Return):
+                if instr.value and instr.value != "None":
+                    self.emit(f"return {instr.value};")
+                else:
+                    if self.current_function_name == "main":
+                        self.emit("return 0;")
+                    else:
+                        self.emit("return Zen_nothing;")
+            elif isinstance(instr, Call):
+                # Special case for print to map to ZenValue-aware IO_write
+                if instr.callee == "print":
+                    self.emit(f"IO_write({instr.args[0]});")
+                else:
+                    args_str = ", ".join(instr.args)
+                    callee_str = instr.callee
+                    
+                    # Core runtime mappings (even for direct calls)
+                    if callee_str == "List_from_args": callee_str = "ZenList_from_args"
+                    elif callee_str == "Map_from_args": callee_str = "ZenMap_from_args"
+                    elif callee_str == "Value_get_index": callee_str = "ZenValue_get_index"
+                    elif callee_str == "Value_set_index": callee_str = "ZenValue_set_index"
+                    elif callee_str == "Value_is_type_name": callee_str = "ZenValue_is_type_name"
+                    elif callee_str == "write": callee_str = "IO_write"
+
+                    if "." in callee_str:
+                        obj_name, prop_name = callee_str.split(".", 1)
+                        if obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file"):
+                            if prop_name in ("create_arena", "__builtin_create_arena"): callee_str = "Memory_create_arena"
+                            elif prop_name in ("free_arena", "__builtin_free_arena"): callee_str = "Memory_free_arena"
+                            elif prop_name in ("reset_arena", "__builtin_reset_arena"): callee_str = "Memory_reset_arena"
+                            elif prop_name in ("push_arena", "__builtin_push_arena"): callee_str = "Memory_push_arena"
+                            elif prop_name in ("pop_arena", "__builtin_pop_arena"): callee_str = "Memory_pop_arena"
+                            elif prop_name == "read":
+                                if obj_name == "__builtin_file": callee_str = "IO_read_file"
+                                else: callee_str = "IO_read"
+                            elif prop_name in ("write", "info", "warn", "error", "debug"):
+                                # Distinguish between __builtin and __builtin_output
+                                if obj_name == "__builtin":
+                                    if prop_name == "error": callee_str = "__builtin_error"
+                                    elif prop_name == "error_literal": callee_str = "__builtin_error_literal"
+                                    else: callee_str = f"{obj_name}_{prop_name}"
+                                else:
+                                    if prop_name == "write": callee_str = "IO_write"
+                                    else: callee_str = f"IO_{prop_name}"
+                            elif prop_name == "exists": callee_str = "IO_file_exists"
+                            elif prop_name == "error_literal": # Explicit for __builtin.error_literal
+                                callee_str = "__builtin_error_literal"
+                            else:
+                                callee_str = f"{obj_name}_{prop_name}"
+                        elif obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys":
+                             callee_str = f"ZenVariant_{obj_name}_{prop_name}"
+                        elif obj_name[0].isupper() and not prop_name[0].isupper():
+                             callee_str = f"{obj_name}_{self.sanitize_name(prop_name)}"
+                             if instr.args and (instr.args[0] == "self" or "self->" in instr.args[0]):
+                                  args_str = ", ".join([f"({obj_name}*)self"] + instr.args[1:])
+                        else:
+                            tname = local_types.get(obj_name, "ZenObject")
+                            callee_str = f"{tname}_{self.sanitize_name(prop_name)}"
+                            args_str = ", ".join([f"({tname}*){obj_name}.as.object"] + instr.args)
+                    else:
+                        callee_str = self.sanitize_name(callee_str)
+
+                    if callee_str in self.global_classes:
+                        if instr.target:
+                            call_return_types[instr.target] = callee_str
+                        callee_str = f"{callee_str}_{callee_str}"
+
+                    if instr.target:
+                         # Promotion logic for Call (Constructors)
+                         target_region = None
+                         if instr.target in self.symbol_allocs:
+                              target_region = self.symbol_allocs[instr.target].region
+                         
+                         pushed = False
+                         # Heuristic: only constructors or string/list/map producers need promotion push
+                         # For now, let's do it if target_region differs
+                         if target_region and target_region != current_arena:
+                              if target_region == "global":
+                                   self.emit("zen_arena_push(NULL);")
+                              else:
+                                   name = self.sanitize_name(target_region)
+                                   if not name.startswith("block_"):
+                                        self.emit(f"zen_arena_push(({name}).as.arena);")
+                                   else:
+                                        self.emit(f"zen_arena_push({name});")
+                              pushed = True
+
+                         # Avoid assigning void returns (like _init)
+                         if callee_str.endswith("_init"):
+                              self.emit(f"{callee_str}({args_str});")
+                         else:
+                              self.emit(f"{instr.target} = {callee_str}({args_str});")
+                         
+                         if pushed:
+                              self.emit("zen_arena_pop();")
+                    else:
+                         self.emit(f"{callee_str}({args_str});")
+            elif isinstance(instr, Load):
+                # source might be a literal (e.g. "1") or string "`hello`"
+                val = instr.source
+                if instr.type == "string" or (val.startswith("`") and val.endswith("`")):
+                    inner = val
+                    if inner.startswith("`") and inner.endswith("`"):
+                        inner = inner[1:-1]
+                    inner = inner.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                    val = f'zen_str("{inner}")'
+                elif instr.type in ("int", "Integer", "IntegerLite") or (val.isdigit() and instr.type != "bool"):
+                    val = f"zen_int({val})"
+                elif instr.type in ("decimal", "Decimal"):
+                    val = f"zen_float({val})"
+                elif instr.type in ("bool", "Boolean"):
+                    val = f"zen_bool({val})"
+                elif instr.type in ("rune", "Rune", "Character"):
+                    val = f"zen_int({val})"
+                elif val.startswith("'") and val.endswith("'"):
+                    val = f"zen_int({val})"
+                elif val == "true" or val == "false":
+                    val = f"zen_bool({val})"
+                
+                # Ensure the target exists in local_types even if it was just loaded
+                if instr.target not in pre_allocated and instr.target.startswith("tmp_"):
+                     self.emit(f"ZenValue {instr.target};")
+                     pre_allocated.add(instr.target)
+                
+                self.emit(f"{instr.target} = {val};")
+
+    def generate_lmir_block(self, node: ASTNode, filename: str = None, pre_allocated: List[str] = None, auto_arena: bool = True):
+        self.emit("// DEBUG: generate_lmir_block")
+        # 1. SMIR Gen
+        smir_gen = SMIRGenerator(filename=filename)
+        instructions = smir_gen.generate(node, pre_allocated_symbols=pre_allocated)
+        
+        # Populate symbol_allocs for this block
+        for instr in instructions:
+             if isinstance(instr, Alloc):
+                  self.symbol_allocs[instr.target] = instr
+        
+        # 2. SMIR Analyze
+        # We need the global region tree. It's in self.scope.global_region
+        if not self.scope:
+             # Fallback: create a dummy root if scope is missing (should not happen if type-checked)
+             from Checker.Scope import RegionNode
+             region_root = RegionNode("global")
+        else:
+             region_root = self.scope.global_region
+        
+        analyzer = SMIRAnalyzer(instructions, region_root)
+        analyzer.analyze()
+        
+        # 3. SMIR Lower
+        lowerer = SMIRLowerer(instructions)
+        lmir_instructions = lowerer.lower()
+        
+        # 4. Emit LMIR
+        # print(f"DEBUG [CG]: LMIR for block: {lmir_instructions}")
+        pre_allocated_set = set(pre_allocated) if pre_allocated else set()
+        self.emit_lmir(lmir_instructions, pre_allocated=pre_allocated_set, auto_arena=auto_arena)
+    def generate(self, program: Program, filename: str = None) -> str:
+        self.last_emitted_file = filename
         self.program = program
         self.scope = program.scope if hasattr(program, "scope") else None
         self.code = []
@@ -284,6 +655,7 @@ class Generator:
              elif isinstance(stmt, (ClassStatement, ObjectStatement)):
                   if stmt.name in seen_classes: continue
                   seen_classes.add(stmt.name)
+                  self.global_classes.add(stmt.name)
              elif isinstance(stmt, FunctionStatement):
                   # Only deduplicate global functions (not methods)
                   if stmt.name in seen_functions: continue
@@ -327,11 +699,6 @@ class Generator:
         self.setup_class_methods(program)
         self.generate_init_singletons()
 
-        # Insert collected global function code AFTER includes
-        # We'll find the first empty line or after last include
-        for func_code in self.global_functions_code:
-            self.code.append(func_code)
-
         has_main = False
         for func in self.global_functions:
             if func.name == "main":
@@ -353,6 +720,39 @@ class Generator:
                     self.singletons.append(statement)
             elif isinstance(statement, EnumeratorStatement):
                 self.generate_enumerator_statement(statement)
+
+    def generate_enumerator_statement(self, statement: EnumeratorStatement):
+        # 1. Generate the C enum typedef
+        self.emit(f"typedef enum {statement.name} {{")
+        self.indent_level += 1
+        for i, variant in enumerate(statement.members):
+            comma = "," if i < len(statement.members) - 1 else ""
+            self.emit(f"{statement.name}_{variant.name}{comma}")
+        self.indent_level -= 1
+        self.emit(f"}} {statement.name};")
+        self.emit("")
+
+        # 2. Generate variant constructors/globals
+        for variant in statement.members:
+            if not variant.params:
+                # Constant variant: ZenValue ZenVariant_SomeEnum_VariantName;
+                var_name = f"ZenVariant_{statement.name}_{variant.name}"
+                self.global_variables.append(f"ZenValue {var_name};")
+                self.global_functions_code.append(f"// Constant variant {var_name} defined globally and initialized in init_singletons")
+            else:
+                # Parameterized variant: function constructor
+                p_names = [f"p{i}" for i in range(len(variant.params))]
+                p_list = ", ".join([f"ZenValue {p}" for p in p_names])
+                func_name = f"ZenVariant_{statement.name}_{variant.name}"
+                
+                self.global_functions_code.append(f"ZenValue {func_name}({p_list}) {{\n"
+                                                 f"    return ZenValue_new_variant(zen_str(\"{statement.name}\"), zen_str(\"{variant.name}\"), {len(variant.params)}, {', '.join(p_names)});\n"
+                                                 f"}}\n")
+                
+                # Mock a function for metadata
+                class DummyFunc:
+                    def __init__(self, name): self.name = name
+                self.global_functions.append(DummyFunc(func_name))
 
     def generate_class_declaration(self, statement: Union[ClassStatement, ObjectStatement]):
         # Cache members for inheritance
@@ -437,7 +837,7 @@ class Generator:
 
     def generate_method_statement(self, class_name: str, method: FunctionStatement):
         # Mangled name: Class_method
-        method_name = f"{class_name}_{method.name}"
+        method_name = f"{class_name}_{self.sanitize_name(method.name)}"
         old_class = self.current_class
         self.current_class = class_name
         
@@ -463,7 +863,9 @@ class Generator:
 
         self.current_function = method
         
-        self.generate_block_statement(method.block)
+        # MIR Body Generation
+        param_names = ["self"] + [p.name for p in method.parameters]
+        self.generate_lmir_block(method.block, filename=self.last_emitted_file, pre_allocated=param_names, auto_arena=(class_name != "Arena"))
         
         # Cleanup
         self.emit(f"zen_defer_run_to(__meth_defer_{temp_id});")
@@ -506,9 +908,9 @@ class Generator:
         arg_str = ", ".join(args)
         if arg_str: arg_str = ", " + arg_str
 
-        self.emit(f"void* {statement.name}_{statement.name}({param_str}) {{")
+        self.emit(f"ZenValue {statement.name}_{statement.name}({param_str}) {{")
         self.indent_level += 1
-        self.emit(f"struct {statement.name}* self = malloc(sizeof(struct {statement.name}));")
+        self.emit(f"struct {statement.name}* self = zen_malloc(sizeof(struct {statement.name}));")
         self.emit(f"memset(self, 0, sizeof(struct {statement.name}));")
         
         # Call init if exists (potentially from parent)
@@ -518,7 +920,7 @@ class Generator:
             else:
                  self.emit(f"{init_class_name}_init(({init_class_name}*)self{arg_str});")
             
-        self.emit("return self;")
+        self.emit("return zen_val_object(self);")
         self.indent_level -= 1
         self.emit("}")
         self.emit("")
@@ -526,14 +928,38 @@ class Generator:
     def generate_init_singletons(self):
         self.emit("void init_singletons() {")
         self.indent_level += 1
+        
+        # Initialize Constant Enum Variants
+        for stmt in self.program.statements:
+             if isinstance(stmt, EnumeratorStatement):
+                  for variant in stmt.members:
+                       if not variant.params:
+                            var_name = f"ZenVariant_{stmt.name}_{variant.name}"
+                            self.emit(f"{var_name} = ZenValue_new_variant(zen_str(\"{stmt.name}\"), zen_str(\"{variant.name}\"), 0);")
+
         for obj in self.singletons:
             for member in obj.members:
                 if not isinstance(member, FunctionStatement):
                     val = self.generate_expression(member.value)
                     self.emit(f"{obj.name}_inst.{member.name} = {val};")
+        
+        for code in self.init_singletons_code:
+            self.emit(code)
+
         self.indent_level -= 1
         self.emit("}")
         self.emit("")
+
+    def get_mangled_name(self, statement: Union[FunctionStatement, ClassStatement, ObjectStatement, EnumeratorStatement]) -> str:
+        name = self.sanitize_name(statement.name)
+        if not hasattr(statement, "filename") or not statement.filename or not self.last_emitted_file:
+             return name
+             
+        if os.path.basename(statement.filename) != os.path.basename(self.last_emitted_file):
+             module_name = os.path.basename(statement.filename).replace(".zl", "")
+             if module_name not in ("bootstrap_runtime"):
+                  return f"{module_name}_{name}"
+        return name
 
     def setup_runtime(self):
         pass
@@ -548,20 +974,28 @@ class Generator:
                 self.emit(f"typedef struct {statement.name} {statement.name};")
             elif isinstance(statement, EnumeratorStatement):
                 self.emit(f"typedef enum {statement.name} {statement.name};")
+                # Forward declare constructors
+                for variant in statement.members:
+                     var_name = f"ZenVariant_{statement.name}_{variant.name}"
+                     if not variant.params:
+                          self.emit(f"extern ZenValue {var_name};")
+                     else:
+                          p_list = ", ".join(["ZenValue" for _ in variant.params])
+                          self.emit(f"ZenValue {var_name}({p_list});")
 
         # Second pass: constructors and methods and functions
         for statement in program.statements:
             if isinstance(statement, FunctionStatement):
                 params = self.generate_parameters(statement)
                 rtype = self.get_function_return_type(statement)
-                name = self.sanitize_name(statement.name)
+                name = self.get_mangled_name(statement)
                 self.emit(f"{rtype} {name}({params});")
             elif isinstance(statement, (ClassStatement, ObjectStatement)):
                 # Forward declare constructor (both styles)
                 init_method = next((m for m in getattr(statement, 'methods', []) if m.name == "init"), None)
                 constr_params = self.generate_parameters(init_method) if init_method else ""
-                self.emit(f"void* {statement.name}_constructor({constr_params});")
-                self.emit(f"void* {statement.name}_{statement.name}({constr_params});")
+                self.emit(f"ZenValue {statement.name}_constructor({constr_params});")
+                self.emit(f"ZenValue {statement.name}_{statement.name}({constr_params});")
                 
                 # Forward declare methods
                 methods = getattr(statement, "methods", [])
@@ -595,8 +1029,9 @@ class Generator:
         return "ZenValue"
 
     def setup_global_functions(self, program: Program) -> None:
-        # Structures moved to setup_global_structures
-
+        for code in self.global_functions_code:
+            self.emit(code)
+        self.emit("")
         for statement in program.statements:
             if (
                 isinstance(statement, FunctionStatement)
@@ -624,14 +1059,18 @@ class Generator:
                 self.global_variables.append(statement)
                 self.global_variable_names.add(statement.name)
                 # Generate directly into main code, but ensure it's before any functions that might use it
-                self.generate_statement(statement)
+                code = self.generate_statement(statement)
+                if code: self.emit(code)
             elif isinstance(statement, ImportStatement):
                 self.global_variable_names.add(statement.alias or statement.name)
             elif isinstance(statement, FromImportStatement):
                 for symbol in statement.symbols:
                     self.global_variable_names.add(symbol["alias"] or symbol["name"])
-            # ReassignmentStatement removed from globals (invalid in C)
-
+        
+        for var in self.global_variables:
+            if isinstance(var, str):
+                self.emit(var)
+        
         self.emit()
 
     def generate_script_main(self, program: Program):
@@ -644,10 +1083,19 @@ class Generator:
             for init_code in self.global_initializers:
                 self.emit(init_code)
 
-        for statement in program.statements:
-            if isinstance(statement, (ReassignmentStatement, ExpressionStatement, WhenStatement, DoStatement, ScopeStatement, ReturnStatement)):
-                self.generate_statement(statement)
-            
+        # Filter for only non-definition statements from the main file to put into main
+        script_statements = []
+        for stmt in program.statements:
+            # ONLY include statements from the actual script file
+            if hasattr(stmt, "filename") and stmt.filename != self.last_emitted_file:
+                continue
+            if not isinstance(stmt, (FunctionStatement, ClassStatement, ObjectStatement, EnumeratorStatement, StructureStatement, ImportStatement, FromImportStatement)):
+                script_statements.append(stmt)
+        
+        if script_statements:
+            temp_node = Program(statements=script_statements)
+            self.generate_lmir_block(temp_node, filename=self.last_emitted_file)
+        
         self.emit("zen_defer_run_to(0);")
         self.emit("return 0;")
         self.indent_level -= 1
@@ -656,6 +1104,7 @@ class Generator:
     ## Statements
 
     def generate_statement(self, statement: ASTNode):
+        self.emit_line_directive(statement)
         if isinstance(statement, AssignmentStatement):
             return self.generate_assignment_statement(statement)
 
@@ -802,8 +1251,8 @@ class Generator:
         self.emit("init_singletons();")
         self.emit("_Sys_init_args(argc, argv);")
 
-        for statement in statement.block.statements:
-            self.generate_statement(statement)
+        param_names = [p.name for p in statement.parameters]
+        self.generate_lmir_block(statement.block, filename=self.last_emitted_file, pre_allocated=param_names)
 
         self.emit("zen_defer_run_to(base_defer);")
         self.emit("return 0;")
@@ -812,7 +1261,7 @@ class Generator:
 
     def generate_function_statement(self, statement: FunctionStatement):
         self.current_function = statement
-        name = self.sanitize_name(statement.name)
+        name = self.get_mangled_name(statement)
         params = self.generate_parameters(statement)
         rtype = self.get_function_return_type(statement)
         if statement.name == "main": rtype = "int"
@@ -826,7 +1275,9 @@ class Generator:
         self.emit(f"int __func_defer_{temp_id} = zen_defer_depth();")
         self.scope_defer_stack.append(f"__func_defer_{temp_id}")
         
-        self.generate_block_statement(statement.block)
+        # MIR Body Generation
+        param_names = [p.name for p in statement.parameters]
+        self.generate_lmir_block(statement, filename=self.last_emitted_file, pre_allocated=param_names)
         
         # Final cleanup for function return falling through
         self.emit(f"zen_defer_run_to(__func_defer_{temp_id});")
@@ -876,15 +1327,39 @@ class Generator:
              
         # Use ZEN_VAL_* macros for literals to allow constant initialization
         if ctype == "ZenValue" and self.indent_level == 0:
+             is_constant = False
              if isinstance(statement.value, IntegerLiteral):
                   value = f"ZEN_VAL_INT({statement.value.value})"
+                  is_constant = True
              elif isinstance(statement.value, BooleanLiteral):
                   val = 1 if str(statement.value.value).lower() in ("true", "1") else 0
                   value = f"ZEN_VAL_BOOL({val})"
+                  is_constant = True
              elif isinstance(statement.value, StringLiteral):
-                  value = f"ZEN_VAL_STR({value})"
-             elif value in ("0", "NULL", "zen_make_null()", "Zen_nothing"):
+                  s = statement.value.value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                  value = f'ZEN_VAL_STR("{s}")'
+                  is_constant = True
+             elif isinstance(statement.value, CallExpression):
+                  callee = statement.value.callee
+                  if isinstance(callee, MemberExpression) and callee.property in ("error", "error_literal"):
+                       obj_name = str(self.generate_expression(callee.object))
+                       if "__builtin" in obj_name and len(statement.value.arguments) > 0:
+                            msg_expr = statement.value.arguments[0]
+                            if isinstance(msg_expr, StringLiteral):
+                                 s = msg_expr.value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+                                 value = f'ZEN_VAL_ERROR("{s}")'
+                                 is_constant = True
+             
+             if is_constant:
+                  return f"static {ctype} {name} = {value};"
+              
+             if value in ("0", "NULL", "zen_make_null()", "Zen_nothing"):
                   value = "Zen_nothing"
+                  return f"static {ctype} {name} = {value};"
+
+             # Defer non-constant initialization to init_singletons
+             self.init_singletons_code.append(f"{name} = {value};")
+             return f"static {ctype} {name} = {{ZEN_NOTHING, {{0}}}};"
         elif ctype == "ZenValue" and (value == "0" or value == "NULL" or value == "zen_make_null()"):
             value = "zen_make_null()"
 
@@ -966,55 +1441,57 @@ class Generator:
              # Default to boxing if it looks like it might be ZenValue in the struct
              pass 
 
+        # Resolve path recursively for inheritance
+        path = f".{prop}"
+        if hasattr(ltype, "members"):
+             path = self.resolve_member_path(ltype, prop)
+        
         # If it's a structure or class pointer, use ->
         sep = "."
         if obj == "self" or "->" in obj or "as.object" in obj or "as.any" in obj:
              sep = "->"
+             if path.startswith("."): path = path[1:] # Remove leading dot for ->
         else:
-             ctype = self.map_type(self.get_type(statement.callee))
+             ctype = self.map_type(ltype)
              if ctype and "*" in ctype:
                   sep = "->"
+                  if path.startswith("."): path = path[1:]
         
-        self.emit(f"{obj}{sep}{prop} = {val};")
+        self.emit(f"{obj}{sep}{path} = {val};")
 
 
-    def generate_enumerator_statement(self, statement: EnumeratorStatement):
-        self.emit(f"typedef enum {statement.name} {{")
-        self.indent_level += 1
-        for i, member in enumerate(statement.members):
-            # members might be MemberLiteral objects
-            member_name = member
-            if hasattr(member, "name"):
-                member_name = member.name
-                
-            comma = "," if i < len(statement.members) - 1 else ""
-            self.emit(f"{statement.name}_{member_name}{comma}")
-        self.indent_level -= 1
-        self.emit(f"}} {statement.name};")
-        self.emit("")
 
 
-    def resolve_member_path(self, object_type: TypeClass, member_name: str) -> str:
+    def resolve_member_path(self, object_type: Any, member_name: str) -> str:
         """
-        Returns access path string like '.x' or '.parent.x'
+        Resolves the C member path for a logical member in a class/structure,
+        accounting for inheritance via '.base'.
         """
         current = object_type
-        path = ""
+        prefix = ""
         while current:
-             # Check if member is in current class
-             # Note: TypeClass.members is a dict
-             if member_name in current.members:
-                 return path + "." + member_name
-             
-             # Move to parent
-             if current.parent:
-                 path += ".parent"
-                 current = current.parent
-             else:
+            # Check members
+            members = getattr(current, "members", {})
+            if isinstance(members, list):
+                 if any(m.name == member_name for m in members if hasattr(m, "name")):
+                      return prefix + "." + member_name
+            elif member_name in members:
+                 return prefix + "." + member_name
+            
+            # Move up the inheritance chain
+            parent = getattr(current, "parent", None)
+            if parent:
+                 prefix += ".base"
+                 if isinstance(parent, str):
+                      p_obj = self.class_parents.get(parent)
+                      if p_obj: current = p_obj
+                      else: break
+                 else:
+                      current = parent
+            else:
                  break
         
-        # Fallback (maybe it's a method call handled elsewhere, or error)
-        return path + "." + member_name
+        return "." + member_name # Fallback
 
     ## Expression
 
@@ -1115,7 +1592,7 @@ class Generator:
     def generate_list_literal(self, expression: ListLiteral) -> str:
         items = [self.generate_expression(el.value) for el in expression.elements]
         args_str = ", " + ", ".join(items) if items else ""
-        return f"zen_val_list(ZenList_from_args({len(items)}{args_str}))"
+        return f"ZenList_from_args({len(items)}{args_str})"
 
     def generate_index_expression(self, expression: IndexExpression):
         list_expr = self.generate_expression(expression.object)
@@ -1134,13 +1611,19 @@ class Generator:
         if isinstance(expression, ListLiteral):
             return self.generate_list_literal(expression)
 
-        if isinstance(expression, DictionaryLiteral):
-            return self.generate_dictionary_literal(expression)
+        if isinstance(expression, MapLiteral):
+            return self.generate_map_literal(expression)
 
-        if isinstance(expression, (VectorLiteral, SetLiteral, TupleLiteral)):
-            # Fallback for now - C bootstrap doesn't support complex collection literals yet
-            # but we allow it to compile as a null pointer.
-            return "zen_make_null()"
+        if isinstance(expression, VectorLiteral):
+            return self.generate_list_literal(expression)
+
+        if isinstance(expression, SetLiteral):
+            # C bootstrap uses ZenMap for sets internally in some versions, or ZenList.
+            # For now, let's use ZenList as a fallback for the literal.
+            return self.generate_list_literal(expression)
+
+        if isinstance(expression, TupleLiteral):
+            return self.generate_list_literal(expression)
 
         if isinstance(expression, IntegerLiteral):
             return f"zen_int({expression.value})"
@@ -1178,7 +1661,7 @@ class Generator:
                 return name
             
             if expression.symbol is None:
-                if name.isidentifier() and not name.startswith("__"):
+                if name.isidentifier() and (not name.startswith("__") or name in ("__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_input")):
                     return name
                 return f'ZEN_VAL_STR("{name}")'
             
@@ -1186,7 +1669,7 @@ class Generator:
                 expression.symbol.scope_level == 0 and 
                 hasattr(self, 'global_variable_names') and
                 name not in self.global_variable_names):
-                if name.isupper() or name in ("IO", "s", "Str", "Sys", "TokenModule", "ASTModule", "ASTKind", "SymbolKind", "TokenType"):
+                if name.isupper() or name in ("IO", "s", "Str", "Sys", "TokenModule", "ASTModule", "ASTKind", "SymbolKind", "TokenType", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file"):
                     return name
                 return f'ZEN_VAL_STR("{name}")'
 
@@ -1352,38 +1835,44 @@ class Generator:
                   if class_name == "String": class_name = "ZenString"
         
         # Static Access (Enums) fallback
-        if hasattr(obj_type, 'name') and obj_type.name == "Enumerator":
-             enum_name = expression.object.name if hasattr(expression.object, "name") else str(obj_type)
-             return f"zen_int({enum_name}_{prop_name})"
+        if hasattr(obj_type, 'name') and (obj_type.name == "Enumerator" or obj_type.name == "ADT"):
+             return f"ZenVariant_{obj_name}_{prop_name}"
         
-        # Inheritance / Heuristic Fallbacks
-        if class_name == "void" or class_name == "Dog":
-             if prop_name in ("name", "age", "species"): # Known Animal (base) members
-                  class_name = "Animal"
+        # Handle ZEN_VAL_STR("Enum").Variant
+        if obj_name.startswith('ZEN_VAL_STR("') and obj_name.endswith('")'):
+             actual_obj = obj_name[13:-2]
+             if actual_obj[0].isupper() and prop_name[0].isupper():
+                  return f"ZenVariant_{actual_obj}_{prop_name}"
+
+        if obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys":
+             return f"ZenVariant_{obj_name}_{prop_name}"
         
-        if class_name == "void":
-             # Try to resolve class_name from the object type name if it's a known static identifier
-             if hasattr(expression.object, "name"):
-                  name = expression.object.name
-                  if name and name[0].isupper():
-                       class_name = name
+        # Inheritance resolution
+        path = f".{prop_name}"
+        if hasattr(obj_type, "members"):
+             path = self.resolve_member_path(obj_type, prop_name)
+        
+        # Handle self and specialized types
+        if obj_name == "self":
+             if path.startswith("."): path = path[1:]
+             return f"self->{path}"
              
-             # Final Test fallbacks
-             if obj_name == "p": class_name = "Point"
-             if obj_name == "d": class_name = "Dog"
-             if obj_name == "a": class_name = "Animal"
+        if class_name == "ZenList" and prop_name == "length":
+             return f"ZenList_length((ZenList*)({obj_name}).as.list)"
+
+        # Fallback to casted object access
+        if path.startswith("."): path = path[1:]
+        # Fallback to casted object access
+        if path.startswith("."): path = path[1:]
+        if class_name == "void" or class_name == "ZenObject":
+             # Try harder to find the specific class type
+             rtype = getattr(expression.object, "resolved_type", None)
+             if rtype and hasattr(rtype, "name") and rtype.name:
+                  class_name = str(rtype.name)
         
-        if class_name == "void" or class_name == "Object":
-             # Avoid using complex expressions as struct names
-             fallback_struct = obj_name if obj_name.isidentifier() and obj_name[0].isupper() else "ZenObject"
-             return f"((struct {fallback_struct}_struct*)({obj_name}).as.object)->{prop_name}"
+        if class_name == "void": class_name = "ZenObject" # Final fallback
         
-        if class_name == "ZenList":
-             if prop_name == "length":
-                  return f"ZenList_length((ZenList*)({obj_name}).as.list)"
-             return f"((ZenList*)({obj_name}).as.list)->{prop_name}"
-             
-        return f"(({class_name}*)({obj_name}).as.object)->{prop_name}"
+        return f"(({class_name}*)({obj_name}).as.object)->{path}"
 
     def generate_call_expression(self, expression: CallExpression):
         callee = expression.callee
@@ -1405,6 +1894,10 @@ class Generator:
             if name == "len": return f"ZenList_length((ZenList*)({args[0]}).as.list)"
             if name == "str" or name == "zl_str": return f"ZenValue_str({args[0]})"
             if name == "int" or name == "zl_int": return f"ZenValue_int({args[0]})"
+            if name == "write": return f"zl_write({args[0]})" # Wait, actually keep zl_write if it works, but I think it returns void.
+            # actually let's use zl_write but ensure it's declared.
+            # NO, let's use IO_write.
+            if name == "write": return f"IO_write({args[0]})"
             
             if name == "read" or name == "IO_read": return f"IO_read_file(ZenString_str({args[0]}))"
             
@@ -1424,24 +1917,35 @@ class Generator:
             if hasattr(callee.property, 'value'): prop_name = str(callee.property.value)
             
             # 0. HIGHEST PRIORITY: Built-in IO/Sys objects
-            if "builtin_output" in obj_name or obj_name == "out":
+            if obj_name in ("__builtin_output", "out"):
                 if prop_name in ("write", "info", "warn", "error", "debug"):
-                    return f"IO_write({args[0]})"
-            if "builtin_input" in obj_name or obj_name == "in":
+                    if prop_name == "write": return f"IO_write({args[0]})"
+                    return f"IO_{prop_name}({args[0]})"
+            if obj_name in ("__builtin_input", "in"):
                 if prop_name == "read": return f"IO_read_file({args[0]})"
-            if "builtin_file" in obj_name or obj_name == "File":
+            if obj_name in ("__builtin_file", "File"):
                 if prop_name == "exists": return f"IO_file_exists(ZenValue_str({args[0]}))"
                 if prop_name == "write": return f"IO_write_file({args[0]}, {args[1]})"
                 if prop_name == "read": return f"IO_read_file({args[0]})"
-            if "builtin_sys" in obj_name or obj_name == "Sys":
+            if obj_name in ("__builtin_sys", "Sys"):
                 if prop_name == "get_args": return "Sys_get_args()"
                 if prop_name == "exit": return f"Sys_exit((int)({args[0]}).as.integer)"
                 if prop_name == "get_env": return f"Sys_get_env(ZenString_str({args[0]}))"
+            
+            if obj_name == "__builtin":
+                if prop_name == "error":
+                    return f"__builtin_error({args[0]})"
+                if prop_name == "error_literal":
+                    return f"__builtin_error_literal({args[0]})"
 
             # 0. Specialized Constructor/Static Check (Absolute Priority)
             name = f"{obj_name}_{prop_name}"
-            if prop_name == obj_name or (obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys"):
+            if prop_name == obj_name:
                  return f"zen_val_object({name}({', '.join(args)}))"
+            
+            if obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys":
+                 # ADT Variant Constructor
+                 return f"ZenVariant_{obj_name}_{prop_name}({', '.join(args)})"
 
             # String literal method calls (e.g., "str".length())
             if obj_name.startswith("ZEN_VAL_STR") and not any(b in obj_name for b in ("builtin_output", "builtin_input", "builtin_file", "builtin_sys")):
@@ -1459,7 +1963,7 @@ class Generator:
                 # In mangled methods, 'self' is passed as the first argument (pointer)
                 return f"{name}(self{', ' if args else ''}{', '.join(args)})"
             elif obj_name == "parent":
-                parent_class = self.class_parents.get(self.current_class, "ZenObject")
+                parent_class = getattr(self, "class_parents", {}).get(self.current_class, "ZenObject")
                 name = f"{parent_class}_{prop_name}"
                 # Cast self to parent type
                 return f"{name}(({parent_class}*)self{', ' if args else ''}{', '.join(args)})"
@@ -1489,6 +1993,20 @@ class Generator:
                 if prop_name == "get_args": return "Sys_get_args()"
                 if prop_name == "exit": return f"Sys_exit((int)({args[0]}).as.integer)"
                 if prop_name == "get_env": return f"Sys_get_env(ZenString_str({args[0]}))"
+
+            # 0d. Static Class Calls (Inheritance Support e.g. Animal.init(self, ...))
+            if obj_name in getattr(self, "class_parents", {}) or obj_name in getattr(self, "structure_members", {}):
+                name = f"{obj_name}_{prop_name}"
+                # If the first argument is 'self', pass the pointer
+                final_args = []
+                for i, arg in enumerate(args):
+                     if i == 0 and (arg == "self" or "self->" in arg):
+                          final_args.append(f"({obj_name}*)self")
+                     else:
+                          final_args.append(arg)
+                call_code = f"{name}({', '.join(final_args)})"
+                if prop_name == "init": return call_code # Constructors usually return void
+                return call_code
 
             # 0c. Better Method Resolution
             res_type = self.get_type(callee.object)
@@ -1572,13 +2090,20 @@ class Generator:
                 
                 return f"{name}({obj_name}{', ' if args else ''}{', '.join(args)})"
 
-            # 4. Built-in Modules (IO, Sys)
-            if obj_name in ("IO", "Sys", "string", "Str", "file", "__builtin_string", "__builtin_sys", "__builtin_io"):
+            # 4. Built-in Modules (IO, Sys, Memory)
+            if obj_name in ("IO", "Sys", "string", "Str", "file", "Memory", "__builtin_string", "__builtin_sys", "__builtin_io", "__builtin_memory"):
                  if prop_name == "write": return f"IO_write({args[0]})"
                  if prop_name == "read_file" or (obj_name == "file" and prop_name == "read"): return f"IO_read_file(ZenString_str({args[0]}))"
                  if prop_name == "get_args": return f"Sys_get_args()"
                  if prop_name == "exit": return f"Sys_exit((int)({args[0]}).as.integer)"
                  if prop_name == "length": return f"ZenString_length(ZenString_str({args[0]}))"
+                 
+                 # Memory Module
+                 if prop_name == "create_arena": return f"Memory_create_arena({args[0] if args else 'zen_int(0)'})"
+                 if prop_name == "free_arena": return f"Memory_free_arena({args[0]})"
+                 if prop_name == "reset_arena": return f"Memory_reset_arena({args[0]})"
+                 if prop_name == "push_arena": return f"Memory_push_arena({args[0]})"
+                 if prop_name == "pop_arena": return f"Memory_pop_arena()"
 
             # 2. Final Fallback (Module Static or Method Call)
             name = f"{obj_name}_{prop_name}"
@@ -1875,14 +2400,15 @@ class Generator:
         
         return f"zen_val_object(&{temp_name})"
 
-    def generate_dictionary_literal(self, expression: DictionaryLiteral) -> str:
+    def generate_map_literal(self, expression: MapLiteral) -> str:
         items = []
-        for entry in expression.entries:
-            items.append(self.generate_expression(entry["key"]))
-            items.append(self.generate_expression(entry["value"]))
-        
+        for el in expression.elements:
+            # el.name and el.value are ASTNodes. name represents the key.
+            items.append(self.generate_expression(el.name))
+            items.append(self.generate_expression(el.value))
+
         args_str = ", " + ", ".join(items) if items else ""
-        return f"zen_val_map(ZenMap_from_args({len(expression.entries)}{args_str}))"
+        return f"ZenMap_from_args({len(expression.elements)}{args_str})"
 
     def box_expression(self, expression: ASTNode, code: str) -> str:
         # Avoid double boxing

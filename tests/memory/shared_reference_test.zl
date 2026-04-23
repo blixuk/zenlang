@@ -1,0 +1,11 @@
+from zen.io import write
+
+class Person {
+    let name -> `Alice`
+}
+
+function main() {
+    let x -> Person()
+    let y -> x
+    write(x.name)
+}

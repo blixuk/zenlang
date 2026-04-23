@@ -1,0 +1,4 @@
+function main() {
+    let x -> `Hello from Phase 4`
+    print(x)
+}

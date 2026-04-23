@@ -8,12 +8,14 @@ import `lib/zen/string` as Str
 let sentinel : Token -> nothing
 
 class Parser {
-    let tokens: List
-    let curr_idx: Integer
+    let tokens : List
+    let curr_idx : Integer
+    let filename : String
 
-    function init(tokens: List) {
+    function init(tokens: List, filename: String) {
         self.tokens -> tokens
         self.curr_idx -> 0
+        self.filename -> filename
     }
 
 
@@ -30,47 +32,58 @@ class Parser {
     }
 
     function declaration() : Variant {
+        let doc_comment : Variant -> nothing
+        when self.check_token(TokenType.DOC_COMMENT) {
+             let doc_token : Token -> self.advance()
+             doc_comment -> doc_token.value
+             while self.check_token(TokenType.DOC_COMMENT) {
+                  let next_doc : Token -> self.advance()
+                  doc_comment -> doc_comment + `\n` + next_doc.value
+             }
+        }
+
+        let stmt : Variant -> nothing
+
         // Safe check for 'let' keyword
         when self.check_token(TokenType.KEYWORD) and self.peek().value = `let` {
              self.advance()
-             <- self.let_declaration()
+             stmt -> self.let_declaration()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `function` {
+             self.advance()
+             stmt -> self.function_declaration()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `structure` {
+             self.advance()
+             stmt -> self.structure_declaration()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `enumerator` {
+             self.advance()
+             stmt -> self.enumerator_declaration()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `class` {
+             self.advance()
+             stmt -> self.class_declaration()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `import` {
+             self.advance()
+             stmt -> self.import_statement()
+        } or when self.check_token(TokenType.KEYWORD) and self.peek().value = `from` {
+             self.advance()
+             stmt -> self.from_import_statement()
+        } or when self.match(TokenType.TYPE_LET) {
+             stmt -> self.let_declaration()
+        } or {
+             stmt -> self.statement()
         }
 
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `function` {
-             self.advance()
-             <- self.function_declaration()
+        when (doc_comment != nothing) {
+            when (stmt != nothing) {
+                when stmt.kind = ASTKind.FUNCTION_STATEMENT or
+                     stmt.kind = ASTKind.CLASS_STATEMENT or
+                     stmt.kind = ASTKind.STRUCTURE_STATEMENT or
+                     stmt.kind = ASTKind.ENUMERATOR_STATEMENT {
+                     stmt.doc_comment -> doc_comment
+                }
+            }
         }
 
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `structure` {
-             self.advance()
-             <- self.structure_declaration()
-        }
-
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `enumerator` {
-             self.advance()
-             <- self.enumerator_declaration()
-        }
-
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `class` {
-             self.advance()
-             <- self.class_declaration()
-        }
-        
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `import` {
-             self.advance()
-             <- self.import_statement()
-        }
-
-        when self.check_token(TokenType.KEYWORD) and self.peek().value = `from` {
-             self.advance()
-             <- self.from_import_statement()
-        }
-        
-        when self.match(TokenType.TYPE_LET) {
-             <- self.let_declaration()
-        }
-        
-        <- self.statement()
+        <- stmt
     }
 
     function statement() : Variant {
@@ -212,6 +225,7 @@ class Parser {
             parameters: parameters, 
             return_type: return_type,
             body: body,
+            doc_comment: nothing,
             line: keyword.line,
             column: keyword.column
         }
@@ -284,6 +298,7 @@ class Parser {
             parent: parent_class_token,
             members: members,
             methods: methods,
+            doc_comment: nothing,
             line: keyword.line,
             column: keyword.column
         }
@@ -321,6 +336,7 @@ class Parser {
             kind: ASTKind.STRUCTURE_STATEMENT,
             name: name,
             members: members,
+            doc_comment: nothing,
             line: keyword.line,
             column: keyword.column
         }
@@ -348,6 +364,7 @@ class Parser {
             kind: ASTKind.ENUMERATOR_STATEMENT,
             name: name,
             members: members,
+            doc_comment: nothing,
             line: keyword.line,
             column: keyword.column
         }
@@ -1338,7 +1355,7 @@ class Parser {
     function advance() : Token {
         when not self.is_at_end() {
              self.curr_idx -> self.curr_idx + 1
-        // IO.write(`DEBUG: Parser advanced to index ` + Str.str(self.curr_idx) + `\n`)
+        // IO.write(`DEBUG: Parser advanced to index ` + Str.to_string(self.curr_idx) + `\n`)
         }
         <- self.previous()
     }
@@ -1354,7 +1371,7 @@ class Parser {
     }
 
     function match(kind: TokenType) : Boolean {
-        // IO.write(`DEBUG: match(expected ` + Str.str(kind) + `)\n`)
+        // IO.write(`DEBUG: match(expected ` + Str.to_string(kind) + `)\n`)
         when self.check_token(kind) {
             self.advance()
             <- True
@@ -1372,9 +1389,10 @@ class Parser {
         let token : Token -> self.peek()
         let val : String -> ``
         when token.value != nothing {
-             val -> Str.str(token.value)
+             val -> Str.to_string(token.value)
         }
-        
+        IO.write(`[DEBUG Parser] [` + self.filename + `] Expected kind: ` + Str.to_string(kind) + ` but got: ` + Str.to_string(token.kind) + ` (value: ` + val + `) at line ` + Str.to_string(token.line) + `\n`)
+        IO.write(`[DEBUG Parser] Context (previous token): ` + self.previous().value + ` at line ` + Str.to_string(self.previous().line) + `\n`)
         IO.error(`[Parse Error] ` + message + ` (Token value: ` + val + `)`)
         
         // Force advance to avoid infinite loop on error, but this will likely cause cascading errors

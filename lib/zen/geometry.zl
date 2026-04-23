@@ -1,0 +1,62 @@
+/!
+ Minimal Geometry utility module.
+ Provides standard structures for points, rectangles, and sizes.
+ !/
+
+/!
+ Structure representing a 2D point.
+ !/
+structure Point {
+    x: Decimal,
+    y: Decimal
+}
+
+/!
+ Structure representing a 2D rectangle.
+ !/
+structure Rect {
+    x: Decimal,
+    y: Decimal,
+    w: Decimal,
+    h: Decimal
+}
+
+/!
+ Structure representing a 2D size.
+ !/
+structure Size {
+    w: Decimal,
+    h: Decimal
+}
+
+/!
+ Factory function for creating a Point.
+ @param x The x-coordinate.
+ @param y The y-coordinate.
+ @return A Point structure.
+ !/
+function point(x, y) {
+    <- Point { x -> x, y -> y }
+}
+
+/!
+ Factory function for creating a Rect.
+ @param x The x-coordinate.
+ @param y The y-coordinate.
+ @param w The width.
+ @param h The height.
+ @return A Rect structure.
+ !/
+function rectangle(x, y, w, h) {
+    <- Rect { x -> x, y -> y, w -> w, h -> h }
+}
+
+/!
+ Factory function for creating a Size.
+ @param w The width.
+ @param h The height.
+ @return A Size structure.
+ !/
+function size(w, h) {
+    <- Size { w -> w, h -> h }
+}

@@ -199,7 +199,7 @@ class Lexer:
                 self.make_operator()
 
             elif character == "/":
-                if self.peek(1) in ["/", "*"]:
+                if self.peek(1) in ["/", "*", "!"]:
                     self.make_comment()
                 else:
                     self.make_operator()
@@ -256,6 +256,8 @@ class Lexer:
             while (character := self.peek()) and character != "\n":
                 comment += character
                 self.advance()
+            
+            token_type = TokenType.COMMENT
 
         elif self.peek() == "/" and self.peek(1) == "*":
             self.advance()
@@ -269,13 +271,30 @@ class Lexer:
 
             self.advance()
             self.advance()
+            
+            token_type = TokenType.COMMENT
+
+        elif self.peek() == "/" and self.peek(1) == "!":
+            self.advance()
+            self.advance()
+
+            while (character := self.peek()) and not (
+                character == "!" and self.peek(1) == "/"
+            ):
+                comment += character
+                self.advance()
+
+            self.advance()
+            self.advance()
+            
+            token_type = TokenType.DOC_COMMENT
 
         else:
             self.make_operator()
             return
 
         self.add_token(
-            TokenType.COMMENT,
+            token_type,
             comment,
             start_line,
             start_column,
@@ -333,12 +352,18 @@ class Lexer:
         start_column: int = self.column_number
         separators: list[str] = [".", "_"]
 
-        while (character := self.peek()) and (
-            character.isdigit() or character in separators
-        ):
-            number += self.advance()
-
-            if character == ".":
+        while (character := self.peek()) is not None:
+            if character.isdigit():
+                number += self.advance()
+            elif character == "_":
+                self.advance()
+                continue
+            elif character == ".":
+                # Check for range operator '..'
+                if self.peek(1) == "." or not self.peek(1).isdigit():
+                    break
+                
+                number += self.advance()
                 dot_count += 1
                 if dot_count > 1:
                     snippet: str = self.get_snippet(
@@ -358,8 +383,8 @@ class Lexer:
                         start_column,
                         snippet,
                     )
-            elif character == "_":
-                continue
+            else:
+                break
 
         if dot_count == 1:
             self.add_token(
@@ -442,29 +467,16 @@ class Lexer:
             )
 
         self.advance()
-
-        if len(string) == 1:
-            self.add_token(
-                TokenType.RUNE,
-                string,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-            if prefix:
-                self.tokens[-1].prefix = prefix
-        else:
-            self.add_token(
-                TokenType.STRING,
-                string,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-            if prefix:
-                self.tokens[-1].prefix = prefix
+        self.add_token(
+            TokenType.STRING,
+            string,
+            start_line,
+            start_column,
+            self.line_number,
+            self.column_number,
+        )
+        if prefix:
+            self.tokens[-1].prefix = prefix
 
     def make_rune(self) -> None:
         rune: str | None = ""
@@ -722,14 +734,25 @@ class Lexer:
         start_column: int = self.column_number
 
         self.advance()
-        self.add_token(
-            TokenType.DOT,
-            ".",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
+        if self.peek() == ".":
+            self.advance()
+            self.add_token(
+                TokenType.RANGE,
+                "..",
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+        else:
+            self.add_token(
+                TokenType.DOT,
+                ".",
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
 
     def make_return(self) -> None:
         start_line: int = self.line_number

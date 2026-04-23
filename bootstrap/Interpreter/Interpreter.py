@@ -22,6 +22,17 @@ from Interpreter.Runtime import (
     StringCapability,
     FileCapability,
     SysCapability,
+    MemoryCapability,
+    TimeCapability,
+    ProcessCapability,
+    MapCapability,
+    SetCapability,
+    TermCapability,
+    RandomCapability,
+    VariantObject,
+    ProcessInstance,
+    FileInstance,
+    BuiltinCapability,
 )
 from Parser.AST import (
     AssignmentStatement,
@@ -33,12 +44,14 @@ from Parser.AST import (
     DoStatement,
     ElementLiteral,
     EnumeratorStatement,
+    EnumVariant,
     FunctionExpression,
     FunctionStatement,
     FromImportStatement,
     Identifier,
     ImportStatement,
     IndexExpression,
+    IndexReassignmentStatement,
     IntegerLiteral,
     IteratorLiteral,
     ListLiteral,
@@ -65,9 +78,21 @@ from Parser.AST import (
     BooleanLiteral,
     SetLiteral,
     VectorLiteral,
-    DictionaryLiteral,
+    MapLiteral,
     TupleLiteral,
     ExportStatement,
+    WithStatement,
+    InExpression,
+    LiteralPattern,
+    IdentifierPattern,
+    ListPattern,
+    MapPattern,
+    VariantPattern,
+    WildcardPattern,
+    IsMatchPattern,
+    Pattern,
+    CaseBranch,
+    IsExpression,
 )
 
 
@@ -133,7 +158,7 @@ class Interpreter:
             return None
  
         def _out_info(value):
-            print(f"\033[36m[INFO]\033[0m {value}")
+            print(f"\033[34m[INFO]\033[0m {value}")
             return None
  
         def _out_warn(value):
@@ -141,14 +166,15 @@ class Interpreter:
             return None
  
         def _out_error(value):
-            print(f"\033[31m[ERROR]\033[0m {value}")
+            import sys
+            print(f"\033[31m[ERROR]\033[0m {value}", file=sys.stderr)
             return None
  
         def _out_debug(value):
             if self.debugging:
                 print(f"\033[36m[DEBUG]\033[0m {value}")
             return None
- 
+
         out_obj = OutputStream("out", {
             "write": _out_write,
             "info": _out_info,
@@ -156,6 +182,21 @@ class Interpreter:
             "error": _out_error,
             "debug": _out_debug
         })
+
+        self.global_environment.define(
+            "__builtin_output", out_obj, mutable=False, type="OutputStream"
+        )
+
+        # Register '__builtin' object
+        def _builtin_error(msg):
+            raise RaiseException(msg)
+            
+        builtin_obj = BuiltinCapability("__builtin", {
+            "error": _builtin_error,
+            "error_literal": lambda msg: {"__type__": "Error", "message": msg},
+            "range": lambda start, end: list(range(start, end)),
+        })
+        self.global_environment.define("__builtin", builtin_obj, mutable=False, type="BuiltinCapability")
  
         self.global_environment.define("__builtin_output", out_obj, mutable=False, type="OutputStream")
         
@@ -174,10 +215,21 @@ class Interpreter:
             "to_upper": lambda s: s.upper(),
             "index_of": lambda s, sub: s.find(sub),
             "at": lambda s, i: s[i] if 0 <= i < len(s) else "",
-            "str": lambda x: str(x),
+            "to_string": lambda x: str(x),
+            "to_number": lambda s: float(s) if '.' in s else int(s),
         })
  
         self.global_environment.define("__builtin_string", string_obj, mutable=False, type="StringCapability")
+
+        # Register 'memory' capability
+        memory_obj = MemoryCapability("memory", {
+            "create_arena": lambda size: None,
+            "free_arena": lambda a: None,
+            "reset_arena": lambda a: None,
+            "push_arena": lambda a: None,
+            "pop_arena": lambda: None,
+        })
+        self.global_environment.define("__builtin_memory", memory_obj, mutable=False, type="MemoryCapability")
         self.global_environment.define("string", string_obj, mutable=False, type="StringCapability")
  
         # Register 'file' capability
@@ -185,20 +237,30 @@ class Interpreter:
             with open(path, 'r') as f:
                 return f.read()
  
-        def write_file(path, content):
-            with open(path, 'w') as f:
+        def write_file(path, content, mode='w'):
+            with open(path, mode) as f:
                 f.write(content)
                 return True
  
+        class FileInstanceObject(FileInstance):
+            def __init__(self, path, mode):
+                self.handle = open(path, mode)
+                super().__init__("File", {
+                    "read": lambda: self.handle.read(),
+                    "write": lambda v: self.handle.write(v),
+                    "close": lambda: self.handle.close(),
+                })
+
         def append_file(path, content):
             with open(path, 'a') as f:
                 f.write(content)
                 return True
  
         file_obj = FileCapability("file", {
+            "open": lambda path, mode="r": FileInstanceObject(path, mode),
             "read": read_file,
             "write": write_file,
-            "append": append_file,
+            "append": lambda path, content: write_file(path, content, 'a'),
             "exists": lambda path: os.path.exists(path),
             "remove": lambda path: os.remove(path) if os.path.exists(path) else None,
             "is_file": lambda path: os.path.isfile(path),
@@ -213,10 +275,139 @@ class Interpreter:
             "get_args": lambda: self.execution_arguments,
             "exit": lambda code=0: os._exit(code),
             "get_env": lambda key: os.environ.get(key, ""),
+            "get_cwd": lambda: os.getcwd(),
+            "platform": lambda: sys.platform,
+            "version": lambda: "0.1.0-bootstrap",
         })
  
         self.global_environment.define("__builtin_sys", sys_obj, mutable=False, type="SysCapability")
         self.global_environment.define("sys", sys_obj, mutable=False, type="SysCapability")
+
+        # Register 'time' capability
+        import time
+        time_obj = TimeCapability("time", {
+            "now": lambda: time.time(),
+            "monotonic": lambda: time.monotonic(),
+            "wallclock": lambda: time.time(),
+            "sleep": lambda s: time.sleep(s),
+        })
+        self.global_environment.define("__builtin_time", time_obj, mutable=False, type="TimeCapability")
+        self.global_environment.define("time", time_obj, mutable=False, type="TimeCapability")
+
+        # Register 'process' capability
+        import subprocess
+        
+        class ProcessInstanceObject(ProcessInstance):
+            def __init__(self, cmd, args):
+                self.proc = subprocess.Popen([cmd] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                super().__init__("Process", {
+                    "wait": lambda: self.proc.wait(),
+                    "get_stdout": lambda: self.proc.stdout.read(),
+                    "get_stderr": lambda: self.proc.stderr.read(),
+                    "get_code": lambda: self.proc.returncode,
+                    "kill": lambda: self.proc.kill(),
+                })
+
+        process_obj = ProcessCapability("process", {
+            "spawn": lambda cmd, args=[]: ProcessInstanceObject(cmd, args),
+            "run": lambda cmd, args=[]: subprocess.check_output([cmd] + args, text=True),
+            "get_id": lambda: os.getpid(),
+        })
+        self.global_environment.define("__builtin_process", process_obj, mutable=False, type="ProcessCapability")
+        self.global_environment.define("process", process_obj, mutable=False, type="ProcessCapability")
+
+        # Register 'math' capability
+        import math
+        math_obj = BuiltinCapability("math", {
+            "abs": lambda x: abs(x),
+            "sqrt": lambda x: math.sqrt(x),
+            "pow": lambda x, y: math.pow(x, y),
+            "sin": lambda x: math.sin(x),
+            "cos": lambda x: math.cos(x),
+            "floor": lambda x: math.floor(x),
+            "ceil": lambda x: math.ceil(x),
+            "pi": math.pi,
+            "e": math.e,
+        })
+        self.global_environment.define("__builtin_math", math_obj, mutable=False, type="MathCapability")
+
+        # Register 'dictionary' capability
+        map_obj = MapCapability("map", {
+            "keys": lambda d: list(d.keys()),
+            "values": lambda d: list(d.values()),
+            "has": lambda d, k: k in d,
+        })
+        self.global_environment.define("__builtin_map", map_obj, mutable=False, type="MapCapability")
+
+        # Register 'term' capability
+        def _term_color(fg=None, bg=None):
+            colors = {
+                "black": 0, "red": 1, "green": 2, "yellow": 3, "blue": 4, "magenta": 5, "cyan": 6, "white": 7
+            }
+            code = ""
+            if fg in colors:
+                code += f"\033[3{colors[fg]}m"
+            if bg in colors:
+                code += f"\033[4{colors[bg]}m"
+            if code:
+                print(code, end="")
+            return None
+
+        def _term_size():
+            import os
+            try:
+                size = os.get_terminal_size()
+                return {"width": size.columns, "height": size.lines}
+            except:
+                return {"width": 80, "height": 24}
+
+        term_obj = TermCapability("term", {
+            "clear": lambda: print("\033[2J\033[H", end=""),
+            "move": lambda x, y: print(f"\033[{y};{x}H", end=""),
+            "color": _term_color,
+            "reset": lambda: print("\033[0m", end=""),
+            "get_size": _term_size,
+        })
+        self.global_environment.define("__builtin_term", term_obj, mutable=False, type="TermCapability")
+
+        # Register 'set' capability
+        set_obj = SetCapability("set", {
+            "from_list": lambda l: set(l),
+            "to_list": lambda s: list(s),
+            "add": lambda s, v: s.add(v),
+            "has": lambda s, v: v in s,
+        })
+        self.global_environment.define("__builtin_set", set_obj, mutable=False, type="SetCapability")
+
+        # Register 'json' capability
+        import json
+        json_obj = SysCapability("json", {
+            "parse": lambda s: json.loads(s),
+            "stringify": lambda v: json.dumps(v),
+        })
+        self.global_environment.define("__builtin_json", json_obj, mutable=False, type="JSONCapability")
+        self.global_environment.define("json", json_obj, mutable=False, type="JSONCapability")
+
+        # Register 'random' capability
+        import random as py_random
+        
+        class RNGObject(BuiltinCapability):
+            def __init__(self, seed_val):
+                self.rng = py_random.Random(seed_val)
+                super().__init__("RNG", {
+                    "next": lambda: self.rng.random(),
+                    "integer": lambda min_val, max_val: self.rng.randint(min_val, max_val),
+                    "decimal": lambda min_val, max_val: self.rng.uniform(min_val, max_val),
+                    "range": lambda min_val, max_val: self.rng.randint(min_val, max_val) if isinstance(min_val, int) and isinstance(max_val, int) else self.rng.uniform(min_val, max_val),
+                })
+        
+        random_obj = RandomCapability("random", {
+            "seed": lambda s: RNGObject(s),
+            "integer": lambda min_val, max_val: py_random.randint(min_val, max_val),
+            "decimal": lambda min_val, max_val: py_random.uniform(min_val, max_val),
+            "range": lambda min_val, max_val: py_random.randint(min_val, max_val) if isinstance(min_val, int) and isinstance(max_val, int) else py_random.uniform(min_val, max_val),
+        })
+        self.global_environment.define("__builtin_random", random_obj, mutable=False, type="RandomCapability")
 
     def interpret(
         self,
@@ -381,6 +572,9 @@ class Interpreter:
         if node_type == "MemberReassignmentStatement":
             return self._evaluate_member_reassignment_statement(node, environment)
 
+        if node_type == "IndexReassignmentStatement":
+            return self._evaluate_index_reassignment_statement(node, environment)
+
         if node_type == "ExpressionStatement":
             return self._evaluate(node.expression, environment)
 
@@ -435,8 +629,11 @@ class Interpreter:
         if node_type == "ExportStatement":
             return self._evaluate_export_statement(node, environment)
 
+        if node_type == "WithStatement":
+            return self._evaluate_with_statement(node, environment)
+
         if node_type == "BreakStatement":
-             print("DEBUG [Interpreter]: Executing break statement")
+             # print("DEBUG [Interpreter]: Executing break statement")
              raise RuntimeBreak()
         
         if node_type == "ContinueStatement":
@@ -474,6 +671,12 @@ class Interpreter:
         if node_type == "ParentExpression":
             return self._evaluate_parent_expression(node, environment)
 
+        if node_type == "InExpression":
+            return self._evaluate_in_expression(node, environment)
+
+        if node_type == "IsExpression":
+            return self._evaluate_is_expression(node, environment)
+
         # Operations
         if node_type == "BinaryOperation":
             left: any = self._evaluate(node.left, environment)
@@ -491,11 +694,12 @@ class Interpreter:
                 return bool(right)
 
             right: any = self._evaluate(node.right, environment)
-            return self._evaluate_binary_operation(node.operator, left, right)
+            return self._evaluate_binary_operation(op_str, left, right)
 
         if node_type == "UnaryOperation":
             right: any = self._evaluate(node.right, environment)
-            return self._evaluate_unary_operation(node.operator, right)
+            op = getattr(node.operator, "value", node.operator)
+            return self._evaluate_unary_operation(str(op), right)
 
         # Literals
 
@@ -513,9 +717,9 @@ class Interpreter:
 
         if node_type == "BooleanLiteral":
             val = getattr(node, "value")
-            if val == "true":
+            if val in ["true", "True"]:
                 return True
-            if val == "false":
+            if val in ["false", "False"]:
                 return False
             return val
 
@@ -525,8 +729,8 @@ class Interpreter:
         if node_type == "VectorLiteral":
             return self._evaluate_vector_literal(node, environment)
 
-        if node_type == "DictionaryLiteral":
-            return self._evaluate_dictionary_literal(node, environment)
+        if node_type == "MapLiteral":
+            return self._evaluate_map_literal(node, environment)
 
         if node_type == "SetLiteral":
             return self._evaluate_set_literal(node, environment)
@@ -542,7 +746,7 @@ class Interpreter:
             return node.value
 
         if node_type == "NothingLiteral":
-            return node.value
+            return None
 
         if node_type == "IntegerLiteral":
             return int(node.value)
@@ -618,16 +822,16 @@ class Interpreter:
         if not os.path.exists(full_path) and os.path.exists(full_path + ".zl"):
             full_path += ".zl"
         
-        print(f"DEBUG [Interpreter]: Loading module from {full_path}")
-        
-        if not os.path.exists(full_path):
-             raise RuntimeError(f"Module not found: {path} (checked {full_path}) Caller: {caller_path} CurrentDir: {current_dir} Full: {os.path.abspath(full_path)}")
-
         # 1.5 Check Cache
         if full_path in self.modules:
             if self.debugging:
                 print(f"DEBUG [Interpreter]: Returning cached module for {full_path}")
             return self.modules[full_path]
+        
+        print(f"DEBUG [Interpreter]: Loading module from {full_path}")
+        
+        if not os.path.exists(full_path):
+             raise RuntimeError(f"Module not found: {path} (checked {full_path}) Caller: {caller_path} CurrentDir: {current_dir} Full: {os.path.abspath(full_path)}")
 
         # 2. Read Source
         try:
@@ -646,15 +850,16 @@ class Interpreter:
         if self.debugging:
             print(f"DEBUG: Parsed module '{alias}' from '{full_path}': {stmt_count} statements. Types: {stmt_types}")
 
-        # 4. Create Module Environment
+        # 4. Create Module Environment and ModuleObject
         module_env = Environment(parent=self.global_environment, file_path=full_path)
+        result = ModuleObject(alias, module_env)
         
+        # 1.5.5 Register in cache BEFORE execution to handle circular imports
+        self.modules[full_path] = result
+
         # 5. Execute Module
         self._evaluate_program(module_ast, module_env)
         
-        # 6. Export as ModuleObject
-        result = ModuleObject(alias, module_env)
-        self.modules[full_path] = result
         return result
 
     def _evaluate_assignment_statement(
@@ -724,9 +929,31 @@ class Interpreter:
             return value
 
         print(f"DEBUG: Member Reassignment ERROR. Object: {object} (type={type(object)}). Member: {member_name}")
+        print(f"DEBUG: Node: {node.callee} (line={getattr(node, 'line', '?')}, col={getattr(node, 'column', '?')})")
         raise RuntimeError(
             f"Cannot assign to member '{member_name}' of non-structure/non-instance object"
         )
+
+    def _evaluate_index_reassignment_statement(
+        self, node: IndexReassignmentStatement, environment: Environment
+    ):
+        object_val: BaseObject | list | dict = self._evaluate(node.callee, environment)
+        index_val: any = self._evaluate(node.index, environment)
+        value: any = self._evaluate(node.value, environment)
+
+        if isinstance(object_val, list):
+            if not isinstance(index_val, int):
+                raise RuntimeError(f"Index must be an integer for List, got {type(index_val).__name__}")
+            if index_val < 0 or index_val >= len(object_val):
+                 raise RuntimeError(f"Index out of bounds: {index_val}")
+            object_val[index_val] = value
+            return value
+        
+        if isinstance(object_val, dict):
+             object_val[index_val] = value
+             return value
+
+        raise RuntimeError(f"Cannot assign by index to object of type {type(object_val)}")
 
     def _evaluate_block_statement(
         self, node: BlockStatement, environment: Environment
@@ -759,7 +986,39 @@ class Interpreter:
         finally:
             if hasattr(new_environment, "defers"):
                 for defer_node in reversed(new_environment.defers):
-                    self._evaluate(defer_node.block, environment) # Use outer env or new_environment? Spec usually says outer.
+                    self._evaluate(defer_node.body, environment) # Use outer env or new_environment? Spec usually says outer.
+
+    def _evaluate_with_statement(self, node: WithStatement, environment: Environment) -> any:
+        # 1. Evaluate the resource (e.g. Region())
+        resource = self._evaluate(node.expression, environment)
+        
+        # 2. If it's an Arena/Region object, push it
+        if hasattr(resource, "get_member"):
+            try:
+                push_fn = resource.get_member("push")
+                if push_fn:
+                    self._call_function(push_fn, [])
+            except:
+                pass
+
+        # 3. Create nested environment
+        new_env = Environment(parent=environment)
+        if node.alias:
+            new_env.define(node.alias, resource, False, "resource")
+            
+        try:
+            # 4. Evaluate the block
+            result = self._evaluate(node.body, new_env)
+            return result
+        finally:
+            # 5. Pop if we pushed
+            if hasattr(resource, "get_member"):
+                try:
+                    pop_fn = resource.get_member("pop")
+                    if pop_fn:
+                        self._call_function(pop_fn, [])
+                except:
+                    pass
 
     def _evaluate_function_statement(
         self, node: FunctionStatement, environment: Environment
@@ -767,7 +1026,7 @@ class Interpreter:
         function_object: FunctionObject = FunctionObject(
             name=node.name,
             parameters=node.parameters,
-            block=node.block,
+            body=node.body,
             closure=environment,
             return_type=getattr(node, "resolved_type", None)
             or getattr(node, "inferred_return_type", None),
@@ -837,7 +1096,7 @@ class Interpreter:
              function_object = FunctionObject(
                 name=method_ast.name,
                 parameters=method_ast.parameters,
-                block=method_ast.block,
+                body=method_ast.body,
                 closure=environment, # Closure is where class is defined
                 return_type=getattr(method_ast, "resolved_type", None)
              )
@@ -853,23 +1112,41 @@ class Interpreter:
     ) -> any:
         members: dict = {}
 
-        # new_environment = Environment(parent=environment)
+        for variant in node.members:
+            # variant is EnumVariant
+            variant_name = variant.name
+            params = variant.params
+            
+            if not params:
+                # Constant variant
+                members[variant_name] = {
+                    "type": "Variant",
+                    "value": VariantObject(node.name, variant_name, []),
+                    "mutable": False,
+                }
+            else:
+                # Variant with data needs a constructor
+                def make_constructor(e_name, v_name, v_params):
+                    def constructor(*args_eval):
+                        if len(args_eval) != len(v_params):
+                            raise Exception(
+                                f"Variant {v_name} expects {len(v_params)} arguments, got {len(args_eval)}"
+                            )
+                        return VariantObject(e_name, v_name, list(args_eval))
 
-        for member in node.members:
-            value: any = (
-                self._evaluate(member.value, environment) if member.value else 0
-            )
-            members[member.name] = {
-                "type": member.declared_type,
-                "value": value,
-                "mutable": member.mutable,
-            }
+                    return constructor
+                
+                members[variant_name] = {
+                    "type": "Function",
+                    "value": make_constructor(node.name, variant_name, params),
+                    "mutable": False,
+                }
 
         structure_object: EnumeratorObject = EnumeratorObject(
             name=node.name, members=members, closure=environment
         )
 
-        environment.define(node.name, structure_object, False, "structure")
+        environment.define(node.name, structure_object, False, "Enumerator")
 
         return structure_object
 
@@ -879,9 +1156,9 @@ class Interpreter:
         scope_env = Environment(parent=environment, file_path=environment.file_path)
 
         # Evaluate statements in the scope block directly into this environment
-        # node.block is a BlockStatement
-        if hasattr(node.block, "statements"):
-             for statement in node.block.statements:
+        # node.body is a BlockStatement
+        if hasattr(node.body, "statements"):
+             for statement in node.body.statements:
                  self._evaluate(statement, scope_env)
 
         # Create Scope Object (reusing ModuleObject as it is a namespace/env wrapper)
@@ -902,11 +1179,23 @@ class Interpreter:
         self, node: WhenStatement, environment: Environment
     ) -> any:
         condition_val = self._evaluate(node.condition, environment)
-        if getattr(node.condition, "node_type", "") == "UnaryExpression":
-             print(f"DEBUG: when condition (unary) evaluated to: {condition_val}")
         
+        # New: Structural pattern match branches (match-like)
+        if hasattr(node, "branches") and node.branches is not None:
+            for branch in node.branches:
+                # Create a local environment for the branch to support bindings
+                branch_env = Environment(parent=environment)
+                if self._evaluate_pattern_match(condition_val, branch.pattern, branch_env):
+                    return self._evaluate(branch.body, branch_env)
+            
+            if node.or_block:
+                return self._evaluate(node.or_block, environment)
+            return None
+
+        # Traditional conditional when-block
         if condition_val:
-            return self._evaluate(node.when_block, environment)
+            if node.when_block:
+                return self._evaluate(node.when_block, environment)
 
         for condition_statement in node.conditional_blocks or []:
             if self._evaluate(condition_statement["condition"], environment):
@@ -933,7 +1222,7 @@ class Interpreter:
                     loop_cycled = True
 
                     try:
-                        result = self._evaluate(node.block, new_environment)
+                        result = self._evaluate(node.body, new_environment)
                     except RuntimeContinue:
                         continue
                     except RuntimeBreak:
@@ -944,7 +1233,7 @@ class Interpreter:
                     loop_cycled = True
 
                     try:
-                        result = self._evaluate(node.block, new_environment)
+                        result = self._evaluate(node.body, new_environment)
                     except RuntimeContinue:
                         continue
                     except RuntimeBreak:
@@ -956,7 +1245,7 @@ class Interpreter:
                     loop_cycled = True
 
                     try:
-                        result = self._evaluate(node.block, new_environment)
+                        result = self._evaluate(node.body, new_environment)
                     except RuntimeContinue:
                         pass
                     except RuntimeBreak:
@@ -970,7 +1259,7 @@ class Interpreter:
                     loop_cycled = True
 
                     try:
-                        result = self._evaluate(node.block, new_environment)
+                        result = self._evaluate(node.body, new_environment)
                     except RuntimeContinue:
                         pass
                     except RuntimeBreak:
@@ -1024,7 +1313,7 @@ class Interpreter:
                         else:
                             loop_environment.define(node.iterator, item, mutable=True)
 
-                        result = self._evaluate(node.block, loop_environment)
+                        result = self._evaluate(node.body, loop_environment)
 
                     except RuntimeContinue:
                         continue
@@ -1039,14 +1328,14 @@ class Interpreter:
                 # Future: reactive/event-based execution
                 if self._evaluate(node.condition, new_environment):
                     loop_cycled = True
-                    result = self._evaluate(node.block, new_environment)
+                    result = self._evaluate(node.body, new_environment)
 
             elif do_type == "block":
                 # plain do { ... } is an infinite loop in Zenlang
                 while True:
                     loop_cycled = True
                     try:
-                        result = self._evaluate(node.block, new_environment)
+                        result = self._evaluate(node.body, new_environment)
                     except RuntimeContinue:
                         continue
                     except RuntimeBreak:
@@ -1099,7 +1388,7 @@ class Interpreter:
         finally:
             if hasattr(new_environment, "defers"):
                 for defer_node in reversed(new_environment.defers):
-                    self._evaluate(defer_node.block, environment)
+                    self._evaluate(defer_node.body, environment)
 
     def _evaluate_function_expression(
         self, node: FunctionExpression, environment: Environment
@@ -1107,7 +1396,7 @@ class Interpreter:
         function_object: FunctionObject = FunctionObject(
             name=node.name,
             parameters=node.parameters,
-            block=node.block,
+            body=node.body,
             closure=environment,
             return_type=getattr(node, "return_type", None),
         )
@@ -1179,12 +1468,6 @@ class Interpreter:
     ) -> any:
         # Evaluate the object (left side of the dot)
         object: BaseObject = self._evaluate(node.object, environment)
-        if object is None:
-             print(f"DEBUG: Member access on None! Property: {node.property}")
-             print(f"DEBUG: Source Line: {node.line}, Col: {node.column}")
-        if isinstance(object, str):
-             print(f"DEBUG: Member access on STR! Val: '{object}'. Property: {node.property}")
-             print(f"DEBUG: Source Line: {node.line}, Col: {node.column}")
         member_name: str = getattr(node.property, "name", node.property)
 
         # --- 1. If it's a StructureObject ---
@@ -1213,7 +1496,7 @@ class Interpreter:
                 bound_function: FunctionObject = FunctionObject(
                     name=member_value.name,
                     parameters=member_value.parameters,
-                    block=member_value.block,
+                    body=member_value.body,
                     closure=object.closure, # closure is the object's closure (class scope or struct scope)
                     return_type=member_value.return_type,
                 )
@@ -1233,17 +1516,58 @@ class Interpreter:
             return member_value
 
 
-            # Otherwise return the value
-            return member["value"]
-
-        # --- 2. If it's a dictionary (fallback) ---
+        # --- 2. If it's a dictionary (Map) ---
         elif isinstance(object, dict):
+            if member_name == "has":
+                return lambda k: k in object
+            elif member_name == "keys":
+                return lambda: list(object.keys())
+            elif member_name == "values":
+                return lambda: list(object.values())
+            
             if member_name not in object:
                 raise RuntimeError(f"Object has no key '{member_name}'")
 
             return object[member_name]
 
-        # --- 3. If it's a built-in Python object (temporary feature) ---
+        # --- 3. Collection Length Properties ---
+        if isinstance(object, (list, set, dict, str)) and member_name in ["size", "length", "count", "len"]:
+            return len(object)
+
+        # --- 4. Special methods for other built-ins ---
+        if isinstance(object, list):
+            if member_name == "append":
+                return object.append
+            elif member_name == "pop":
+                return object.pop
+            elif member_name == "at":
+                return lambda idx: object[idx]
+            elif member_name == "remove_at":
+                return lambda idx: object.pop(idx)
+
+        if isinstance(object, str):
+            if member_name == "substring":
+                return lambda start, end=None: object[start:end] if end is not None else object[start:]
+            elif member_name == "at":
+                return lambda idx: object[idx]
+            elif member_name == "split":
+                return lambda sep: object.split(sep)
+            elif member_name == "to_upper":
+                return lambda: object.upper()
+            elif member_name == "to_lower":
+                return lambda: object.lower()
+            elif member_name == "trim":
+                return lambda: object.strip()
+            elif member_name == "starts_with":
+                return object.startswith
+            elif member_name == "ends_with":
+                return object.endswith
+            elif member_name == "contains":
+                return lambda s: s in object
+
+        # --- 5. If it's a built-in Python object (temporary feature) ---
+
+        # --- 4. If it's a built-in Python object (temporary feature) ---
         elif hasattr(object, member_name) or (member_name == "kind" and hasattr(object, "type")):
             real_member_name = member_name if hasattr(object, member_name) else "type"
             val = getattr(object, real_member_name)
@@ -1252,10 +1576,49 @@ class Interpreter:
                 return val.name
             return val
 
-        elif isinstance(object, (list, str, tuple)) and member_name == "at":
+        elif isinstance(object, str):
+            if member_name == "substring":
+                return lambda start, end=None: object[start:end] if end is not None else object[start:]
+            elif member_name == "at":
+                return lambda idx: object[idx]
+
+            elif member_name == "split":
+                return lambda sep: object.split(sep)
+            elif member_name == "to_upper":
+                return lambda: object.upper()
+            elif member_name == "to_lower":
+                return lambda: object.lower()
+            elif member_name == "to_number":
+                return lambda: float(object) if "." in object else int(object)
+            elif member_name == "to_integer":
+                return lambda: int(object)
+            elif member_name == "to_decimal":
+                return lambda: float(object)
+            raise RuntimeError(f"String has no member '{member_name}'")
+        elif isinstance(object, (list, tuple)) and member_name == "at":
             return lambda idx: object[idx]
-        elif isinstance(object, (list, str, set, dict)) and member_name in ["size", "length"]:
-            return lambda: len(object)
+        elif isinstance(object, list):
+            if member_name == "append":
+                return lambda v: object.append(v)
+            elif member_name == "pop":
+                return lambda: object.pop()
+            elif member_name == "remove_at":
+                return lambda i: object.pop(i)
+            raise RuntimeError(f"List has no member '{member_name}'")
+        elif isinstance(object, (int, float)):
+            if member_name in ["ms", "miliseconds"]:
+                return object / 1000.0
+            elif member_name in ["s", "seconds"]:
+                return object
+            elif member_name in ["m", "minutes"]:
+                return object * 60.0
+            elif member_name in ["h", "hours"]:
+                return object * 3600.0
+            elif member_name in ["d", "days"]:
+                return object * 86400.0
+            elif member_name == "times":
+                 return object # For retry(3.times, ...)
+            raise RuntimeError(f"Number has no member '{member_name}'")
 
         raise RuntimeError(
             f"Cannot access member '{member_name}' on type '{type(object).__name__}'"
@@ -1265,7 +1628,7 @@ class Interpreter:
         bound_function: FunctionObject = FunctionObject(
             name=method.name,
             parameters=method.parameters,
-            block=method.block,
+            body=method.body,
             closure=method.closure,
             return_type=method.return_type,
         )
@@ -1337,10 +1700,6 @@ class Interpreter:
         index_val: any = self._evaluate(node.index, environment)
 
         if not isinstance(index_val, int) and not isinstance(object_val, dict):
-            print(f"DEBUG: Index Error Node Line: {getattr(node, 'line', 'unknown')}")
-            print(f"DEBUG: Object Type: {type(object_val)}")
-            print(f"DEBUG: Index Type: {type(index_val)}")
-            print(f"DEBUG: Index Value: {index_val}")
             raise RuntimeError(f"Index must be an integer for {type(object_val).__name__}, got {type(index_val).__name__}")
 
         if isinstance(object_val, list):
@@ -1436,7 +1795,7 @@ class Interpreter:
 
         try:
             # evaluate function block (which is a BlockStatement or similar)
-            return self._evaluate(function.block, function_environment)
+            return self._evaluate(function.body, function_environment)
         except ReturnException as return_exception:
             return return_exception.value
 
@@ -1463,7 +1822,7 @@ class Interpreter:
     def _evaluate_vector_literal(self, node: Any, environment: Environment) -> list:
         return [self._evaluate(el.value, environment) for el in node.elements]
 
-    def _evaluate_dictionary_literal(self, node: Any, environment: Environment) -> dict:
+    def _evaluate_map_literal(self, node: Any, environment: Environment) -> dict:
         result = {}
         for element in node.elements:
             key = self._evaluate(element.name, environment)
@@ -1643,30 +2002,124 @@ class Interpreter:
                 raise RaiseException("AssertionError", f"Assertion failed at {node.line}:{node.column}")
         return None
     def _evaluate_check_statement(self, node: Any, environment: Environment) -> Any:
-        caught_exception = None
         try:
             result = self._evaluate(node.expression, environment)
-            # Match cases
-            for case in node.cases:
-                # Basic matching: if result == case_condition or matches type
-                case_cond = self._evaluate(case["condition"], environment)
-                if result == case_cond: # Simple equality for now
-                    return self._evaluate(case["block"], environment)
+            # Normal return path: match cases
+            if hasattr(node, "cases") and node.cases:
+                for case in node.cases:
+                    if self._evaluate_pattern_match(result, case.pattern, environment):
+                        return self._evaluate(case.body, environment)
             return result
         except RaiseException as e:
-            caught_exception = e
-        except Exception as e:
-            raise e
-        
-        if caught_exception:
-            if node.or_block:
+            # Exception path: match cases against the exception
+            if hasattr(node, "cases") and node.cases:
+                for case in node.cases:
+                    if self._evaluate_pattern_match(e, case.pattern, environment):
+                        return self._evaluate(case.body, environment)
+            
+            if hasattr(node, "or_block") and node.or_block:
                 return self._evaluate(node.or_block, environment)
-            raise caught_exception
+            if hasattr(node, "raise_expression") and node.raise_expression:
+                raise_val = self._evaluate(node.raise_expression, environment)
+                raise RaiseException(raise_val)
+            raise e
 
-    def _evaluate_check_expression(self, node: Any, environment: Environment) -> Any:
+    def _evaluate_check_expression(self, node: CheckExpression, environment: Environment) -> Any:
         try:
             return self._evaluate(node.expression, environment)
         except RaiseException as e:
-            if node.or_value:
+            if hasattr(node, "or_value") and node.or_value:
                 return self._evaluate(node.or_value, environment)
-            return None
+            if hasattr(node, "raise_expression") and node.raise_expression:
+                raise_val = self._evaluate(node.raise_expression, environment)
+                raise RaiseException(raise_val)
+            raise e
+
+    def _evaluate_is_expression(self, node: IsExpression, environment: Environment) -> bool:
+        value = self._evaluate(node.left, environment)
+        return self._evaluate_pattern_match(value, node.right, environment)
+
+    def _evaluate_pattern_match(self, value: Any, pattern: Any, environment: Environment) -> bool:
+        if isinstance(pattern, WildcardPattern):
+            return True
+            
+        if isinstance(pattern, IdentifierPattern):
+            environment.define(pattern.name, value, mutable=False, type="Variant")
+            return True
+
+        if isinstance(pattern, IsMatchPattern):
+            # Check type name
+            val_type = type(value).__name__
+            type_map = {
+                "int": "Integer",
+                "float": "Decimal",
+                "str": "String",
+                "bool": "Boolean",
+                "list": "List",
+                "dict": "Map",
+                "NoneType": "Nothing"
+            }
+            if pattern.type_name == "Error":
+                 if isinstance(value, (RaiseException, Exception)):
+                     return True
+                 if isinstance(value, dict) and value.get("__type__") == "Error":
+                     return True
+            
+            return type_map.get(val_type) == pattern.type_name
+
+        if isinstance(pattern, ListPattern):
+            if not isinstance(value, list):
+                return False
+            if len(pattern.elements) != len(value):
+                return False
+            
+            for i, elem_pattern in enumerate(pattern.elements):
+                if not self._evaluate_pattern_match(value[i], elem_pattern, environment):
+                    return False
+            return True
+
+        if isinstance(pattern, VariantPattern):
+            if not isinstance(value, VariantObject):
+                return False
+            
+            # Check the variant name (tag)
+            # Support both "Some" and "Option.Some"
+            if "." in pattern.name:
+                 enum_part, variant_part = pattern.name.split(".", 1)
+                 if value.enum_name != enum_part or value.variant_name != variant_part:
+                      return False
+            else:
+                 if value.variant_name != pattern.name:
+                      return False
+            
+            # Match parameters
+            if len(pattern.params) != len(value.data):
+                return False
+                
+            for p, v in zip(pattern.params, value.data):
+                if not self._evaluate_pattern_match(v, p, environment):
+                    return False
+            return True
+
+        if isinstance(pattern, MapPattern):
+            if not isinstance(value, dict):
+                return False
+            
+            for key_node, val_pattern in pattern.pairs:
+                key = self._evaluate(key_node, environment)
+                if key not in value:
+                    return False
+                if not self._evaluate_pattern_match(value[key], val_pattern, environment):
+                    return False
+            return True
+            
+        elif isinstance(pattern, LiteralPattern):
+            match_val = self._evaluate(pattern.value, environment)
+            return value == match_val
+        
+        return False
+    def _evaluate_in_expression(self, node: InExpression, environment: Environment) -> any:
+        # The interpreter doesn't strictly enforce arenas for every allocation yet,
+        # but we could potentially set a 'current_arena' in the environment.
+        # For now, just evaluate the expression.
+        return self._evaluate(node.expression, environment)

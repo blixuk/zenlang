@@ -183,6 +183,7 @@ structure FunctionStatement {
     parameters: List,
     body: BlockStatement, // Variant or BlockStatement
     return_type: Variant,
+    doc_comment: Variant,
     line: Integer,
     column: Integer
 }
@@ -226,6 +227,7 @@ structure StructureStatement {
     kind: ASTKind,
     name: Token,
     members: List,
+    doc_comment: Variant,
     line: Integer,
     column: Integer
 }
@@ -234,6 +236,7 @@ structure EnumeratorStatement {
     kind: ASTKind,
     name: Token,
     members: List,
+    doc_comment: Variant,
     line: Integer,
     column: Integer
 }
@@ -244,6 +247,7 @@ structure ClassStatement {
     parent: Variant, // Token or nothing (for inheritance)
     members: List,   // List of StructureMember
     methods: List,   // List of FunctionStatement
+    doc_comment: Variant,
     line: Integer,
     column: Integer
 }

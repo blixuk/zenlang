@@ -1,51 +1,131 @@
+/!
+ String manipulation module.
+ Provides functions for string operations and conversions.
+!/
+
+/!
+ Splits a string into a list of substrings based on a separator.
+ @param s The string to split.
+ @param sep The separator string.
+ @return A list of substrings.
+!/
 function split(s, sep) {
     <- __builtin_string.split(s, sep)
 }
 
+/!
+ Joins a list of strings into a single string using a separator.
+ @param parts The list of strings to join.
+ @param sep The separator string.
+ @return The joined string.
+!/
 function join(parts, sep) {
     <- __builtin_string.join(parts, sep)
 }
 
+/!
+ Trims whitespace from both ends of a string.
+ @param s The string to trim.
+ @return The trimmed string.
+!/
 function trim(s) {
     <- __builtin_string.trim(s)
 }
 
+/!
+ Returns a substring of the given string.
+ @param s The string.
+ @param start The start index (inclusive).
+ @param end The end index (exclusive).
+ @return The substring.
+!/
 function substring(s, start, end) {
     <- __builtin_string.substring(s, start, end)
 }
 
+/!
+ Checks if a string starts with the given prefix.
+ @param s The string.
+ @param prefix The prefix to check.
+ @return True if it starts with prefix, False otherwise.
+!/
 function starts_with(s, prefix) {
     <- __builtin_string.starts_with(s, prefix)
 }
 
+/!
+ Checks if a string ends with the given suffix.
+ @param s The string.
+ @param suffix The suffix to check.
+ @return True if it ends with suffix, False otherwise.
+!/
 function ends_with(s, suffix) {
     <- __builtin_string.ends_with(s, suffix)
 }
 
+/!
+ Replaces occurrences of a substring with another substring.
+ @param s The string.
+ @param old The substring to replace.
+ @param new The replacement substring.
+ @return The resulting string.
+!/
 function replace(s, old, new) {
     <- __builtin_string.replace(s, old, new)
 }
 
+/!
+ Returns the length of a string.
+ @param s The string.
+ @return The length of the string.
+!/
 function length(s) {
     <- __builtin_string.length(s)
 }
 
+/!
+ Converts a string to lowercase.
+ @param s The string.
+ @return The lowercase string.
+!/
 function to_lower(s) {
     <- __builtin_string.to_lower(s)
 }
 
+/!
+ Converts a string to uppercase.
+ @param s The string.
+ @return The uppercase string.
+!/
 function to_upper(s) {
     <- __builtin_string.to_upper(s)
 }
 
+/!
+ Returns the index of the first occurrence of a substring.
+ @param s The string.
+ @param sub The substring to find.
+ @return The index of the substring, or -1 if not found.
+!/
 function index_of(s, sub) {
     <- __builtin_string.index_of(s, sub)
 }
 
+/!
+ Returns the character at the specified index.
+ @param s The string.
+ @param i The index.
+ @return The character at index i.
+!/
 function at(s, i) {
     <- __builtin_string.at(s, i)
 }
 
-function str(x) {
-    <- __builtin_string.str(x)
+/!
+ Converts a value to its string representation.
+ @param x The value to convert.
+ @return The string representation of x.
+!/
+function to_string(x) {
+    <- __builtin_string.to_string(x)
 }

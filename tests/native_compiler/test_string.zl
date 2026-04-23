@@ -3,6 +3,6 @@ from zen.io import write
 
 function main() {
     let s -> "Hello"
-    let repr -> Str.str(s)
+    let repr -> Str.to_string(s)
     write(repr)
 }

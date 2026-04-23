@@ -1,0 +1,48 @@
+from zen.io import write
+
+function throw_error() {
+    <- __builtin.error(`Execution failed`)
+}
+
+function test_check_match() {
+    write(`--- Test 1: Match Error from call ---`)
+    check throw_error() {
+        case is Error { 
+            write(`[OK] Caught Error from throw_error()`) 
+        }
+    } or {
+        write(`[FAIL] Should have caught error in case`)
+    }
+
+    write(`--- Test 2: Match String ---`)
+    let val -> `Hello`
+    check val {
+        case is String { 
+            write(`[OK] Matched String: ` + val) 
+        }
+    } or {
+        write(`[FAIL] Should have matched String`)
+    }
+
+    write(`--- Test 3: Inline symbols ? and ^ ---`)
+    // check with success
+    let result -> ? `Success` or `fallback`
+    write(`? result (success): ` + result)
+
+    // check with failure (raising)
+    let fallback -> ? throw_error() or `Recovered`
+    write(`? result (failure): ` + fallback)
+
+    write(`--- Test 4: Pattern Matching literals ---`)
+    let x -> 10
+    check x {
+        case 10 { write(`[OK] Matched literal 10`) }
+        case 20 { write(`[FAIL] Should not match 20`) }
+    } or {
+        write(`[FAIL] Should have matched 10`)
+    }
+
+    write(`All check tests completed.`)
+}
+
+test_check_match()

@@ -24,8 +24,9 @@ ZenVariant ZenList_get(ZenList* list, int index) {
     return list->items[index];
 }
 
-int ZenList_length(ZenList* list) {
-    return list->count;
+ZenValue ZenList_count(ZenList* list) {
+    if (!list) return zen_int(0);
+    return zen_int(list->count);
 }
 
 ZenList* ZenList_from_args(int count, ...) {

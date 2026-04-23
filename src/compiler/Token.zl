@@ -6,6 +6,7 @@ enumerator TokenType {
     TYPE -> `TYPE`,
     UNKNOWN -> `UNKNOWN`,
     COMMENT -> `COMMENT`,
+    DOC_COMMENT -> `DOC_COMMENT`,
     ERROR -> `ERROR`,
     VOID -> `VOID`,
     NOTHING -> `NOTHING`,

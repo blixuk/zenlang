@@ -11,5 +11,6 @@ void IO_error(ZenString value);
 ZenString IO_read_file(ZenString path);
 void IO_write_file(ZenString path, ZenString content);
 long long IO_file_exists(ZenString path);
+ZenList* ZenIO_list_dir(ZenString path);
 
 #endif

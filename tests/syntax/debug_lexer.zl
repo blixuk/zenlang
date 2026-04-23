@@ -1,0 +1,21 @@
+import `../src/compiler/Lexer` as Lexer
+import `../lib/zen/io` as IO
+
+function main() {
+    let source -> `from \`compiler/AST\` import ASTNode, ASTKind, ImportStatement\nimport \`compiler/Token\` as TokenModule`
+    IO.write(`Testing Lexer with: ` + source + `\n`)
+    
+    let l -> Lexer.Lexer(source)
+    let tokens -> l.tokenize()
+    
+    IO.write(`Generated ` + Str.to_string(tokens.length) + ` tokens.\n`)
+    
+    let i -> 0
+    while (i < tokens.length) {
+        let t -> tokens[i]
+        IO.write(`Token ` + Str.to_string(i) + `: ` + Str.to_string(t.kind) + ` (` + Str.to_string(t.value) + `)\n`)
+        i -> i + 1
+    }
+}
+
+main()

@@ -1,0 +1,35 @@
+import zen.io
+
+function main() {
+    let x -> [1, 2, 3]
+    
+    io.write(`Testing List Pattern... `)
+    when x is [a, b, c] {
+        io.write(`Matched: `)
+        io.write(a)
+        io.write(`, `)
+        io.write(b)
+        io.write(`, `)
+        io.write(c)
+        io.write(`\n`)
+    } or {
+        io.write(`Failed to match list\n`)
+    }
+    
+    io.write(`Testing Map Pattern... `)
+    let m -> { `name` -> `Zen`, `version` -> 1 }
+    when m is { `name` -> n } {
+        io.write(`Matched name: `)
+        io.write(n)
+        io.write(`\n`)
+    } or {
+        io.write(`Failed to match map\n`)
+    }
+    
+    io.write(`Testing Wildcard... `)
+    when x is [1, _, 3] {
+        io.write(`Matched [1, _, 3]\n`)
+    } or {
+        io.write(`Failed wildcard match\n`)
+    }
+}

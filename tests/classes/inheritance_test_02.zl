@@ -1,0 +1,67 @@
+
+class Animal {
+    let name -> `Unknown`
+    let age -> 0
+
+    function init(name, age) {
+        self.name = name
+        self.age = age
+    }
+
+    function speak() {
+        write(`Animal makes a sound`)
+    }
+}
+
+class Dog extends Animal {
+    let breed -> `Unknown`
+
+    function init(name, age, breed) {
+        Animal.init(self, name, age)
+        self.breed = breed
+    }
+
+    function speak() {
+        write(`Dog barks`)
+    }
+    
+    function info() {
+        write(self.name + ` is a ` + self.breed)
+    }
+}
+
+class Poodle extends Dog {
+    let size -> `Small`
+
+    function init(name, age, size) {
+        Dog.init(self, name, age, `Poodle`)
+        self.size = size
+    }
+
+    function speak() {
+        write(`Poodle yaps`)
+    }
+}
+
+function main() {
+    write(`--- Inheritance Test ---`)
+    
+    let a -> Animal(`Generic`, 5)
+    a.speak()
+    write(`Animal: ` + a.name + `, ` + a.age)
+    
+    let d -> Dog(`Buddy`, 3, `Golden Retriever`)
+    d.speak()
+    d.info()
+    write(`Dog: ` + d.name + `, ` + d.age + `, ` + d.breed)
+    
+    let p -> Poodle(`Fifi`, 2, `Tiny`)
+    p.speak()
+    p.info()
+    write(`Poodle: ` + p.name + `, ` + p.age + `, ` + p.breed + `, ` + p.size)
+    
+    // Test reassignment of inherited members
+    p.name = `Bella`
+    p.age = 4
+    write(`Updated Poodle: ` + p.name + `, ` + p.age)
+}

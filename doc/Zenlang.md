@@ -65,19 +65,6 @@ Comments do not nest.
  comment
  !/
 ```
-
-### Documentation Comment
-```
-/! ... !/
-/!
- This
- is
- a
- multi-line
- documentation
- comment
- !/
-```
  
 ## Identifiers
 
@@ -532,7 +519,37 @@ let a : Vector[4]<Integer> -> { 1, 2, 3, 4 }
 let a : Vector[4]<String> -> { `a`, `b`, `c`, `d` }
 let a : Vector[4]<Variant> -> { `a`, 1, True }
 
+// Typed literals
+let a -> Vector{ 1, 2, 3, 4 }
+let a -> V{ 1, 2, 3, 4 }
 function test : Vector[4]<Integer> { <- { 1, 2, 3, 4 } }
+```
+
+## Typed Collection Literals
+
+Zenlang supports explicit typed collection literals for clarity and to assist the compiler with type inference. These literals can use the full type name or a one-letter abbreviation.
+
+| Type   | Abbreviation | Example                     |
+|--------|--------------|-----------------------------|
+| Vector | V            | `Vector{1, 2}` or `V{1, 2}` |
+| List   | L            | `List{1, 2}` or `L{1, 2}`   |
+| Set    | S            | `Set{1, 2}` or `S{1, 2}`    |
+| Tuple  | T            | `Tuple{1, 2}` or `T{1, 2}`  |
+| Map    | M            | `Map{a -> 1}` or `M{a -> 1}`|
+
+### Syntax
+```zl
+Type{elements}
+Abbreviation{elements}
+```
+
+### Examples
+```zl
+let v -> Vector{1, 2, 3}
+let l -> L{10, 20}
+let m -> M{ `name` -> `Zen`, `version` -> 1 }
+let s -> S{ 1, 1, 2 } // { 1, 2 }
+let t -> T{ 1, `hello` }
 ```
 
 ## Container Types
@@ -692,6 +709,25 @@ enumerator Week {
 write(Week) // ( (`SUNDAY`, 10), (`MONDAY`, 11), (`TUESDAY`, 12), (`WEDNESDAY`, 13) )
 ```
 
+#### Algebraic Data Types (ADTs)
+
+Zenlang enums (enumerators) support **variants with data**, also known as Algebraic Data Types. This allows variants to carry associated values of any type.
+
+```zl
+enumerator Option {
+    Nothing,
+    Some(value)
+}
+
+enumerator Result {
+    Ok(value),
+    Error(message)
+}
+
+let success -> Result.Ok(200)
+let failure -> Result.Error(`Not Found`)
+```
+
 #### Classes
 
 ```
@@ -827,7 +863,7 @@ Zenlang infers types in:
 - variable declarations
 - function returns
 - arithmetic expressions
-- list, tuple, and dictionary literals
+- list, tuple, map and set literals
 
 ## Literals
 
@@ -901,6 +937,8 @@ Runes and strings are both enclosed in backticks. A single-code-point backtick l
 []                      // Empty list
 [1, 2, 3, 4]            // List of numbers
 [1, `a`, True]          // List of mixed types
+List{1, 2, 3}           // Typed List literal
+L{1, 2, 3}              // Abbreviated Typed List literal
 ```
 
 ### Tuple literals
@@ -912,11 +950,20 @@ Runes and strings are both enclosed in backticks. A single-code-point backtick l
 (`a` -> 1, `b` -> 2)    // Named tuple
 ```
 
-### Dictionary literals
+### Map literals
 
+```zl
+{ key -> value }        // Map literal
+Map{ key -> value }     // Typed Map literal
+M{ key -> value }       // Abbreviated Typed Map literal
 ```
-{ }                     // Empty dictionary
-{ `a` -> 1, `b` -> 2 }  // Dictionary of Key: String and Value: Number
+
+### Set literals
+
+```zl
+{ 1, 2, 3 }             // Set literal
+Set{ 1, 2, 3 }          // Typed Set literal
+S{ 1, 2, 3 }            // Abbreviated Typed Set literal
 ```
 
 ### Generic literals
@@ -925,7 +972,8 @@ Runes and strings are both enclosed in backticks. A single-code-point backtick l
 l{1, 2, 3}              // List
 v{1, 2, 3}              // Vector
 t{1, 2, 3}              // Tuple
-d{`a` -> 1, `b` -> 2}   // Dictionary
+m{`a` -> 1, `b` -> 2}   // Map
+s{1, 2, 3}              // Set
 ```
 
 ## Variables & Assignment
@@ -1079,9 +1127,43 @@ when x > 0 {
 }
 ```
 
-#### When Inline
+#### Structural Pattern Matching
 
-Syntax:
+`when` statements also support structural pattern matching for ADTs and other types using the `is` keyword.
+
+```zl
+when opt {
+    is Option.Some(v) {
+        write(`Value is: `)
+        write(v)
+    }
+    is Option.Nothing {
+        write(`No value`)
+    }
+}
+
+when res {
+    is Result.Ok(_) {
+        write(`Success!`)
+    }
+    is Result.Error(msg) {
+        write(`Error: ` + msg)
+    }
+}
+```
+
+#### Type Checking
+
+The `is` operator allows you to check if a value is of a certain type at runtime. It returns a `Boolean` value.
+
+```zl
+let x -> 10
+if x is Integer {
+    write(`x is an integer`)
+}
+
+let result -> (x is String) // false
+```
 ```
 value when condition or value
 ```
@@ -1900,20 +1982,47 @@ Objects are managed by garbage collection or reference counting.
 
 ### Standard Library
 
-Includes:
-- math
-- collections
-- system I/O
-- async utilities
-- HTTP
-- GUI (optional)
-- TUI
-- Web
-- HTML
-- JSON
-- CSV
-- syscalls
-- Terminal / processes / subprocesses
-- Bash?
+Zenlang provides a suite of standard modules for essential tasks.
+
+#### zen.core
+
+The `zen.core` module is the language's prelude (automatically imported), providing fundamental types for error handling and data management.
+
+##### Option
+
+Represents a value that may or may not be present.
+
+- `Option.Some(value)`: The value is present.
+- `Option.Nothing`: The value is absent.
+
+##### Result
+
+Represents the result of an operation that can succeed or fail.
+
+- `Result.Ok(value)`: The operation succeeded.
+- `Result.Error(message)`: The operation failed with a descriptive message.
+
+##### Utility Functions
+
+- `unwrap(container)`: Extracts the value or raises a panic if empty/error.
+- `unwrap_or(container, default)`: Extracts the value or returns the provided default.
+- `expect(container, message)`: Extracts the value or raises a panic with a custom message.
+- `is_some(option)`, `is_none(option)`: Boolean checks for `Option`.
+- `is_ok(result)`, `is_error(result)`: Boolean checks for `Result`.
+
+#### zen.io
+
+Provides basic terminal input and output operations.
+
+- `write(value)`: Prints a value to the standard output.
+- `read()`: Reads a line from the standard input.
+
+#### Additional Modules
+
+- `zen.math`: Mathematical constants and functions.
+- `zen.collections`: Advanced data structures (Lists, Maps, Sets).
+- `zen.random`: Deterministic and seedable PRNGs.
+- `zen.string`: String manipulation and formatting.
+- `zen.sys`: System information and environment access.
 
 

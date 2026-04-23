@@ -1,0 +1,29 @@
+import zen.io as io
+
+// Full names
+let l -> List{1, 2, 3}
+let v -> Vector{1.0, 2.0, 3.0}
+let m -> Map{`a` -> 1, `b` -> 2}
+let s -> Set{1, 2, 3}
+let t -> Tuple{1, `hello`}
+
+// Abbreviations
+let l2 -> L{4, 5, 6}
+let v2 -> V{4.0, 5.0, 6.0}
+let m2 -> M{`c` -> 3}
+let s2 -> S{4, 5, 6}
+let t2 -> T{2, `world`}
+
+io.write(`Full Names:`)
+io.write(l)
+io.write(v)
+io.write(m)
+io.write(s)
+io.write(t)
+
+io.write(`Abbreviations:`)
+io.write(l2)
+io.write(v2)
+io.write(m2)
+io.write(s2)
+io.write(t2)

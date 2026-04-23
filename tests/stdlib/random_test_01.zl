@@ -1,0 +1,46 @@
+import zen.io as IO
+import zen.random as Random
+import zen.string as Str
+
+function test_global_random() {
+    IO.info(`--- Testing Global Randomness ---`)
+    
+    let i -> Random.integer(1, 100)
+    IO.info(`  Random integer (1-100): ` + Str.to_string(i))
+    
+    let d -> Random.decimal(0.0, 1.0)
+    IO.info(`  Random decimal (0-1): ` + Str.to_string(d))
+    
+    let r1 -> Random.range(1, 10)
+    IO.info(`  Random range (int 1-10): ` + Str.to_string(r1))
+    
+    let r2 -> Random.range(0.0, 1.0)
+    IO.info(`  Random range (dec 0-1): ` + Str.to_string(r2))
+}
+
+function test_deterministic_random() {
+    IO.info(`--- Testing Deterministic Randomness ---`)
+    
+    let rng1 -> Random.seed(42)
+    let v1_a -> rng1.next()
+    let v1_b -> rng1.integer(1, 100)
+    
+    IO.info(`  Seed 42 (A): next=` + Str.to_string(v1_a) + `, int=` + Str.to_string(v1_b))
+    
+    let rng2 -> Random.seed(42)
+    let v2_a -> rng2.next()
+    let v2_b -> rng2.integer(1, 100)
+    
+    IO.info(`  Seed 42 (B): next=` + Str.to_string(v2_a) + `, int=` + Str.to_string(v2_b))
+    
+    when v1_a == v2_a and v1_b == v2_b {
+        IO.info(`  SUCCESS: Deterministic runs match!`)
+    } or {
+        IO.error(`  FAILURE: Deterministic runs differ!`)
+    }
+}
+
+function zen_entry() {
+    test_global_random()
+    test_deterministic_random()
+}

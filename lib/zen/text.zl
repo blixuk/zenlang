@@ -1,0 +1,109 @@
+/!
+ Semantic Text module.
+ Provides structures for natural language processing: Word, Sentence, and Paragraph.
+ !/
+
+import zen.string as Str
+
+/!
+ Represents a single word.
+ !/
+structure Word {
+    text: String
+}
+
+/!
+ Represents a sentence containing multiple words.
+ !/
+structure Sentence {
+    text: String
+}
+
+/!
+ Represents a paragraph containing multiple sentences.
+ !/
+structure Paragraph {
+    text: String
+}
+
+scope Word {
+    /!
+     Checks if the word is entirely uppercase.
+     @param w The Word structure.
+     @return True if all runes are uppercase.
+     !/
+    function is_uppercase(w) {
+        let s -> w.text
+        <- s == Str.to_upper(s)
+    }
+
+    /!
+     Returns a capitalized version of the word.
+     @param w The Word structure.
+     @return A new Word with the first letter capitalized.
+     !/
+    function capitalize(w) {
+        let s -> w.text
+        when s.length() == 0 { <- Word { text -> s } }
+        
+        let first -> Str.to_upper(s.at(0))
+        let rest -> s.substring(1)
+        <- Word { text -> first + rest }
+    }
+}
+
+scope Sentence {
+    /!
+     Splits the sentence into a list of Words.
+     @param s The Sentence structure.
+     @return A list of Word structures.
+     !/
+    function to_words(s) {
+        let parts -> Str.split(s.text, ` `)
+        let words -> []
+        do for part in parts {
+            words.append(Word { text -> part })
+        }
+        <- words
+    }
+
+    /!
+     Counts the number of words in the sentence.
+     @param s The Sentence structure.
+     @return The number of words.
+     !/
+    function count_words(s) {
+        let words -> to_words(s)
+        <- words.length()
+    }
+}
+
+scope Paragraph {
+    /!
+     Wraps the paragraph text to a maximum width.
+     @param p The Paragraph structure.
+     @param width The maximum line width.
+     @return A new Paragraph with wrapped text.
+     !/
+    function wrap(p, width) {
+        let text -> p.text
+        let result -> ``
+        let current_line -> ``
+        
+        let words -> Str.split(text, ` `)
+        do for word in words {
+            when current_line.length() + word.length() + 1 > width {
+                result -> result + current_line + `\n`
+                current_line -> word
+            } or {
+                when current_line.length() == 0 {
+                    current_line -> word
+                } or {
+                    current_line -> current_line + ` ` + word
+                }
+            }
+        }
+        result -> result + current_line
+        <- Paragraph { text -> result }
+    }
+}

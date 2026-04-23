@@ -1,0 +1,26 @@
+import zen.memory as memory
+import zen.io as io
+
+class Person {
+    let name : String
+    function init(n : String) {
+        self.name -> n
+    }
+}
+
+function main() {
+    io.write(`--- Zen-style Memory Test ---`)
+    
+    with memory.Arena(1024) as scene {
+        io.write(`Inside with block...`)
+        
+        // Targeted allocation using 'in'
+        let p -> Person(in scene, `Zen`)
+        io.write(`Person name: ` + p.name)
+        
+        let list -> [ `item1`, `item2` ] // Default arena (local)
+        io.write(`List item: ` + list[0])
+    }
+    
+    io.write(`--- Test Complete ---`)
+}

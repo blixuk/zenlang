@@ -1,0 +1,41 @@
+import zen.io as IO
+import zen.term as Term
+import zen.time as Time
+import zen.string as Str
+
+function test_term_basics() {
+    IO.info(`--- Testing Terminal Basics ---`)
+    
+    Term.clear()
+    Term.move(10, 5)
+    Term.color(`green`, `black`)
+    IO.write(`Hello, Zenlang Terminal!`)
+    Term.reset()
+    
+    Term.move(1, 7)
+    let size -> Term.get_size()
+    IO.info(`Terminal size: ` + Str.to_string(size.width) + `x` + Str.to_string(size.height))
+}
+
+function test_alt_screen() {
+    IO.info(`--- Testing Alt Screen ---`)
+    Time.sleep(1.seconds)
+    
+    Term.alt_screen(function() {
+        Term.clear()
+        Term.move(5, 5)
+        Term.color(`cyan`, `black`)
+        IO.write(`Welcome to the Alternate Screen!`)
+        Term.move(5, 6)
+        IO.write(`(Wait... no input yet, so sleeping 2 seconds)`)
+        Term.reset()
+        Time.sleep(2.seconds)
+    })
+    
+    IO.info(`Back to normal screen.`)
+}
+
+function zen_entry() {
+    test_term_basics()
+    test_alt_screen()
+}

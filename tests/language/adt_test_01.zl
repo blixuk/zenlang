@@ -1,0 +1,32 @@
+import zen.io as io
+
+enumerator Option {
+    Nothing,
+    Some(value)
+}
+
+function print_option(opt) {
+    when opt {
+        is Option.Some(v) {
+            io.write(`Some: `)
+            io.write(v)
+            io.write(`\n`)
+        }
+        is Option.Nothing {
+            io.write(`Nothing\n`)
+        }
+        or {
+            io.write(`Not an option\n`)
+        }
+    }
+}
+
+function main() {
+    let s -> Option.Some(42)
+    let n -> Option.Nothing
+
+    io.write(`Testing ADT Option...\n`)
+    print_option(s)
+    print_option(n)
+    print_option(123.45)
+}

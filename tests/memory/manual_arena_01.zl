@@ -1,0 +1,36 @@
+import zen.memory as memory
+import zen.io as io
+
+class Data {
+    let val
+    function init(v) {
+        self.val -> v
+    }
+}
+
+function main() {
+    io.write(`--- Starting Manual Arena Test ---`)
+    
+    let my_arena -> memory.Arena(1024)
+    
+    io.write(`Pushing arena...`)
+    my_arena.push()
+    
+    // This allocation should happen in my_arena because of zen_malloc
+    let d1 -> Data(`Allocated in manual arena`)
+    io.write(d1.val)
+    
+    io.write(`Popping arena...`)
+    my_arena.pop()
+    
+    // This should still work as long as we haven't freed the arena
+    io.write(`Data after pop: ` + d1.val)
+    
+    io.write(`Freeing arena...`)
+    my_arena.free()
+    
+    // ACCESSING d1 NOW IS DANGEROUS (Manual Memory!)
+    // But we've fulfilled the user's request for manual control.
+    
+    io.write(`--- Manual Arena Test Complete ---`)
+}

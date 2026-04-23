@@ -10,15 +10,15 @@ let item -> ( key : Nothing, value : Nothing )
 let weapon -> item( `sword`, 100 )
 let weapon : Tuple -> item( key -> `sword`, value -> 100 )
 
-print(weapon[0])
-print(weapon[1])
-print(weapon.key)
-print(weapon.value)
+write(weapon[0])
+write(weapon[1])
+write(weapon.key)
+write(weapon.value)
 
 let shape : Tuple<Integer, Integer, Integer> -> (x: 0, y: 0, z: 0)
 let shape -> (x: 0, y: 0, z: 0)
 
-print(shape.x, shape.y)
+write(shape.x, shape.y)
 
 let thing -> (1, 2, 3)
 

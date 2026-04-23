@@ -1,0 +1,4 @@
+name: zen
+entry: src/zen.zl
+output: bin/zen
+source_map: true

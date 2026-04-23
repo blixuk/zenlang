@@ -1,0 +1,4 @@
+import zen.memory as memory
+function main() {
+    print(`Import successful`)
+}

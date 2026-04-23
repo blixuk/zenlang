@@ -1,0 +1,17 @@
+function create_name(a, b) {
+    let full -> a + b
+    return full
+}
+
+function main() {
+    let s1 -> `Zen`
+    let s2 -> `Lang`
+    let name -> create_name(s1, s2)
+    print(name)
+    
+    // Create another few to overwrite the old arena memory
+    let dummy1 -> `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` + `yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy`
+    let dummy2 -> `zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz` + `wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww`
+    
+    print(`Result after potential reuse: ` + name)
+}

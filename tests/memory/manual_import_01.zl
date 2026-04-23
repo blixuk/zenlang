@@ -1,0 +1,8 @@
+import zen.memory as memory
+function main() {
+    let a -> memory.create_arena(1024)
+    memory.push_arena(a)
+    print(`Import Success`)
+    memory.pop_arena()
+    memory.free_arena(a)
+}

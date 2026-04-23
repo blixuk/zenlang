@@ -64,7 +64,7 @@ class Environment:
 class FunctionObject:
     name: Optional[str]
     parameters: List[dict]
-    block: Any
+    body: Any
     closure: Environment
     return_type: Optional[str] = None
 
@@ -128,7 +128,17 @@ class EnumeratorObject(BaseObject):
 
         return self.members[name]["value"]
 
-        self.members[name]["value"] = value
+
+@dataclass
+class VariantObject:
+    enum_name: str
+    variant_name: str
+    data: List[Any]
+
+    def __repr__(self):
+        if not self.data:
+            return f"{self.enum_name}.{self.variant_name}"
+        return f"{self.enum_name}.{self.variant_name}({', '.join(map(str, self.data))})"
 
 
 class ModuleObject(BaseObject):
@@ -263,5 +273,50 @@ class FileCapability(BuiltinCapability):
 
 
 class SysCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class MemoryCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class TimeCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class ProcessCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class MapCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class SetCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class TermCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class RandomCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class ProcessInstance(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class FileInstance(BuiltinCapability):
     def __init__(self, name: str, handlers: Dict[str, callable]):
         super().__init__(name, handlers)

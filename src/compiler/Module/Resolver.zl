@@ -6,9 +6,16 @@ class Resolver {
     let root_path: String
     let search_paths: List
 
-    function init(root_path: String) {
-        self.root_path -> root_path
-        self.search_paths -> [root_path, `.`, `lib`, `../lib`]
+    function init(paths: List) {
+        self.search_paths -> []
+        for path in paths {
+            self.search_paths.append(path)
+        }
+        
+        // Default paths
+        self.search_paths.append(`.`)
+        self.search_paths.append(`lib`)
+        self.search_paths.append(`../lib`)
         
         // IO.write(`DEBUG [Resolver]: Search paths: ` + Str.join(self.search_paths, `, `))
         
@@ -28,7 +35,9 @@ class Resolver {
         
         for base_path in self.search_paths {
             let candidate: String -> base_path + `/` + relative_path + `.zl`
+            IO.write(`DEBUG [Resolver]: Checking candidate: ` + candidate + `\n`)
             when (IO.file_exists(candidate)) {
+                IO.write(`DEBUG [Resolver]: Found! ` + candidate + `\n`)
                 <- candidate
             }
         }

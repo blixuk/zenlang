@@ -1,0 +1,63 @@
+import zen.io as IO
+import zen.path as Path
+import zen.file as File
+import zen.sys as Sys
+import zen.math as Math
+import zen.json as JSON
+
+function test_path() {
+    IO.info(`Testing Path module...`)
+    let p -> Path.join(`foo`, `bar.txt`)
+    IO.write(`  Join: ` + p)
+    
+    IO.write(`  Basename: ` + Path.basename(p))
+    IO.write(`  Dirname: ` + Path.dirname(p))
+    IO.write(`  Extname: ` + Path.extname(p))
+    IO.write(`  Is Absolute (/foo): ` + __builtin_string.str(Path.is_absolute(`/foo`)))
+}
+
+function test_file() {
+    IO.info(`Testing File module constants...`)
+    let lines -> [`line 1`, `line 2`, `line 3`]
+    File.write_lines(`tmp_test.txt`, lines)
+    let read_back -> File.read_lines(`tmp_test.txt`)
+    IO.write(`  Read Lines count: ` + __builtin_string.str(__builtin_string.length(read_back)))
+    IO.write(`  First element: ` + read_back[0])
+}
+
+function test_sys() {
+    IO.info(`Testing Sys module...`)
+    IO.write(`  CWD: ` + Sys.get_cwd())
+    IO.write(`  Platform: ` + Sys.platform())
+    IO.write(`  Version: ` + Sys.version())
+}
+
+function test_math() {
+    IO.info(`Testing Math module...`)
+    IO.write(`  PI: ` + __builtin_string.str(Math.PI))
+    IO.write(`  sqrt(16): ` + __builtin_string.str(Math.sqrt(16)))
+    IO.write(`  sin(PI/2): ` + __builtin_string.str(Math.sin(Math.PI / 2)))
+}
+
+function test_json() {
+    IO.info(`Testing JSON module...`)
+    let data -> d{
+        `name` -> `Zenlang`,
+        `awesome` -> true,
+        `tags` -> [`terminal`, `unix`, `simple`]
+    }
+    let s -> JSON.stringify(data)
+    IO.write(`  Stringified: ` + s)
+    let parsed -> JSON.parse(s)
+    IO.write(`  Parsed name: ` + parsed[`name`])
+}
+
+function main() {
+    IO.info(`--- Standard Library Extension Test ---`)
+    test_path()
+    test_file()
+    test_sys()
+    test_math()
+    test_json()
+    IO.info(`--- All Tests Passed! ---`)
+}

@@ -3,15 +3,12 @@ import `../../src/compiler/Parser` as Parser
 import `../../src/compiler/CTranspiler` as CTranspiler
 import `../../src/compiler/Token` as TokenRec
 import `../../lib/zen/io` as IO
+import `../../lib/zen/file` as File
 import `../../lib/zen/string` as Str
 
-function transpile_file(path, output_path) {
-    IO.write(`DEBUG: TokenType.COMMA = ` + Str.str(TokenRec.TokenType.COMMA))
-    IO.write(`DEBUG: TokenType.LEFT_BRACKET = ` + Str.str(TokenRec.TokenType.LEFT_BRACKET))
-    IO.write(`DEBUG: TokenType.TK_LIST = ` + Str.str(TokenRec.TokenType.TK_LIST))
-    IO.write(`DEBUG: TokenType.TK_SET = ` + Str.str(TokenRec.TokenType.TK_SET))
+function transpile_file(path, output_base) {
     IO.write(`--- Transpiling ` + path + ` ---`)
-    let source -> IO.read_file(path)
+    let source -> File.read(path)
     
     let l -> Lexer.Lexer(source)
     let tokens -> l.tokenize()
@@ -20,22 +17,31 @@ function transpile_file(path, output_path) {
     let ast -> p.parse()
     
     let t -> CTranspiler.Transpiler(ast)
-    let c_code -> t.transpile()
     
-    IO.write(`Writing output to ` + output_path)
-    IO.write_file(output_path, c_code)
-    IO.write(`Success!`)
+    // Header
+    let guard_name -> Str.replace(Str.to_upper(output_base), `/`, `_`) + `_H`
+    let h_code -> t.transpile_header(guard_name)
+    File.write(output_base + `.h`, h_code)
+    
+    // Source
+    let parts -> Str.split(output_base, `/`)
+    let h_file -> parts[parts.length - 1] + `.h`
+    let c_code -> t.transpile_source(h_file)
+    File.write(output_base + `.c`, c_code)
+    
+    IO.write(`Success generating ` + output_base + `.c/h`)
 }
 
-function verify_compiler {
-    // Transpile Lexer
-    transpile_file(`src/compiler/Lexer.zl`, `out/Lexer.c`)
+function verify_compiler() {
+    // Component directory in 'out'
+    // Actually just flat for now
     
-    // Transpile Parser
-    transpile_file(`src/compiler/Parser.zl`, `out/Parser.c`)
-    
-    // Transpile CTranspiler
-    transpile_file(`src/compiler/CTranspiler.zl`, `out/CTranspiler.c`)
+    transpile_file(`src/compiler/Token.zl`, `out/compiler/Token`)
+    transpile_file(`src/compiler/AST.zl`, `out/compiler/AST`)
+    transpile_file(`src/compiler/Lexer.zl`, `out/compiler/Lexer`)
+    transpile_file(`src/compiler/Parser.zl`, `out/compiler/Parser`)
+    transpile_file(`src/compiler/CTranspiler.zl`, `out/compiler/CTranspiler`)
+    transpile_file(`src/compiler/main.zl`, `out/zen`)
 }
 
 verify_compiler()

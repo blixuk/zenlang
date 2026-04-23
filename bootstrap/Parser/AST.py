@@ -30,6 +30,8 @@ from Checker.Type import (
 
 class ASTNode:
     node_type: str | None = "ASTNode"
+    doc_comment: Optional[str] = None
+    filename: Optional[str] = None
 
 
 @dataclass
@@ -102,6 +104,17 @@ class MemberReassignmentStatement(ASTNode):
 
 
 @dataclass
+class IndexReassignmentStatement(ASTNode):
+    line: int
+    column: int
+    scope_level: int
+    callee: Any
+    index: Any
+    value: Any
+    node_type: Optional[str] = "IndexReassignmentStatement"
+
+
+@dataclass
 class ExpressionStatement(ASTNode):
     expression: Any
     node_type: Optional[str] = "ExpressionStatement"
@@ -125,7 +138,7 @@ class FunctionStatement(ASTNode):
     scope_level: int
     name: str
     parameters: List
-    block: Any
+    body: Any
     return_type: Optional[Type] = None
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "FunctionStatement"
@@ -158,12 +171,21 @@ class ObjectStatement(ASTNode):
 
 
 @dataclass
+class EnumVariant(ASTNode):
+    line: int
+    column: int
+    name: str
+    params: List[str]  # List of parameter names
+    value: Optional[Any] = None
+    node_type: Optional[str] = "EnumVariant"
+
+@dataclass
 class EnumeratorStatement(ASTNode):
     line: int
     column: int
     scope_level: int
     name: str
-    members: list
+    members: List[EnumVariant]
     declared_type: str = "Enumerator"
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "EnumeratorStatement"
@@ -189,7 +211,7 @@ class ScopeStatement(ASTNode):
     column: int
     scope_level: int
     name: str
-    block: Any
+    body: Any
     node_type: Optional[str] = "ScopeStatement"
 
 
@@ -220,7 +242,7 @@ class DeferStatement(ASTNode):
     line: int
     column: int
     scope_level: int
-    block: Any
+    body: Any
     node_type: Optional[str] = "DeferStatement"
 
 
@@ -243,8 +265,39 @@ class WhenStatement(ASTNode):
     when_block: Any
     conditional_blocks: List[Dict[Any, Any]]
     or_block: Any
+    branches: Optional[List["CaseBranch"]] = None
     node_type: Optional[str] = "WhenStatement"
 
+
+@dataclass
+class WithStatement(ASTNode):
+    line: int
+    column: int
+    scope_level: int
+    expression: Any
+    alias: str
+    body: Any
+    node_type: Optional[str] = "WithStatement"
+
+
+@dataclass
+class InExpression(ASTNode):
+    line: int
+    column: int
+    scope_level: int
+    arena: str
+    expression: Any
+    node_type: Optional[str] = "InExpression"
+
+
+@dataclass
+@dataclass
+class CaseBranch(ASTNode):
+    line: int
+    column: int
+    pattern: Any
+    body: Any
+    node_type: Optional[str] = "CaseBranch"
 
 @dataclass
 class CheckStatement(ASTNode):
@@ -252,8 +305,9 @@ class CheckStatement(ASTNode):
     column: int
     scope_level: int
     expression: Any
-    cases: List[Dict[Any, Any]]
+    cases: List[CaseBranch]
     or_block: Optional[Any] = None
+    raise_expression: Optional[Any] = None
     node_type: Optional[str] = "CheckStatement"
 
 
@@ -263,7 +317,7 @@ class DoStatement(ASTNode):
     column: int
     do_type: str
     scope_level: int
-    block: Any
+    body: Any
     condition: Optional[Any] = None
     iterator: Optional[Any] = None
     iterable: Optional[Any] = None
@@ -363,7 +417,7 @@ class FunctionExpression(ASTNode):
     scope_level: int
     name: str
     parameters: list
-    block: Any
+    body: Any
     return_type: Optional[Type] = None
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "FunctionExpression"
@@ -424,7 +478,18 @@ class CheckExpression(ASTNode):
     scope_level: int
     expression: Any
     or_value: Optional[Any] = None
+    raise_expression: Optional[Any] = None
     node_type: Optional[str] = "CheckExpression"
+
+
+@dataclass
+class IsExpression(ASTNode):
+    line: int
+    column: int
+    scope_level: int
+    left: Any
+    right: Any
+    node_type: Optional[str] = "IsExpression"
 
 
 ## Identifiers
@@ -447,6 +512,8 @@ class Identifier(ASTNode):
 
 @dataclass
 class BinaryOperation(ASTNode):
+    line: int
+    column: int
     operator: str
     left: Any
     right: Any
@@ -457,6 +524,8 @@ class BinaryOperation(ASTNode):
 
 @dataclass
 class UnaryOperation(ASTNode):
+    line: int
+    column: int
     operator: str
     right: Any
     resolved_type: Optional[Type] = None
@@ -486,6 +555,8 @@ class NothingLiteral(ASTNode):
 
 @dataclass
 class NumberLiteral(ASTNode):
+    line: int
+    column: int
     value: Optional[Any] = None
     literal: Optional[Any] = None
     base: Optional[Any] = None
@@ -495,6 +566,8 @@ class NumberLiteral(ASTNode):
 
 @dataclass
 class TextLiteral(ASTNode):
+    line: int
+    column: int
     value: Optional[Any] = None
     literal: Optional[Any] = None
     type: Optional[Type] = None
@@ -561,6 +634,8 @@ class BooleanLiteral(ASTNode):
 
 @dataclass
 class TypeLiteral(ASTNode):
+    line: int
+    column: int
     name: str
     type: Optional[Type | None] = None
     subtypes: Optional[List["TypeLiteral"]] = None
@@ -671,9 +746,62 @@ class SetLiteral(ASTNode):
 
 
 @dataclass
+class MapLiteral(ASTNode):
+    line: int
+    column: int
+    elements: List[ElementLiteral] # ElementLiteral can represent key -> value
+    resolved_type: Type = TypeMap(None, TypeVariant, TypeVariant)
+    type: Optional[TypeMap] = None
+    node_type: Optional[str] = "MapLiteral"
+
+
+@dataclass
 class VectorLiteral(ASTNode):
     line: int
     column: int
     elements: List[ElementLiteral]
     type: Optional[TypeVector] = None
     node_type: Optional[str] = "VectorLiteral"
+
+## Patterns
+
+@dataclass
+class Pattern(ASTNode):
+    line: int
+    column: int
+
+@dataclass
+class LiteralPattern(Pattern):
+    value: Any
+    node_type: Optional[str] = "LiteralPattern"
+
+@dataclass
+class IdentifierPattern(Pattern):
+    name: str
+    node_type: Optional[str] = "IdentifierPattern"
+
+@dataclass
+class ListPattern(Pattern):
+    elements: List[Pattern]
+    node_type: Optional[str] = "ListPattern"
+
+@dataclass
+class MapPattern(Pattern):
+    pairs: List[Tuple[Any, Pattern]]
+    node_type: Optional[str] = "MapPattern"
+
+@dataclass
+class IsMatchPattern(Pattern):
+    type_name: str
+    node_type: Optional[str] = "IsMatchPattern"
+
+@dataclass
+class VariantPattern(Pattern):
+    name: str
+    enum_name: str
+    params: List[Pattern]
+    node_type: Optional[str] = "VariantPattern"
+
+@dataclass
+class WildcardPattern(Pattern):
+    node_type: Optional[str] = "WildcardPattern"

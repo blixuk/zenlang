@@ -21,6 +21,7 @@ class SymbolKind(Enum):
     ARGUMENT = "ARGUMENT"
     COLLECTION = "COLLECTION"
     CONTAINER = "CONTAINER"
+    TYPE = "TYPE"
 
 
 class Value:
@@ -239,10 +240,22 @@ class TypeEnumerator(Type):
     members: List[TypeMember]
 
 
-CONTAINER_TYPES: Dict = {
+@dataclass(frozen=True)
+class TypeEnum(Type):
+    name: str
+    variants: Dict[str, "TypeEnumVariant"]
+
+@dataclass(frozen=True)
+class TypeEnumVariant(Type):
+    name: str
+    params: List[Type]
+    parent_enum: str
+
+OBJECT_TYPES: Dict = {
     "Function": TypeFunction,
     "Structure": TypeStructure,
-    "Enumerator": TypeEnumerator,
+    "Class": TypeClass,
+    "Enumerator": TypeEnum,
 }
 
 

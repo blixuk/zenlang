@@ -4,7 +4,7 @@ enumerator name { .... }
 
 enumerator Direction { North, South, East, West }
 
-print(Direction)
+write(Direction)
 // ( (`North`, 0), (`South`, 1), (`East`, 2), (`West`, 3) )
 
 enumerator Direction { 
@@ -14,17 +14,17 @@ enumerator Direction {
     West -> 4 
 }
 
-print(Direction)
+write(Direction)
 // ( (`North`, 1), (`South`, 2), (`East`, 3), (`West`, 4) )
-print(Direction.names)
+write(Direction.names)
 // ( `North`, `South`, `East`, `West` )
-print(Direction.values)
+write(Direction.values)
 // ( 1, 2, 3, 4 )
-print(Direction.South)
+write(Direction.South)
 // (`South`, 2)
-print(Direction.South.name)
+write(Direction.South.name)
 // `South`
-print(Direction.South.value)
+write(Direction.South.value)
 // 2
 
 enumerator Week { 
@@ -33,7 +33,7 @@ enumerator Week {
     TUESDAY -> 10, 
     WEDNESDAY -> 100 
 }
-print(Direction)
+write(Direction)
 // ( (`SUNDAY`, -1), (`MONDAY`, 1), (`TUESDAY`, 10), (`WEDNESDAY`, 100) )
 
 enumerator Week { 

@@ -200,13 +200,13 @@ Classes:
 class Animal {
     name : String
     function speak {
-        print("...")
+        write("...")
     }
 }
 
 class Dog extends Animal {
     function speak {
-        print("Woof!")
+        write("Woof!")
     }
 }
 ```
@@ -350,7 +350,7 @@ not expression     - logical not
 
 ### 5.4 Function Calls
 ```
-print("hi")
+write("hi")
 ```
 
 ### 5.5 Member Access
@@ -415,20 +415,20 @@ let messsage -> `positive` when x > 0 or `negative`
 ### 6.4 Do Loop
 ```
 do {
-  print(`Done`)
+  write(`Done`)
 }
 ```
 
 ### 6.5 Do when Loop
 ```
 do when <condition> {
-  print(`Done`)
+  write(`Done`)
 }
 
 do when <condition> {
-  print(`Working`)
+  write(`Working`)
 } or {
-  print('Done')
+  write('Done')
 }
 ```
 
@@ -437,24 +437,24 @@ do when <condition> {
 // pre check
 let a -> 0
 do while a < 3 {
-  print(a)
+  write(a)
   a -> a + 1
 }
 
 // post check
 let z -> 0
 do {
-  print(z)
+  write(z)
   z -> z + 1
 } while z == 1
 
 // or only with pre check
 let b -> 0
 do while b < 3 {
-  print(b)
+  write(b)
   b -> b + 1
 } or {
-  print(`Else`)
+  write(`Else`)
 }
 ```
 
@@ -463,14 +463,14 @@ do while b < 3 {
 // pre check
 let c -> 0
 do until c == 3 {
-  print(c)
+  write(c)
   c -> c + 1
 }
 
 // post check
 let x -> 0
 do {
-  print(x)
+  write(x)
   x -> x + 1
 } until x == 1
 ```
@@ -478,13 +478,13 @@ do {
 ### 6.8 Do For Loop
 ```
 do for i in [1, 2, 3, 4] {
-  print(i)
+  write(i)
 }
 
 do for i in [] {
-  print(i)
+  write(i)
 } or {
-  print(`empty`)
+  write(`empty`)
 }
 ```
 
@@ -564,7 +564,7 @@ class Dog extends Animal { ... }
 try {
   dangerous()
 } catch error {
-  print(error)
+  write(error)
 }
 ```
 

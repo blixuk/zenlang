@@ -71,9 +71,10 @@ class CCompiler:
         )
 
         if result.returncode != 0:
-            print("Compile failed:")
+            print("\n!!! C COMPILE FAILED !!!")
             print(result.stderr)
-            return
+            import sys
+            sys.exit(1)
 
         print("Compiled successfully. Running program:\n")
 

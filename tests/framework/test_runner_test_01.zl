@@ -1,0 +1,48 @@
+import zen.io as io
+import zen.test as test
+
+/!
+ Adds two integers.
+ @param a The first integer.
+ @param b The second integer.
+ @return The sum.
+ @example
+   assert_equal(add(2, 3), 5)
+   assert_equal(add(-1, 1), 0)
+ !/
+function add(a, b) {
+    <- a + b
+}
+
+/!
+ Subtracts two integers.
+ @param a The first integer.
+ @param b The second integer.
+ @return The difference.
+ @example
+   assert_equal(sub(10, 5), 5)
+ !/
+function sub(a, b) {
+    <- a - b
+}
+
+/!
+ @test
+ !/
+function test_add_basic() {
+    <- test.assert_equal(add(10, 20), 30)
+}
+
+/!
+ @test
+ !/
+function test_sub_basic() {
+    <- test.assert_equal(sub(20, 10), 10)
+}
+
+function main() {
+    io.info(`Manual test run...`)
+    test_add_basic()
+    test_sub_basic()
+    io.info(`Manual test run complete.`)
+}

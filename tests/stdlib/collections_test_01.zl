@@ -1,0 +1,44 @@
+import zen.io as IO
+import zen.collections as C
+import zen.string as Str
+
+function test_collections() {
+    IO.info(`--- Testing zen.collections module ---`)
+    
+    // Test Map
+    let d -> m{
+        `a` -> 1,
+        `b` -> 2,
+        `c` -> 3
+    }
+    
+    let keys -> C.Map.keys(d)
+    IO.info(`  Map keys: ` + Str.to_string(keys))
+    
+    let values -> C.Map.values(d)
+    IO.info(`  Map values: ` + Str.to_string(values))
+    
+    when C.Map.has(d, `b`) {
+        IO.info(`  Map has 'b': true`)
+    } or {
+        IO.error(`  Map has 'b': false (failed)`)
+    }
+    
+    // Test Set
+    let l -> [1, 2, 2, 3, 1]
+    let s -> C.Set.from_list(l)
+    IO.info(`  Set from list [1, 2, 2, 3, 1]: ` + Str.to_string(C.Set.to_list(s)))
+    
+    C.Set.add(s, 4)
+    when C.Set.has(s, 4) {
+        IO.info(`  Set has 4: true`)
+    } or {
+        IO.error(`  Set has 4: false (failed)`)
+    }
+    
+    IO.info(`--- zen.collections tests complete ---`)
+}
+
+function zen_entry() {
+    test_collections()
+}
