@@ -1,4 +1,0 @@
-from closure_test_mod import get_internal
-from zen.io import write
-
-write(`Checking closure: ` + get_internal())

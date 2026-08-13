@@ -1,47 +1,27 @@
-import `../../src/compiler/Lexer` as Lexer
-import `../../src/compiler/Parser` as Parser
-import `../../src/compiler/CTranspiler` as CTranspiler
-import `../../src/compiler/Token` as TokenRec
-import `../../lib/zen/io` as IO
-import `../../lib/zen/file` as File
-import `../../lib/zen/string` as Str
+/!
+ Self-host Stage 1 verify: tokenize a small fixture via selfhost lexer.
+ Full component transpile lives in later stages (see selfhost/PARITY.md).
+ !/
 
-function transpile_file(path, output_base) {
-    IO.write(`--- Transpiling ` + path + ` ---`)
-    let source -> File.read(path)
-    
-    let l -> Lexer.Lexer(source)
-    let tokens -> l.tokenize()
-    
-    let p -> Parser.Parser(tokens)
-    let ast -> p.parse()
-    
-    let t -> CTranspiler.Transpiler(ast)
-    
-    // Header
-    let guard_name -> Str.replace(Str.to_upper(output_base), `/`, `_`) + `_H`
-    let h_code -> t.transpile_header(guard_name)
-    File.write(output_base + `.h`, h_code)
-    
-    // Source
-    let parts -> Str.split(output_base, `/`)
-    let h_file -> parts[parts.length - 1] + `.h`
-    let c_code -> t.transpile_source(h_file)
-    File.write(output_base + `.c`, c_code)
-    
-    IO.write(`Success generating ` + output_base + `.c/h`)
+import compiler.Lexer as Lexer
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let src -> `function main() {
+    let x -> 1 + 2
+    <- x
 }
-
-function verify_compiler() {
-    // Component directory in 'out'
-    // Actually just flat for now
-    
-    transpile_file(`src/compiler/Token.zl`, `out/compiler/Token`)
-    transpile_file(`src/compiler/AST.zl`, `out/compiler/AST`)
-    transpile_file(`src/compiler/Lexer.zl`, `out/compiler/Lexer`)
-    transpile_file(`src/compiler/Parser.zl`, `out/compiler/Parser`)
-    transpile_file(`src/compiler/CTranspiler.zl`, `out/compiler/CTranspiler`)
-    transpile_file(`src/compiler/main.zl`, `out/zen`)
+`
+    let tokens -> Lexer.tokenize_source(src)
+    // Capture length before any iteration (native for-loops must not be assumed non-consuming).
+    let n -> tokens.length
+    io.writeln(`tokens=` + Str.to_string(n))
+    when n >= 10 {
+        io.writeln(`PASS`)
+        <- 0
+    } or {
+        io.writeln(`FAIL n=` + Str.to_string(n))
+        <- 1
+    }
 }
-
-verify_compiler()

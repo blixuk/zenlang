@@ -5,9 +5,10 @@ class SMIRLowerer:
     """
     Translates analyzed S-MIR into explicit memory management instructions (L-MIR).
     """
-    def __init__(self, instructions: List[MIRInstruction]):
+    def __init__(self, instructions: List[MIRInstruction], global_variable_names: set = None):
         self.instructions = instructions
         self.output: List[MIRInstruction] = []
+        self.global_variable_names = global_variable_names if global_variable_names else set()
 
     def lower(self) -> List[MIRInstruction]:
         for instr in self.instructions:
@@ -44,12 +45,19 @@ class SMIRLowerer:
                 column=instr.column,
                 filename=instr.filename
             ))
-            self.output.append(Nullify(
-                target=instr.src, 
-                line=instr.line, 
-                column=instr.column,
-                filename=instr.filename
-            ))
+            
+            # Do not nullify globals, variants, or built-ins
+            is_global = instr.src in self.global_variable_names
+            is_variant = instr.src.startswith("ZenVariant_")
+            is_builtin = instr.src.startswith("__builtin") or instr.src.startswith("ZenIO") or instr.src.startswith("ZenSystem")
+            
+            if not (is_global or is_variant or is_builtin):
+                self.output.append(Nullify(
+                    target=instr.src, 
+                    line=instr.line, 
+                    column=instr.column,
+                    filename=instr.filename
+                ))
             
         elif isinstance(instr, RegionEnter):
             if instr.is_explicit:

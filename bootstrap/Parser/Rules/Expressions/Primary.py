@@ -15,6 +15,7 @@ from Parser.AST import (
     StructureExpression,
     ParentExpression,
     NothingLiteral,
+    DefaultLiteral,
     BooleanLiteral,
     IntegerLiteral,
     DecimalLiteral,
@@ -25,6 +26,21 @@ from Parser.AST import (
 from Checker.Type import TypeVariant, TypeElement
 
 class PrimaryExpressionsMixin:
+    def _structure_type_name(self, node: ASTNode) -> str:
+        """Dotted type path for structure instantiation (Word / text.Word)."""
+        if isinstance(node, Identifier):
+            return node.name
+        if isinstance(node, MemberExpression):
+            obj = self._structure_type_name(node.object) if hasattr(node, "object") else ""
+            prop = node.property
+            if hasattr(prop, "value"):
+                prop = prop.value
+            if hasattr(prop, "name"):
+                prop = prop.name
+            prop = str(prop)
+            return f"{obj}.{prop}" if obj else prop
+        return getattr(node, "name", None) or str(node)
+
     def primary(self) -> ASTNode | None:
         token: Token | None = self.token_handler.peek()
 
@@ -42,6 +58,18 @@ class PrimaryExpressionsMixin:
 
             self.logger.debug("primary when", primary_when)
             return primary_when
+
+        if self.token_handler.match_type_value(TokenType.KEYWORD, "await"):
+            token = self.token_handler.previous()
+            expression = self.expression()
+            node = AwaitExpression(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                self.scope_manager.get_current_scope_level(),
+                expression
+            )
+            self.logger.debug("primary await", node)
+            return node
 
         if self.token_handler.check_type(TokenType.CHECK_SYMBOL) or self.token_handler.match_type_value(TokenType.KEYWORD, "check"):
             if self.token_handler.match_type(TokenType.CHECK_SYMBOL):
@@ -64,7 +92,8 @@ class PrimaryExpressionsMixin:
                 node = MapLiteral(getattr(token, "line"), getattr(token, "column"), [])
                 return node
             
-            is_dict = False
+            has_assignment = False
+            has_block_indicator = False
             depth = 0
             for i in range(self.token_handler.current_token, len(self.token_handler.tokens)):
                 curr_t = self.token_handler.tokens[i]
@@ -74,15 +103,18 @@ class PrimaryExpressionsMixin:
                     if depth == 0:
                         break
                     depth -= 1
-                elif curr_t.type == TokenType.ASSIGNMENT and depth == 0:
-                    is_dict = True
-                    break
-                elif curr_t.type in [TokenType.RETURN, TokenType.TYPE_LET, TokenType.TYPE_SET] and depth == 0:
-                    break
-                elif curr_t.type == TokenType.KEYWORD and depth == 0 and curr_t.value in ['let', 'set', 'if', 'when', 'for', 'while', 'until', 'do', 'return', 'break', 'continue', 'check', 'raise', 'assert', 'function', 'class', 'structure', 'enumerator', 'object', 'defer', 'case', 'with', 'export']:
-                    break
-                elif curr_t.type == TokenType.SEMICOLON and depth == 0:
-                    break
+                elif depth == 0:
+                    if curr_t.type == TokenType.SEMICOLON:
+                        has_block_indicator = True
+                        break
+                    elif curr_t.type == TokenType.ASSIGNMENT:
+                        has_assignment = True
+                    elif curr_t.type in [TokenType.RETURN, TokenType.TYPE_LET, TokenType.TYPE_SET]:
+                        has_block_indicator = True
+                    elif curr_t.type == TokenType.KEYWORD and curr_t.value in ['let', 'set', 'if', 'when', 'for', 'while', 'until', 'do', 'return', 'break', 'continue', 'check', 'raise', 'assert', 'class', 'structure', 'enumerator', 'object', 'defer', 'case', 'with', 'export']:
+                        has_block_indicator = True
+            
+            is_dict = has_assignment and not has_block_indicator
             
             if is_dict:
                 elements = self.parse_elements(TokenType.RIGHT_BRACE)
@@ -290,6 +322,15 @@ class PrimaryExpressionsMixin:
             self.logger.debug("primary nothing", primary_nothing)
             return primary_nothing
 
+        if self.token_handler.match_type(TokenType.DEFAULT):
+            primary_default: DefaultLiteral = DefaultLiteral(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                getattr(token, "value"),
+            )
+            self.logger.debug("primary default", primary_default)
+            return primary_default
+
         return None
 
     def resolve_identifier(self) -> ASTNode:
@@ -315,7 +356,7 @@ class PrimaryExpressionsMixin:
         token: Token | None = None
         callee: Identifier | None = None
 
-        token = self.token_handler.match_types([TokenType.IDENTIFIER, TokenType.KEYWORD])
+        token = self.token_handler.match_types([TokenType.IDENTIFIER, TokenType.KEYWORD, TokenType.TYPE])
 
         callee = Identifier(
             getattr(token, "line"),
@@ -329,7 +370,16 @@ class PrimaryExpressionsMixin:
         while True:
             if self.token_handler.match_type(TokenType.DOT):
                 property: Token | None = self.token_handler.expect_types(
-                    [TokenType.IDENTIFIER, TokenType.KEYWORD, TokenType.TYPE], "Expected property name after `.`"
+                    [
+                        TokenType.IDENTIFIER,
+                        TokenType.KEYWORD,
+                        TokenType.TYPE,
+                        TokenType.NOTHING,
+                        TokenType.VOID,
+                        TokenType.VARIANT,
+                        TokenType.BOOLEAN,
+                    ],
+                    "Expected property name after `.`",
                 )
 
                 expression = MemberExpression(
@@ -342,25 +392,6 @@ class PrimaryExpressionsMixin:
             else:
                 break
 
-        if self.token_handler.check_type(TokenType.ASSIGNMENT):
-            self.token_handler.expect_type(
-                TokenType.ASSIGNMENT, "Expected `->` after member name"
-            )
-
-            value: ASTNode = self.expression()
-            assignment_path = expression 
-             
-            expression = MemberReassignmentStatement(
-                getattr(token, "line"),
-                getattr(token, "column"),
-                self.scope_manager.get_scope_level("global"),
-                assignment_path,
-                getattr(assignment_path, "property", ""),
-                value,
-                declared_type=getattr(value, "type")
-                if hasattr(value, "type")
-                else TypeVariant.name,
-            )
 
         self.logger.debug("member_expression", expression)
 
@@ -469,11 +500,14 @@ class PrimaryExpressionsMixin:
 
                         self.token_handler.match_type(TokenType.LEFT_BRACE)
                         members = self.parse_members(is_instantiation=True)
+                        # Preserve qualified type names: text.Word → "text.Word"
+                        # (never str(MemberExpression) which breaks native mangling).
+                        struct_name = self._structure_type_name(node)
                         node = StructureExpression(
                             getattr(node, "line"),
                             getattr(node, "column"),
                             self.scope_manager.get_scope_level("structure"),
-                            getattr(node, "name", str(node)),
+                            struct_name,
                             members,
                         )
                         continue

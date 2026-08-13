@@ -6,7 +6,7 @@ Based on the current progress, Zenlang is now in a very strong position with a u
 *   **Result/Option Types**: While we have the "Error Triad" (`^`, `?`, `!`), formalizing `Result<T, E>` and `Option<T>` types would make the type system even more robust.
 
 ### 2. Standard Library Expansion
-*   **`zen.term` (TUI Framework)**: The foundations are there, but adding a declarative TUI layout engine (similar to Flexbox but for the terminal) would be a "killer feature" for Zenlang.
+*   **`zen.sys.term` (TUI Framework)**: The foundations are there, but adding a declarative TUI layout engine (similar to Flexbox but for the terminal) would be a "killer feature" for Zenlang.
 *   **`zen.net`**: Building out a high-level HTTP client and server library using the fiber-based **Task** model we've documented.
 *   **`zen.fs`**: More ergonomic file system wrappers (recursive directory walking, watchdog/file-watching support) for modern scripting.
 
@@ -33,7 +33,7 @@ Debug handling and logging
 
 ---
 
-### 1. Semantic Text Power (`zen.text`)
+### 1. Semantic Text Power (`zen.text.text`)
 The manifesto mentions that Zenlang treats text as more than just byte arrays. We could implement the linguistic structures:
 - **`Word`**: Functions for stems, case manipulation, and boundaries.
 - **`Sentence`**: Utilities for punctuation handling, capitalization, and segments.
@@ -46,11 +46,12 @@ To move toward building networked services as mentioned in the docs:
 - **`HTTP` Client**: A simple wrapper for making requests (GET/POST).
 - *Why:* Essential for any modern "Unix-native" language.
 
-### 3. Advanced Terminal UI (`zen.console`)
+### 3. Advanced Terminal UI (`zen.console` / `zen.sys.term`)
 Fulfilling the "Terminal-first" philosophy:
 - **Rich Formatting**: Support for 256-color/TrueColor, bold, italics, etc.
-- **Interactive Input**: Reading single keys (raw mode) without enter, terminal resizing events.
+- **Interactive Input**: Done for basics — `raw_enter`/`raw_exit`, `read_key`/`poll_key`, resize events, cursor helpers; demo editor `examples/zedit.zl`.
 - **Progress & Spinners**: High-level components for CLI tools.
+- **Declarative layout**: Still open (flex-like TUI engine).
 
 ### 4. Concurrency & Tasks (`zen.task`)
 Fleshing out the "Everything is a Task" model:

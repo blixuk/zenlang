@@ -16,6 +16,7 @@ class TokenType(Enum):
 
     VOID = "VOID"
     NOTHING = "NOTHING"
+    DEFAULT = "DEFAULT"
     VARIANT = "VARIANT"
     INTEGER = "INTEGER"
     DECIMAL = "DECIMAL"
@@ -34,6 +35,8 @@ class TokenType(Enum):
     DEFER = "DEFER"
     CASE = "CASE"
     WITH = "WITH"
+    TASK = "TASK"
+    AWAIT = "AWAIT"
 
     LIST = "LIST"
     TUPLE = "TUPLE"
@@ -105,6 +108,7 @@ class TokenType(Enum):
 
     QUOTIENT = "QUOTIENT"
     RANGE = "RANGE"
+    RANGE_INCLUSIVE = "RANGE_INCLUSIVE"
 
     NUMBER = "NUMBER"
     TEXT = "TEXT"
@@ -124,6 +128,8 @@ class TokenType(Enum):
     CHECK_SYMBOL = "CHECK_SYMBOL"
     RAISE_SYMBOL = "RAISE_SYMBOL"
     ASSERT_SYMBOL = "ASSERT_SYMBOL"
+
+    ELLIPSIS = "ELLIPSIS"
 
     EOF = "EOF"
 
@@ -147,7 +153,6 @@ class Token:
     column: int | None
     end_line: int | None = None
     end_column: int | None = None
-    prefix: Optional[str] = None
     message: Optional[str] = None
 
 
@@ -201,8 +206,15 @@ KEYWORDS: list = [
     "extend",
     "extends",
     "import",
+    "use",  # alias for import (migration path toward preferred surface)
     "from",
     "as",
+    "task",
+    "await",
+    "source",
+    "target",
+    "owned",
+    "borrowed",
 ]
 
 TYPES: list = [
@@ -231,11 +243,14 @@ TYPES: list = [
     "Iterable",
     "Enumerator",
     "Error",
+    "Option",
+    "Result",
 ]
 
 TYPE_TOKENS: list = [
     TokenType.VOID,
     TokenType.NOTHING,
+    TokenType.DEFAULT,
     TokenType.VARIANT,
     TokenType.INTEGER,
     TokenType.DECIMAL,
@@ -276,9 +291,11 @@ LITERALS: dict = {
     "True": TokenType.BOOLEAN,
     "False": TokenType.BOOLEAN,
     "Nothing": TokenType.NOTHING,
+    "Default": TokenType.DEFAULT,
     "true": TokenType.BOOLEAN,
     "false": TokenType.BOOLEAN,
-    "nothing": TokenType.NOTHING,
+    "nothing": TokenType.NOTHING, # DEPRECATED: use Nothing
+    "default": TokenType.DEFAULT, # DEPRECATED: use Default
 }
 
 OPERATORS: dict = {
@@ -334,3 +351,16 @@ BRACKETS: dict = {
     "[": TokenType.LEFT_BRACKET,
     "]": TokenType.RIGHT_BRACKET,
 }
+
+IDENTIFIER_MAP: dict = {}
+for _t in TYPES:
+    IDENTIFIER_MAP[_t] = TokenType.TYPE
+for _k in KEYWORDS:
+    IDENTIFIER_MAP[_k] = TokenType.KEYWORD
+for _k, _v in LOGICALS.items():
+    IDENTIFIER_MAP[_k] = _v
+for _k, _v in LITERALS.items():
+    IDENTIFIER_MAP[_k] = _v
+for _k, _v in ASSIGNMENTS.items():
+    if _k.isalpha() or "_" in _k:
+        IDENTIFIER_MAP[_k] = _v

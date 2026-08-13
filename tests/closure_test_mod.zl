@@ -1,5 +1,0 @@
-let internal_val -> `The secret value`
-
-function get_internal() {
-    <- internal_val
-}

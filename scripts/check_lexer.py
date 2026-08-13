@@ -1,10 +1,10 @@
 from Lexer.Lexer import Lexer
 import os
 
-with open("src/compiler/Lexer.zl", "r") as f:
+with open("selfhost/compiler/Lexer.zl", "r") as f:
     source = f.read()
 
-lexer = Lexer(source, "src/compiler/Lexer.zl")
+lexer = Lexer(source, "selfhost/compiler/Lexer.zl")
 try:
     tokens = lexer.tokenize()
     print(f"Token count: {len(tokens)}")

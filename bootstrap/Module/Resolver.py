@@ -9,11 +9,36 @@ class Resolver:
         if "ZEN_PATH" in os.environ:
              self.search_paths.extend(os.environ["ZEN_PATH"].split(os.pathsep))
 
+    # Short names → nested canonical modules (flat lib/zen/*.zl removed).
+    # Exact-match only so zen.sys.term is not rewritten by a zen.sys alias.
+    _IMPORT_ALIASES = {
+        "zen.string": "zen.text.string",
+        "lib/zen/string": "lib/zen/text/string",
+        "zen.file": "zen.io.file",
+        "lib/zen/file": "lib/zen/io/file",
+        "zen.path": "zen.io.path",
+        "lib/zen/path": "lib/zen/io/path",
+        "zen.io": "zen.io.io",
+        "lib/zen/io": "lib/zen/io/io",
+        "zen.process": "zen.sys.process",
+        "lib/zen/process": "lib/zen/sys/process",
+        "zen.term": "zen.sys.term",
+        "lib/zen/term": "lib/zen/sys/term",
+        "zen.random": "zen.math.random",
+        "lib/zen/random": "lib/zen/math/random",
+        "zen.list": "zen.collections.list",
+        "lib/zen/list": "lib/zen/collections/list",
+        "zen.json": "zen.data.json",
+        "lib/zen/json": "lib/zen/data/json",
+    }
+
     def resolve(self, import_path: str, base_dir: str = None) -> str:
         """
         Resolves a dotted import path (e.g. 'tests.modules.MyLib') 
         to an absolute file path (e.g. '/path/to/tests/modules/MyLib.zl').
         """
+        import_path = self._IMPORT_ALIASES.get(import_path, import_path)
+
         # Convert dotted path to file path
         # 'tests.modules.MyLib' -> 'tests/modules/MyLib'
         if os.sep in import_path or "/" in import_path:
@@ -33,9 +58,12 @@ class Resolver:
             if os.path.isfile(candidate):
                 return os.path.abspath(candidate)
                 
-            # 2. Check for package/mod.zl (if implicit) or package/__init__.zl?
-            # ZenLang spec is silent on __init__, assuming direct mapping for now.
-            
+            # 2. Check for package/package.zl
+            last_part = os.path.basename(relative_path)
+            candidate = os.path.join(base_path, relative_path, last_part + ".zl")
+            if os.path.isfile(candidate):
+                return os.path.abspath(candidate)
+
             # 3. Check exact path if it was already a file path (e.g. local import)
             candidate = os.path.join(base_path, relative_path)
             if os.path.isfile(candidate):

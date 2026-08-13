@@ -1,5 +1,0 @@
-import `../lib/zen/io` as IO
-
-function main() {
-    IO.write(`Hello from self-compiled ZenLang!`)
-}

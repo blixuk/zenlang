@@ -1,4 +1,4 @@
-import zen.io as IO
+import zen.io.io as IO
 import zen.test as T
 
 function test_addition() {

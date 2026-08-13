@@ -124,6 +124,11 @@ Functions are introduced with the function keyword.
         let add : Function<Integer> -> function ( a : Integer, b : Integer ) {
           <- a + b
         }
+
+        // Free outer locals are captured *by value* at creation time
+        // (interpreter + native). Up to 8 captures in the C runtime.
+        let n -> 10
+        let add_n -> function(x) { <- x + n }
         ```
     ]
 )

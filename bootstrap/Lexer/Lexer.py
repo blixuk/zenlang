@@ -16,8 +16,9 @@ from Lexer.Token import (
 from Logging import Printer
 from Logging.LexerLogger import LexerLogger
 
+from Lexer.Rules import Comments, Identifiers, Numbers, Strings, Operators, Symbols
 
-class Lexer:
+class Lexer(Comments, Identifiers, Numbers, Strings, Operators, Symbols):
     def __init__(
         self,
         source: str,
@@ -37,6 +38,91 @@ class Lexer:
         self.tokens: list = []
 
         self.logger: LexerLogger = LexerLogger(self.source_path)
+
+        self.char_dispatch: dict = {}
+        self._build_dispatch_table()
+
+    def _build_dispatch_table(self):
+        import string
+
+        self.char_dispatch = {
+            "`": self.make_string,
+            "\"": self.make_string,
+            ":": self.make_type,
+            ",": self.make_comma,
+            ".": self.make_dot,
+            "?": self.make_check_symbol,
+            "^": self._dispatch_caret,
+            "&": self.make_operator,
+            "|": self.make_operator,
+            "!": self._dispatch_bang,
+            "%": self.make_operator,
+            "/": self._dispatch_slash,
+            "<": self._dispatch_less_than,
+            ">": self._dispatch_greater_than,
+            "-": self._dispatch_minus,
+            "'": self.make_rune,
+            "~": self.make_operator,
+            "*": self.make_operator,
+        }
+
+        for c in string.ascii_letters + "_":
+            self.char_dispatch[c] = self.make_identifier
+
+        for c in string.digits:
+            self.char_dispatch[c] = self.make_number
+
+        for c in BRACKETS.keys():
+            self.char_dispatch[c] = self.make_bracket
+
+        for c in OPERATORS.keys():
+            if c not in self.char_dispatch:
+                self.char_dispatch[c] = self.make_operator
+
+        for c in COMPARATORS.keys():
+            if c not in self.char_dispatch:
+                self.char_dispatch[c] = self.make_comparator
+
+    def _dispatch_caret(self):
+        if self.peek(1) in ["^", "="]:
+            self.make_operator()
+        else:
+            self.make_raise_symbol()
+
+    def _dispatch_bang(self):
+        if self.peek(1) == "=":
+            self.make_comparator()
+        elif self.peek(1) in ["!", "|", "&", "^"]:
+            self.make_operator()
+        else:
+            self.make_assert_symbol()
+
+    def _dispatch_slash(self):
+        if self.peek(1) in ["/", "*", "!"]:
+            self.make_comment()
+        else:
+            self.make_operator()
+
+    def _dispatch_less_than(self):
+        if self.peek(1) == "-":
+            self.make_return()
+        elif self.peek(1) == "<":
+            self.make_operator()
+        else:
+            self.make_comparator()
+
+    def _dispatch_greater_than(self):
+        if self.peek(1) == ">":
+            self.make_operator()
+        else:
+            self.make_comparator()
+
+    def _dispatch_minus(self):
+        if self.peek(1) == ">":
+            self.make_assignment()
+        else:
+            self.make_operator()
+
 
     def get_snippet(
         self, line: int | None = None, column: int | None = None, context: int = 0
@@ -129,684 +215,33 @@ class Lexer:
     def make_tokens(self) -> None:
         character: str | None = self.peek()
 
-        if character and character.isspace():
+        if character is None:
+            return
+
+        if character.isspace():
             self.advance()
             return
 
-        if (
-            character
-            and character == "/"
-            and (self.peek(1) == "/" or self.peek(1) == "*")
-        ):
-            self.make_comment()
-            return
+        handler = self.char_dispatch.get(character)
 
-        if character:
+        if handler:
+            handler()
+        else:
             start_line: int = self.line_number
             start_column: int = self.column_number
-
-            if character == "`":
-                self.make_string()
-
-            elif character.isalpha() or character == "_":
-                self.make_identifier()
-
-            elif character.isdigit():
-                self.make_number()
-
-            elif character in BRACKETS.keys():
-                self.make_bracket()
-
-            elif character == "-" and self.peek(1) == ">":
-                self.make_assignment()
-
-            elif character == "<" and self.peek(1) == "-":
-                self.make_return()
-
-            elif character == ":":
-                self.make_type()
-
-            elif character == ",":
-                self.make_comma()
-
-            elif character == ".":
-                self.make_dot()
-
-            elif character == "?":
-                self.make_check_symbol()
-
-            elif character == "^":
-                if self.peek(1) in ["^", "="]:
-                    self.make_operator()
-                else:
-                    self.make_raise_symbol()
-
-            elif character == "&":
-                self.make_operator()
-
-            elif character == "|":
-                self.make_operator()
-
-            elif character == "!":
-                if self.peek(1) == "=":
-                    self.make_comparator()
-                elif self.peek(1) in ["!", "|", "&", "^"]:
-                    self.make_operator()
-                else:
-                    self.make_assert_symbol()
-
-            elif character == "%":
-                self.make_operator()
-
-            elif character == "/":
-                if self.peek(1) in ["/", "*", "!"]:
-                    self.make_comment()
-                else:
-                    self.make_operator()
-
-            elif character == "<":
-                if self.peek(1) == "-":
-                    self.make_return()
-                elif self.peek(1) == "<":
-                    self.make_operator()
-                else:
-                    self.make_comparator()
-
-            elif character == ">":
-                if self.peek(1) == ">":
-                    self.make_operator()
-                else:
-                    self.make_comparator()
-
-            elif character in OPERATORS.keys() or character == "~" or (character == "*" and self.peek(1) == "*"):
-                self.make_operator()
-
-            elif character in COMPARATORS.keys():
-                self.make_comparator()
-
-            elif character == "'":
-                self.make_rune()
-
-            else:
-                self.logger.error_token(
-                    TokenType.ERROR_UNEXPECTED_CHARACTER.name,
-                    start_line,
-                    start_column,
-                    character,
-                )
-                self.add_token(
-                    TokenType.ERROR_UNEXPECTED_CHARACTER,
-                    character,
-                    start_line,
-                    start_column,
-                    self.line_number,
-                    self.column_number,
-                )
-                raise TokenError
-
-    def make_comment(self) -> None:
-        comment: str = ""
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        if self.peek() == "/" and self.peek(1) == "/":
-            self.advance()
-            self.advance()
-
-            while (character := self.peek()) and character != "\n":
-                comment += character
-                self.advance()
-            
-            token_type = TokenType.COMMENT
-
-        elif self.peek() == "/" and self.peek(1) == "*":
-            self.advance()
-            self.advance()
-
-            while (character := self.peek()) and not (
-                character == "*" and self.peek(1) == "/"
-            ):
-                comment += character
-                self.advance()
-
-            self.advance()
-            self.advance()
-            
-            token_type = TokenType.COMMENT
-
-        elif self.peek() == "/" and self.peek(1) == "!":
-            self.advance()
-            self.advance()
-
-            while (character := self.peek()) and not (
-                character == "!" and self.peek(1) == "/"
-            ):
-                comment += character
-                self.advance()
-
-            self.advance()
-            self.advance()
-            
-            token_type = TokenType.DOC_COMMENT
-
-        else:
-            self.make_operator()
-            return
-
-        self.add_token(
-            token_type,
-            comment,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_identifier(self) -> None:
-        identifier: str = ""
-        identifier_type: TokenType
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        while (character := self.peek()) and (character.isalnum() or character == "_"):
-            identifier += self.advance()
-
-        if identifier in TYPES:
-            identifier_type = TokenType.TYPE
-        
-        elif identifier in ASSIGNMENTS:
-            identifier_type = ASSIGNMENTS[identifier]
-
-        elif identifier in LITERALS.keys():
-            identifier_type = LITERALS[identifier]
-
-        elif identifier in LOGICALS:
-            identifier_type = LOGICALS[identifier]
-
-        elif self.peek() == "`":
-            self.make_string(prefix=identifier)
-            return
-
-        elif identifier in TYPES:
-            identifier_type = TokenType.TYPE
-
-        elif identifier in KEYWORDS:
-            identifier_type = TokenType.KEYWORD
-
-        else:
-            identifier_type = TokenType.IDENTIFIER
-
-        self.add_token(
-            identifier_type,
-            identifier,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_number(self) -> None:
-        number: str = ""
-        dot_count: int = 0
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        separators: list[str] = [".", "_"]
-
-        while (character := self.peek()) is not None:
-            if character.isdigit():
-                number += self.advance()
-            elif character == "_":
-                self.advance()
-                continue
-            elif character == ".":
-                # Check for range operator '..'
-                if self.peek(1) == "." or not self.peek(1).isdigit():
-                    break
-                
-                number += self.advance()
-                dot_count += 1
-                if dot_count > 1:
-                    snippet: str = self.get_snippet(
-                        start_line, start_column, int(self.column_number - start_column)
-                    )
-                    self.add_token(
-                        TokenType.ERROR_INVALID_NUMBER,
-                        snippet,
-                        start_line,
-                        start_column,
-                        self.line_number,
-                        self.column_number,
-                    )
-                    raise self.logger.error_token(
-                        TokenType.ERROR_INVALID_NUMBER.name,
-                        start_line,
-                        start_column,
-                        snippet,
-                    )
-            else:
-                break
-
-        if dot_count == 1:
+            self.logger.error_token(
+                TokenType.ERROR_UNEXPECTED_CHARACTER.name,
+                start_line,
+                start_column,
+                character,
+            )
             self.add_token(
-                TokenType.DECIMAL,
-                float(number),
+                TokenType.ERROR_UNEXPECTED_CHARACTER,
+                character,
                 start_line,
                 start_column,
                 self.line_number,
                 self.column_number,
             )
-        elif dot_count == 0:
-            self.add_token(
-                TokenType.INTEGER,
-                int(number),
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
+            raise TokenError
 
-    def make_string(self, prefix: str | None = None) -> None:
-        string: str = ""
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        quote: str | None = self.advance()
-
-        while (character := self.peek()) and character != quote:
-            if character == "\\":
-                self.advance() # consume \
-                next_char = self.peek()
-                if next_char == "n":
-                    string += "\n"
-                    self.advance()
-                elif next_char == "t":
-                    string += "\t"
-                    self.advance()
-                elif next_char == "r":
-                    string += "\r"
-                    self.advance()
-                elif next_char == "\\":
-                    string += "\\"
-                    self.advance()
-                elif next_char == '"':
-                    string += '"'
-                    self.advance()
-                elif next_char == "`":
-                    string += "`"
-                    self.advance()
-                elif next_char == "0": # Support for \033
-                    # Simplified octal/escape
-                    esc_code = self.advance() # 0
-                    if self.peek() == "3" and self.peek(1) == "3":
-                        self.advance() # 3
-                        self.advance() # 3
-                        string += "\033"
-                    else:
-                        string += "\\" + esc_code
-                else:
-                    string += "\\"
-            else:
-                string += self.advance()
-
-        if self.peek() is None:
-            snippet = self.get_snippet(
-                start_line, start_column, int(self.column_number - start_column)
-            )
-            self.add_token(
-                TokenType.ERROR_UNTERMINATED_STRING_EOF,
-                snippet,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-            raise self.logger.error_token(
-                TokenType.ERROR_UNTERMINATED_STRING_EOF.name,
-                start_line,
-                start_column,
-                snippet,
-            )
-
-        self.advance()
-        self.add_token(
-            TokenType.STRING,
-            string,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-        if prefix:
-            self.tokens[-1].prefix = prefix
-
-    def make_rune(self) -> None:
-        rune: str | None = ""
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        quote: str | None = self.advance()
-        snippet: str = ""
-
-        rune = self.advance()
-
-        if self.peek() == quote:
-            self.advance()
-            self.add_token(
-                TokenType.RUNE,
-                rune,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-
-        elif self.peek() is None:
-            snippet = self.get_snippet(
-                start_line, start_column, int(self.column_number - start_column)
-            )
-            self.add_token(
-                TokenType.ERROR_UNTERMINATED_CHARACTER_EOF,
-                snippet,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-            raise self.logger.error_token(
-                TokenType.ERROR_UNTERMINATED_CHARACTER_EOF.name,
-                start_line,
-                start_column,
-                snippet,
-            )
-        else:
-            snippet = self.get_snippet(
-                start_line, start_column, int(self.column_number - start_column)
-            )
-            self.add_token(
-                TokenType.ERROR_UNTERMINATED_CHARACTER,
-                snippet,
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-            raise self.logger.error_token(
-                TokenType.ERROR_UNTERMINATED_CHARACTER.name,
-                start_line,
-                start_column,
-                snippet,
-            )
-
-    def make_bracket(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        bracket: str | None = self.advance()
-        bracket_type: TokenType = BRACKETS[bracket]
-
-        self.add_token(
-            bracket_type,
-            bracket,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_operator(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        operator: str | None = self.advance()
-        operator_type: TokenType
-
-        if operator == "*" and self.peek() == "*":
-            operator += self.advance()
-            operator_type = TokenType.EXPONENTIATION
-
-        elif operator == "+" and self.peek() == "+":
-            operator += self.advance()
-            operator_type = TokenType.INCREMENT
-
-        elif operator == "-" and self.peek() == "-":
-            operator += self.advance()
-            operator_type = TokenType.DECREMENT
-
-        elif operator == "&" and self.peek() == "&":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_AND
-
-        elif operator == "|" and self.peek() == "|":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_OR
-
-        elif operator == "!" and self.peek() == "!":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_NOT
-
-        elif operator == "^" and self.peek() == "^":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_XOR
-
-        elif operator == "!" and self.peek() == "|":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_NOR
-
-        elif operator == "!" and self.peek() == "&":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_NAND
-
-        elif operator == "!" and self.peek() == "^":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_XNOR
-
-        elif operator == "%" and self.peek() == "%":
-            operator += self.advance()
-            operator_type = TokenType.BITWISE_MOD
-
-        elif operator == "<" and self.peek() == "<":
-            operator += self.advance()
-            if self.peek() == "=":
-                operator += self.advance()
-                operator_type = TokenType.LEFT_SHIFT_EQUAL
-            else:
-                operator_type = TokenType.BITWISE_LEFT_SHIFT
-
-        elif operator == ">" and self.peek() == ">":
-            operator += self.advance()
-            if self.peek() == "=":
-                operator += self.advance()
-                operator_type = TokenType.RIGHT_SHIFT_EQUAL
-            else:
-                operator_type = TokenType.BITWISE_RIGHT_SHIFT
-
-
-        elif operator == "&" and self.peek() == "=":
-            operator += self.advance()
-            operator_type = TokenType.AND_EQUAL
-
-        elif operator == "|" and self.peek() == "=":
-            operator += self.advance()
-            operator_type = TokenType.OR_EQUAL
-
-        elif operator == "^" and self.peek() == "=":
-            operator += self.advance()
-            operator_type = TokenType.XOR_EQUAL
-
-        elif operator == "%" and self.peek() == "=":
-            operator += self.advance()
-            operator_type = TokenType.MOD_EQUAL
-        else:
-            operator_type = OPERATORS[operator]
-
-        self.add_token(
-            operator_type,
-            operator,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_comparator(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-        comparator: str | None = self.advance()
-        comparator_type: TokenType
-
-        if comparator == "=" and self.peek() == "=":
-            comparator += self.advance()
-            comparator_type = TokenType.EQUAL
-        elif comparator == "!" and self.peek() == "=":
-            comparator += self.advance()
-            comparator_type = TokenType.NOT_EQUAL
-        elif comparator == ">" and self.peek() == "=":
-            comparator += self.advance()
-            comparator_type = TokenType.GREATER_THAN_OR_EQUAL
-        elif comparator == "<" and self.peek() == "=":
-            comparator += self.advance()
-            comparator_type = TokenType.LESS_THAN_OR_EQUAL
-        else:
-            comparator_type = COMPARATORS[comparator]
-
-        self.add_token(
-            comparator_type,
-            comparator,
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_assignment(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.advance()
-        self.add_token(
-            TokenType.ASSIGNMENT,
-            "assign",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_type(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-
-        if self.peek() == ">":
-            self.advance()
-            self.add_token(
-                TokenType.TYPE_LET,
-                ":>",
-                self.line_number,
-                self.column_number,
-                start_line,
-                start_column,
-            )
-        else:
-            self.add_token(
-                TokenType.TYPE_SET,
-                ":",
-                self.line_number,
-                self.column_number,
-                start_line,
-                start_column,
-            )
-
-    def make_comma(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.add_token(
-            TokenType.COMMA,
-            ",",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_dot(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        if self.peek() == ".":
-            self.advance()
-            self.add_token(
-                TokenType.RANGE,
-                "..",
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-        else:
-            self.add_token(
-                TokenType.DOT,
-                ".",
-                start_line,
-                start_column,
-                self.line_number,
-                self.column_number,
-            )
-
-    def make_return(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.advance()
-        self.add_token(
-            TokenType.RETURN,
-            "<-",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_check_symbol(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.add_token(
-            TokenType.CHECK_SYMBOL,
-            "?",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_raise_symbol(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.add_token(
-            TokenType.RAISE_SYMBOL,
-            "^",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )
-
-    def make_assert_symbol(self) -> None:
-        start_line: int = self.line_number
-        start_column: int = self.column_number
-
-        self.advance()
-        self.add_token(
-            TokenType.ASSERT_SYMBOL,
-            "!",
-            start_line,
-            start_column,
-            self.line_number,
-            self.column_number,
-        )

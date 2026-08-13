@@ -94,24 +94,19 @@ The build system will automatically find the `.zbuild` file in the current direc
 - Runtime
 - Standard Library
 
-## Standard Library
+## Standard Library (nested packages)
 
-- **zen.io**: Basic input/output, logging (info, warn, error, debug).
-- **zen.string**: String manipulation and conversion utilities.
-- **zen.math**: Constants (PI, E) and functions (abs, min, max, sqrt, etc.).
-- **zen.json**: Pure Zenlang JSON serialization and parsing.
-- **zen.test**: Unit testing framework with assertions and test management utilities.
-- **zen.time**: Time management, durations (s, ms, etc.), and timers.
-- **zen.list**: Functional list utilities (map, filter, reduce, each, contains).
-- **zen.collections**: Common data structures (Map, Set, Stack, Queue).
-- **zen.process**: Process control and management (spawn, wait).
-- **zen.file**: File I/O with object-oriented `File` class.
-- **zen.sys**: System information (args, env, platform, version).
-- **zen.path**: Unix-style path manipulation.
-- **zen.term**: Advanced Terminal UI control and formatting.
-- **zen.random**: Deterministic and seedable randomness.
-- **zen.geometry**: Geometric primitives (Point, Rect, Size).
-- **zen.text**: Linguistic text structures (Word, Sentence, Paragraph).
+See [Standard_Library_Reference.md](Standard_Library_Reference.md) for the full import map.
+
+- **zen.io.io** — write/read, info/warn/error/debug  
+- **zen.io.file** / **zen.io.path** — files, `walk` / `list_files`, path join  
+- **zen.sys.sys** / **zen.sys.process** / **zen.sys.term** / **zen.sys.cli** — system, shell, TUI keys  
+- **zen.text.string** / **zen.text.text** — strings and semantic text  
+- **zen.math.math** / **zen.math.random** / **zen.math.range**  
+- **zen.collections.list** (and set/stack/queue)  
+- **zen.data.json** (and csv, xml, …)  
+- **zen.test**, **zen.time**, **zen.log**, **zen.memory**, **zen.error**  
+- **zen.ui.***, **zen.geometry.***, **zen.net.***, **zen.graphics.***
 
 ## Extended
 

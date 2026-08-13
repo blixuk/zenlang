@@ -1,4 +1,4 @@
 name: zen
-entry: src/zen.zl
+entry: selfhost/zen.zl
 output: bin/zen
 source_map: true

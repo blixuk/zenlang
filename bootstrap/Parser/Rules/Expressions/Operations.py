@@ -1,5 +1,5 @@
 from Lexer.Token import Token, TokenType
-from Parser.AST import ASTNode, BinaryOperation, IsExpression, UnaryOperation
+from Parser.AST import ASTNode, BinaryOperation, IsExpression, UnaryOperation, AwaitExpression
 
 class OperationsParserMixin:
     def logical(self, allow_instantiation: bool = True) -> ASTNode:
@@ -96,7 +96,7 @@ class OperationsParserMixin:
         return node
 
     def comparison(self, allow_instantiation: bool = True) -> ASTNode | BinaryOperation:
-        node: ASTNode = self.term(allow_instantiation=allow_instantiation)
+        node: ASTNode = self.range_op(allow_instantiation=allow_instantiation)
 
         while True:
             if self.token_handler.match_types(
@@ -108,7 +108,7 @@ class OperationsParserMixin:
                 ]
             ):
                 operator: Token | None = self.token_handler.previous()
-                right: ASTNode | None = self.term(allow_instantiation=allow_instantiation)
+                right: ASTNode | None = self.range_op(allow_instantiation=allow_instantiation)
                 node = BinaryOperation(getattr(operator, "line"), getattr(operator, "column"), getattr(operator, "value"), node, right)
             elif self.token_handler.check_type_value(TokenType.KEYWORD, "is"):
                 self.token_handler.advance() # consume 'is'
@@ -124,6 +124,27 @@ class OperationsParserMixin:
                 break
 
         self.logger.debug("comparison", node)
+        return node
+
+    def range_op(self, allow_instantiation: bool = True) -> ASTNode:
+        node: ASTNode = self.term(allow_instantiation=allow_instantiation)
+
+        # `a..b`  exclusive end (half-open)
+        # `a..=b` inclusive end
+        # Note: `...` is ELLIPSIS (rest/spread), not a range.
+        if self.token_handler.match_types([TokenType.RANGE, TokenType.RANGE_INCLUSIVE]):
+            operator: Token | None = self.token_handler.previous()
+            right: ASTNode | None = self.term(allow_instantiation=allow_instantiation)
+            op_value = getattr(operator, "value", "..") or ".."
+            node = BinaryOperation(
+                getattr(operator, "line"),
+                getattr(operator, "column"),
+                op_value,
+                node,
+                right,
+            )
+
+        self.logger.debug("range", node)
         return node
 
     def term(self, allow_instantiation: bool = True) -> ASTNode | BinaryOperation:
@@ -188,5 +209,34 @@ class OperationsParserMixin:
             self.logger.debug("unary", node)
 
             return node
+
+        if self.token_handler.match_type_value(TokenType.KEYWORD, "await"):
+            operator = self.token_handler.previous()
+            right = self.unary(allow_instantiation=allow_instantiation)
+            node = AwaitExpression(
+                line=getattr(operator, "line"),
+                column=getattr(operator, "column"),
+                scope_level=self.scope_manager.get_scope_level("global"),
+                expression=right
+            )
+            return node
+
+        if self.token_handler.match_type(TokenType.CHECK_SYMBOL) or self.token_handler.match_type_value(TokenType.KEYWORD, "check"):
+            return self.check_expression()
+
+        if self.token_handler.check_types([TokenType.BITWISE_AND, TokenType.MULTIPLICATION]):
+            operator = self.token_handler.advance()
+            op_str = "source" if operator.type == TokenType.BITWISE_AND else "target"
+            right = self.unary(allow_instantiation=allow_instantiation)
+            node = UnaryOperation(getattr(operator, "line"), getattr(operator, "column"), op_str, right)
+            return node
+
+        if self.token_handler.check_type(TokenType.KEYWORD):
+            pk = self.token_handler.peek().value
+            if pk in ["source", "target"]:
+                operator = self.token_handler.advance()
+                right = self.unary(allow_instantiation=allow_instantiation)
+                node = UnaryOperation(getattr(operator, "line"), getattr(operator, "column"), pk, right)
+                return node
 
         return self.call(allow_instantiation=allow_instantiation)

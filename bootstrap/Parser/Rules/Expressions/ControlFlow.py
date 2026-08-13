@@ -48,20 +48,6 @@ class ControlFlowExpressionsMixin:
 
             self.logger.debug("when_inline_expression", node)
 
-        if self.token_handler.match_type(TokenType.CHECK_SYMBOL):
-            # Ternary operator: condition ? true_expr : false_expr
-            true_expr = self.expression(allow_instantiation=allow_instantiation)
-            self.token_handler.expect_type(TokenType.TYPE_SET, "Expected `:` after true expression in ternary operator")
-            false_expr = self.expression(allow_instantiation=allow_instantiation)
-            node = WhenInlineExpression(
-                getattr(node, "line", 0),
-                getattr(node, "column", 0),
-                self.scope_manager.get_scope_level("global"),
-                node,  # condition
-                true_expr,
-                false_expr,
-            )
-            self.logger.debug("when_inline_expression", node)
 
         return node
 

@@ -1,16 +1,62 @@
 #ifndef ZEN_IO_H
 #define ZEN_IO_H
 
-#include "../object/zen_object.h"
+#include <stdio.h>
+#include "../core/zen_value.h"
 
-void IO_write(ZenString value);
-void zl_write(ZenString value);
-void out_write(ZenString value, void* data);
-void IO_write_int(long long value);
-void IO_error(ZenString value);
-ZenString IO_read_file(ZenString path);
-void IO_write_file(ZenString path, ZenString content);
-long long IO_file_exists(ZenString path);
-ZenList* ZenIO_list_dir(ZenString path);
+// Internal Print helpers
+void ZenIO_internal_print_begin(void);
+void ZenIO_internal_print_separator(void);
+void ZenIO_internal_print_end(void);
+void ZenIO_internal_print_value(ZenValue value);
+void ZenIO_internal_print_integer(long long value);
+void ZenIO_internal_print_decimal(double value);
+void ZenIO_internal_print_string(const char* value);
+void ZenIO_internal_print_boolean(bool value);
 
-#endif
+// Built-in objects
+extern ZenValue __builtin_output;
+extern ZenValue __builtin_input;
+extern ZenValue __builtin_file;
+extern ZenValue __builtin_sys;
+extern ZenValue __builtin_string;
+extern ZenValue __builtin_math;
+extern ZenValue __builtin_list;
+extern ZenValue __builtin_map;
+extern ZenValue __builtin_set;
+extern ZenValue __builtin_range;
+extern ZenValue __builtin_time;
+extern ZenValue __builtin_term;
+
+// Zenlang IO API
+ZenValue ZenIO_write_value(ZenValue value);
+ZenValue ZenIO_write_line(ZenValue value);
+ZenValue ZenIO_read_value(ZenValue prompt);
+ZenValue ZenIO_write_info(ZenValue value);
+ZenValue ZenIO_write_warning(ZenValue value);
+ZenValue ZenIO_write_debug(ZenValue value);
+ZenValue ZenIO_write_error(ZenValue value);
+ZenValue ZenIO_flush(void);
+
+// File IO
+ZenValue ZenIO_file_exists(ZenValue path);
+ZenValue ZenIO_read_file(ZenValue path);
+ZenValue ZenIO_write_file(ZenValue path, ZenValue content);
+ZenValue ZenIO_list_dir(ZenValue path);
+ZenValue ZenIO_append(ZenValue path, ZenValue content);
+ZenValue ZenIO_write_bytes(ZenValue path, ZenValue bytes);
+ZenValue ZenIO_remove(ZenValue path);
+ZenValue ZenIO_is_file(ZenValue path);
+ZenValue ZenIO_is_dir(ZenValue path);
+ZenValue ZenIO_open(ZenValue path, ZenValue mode);
+/* Create directory; returns boolean success. parents=false → single level. */
+ZenValue ZenIO_mkdir(ZenValue path);
+/* Create directory and parents (like mkdir -p). */
+ZenValue ZenIO_mkdir_p(ZenValue path);
+
+// Open file handle methods (generated code may pass ZenObject* or ZenValue)
+ZenValue ZenObject_read(void* self);
+ZenValue ZenObject_write(void* self, ZenValue content);
+ZenValue ZenObject_close(void* self);
+
+#endif // ZEN_IO_H

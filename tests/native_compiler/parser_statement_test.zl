@@ -1,8 +1,8 @@
 from ../../src/compiler/Lexer import Lexer
 from ../../src/compiler/Parser import Parser
 from zen.io import write
-import zen.string as s
-// import zen.list as l // Module doesn't exist
+import zen.text.string as s
+// import zen.collections.list as l // Module doesn't exist
 
 function main() {
     let source -> `

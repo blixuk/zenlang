@@ -44,7 +44,7 @@ class SemanticChecker:
 
         for statement in self.AST.statements:
             if type(statement) is FunctionStatement and statement.name == "main":
-                print("main function found")
+                # print("main function found")
                 main_function = statement
                 break
 
@@ -66,7 +66,11 @@ class SemanticChecker:
                 arguments=[],
             )
 
-            self.AST.statements.append(ExpressionStatement(call_node))
+            self.AST.statements.append(ExpressionStatement(
+                call_node.line,
+                call_node.column,
+                call_node
+            ))
 
             program: Program = Program(self.AST.statements)
 

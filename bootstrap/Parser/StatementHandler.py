@@ -40,6 +40,49 @@ class StatementHandler(
         self.expression_handler: ExpressionHandler = ExpressionHandler(
             self.token_handler, self.scope_manager, self.logger, self
         )
+        self.keyword_parsers = {
+            "let": self.assignment_statement,
+            "set": self.assignment_statement,
+            "function": self.function_statement,
+            "structure": self.structure_statement,
+            "enumerator": self.enumerator_statement,
+            "return": self.return_statement,
+            "when": self.when_statement,
+            "class": self.class_statement,
+            "do": self.do_statement,
+            "break": self.break_statement,
+            "continue": self.continue_statement,
+            "while": self._dispatch_while,
+            "for": self._dispatch_for,
+            "until": self._dispatch_until,
+            "import": self.import_statement,
+            "use": self.import_statement,  # alias for import
+            "from": self.from_import_statement,
+            "scope": self.scope_statement,
+            "defer": self.defer_statement,
+            "raise": self.raise_statement,
+            "assert": self.assert_statement,
+            "check": self.check_statement,
+            "object": self.object_statement,
+            "export": self.export_statement,
+            "with": self.with_statement,
+            "task": self.task_statement,
+        }
+
+    def _dispatch_while(self) -> ASTNode:
+        token = self.token_handler.advance()
+        self.scope_manager.enter("loop")
+        return self._do_while(token)
+
+    def _dispatch_for(self) -> ASTNode:
+        token = self.token_handler.advance()
+        self.scope_manager.enter("loop")
+        return self._do_for(token)
+
+    def _dispatch_until(self) -> ASTNode:
+        token = self.token_handler.advance()
+        self.scope_manager.enter("loop")
+        return self._do_until(token)
 
     def statement(self) -> ASTNode | None:
         try:
@@ -96,86 +139,13 @@ class StatementHandler(
             except ImportError:
                 pass
             
-            if self.token_handler.check_value("let"):
-                 return self.assignment_statement()
-
-            if self.token_handler.check_value("set"):
-                return self.assignment_statement()
-
-            if self.token_handler.check_value("function"):
-                return self.function_statement()
-
-            if self.token_handler.check_value("structure"):
-                return self.structure_statement()
-
-            if self.token_handler.check_value("enumerator"):
-                return self.enumerator_statement()
-
-            if self.token_handler.check_value("return"):
-                return self.return_statement()
-
-            if self.token_handler.check_value("when"):
-                return self.when_statement()
-
-            if self.token_handler.check_value("class"):
-                return self.class_statement()
-
-            if self.token_handler.check_value("do"):
-                return self.do_statement()
-
-            if self.token_handler.check_value("break"):
-                return self.break_statement()
-
-            if self.token_handler.check_value("continue"):
-                return self.continue_statement()
-
-            if self.token_handler.check_value("while"):
-                token = self.token_handler.advance()
-                self.scope_manager.enter("loop")
-                return self._do_while(token)
-
-            if self.token_handler.check_value("for"):
-                token = self.token_handler.advance()
-                self.scope_manager.enter("loop")
-                return self._do_for(token)
-
-            if self.token_handler.check_value("until"):
-                token = self.token_handler.advance()
-                self.scope_manager.enter("loop")
-                return self._do_until(token)
-
-            if self.token_handler.check_value("import"):
-                return self.import_statement()
-
-            if self.token_handler.check_value("from"):
-                return self.from_import_statement()
-
-            if self.token_handler.check_value("scope"):
-                return self.scope_statement()
-
-            if self.token_handler.check_value("defer"):
-                return self.defer_statement()
-
-            if self.token_handler.check_value("raise"):
-                return self.raise_statement()
-
-            if self.token_handler.check_value("assert"):
-                return self.assert_statement()
-
-            if self.token_handler.check_value("check"):
-                return self.check_statement()
-
-            if self.token_handler.check_value("object"):
-                return self.object_statement()
-
-            if self.token_handler.check_value("export"):
-                return self.export_statement()
-
-            if self.token_handler.check_value("with"):
-                return self.with_statement()
+            value = getattr(token, "value", "")
+            handler = self.keyword_parsers.get(value)
+            if handler:
+                return handler()
 
         # Variable, Member, or Index Reassignment
-        if self.token_handler.check_types([TokenType.IDENTIFIER, TokenType.KEYWORD]):
+        if self.token_handler.check_types([TokenType.IDENTIFIER, TokenType.KEYWORD, TokenType.MULTIPLICATION]):
             is_reassign = False
             # Look ahead for '->' at current level
             depth = 0
@@ -194,7 +164,7 @@ class StatementHandler(
                     break
                 elif t.type in [TokenType.SEMICOLON, TokenType.RETURN] and depth == 0:
                     break
-                elif t.type == TokenType.KEYWORD and depth == 0 and t.value in ["let", "set", "function", "class", "structure", "enumerator", "do", "for", "while", "until", "if", "when", "return", "break", "continue", "import", "export"]:
+                elif t.type == TokenType.KEYWORD and depth == 0 and t.value in ["let", "set", "function", "class", "structure", "enumerator", "do", "for", "while", "until", "if", "when", "return", "break", "continue", "import", "use", "export"]:
                     break # New statement starting
             
             if is_reassign:
@@ -223,9 +193,12 @@ class StatementHandler(
 
     def expression_statement(self) -> ExpressionStatement:
         expression: ASTNode = self.expression_handler.expression()
-        statement: ExpressionStatement = ExpressionStatement(expression)
+        statement: ExpressionStatement = ExpressionStatement(
+            getattr(expression, "line", 0),
+            getattr(expression, "column", 0),
+            expression
+        )
 
-        self.logger.debug("expression_statement", statement)
         return statement
 
     def block_statement(self, scope_type: str = "block") -> BlockStatement:

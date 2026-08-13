@@ -1,4 +1,4 @@
-import zen.string as Str
+import zen.text.string as Str
 from zen.io import write
 
 function main() {

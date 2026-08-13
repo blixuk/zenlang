@@ -249,12 +249,21 @@ Defer runs when the enclosing function returns, even if it panics or returns ear
 
         Example:
         ```zl
-        // pre check
+        // list / collection
         do for value in container {
           ....
         }
 
-        // post check
+        // range operators produce lists
+        do for i in 0..10 {
+          // i = 0 .. 9
+        }
+
+        do for ch in `a`..=`c` {
+          // ch = `a`, `b`, `c`
+        }
+
+        // post check (or runs when container is empty)
         do for value in container {
           ....
         } or {

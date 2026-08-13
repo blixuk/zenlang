@@ -195,13 +195,13 @@ users = db.users.where(role == `admin`)
 
 Core
 - zen.fs – files, paths, permissions
-- zen.io – streams, pipes
+- zen.io.io.io – streams, pipes
 - zen.proc – processes, signals
 - zen.net – sockets, DNS
 - zen.time – timers, schedulers
 
 Terminal / UI
-- zen.term
+- zen.sys.sys.term
 - zen.tui
 - zen.ui (shared abstraction)
 - zen.style

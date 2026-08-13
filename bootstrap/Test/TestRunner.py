@@ -46,8 +46,9 @@ class TestRunner:
                         passed += 1
                 
                 # 2. Doctests from documentation
-                if stmt.documentation:
-                    doctests = self._extract_doctests(stmt.documentation)
+                documentation = getattr(stmt, "documentation", None)
+                if documentation:
+                    doctests = self._extract_doctests(documentation)
                     for doctest in doctests:
                         found_tests += 1
                         if self._run_doctest(doctest, stmt.name):

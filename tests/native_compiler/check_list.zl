@@ -1,4 +1,4 @@
-import zen.io
+import zen.io.io
 
 function main() {
     let l -> []

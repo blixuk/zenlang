@@ -1,4 +1,4 @@
-from `zen.io` import write
+from `zen.io.io` import write
 from `../../src/compiler/Lexer` import Lexer
 from `../../src/compiler/Parser` import Parser
 from `../../src/compiler/CTranspiler` import Transpiler

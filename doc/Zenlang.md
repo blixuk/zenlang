@@ -800,6 +800,43 @@ let dog -> Dog()
 dog.sound()
 ```
 
+### Ranges
+
+Range operators build lists of integers or single-character strings.
+
+| Operator | Bounds | Example |
+|----------|--------|---------|
+| `a..b` | start inclusive, end exclusive | `0..5` → `[0,1,2,3,4]` |
+| `a..=b` | start and end inclusive | `0..=5` → `[0,1,2,3,4,5]` |
+
+```zl
+0..5          // [0, 1, 2, 3, 4]
+0..=5         // [0, 1, 2, 3, 4, 5]
+2..2          // []
+3..=3         // [3]
+`a`..=`c`     // [`a`, `b`, `c`]
+`a`..`d`      // [`a`, `b`, `c`]
+5..2          // [5, 4, 3]           descending exclusive
+5..=2         // [5, 4, 3, 2]        descending inclusive
+
+do for i in 1..=4 {
+    // i = 1, 2, 3, 4
+}
+
+let r -> 10..15
+// r is a List: r.length == 5, r[0] == 10
+```
+
+Do **not** use `...` for ranges — that token is rest/spread in patterns (`[head, ...tail]`).
+
+Library helpers (`zen.math.range`):
+
+```zl
+import zen.math.range as R
+R.range(2, 6)            // same as 2..6
+R.range_inclusive(2, 4)  // same as 2..=4
+```
+
 ### Abstract Types
 
 #### Number
@@ -1085,13 +1122,22 @@ xnor    // Logical XNOR
 *       // Multiplication
 /       // Division
 %       // Remainder (Modulo)
-:       // Range
 **      // Exponentiation (Power)
 ++      // Increment
 --      // Decrement
 //      // Quotient
 ()      // Parentheses
 ```
+
+### Range Operators
+
+```
+..      // Half-open range (start inclusive, end exclusive) → List
+..=     // Closed range (start and end inclusive) → List
+```
+
+See [Ranges](#ranges) above for full semantics (integers, characters, descending, loops).
+Do not use `...` for ranges — that is rest/spread in patterns.
 
 ### Order of Operations
 
@@ -1133,7 +1179,7 @@ when x > 0 {
 
 ```zl
 when opt {
-    is Option.Some(v) {
+    is Option.Something(v) {
         write(`Value is: `)
         write(v)
     }
@@ -1164,13 +1210,18 @@ if x is Integer {
 
 let result -> (x is String) // false
 ```
-```
-value when condition or value
+
+### When Inline (Ternary Alternative)
+
+Zenlang uses the `when ... or` pattern for inline conditional expressions. This replaces the C-style `condition ? true : false` with a more readable, English-like syntax.
+
+```zl
+value when condition or other_value
 ```
 
 Example:
-```
-let messsage -> `positive` when x > 0 or `negative`
+```zl
+let message -> `positive` when x > 0 or `negative`
 ```
 
 ## Defer
@@ -1324,6 +1375,15 @@ do for value in container {
 } or {
     ....
 }
+
+// ranges produce lists — exclusive `..` and inclusive `..=`
+do for i in 0..10 {
+    // i = 0 .. 9
+}
+
+do for ch in `a`..=`c` {
+    // ch = `a`, `b`, `c`
+}
 ```
 
 ### Break / Continue
@@ -1431,7 +1491,14 @@ let print : Function<String> -> function ( message : String ) {
 let add : Function<Integer> -> function ( a : Integer, b : Integer ) {
   <- a + b
 }
+
+// Outer locals are captured by value at creation (interpret + native)
+let n -> 10
+let add_n -> function(x) { <- x + n }
+// After `n -> 99`, add_n(5) is still 15
 ```
+
+Closures snapshot free outer locals when the lambda is created (not live bindings). Native runtime stores them in a small env bag (`ZenValue_from_closure`) and prepends them when applying. See Zenlang Explained §3.5 and `tests/language/closure_01.zl`.
 
 ### Anonymous Functions Inline
 
@@ -1766,16 +1833,29 @@ name.member ( parameters )
 
 Zenlang supports importing and exporting code between files.
 
+**Full current reference** (built-in `module`, entry points, `use`, reflection, plugins):  
+[Language_Module_and_Reflect.md](Language_Module_and_Reflect.md).
+
 ### Importing
 
 ```
-import math
-import utils.helpers
-from gui import Button
+use zen.io
+use zen.text.string as Str
+from zen.io use writeln
 
+// Still valid:
+import zen.io as io
 from zen.io import write
 from zen.io import read as r
 ```
+
+Package short form: `use zen.time` → `lib/zen/time/time.zl`. Prefer nested stdlib paths under `lib/zen/`.
+
+### Built-in `module` and entry
+
+- `module.name` / `path` / `file` / `dir` / `is_entry`
+- Default entry: `function main()`
+- Override: `module.entry -> \`run\`` or `module.entry -> run` (no `@entry` decorator)
 
 ### Exporting
 
@@ -1865,15 +1945,18 @@ assert condition raise error    // assert keyword with raise keyword
 ```
 
 - Symbol: ^, Keyword: raise, Purpose: Immediate return of an error value/variant.
-- Symbol: ?, Keyword: check, Purpose: Unwrapping a value or branching based on a condition.
+- Symbol: ?, Keyword: check, Purpose: Unwrapping a value (`Option` or `Result`) or branching.
 - Symbol: !, Keyword: assert, Purpose: Validation of assumptions; halts or raises on failure.
 
 ### Semantic Comparison Table
 
-Recovery: let x -> ? func() or 0
-Propagation: ? condition ^ Error(`ErrorName`)
-Validation: `! x > 0`
-Matching: `check value { case ... }`
+| Pattern | Syntax | Description |
+| :--- | :--- | :--- |
+| **Recovery** | `let x -> ? func() or 0` | Unwraps value; uses fallback on Error/Nothing. |
+| **Propagation**| `let x -> ? func() ^ error` | Unwraps value; raises error on failure. |
+| **Assertion** | `! x > 0` | Halts execution if condition is false. |
+| **Validation** | `! x > 0 ^ `InvalidValue`` | Raises specified error if condition is false. |
+| **Matching** | `check value { ... }` | Full pattern matching block. |
 
 ### Error ReturnType
 
@@ -1976,9 +2059,61 @@ Zenlang’s runtime manages memory, execution, and built-in modules.
 
 Supports interpreted mode (.zs) and compiled mode (.zl).
 
-### Memory Model
+### Memory Model & Pointer Syntax
 
-Objects are managed by garbage collection or reference counting.
+Zenlang features a visual data-flow-oriented memory architecture that supports explicit pointers, ownership qualifiers, and directional memory operations. Pointers can be declared with explicit ownership behaviors and mutated using intuitive, symmetric syntax.
+
+#### Pointers and Referencing
+
+To obtain the memory address of a variable, member, or index (capturing its origin or "source of truth"), use the `source` keyword or the `&` symbol.
+
+```zl
+let score : Integer -> 100
+
+// Capture pointer using keyword
+let address : Pointer<Integer> -> source score
+
+// Capture pointer using symbol
+let address : Pointer<Integer> -> &score
+```
+
+#### Dereferencing and Reading
+
+To access the value stored at a pointer's destination ("target of truth"), use the `target` keyword or the `*` symbol.
+
+```zl
+let val_keyword -> target address
+let val_symbol -> *address
+```
+
+#### Dereference Reassignment (Writing)
+
+You can assign values directly to a dereferenced pointer to mutate the underlying memory. 
+
+```zl
+// Mutate via keyword
+target address -> 150
+
+// Mutate via symbol
+*address -> 200
+```
+
+> [!NOTE]
+> Since Zenlang is newline-delimited, if a dereference reassignment using the `*` symbol immediately follows an expression statement (like a function call), you must ensure they are syntactically separated (for example, by an empty block `{}` or a blank declaration) to prevent the parser from greedily matching `*` as a binary multiplication operator.
+
+#### Ownership Qualifiers
+
+Types can be qualified with explicit ownership behaviors to define their access and lifetime characteristics:
+
+1. **`owned`**: Denotes exclusive ownership of the referenced memory.
+2. **`borrowed`**: Denotes a temporary, non-owning reference to the memory.
+
+```zl
+let own_ptr : owned Pointer<Integer> -> source score
+let borrow_ptr : borrowed Pointer<Integer> -> source score
+```
+
+These qualifiers integrate with Zenlang's compile-time borrow checker to enforce memory safety without garbage collection overhead.
 
 ### Standard Library
 
@@ -1992,7 +2127,7 @@ The `zen.core` module is the language's prelude (automatically imported), provid
 
 Represents a value that may or may not be present.
 
-- `Option.Some(value)`: The value is present.
+- `Option.Something(value)`: The value is present.
 - `Option.Nothing`: The value is absent.
 
 ##### Result
@@ -2007,7 +2142,7 @@ Represents the result of an operation that can succeed or fail.
 - `unwrap(container)`: Extracts the value or raises a panic if empty/error.
 - `unwrap_or(container, default)`: Extracts the value or returns the provided default.
 - `expect(container, message)`: Extracts the value or raises a panic with a custom message.
-- `is_some(option)`, `is_none(option)`: Boolean checks for `Option`.
+- `is_something(option)`, `is_nothing(option)`: Boolean checks for `Option`.
 - `is_ok(result)`, `is_error(result)`: Boolean checks for `Result`.
 
 #### zen.io
@@ -2019,10 +2154,10 @@ Provides basic terminal input and output operations.
 
 #### Additional Modules
 
-- `zen.math`: Mathematical constants and functions.
+- `zen.math.math`: Mathematical constants and functions.
 - `zen.collections`: Advanced data structures (Lists, Maps, Sets).
-- `zen.random`: Deterministic and seedable PRNGs.
-- `zen.string`: String manipulation and formatting.
-- `zen.sys`: System information and environment access.
+- `zen.math.random`: Deterministic and seedable PRNGs.
+- `zen.text.string`: String manipulation and formatting.
+- `zen.sys.sys`: System information and environment access.
 
 

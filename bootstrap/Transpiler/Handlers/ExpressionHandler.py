@@ -104,7 +104,7 @@ class ExpressionHandler:
                 )
                 mapped_obj = obj_name if obj_is_local else self.map_builtin_name(obj_name)
 
-                # Enum variant constructors: Result.Ok(x), Option.Some(v)
+                # Enum variant constructors: Result.Ok(x), Option.Something(v)
                 obj_type = getattr(obj_node, "resolved_type", None)
                 from Checker.Type import TypeEnum, TypeEnumerator
                 prop = node.callee.property
@@ -461,7 +461,7 @@ class ExpressionHandler:
         
         # Determine if we are checking an Option or Result
         expr_type = getattr(node.expression, "resolved_type", None)
-        from Checker.Type import TypeOption, TypeResult
+        from Checker.Type import TypeOption, TypeResult, TypeEnumVariant
         
         is_fail = self._alloc_temp(self.new_label("is_fail"), node, "bool", region=current_reg)
         
@@ -482,8 +482,8 @@ class ExpressionHandler:
         self._emit(Branch(condition=is_fail, true_label=catch_label, false_label=None), node)
         
         # Success: Unwrap and move to res_tmp
-        if isinstance(expr_type, (TypeOption, TypeResult)):
-            # Enums store data in variants. For Option.Some and Result.Ok, data is at index 0
+        if isinstance(expr_type, (TypeOption, TypeResult, TypeEnumVariant)):
+            # Enums store data in variants. For Option.Something and Result.Ok, data is at index 0
             self._emit(Call(target=res_tmp, callee="ZenValue_get_variant_data", args=[val_tmp, "0"], region=current_reg), node)
         else:
             self._emit(Move(dest=res_tmp, src=val_tmp), node)

@@ -69,6 +69,43 @@ class FunctionObject:
     return_type: Optional[str] = None
 
 
+@dataclass
+class TaskObject:
+    name: Optional[str]
+    parameters: List[dict]
+    body: Any
+    closure: Environment
+    return_type: Optional[str] = None
+
+
+class TaskHandleObject:
+    def __init__(self, task_func):
+        import threading
+        self.result = None
+        self.exception = None
+        self.completed = False
+        self.lock = threading.Lock()
+        self.event = threading.Event()
+        
+        def run_task():
+            try:
+                self.result = task_func()
+            except Exception as e:
+                self.exception = e
+            finally:
+                self.completed = True
+                self.event.set()
+        
+        self.thread = threading.Thread(target=run_task)
+        self.thread.start()
+
+    def await_result(self):
+        self.event.wait()
+        if self.exception:
+            raise self.exception
+        return self.result
+
+
 # @dataclass
 # class StructureObject:
 #     name: Optional[str]
@@ -91,8 +128,15 @@ class BaseObject:
 
 
 class StructureObject(BaseObject):
-    def __init__(self, name, members, closure, parent=None):
+    def __init__(self, name, members, closure, parent=None, reflectable: bool = False):
         super().__init__(name, members, closure, parent)
+        self.reflectable = reflectable
+
+    def field_names(self) -> list:
+        return list(self.members.keys()) if isinstance(self.members, dict) else []
+
+    def method_names(self) -> list:
+        return []
 
     def get_member(self, name):
         if name == "classname":
@@ -163,11 +207,38 @@ class ModuleObject(BaseObject):
 
 
 class ClassObject(BaseObject):
-    def __init__(self, name: str, parent: Optional["ClassObject"], members: list, methods: list, closure: Environment):
+    def __init__(
+        self,
+        name: str,
+        parent: Optional["ClassObject"],
+        members: list,
+        methods: list,
+        closure: Environment,
+        reflectable: bool = False,
+    ):
         super().__init__(name, members, closure, parent)
         self.members_ast = members # List of AssignmentStatement
         self.methods_ast = methods # List of FunctionStatement
         self.methods_map = {} # Cache for FunctionObjects
+        self.reflectable = reflectable
+
+    def field_names(self) -> list:
+        names = []
+        for m in self.members_ast or []:
+            n = getattr(m, "name", None)
+            if n:
+                names.append(n)
+        if self.parent and hasattr(self.parent, "field_names"):
+            names = self.parent.field_names() + names
+        return names
+
+    def method_names(self) -> list:
+        names = list(self.methods_map.keys())
+        if self.parent and hasattr(self.parent, "method_names"):
+            for n in self.parent.method_names():
+                if n not in names:
+                    names.append(n)
+        return names
 
     def get_member(self, name):
         # Class objects can have methods (like init)
@@ -282,6 +353,73 @@ class MemoryCapability(BuiltinCapability):
         super().__init__(name, handlers)
 
 
+class MemoryArenaObject(BuiltinCapability):
+    def __init__(self, name: str, size: int):
+        self.size = size
+        self.data = bytearray(size)
+        self.cursor = 0
+        
+        super().__init__(name, {
+            "size": lambda: self.size,
+            "cursor": lambda: self.cursor,
+            "reset": self.reset,
+            "read_byte": self.read_byte,
+            "write_byte": self.write_byte,
+            "read_word": self.read_word,
+            "write_word": self.write_word,
+        })
+
+    def reset(self):
+        self.cursor = 0
+        for i in range(len(self.data)):
+            self.data[i] = 0
+
+    def read_byte(self, offset):
+        return self.data[offset]
+
+    def write_byte(self, offset, value):
+        self.data[offset] = value & 0xFF
+
+    def read_word(self, offset):
+        # 32-bit little endian
+        return int.from_bytes(self.data[offset:offset+4], "little")
+
+    def write_word(self, offset, value):
+        self.data[offset:offset+4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
+
+
+class MemoryManager:
+    def __init__(self):
+        self.arenas = {}
+        self.arena_stack = []
+        self.next_id = 1
+
+    def create_arena(self, size):
+        arena_id = self.next_id
+        self.next_id += 1
+        arena = MemoryArenaObject(f"Arena#{arena_id}", size)
+        self.arenas[arena_id] = arena
+        return arena
+
+    def free_arena(self, arena):
+        # In this simple model, we just remove it
+        pass
+
+    def push_arena(self, arena):
+        self.arena_stack.append(arena)
+
+    def pop_arena(self):
+        if self.arena_stack:
+            return self.arena_stack.pop()
+        return None
+
+    def get_current_arena(self):
+        if self.arena_stack:
+            return self.arena_stack[-1]
+        return None
+
+
+
 class TimeCapability(BuiltinCapability):
     def __init__(self, name: str, handlers: Dict[str, callable]):
         super().__init__(name, handlers)
@@ -312,6 +450,16 @@ class RandomCapability(BuiltinCapability):
         super().__init__(name, handlers)
 
 
+class NetCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class CryptoCapability(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
 class ProcessInstance(BuiltinCapability):
     def __init__(self, name: str, handlers: Dict[str, callable]):
         super().__init__(name, handlers)
@@ -320,3 +468,40 @@ class ProcessInstance(BuiltinCapability):
 class FileInstance(BuiltinCapability):
     def __init__(self, name: str, handlers: Dict[str, callable]):
         super().__init__(name, handlers)
+
+
+class SocketInstance(BuiltinCapability):
+    def __init__(self, name: str, handlers: Dict[str, callable]):
+        super().__init__(name, handlers)
+
+
+class PointerObject(BaseObject):
+    def __init__(self, container: Any, key: Any, kind: str = "variable"):
+        # kind can be "variable", "member", "index"
+        super().__init__("Pointer", {}, None)
+        self.container = container
+        self.key = key
+        self.kind = kind
+
+    def get_value(self) -> Any:
+        if self.kind == "variable":
+            return self.container.get(self.key)
+        elif self.kind == "member":
+            res = self.container.get_member(self.key)
+            if isinstance(res, tuple):
+                return res[0]
+            return res
+        elif self.kind == "index":
+            return self.container[self.key]
+        return None
+
+    def set_value(self, value: Any):
+        if self.kind == "variable":
+            self.container.assign(self.key, value)
+        elif self.kind == "member":
+            self.container.set_member(self.key, value)
+        elif self.kind == "index":
+            self.container[self.key] = value
+
+    def __repr__(self):
+        return f"<Pointer to {self.kind} '{self.key}'>"

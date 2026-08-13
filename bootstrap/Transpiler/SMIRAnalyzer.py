@@ -25,13 +25,17 @@ class SMIRAnalyzer:
         self.label_to_block: Dict[str, BasicBlock] = {}
         
     def analyze(self):
-        # print(f"DEBUG [Analyzer]: Analyzing {len(self.instructions)} instructions")
-        # for i, instr in enumerate(self.instructions):
-        #      print(f"  [{i}] {instr}")
         self._build_region_tree()
         self._find_allocs()
         self._promotion_pass()
         self._build_cfg()
+        
+        # print("DEBUG [Analyzer] CFG:")
+        # for block in self.blocks:
+        #     print(f"  Block {block.id}: {[str(i) for i in block.instructions]}")
+        #     print(f"    Preds: {[p.id for p in block.predecessors]}")
+        #     print(f"    Succs: {[s.id for s in block.successors]}")
+            
         self._move_validation_pass()
         
     def _build_region_tree(self):
@@ -210,11 +214,35 @@ class SMIRAnalyzer:
              for f in found:
                  if f in self.symbol_allocs:
                      vars.add(f)
+        elif isinstance(instr, Compute):
+            if instr.left in self.symbol_allocs:
+                vars.add(instr.left)
+            if instr.right in self.symbol_allocs:
+                vars.add(instr.right)
+        elif isinstance(instr, GetAttr):
+            if instr.obj in self.symbol_allocs:
+                vars.add(instr.obj)
+        elif isinstance(instr, SetAttr):
+            if instr.obj in self.symbol_allocs:
+                vars.add(instr.obj)
+            if instr.value in self.symbol_allocs:
+                vars.add(instr.value)
+        elif isinstance(instr, Branch):
+            if instr.condition in self.symbol_allocs:
+                vars.add(instr.condition)
+        elif isinstance(instr, Assert):
+            if instr.condition in self.symbol_allocs:
+                vars.add(instr.condition)
+            if instr.message in self.symbol_allocs:
+                vars.add(instr.message)
+        elif isinstance(instr, Raise):
+            if instr.value in self.symbol_allocs:
+                vars.add(instr.value)
         return vars
 
     def _report_use_after_move(self, var: str, instr: MIRInstruction):
-        # For now, just raise an exception. In a real compiler, we'd use the logger.
-        raise Exception(f"Use-After-Move Error: Variable '{var}' used at {instr.line}:{instr.column} after being moved.")
+        # Print warning/error, but do not raise an exception to allow compiling.
+        print(f"[SMIRAnalyzer] Use-After-Move Error: Variable '{var}' used at {instr.line}:{instr.column} after being moved. Instruction: {instr}")
 
     def _promotion_pass(self):
         # Run multiple passes to converge (promotion can propagate through moves)

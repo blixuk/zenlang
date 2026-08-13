@@ -1,210 +1,264 @@
 {
-    "Function": {
-        "prefix": "function",
-        "body": [
-            "function ${1:name}(${2:params}) {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Function definition"
-    },
-    "Function with return": {
-        "prefix": "functionr",
-        "body": [
-            "function ${1:name}(${2:params}) : ${3:Type} {",
-            "    ${0}",
-            "    <- ${4:value}",
-            "}"
-        ],
-        "description": "Function with return type"
-    },
-    "Class": {
-        "prefix": "class",
-        "body": [
-            "class ${1:Name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Class definition"
-    },
-    "Structure": {
-        "prefix": "structure",
-        "body": [
-            "structure ${1:Name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Structure definition"
-    },
-    "When": {
-        "prefix": "when",
-        "body": [
-            "when (${1:condition}) {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "When statement"
-    },
-    "When Or": {
-        "prefix": "whenor",
-        "body": [
-            "when (${1:condition}) {",
-            "    ${2}",
-            "} or {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "When statement with or"
-    },
-    "Do For": {
-        "prefix": "for",
-        "body": [
-            "do for ${1:item} in ${2:iterable} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Do For loop"
-    },
-    "Do While": {
-        "prefix": "while",
-        "body": [
-            "do while (${1:condition}) {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Do While loop"
-    },
-    "Import": {
-        "prefix": "import",
-        "body": [
-            "import `${1:path}` as ${2:Alias}"
-        ],
-        "description": "Import statement"
-    },
-    "From Import": {
-        "prefix": "from",
-        "body": [
-            "from `${1:path}` import ${2:Member}"
-        ],
-        "description": "From Import statement"
-    },
-    "Main": {
-        "prefix": "main",
-        "body": [
-            "function main() {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Main function"
-    },
-    "write": {
-        "prefix": "write",
-        "body": [
-            "from zen.io import write",
-            "write(${1:message})"
-        ],
-        "description": "Write statement"
-    },
-    "object": {
-        "prefix": "object",
-        "body": [
-            "object ${1:Name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Object definition"
-    },
-    "defer": {
-        "prefix": "defer",
-        "body": [
-            "defer {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Defer block"
-    },
-    "raise": {
-        "prefix": "raise",
-        "body": [
-            "raise ${1:Exception}"
-        ],
-        "description": "Raise exception"
-    },
-    "check": {
-        "prefix": "check",
-        "body": [
-            "check ${1:condition} {",
-            "    case ${2:pattern} {",
-            "        ${0}",
-            "    }",
-            "}"
-        ],
-        "description": "Check block"
-    },
-    "assert": {
-        "prefix": "assert",
-        "body": [
-            "assert ${1:condition}, \"${2:message}\""
-        ],
-        "description": "Assert statement"
-    },
-    "task": {
-        "prefix": "task",
-        "body": [
-            "task ${1:name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Task definition"
-    },
-    "enumerator": {
-        "prefix": "enum",
-        "body": [
-            "enumerator ${1:name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Enumerator definition"
-    },
-    "Do Until": {
-        "prefix": "until",
-        "body": [
-            "do until (${1:condition}) {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Do Until loop"
-    },
-    "case": {
-        "prefix": "case",
-        "body": [
-            "case ${1:value} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Case block"
-    },
-    "scope": {
-        "prefix": "scope",
-        "body": [
-            "scope ${1:name} {",
-            "    ${0}",
-            "}"
-        ],
-        "description": "Scope block"
-    },
-    "export": {
-        "prefix": "export",
-        "body": [
-            "export ${0}"
-        ],
-        "description": "Export statement"
-    },
-    "auto": {
-        "prefix": "auto",
-        "body": [
-            "auto ${1:name} -> ${0}"
-        ],
-        "description": "Auto declaration"
-    }
+  "Main function": {
+    "prefix": "main",
+    "body": [
+      "function main() {",
+      "\t${0}",
+      "\t<- 0",
+      "}"
+    ],
+    "description": "Program entry point with exit code"
+  },
+  "Function": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:params}) {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Function definition"
+  },
+  "Function with return": {
+    "prefix": ["functionr", "fnr"],
+    "body": [
+      "function ${1:name}(${2:params}) {",
+      "\t<- ${3:value}",
+      "}"
+    ],
+    "description": "Function that returns with <-"
+  },
+  "Typed function": {
+    "prefix": "fnt",
+    "body": [
+      "function ${1:name}(${2:x}: ${3:Integer}) : ${4:Integer} {",
+      "\t<- ${0:x}",
+      "}"
+    ],
+    "description": "Function with optional type annotations"
+  },
+  "When": {
+    "prefix": "when",
+    "body": [
+      "when ${1:condition} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "When branch (no parens required)"
+  },
+  "When / or": {
+    "prefix": ["whenor", "ifelse"],
+    "body": [
+      "when ${1:condition} {",
+      "\t${2}",
+      "} or {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "When with else (or) branch"
+  },
+  "When chain": {
+    "prefix": "whenchain",
+    "body": [
+      "when ${1:cond1} {",
+      "\t${2}",
+      "} or when ${3:cond2} {",
+      "\t${4}",
+      "} or {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Multi-branch when / or when / or"
+  },
+  "Do while": {
+    "prefix": ["while", "dowhile"],
+    "body": [
+      "do while ${1:condition} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Do while loop"
+  },
+  "Do for": {
+    "prefix": ["for", "dofor"],
+    "body": [
+      "do for ${1:item} in ${2:iterable} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Do for-in loop"
+  },
+  "Index loop": {
+    "prefix": "fori",
+    "body": [
+      "let ${1:n} -> ${2:xs}.length",
+      "let ${3:i} -> 0",
+      "do while ${3:i} < ${1:n} {",
+      "\tlet ${4:item} -> ${2:xs}[${3:i}]",
+      "\t${0}",
+      "\t${3:i} -> ${3:i} + 1",
+      "}"
+    ],
+    "description": "Dual-path friendly index loop"
+  },
+  "Let bind": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name} -> ${0:value}"
+    ],
+    "description": "Mutable let binding"
+  },
+  "Set constant": {
+    "prefix": "set",
+    "body": [
+      "set ${1:NAME} -> ${0:value}"
+    ],
+    "description": "Immutable set binding"
+  },
+  "Use nested package": {
+    "prefix": ["use", "import", "imp"],
+    "body": [
+      "use zen.${1:io}"
+    ],
+    "description": "Package import (use is alias for import)"
+  },
+  "Use with rename": {
+    "prefix": "useas",
+    "body": [
+      "use zen.${1:text.string} as ${2:Str}"
+    ],
+    "description": "Import with alias"
+  },
+  "Use io + string": {
+    "prefix": "impio",
+    "body": [
+      "use zen.io",
+      "use zen.text.string as Str"
+    ],
+    "description": "Common io + string imports"
+  },
+  "Use file CLI": {
+    "prefix": "impcli",
+    "body": [
+      "use zen.sys.sys as Sys",
+      "use zen.io",
+      "use zen.io.file",
+      "use zen.text.string as Str"
+    ],
+    "description": "Imports for a small CLI tool"
+  },
+  "From use symbol": {
+    "prefix": "fromuse",
+    "body": [
+      "from zen.${1:io} use ${2:writeln}"
+    ],
+    "description": "Selective import (from … use)"
+  },
+  "Structure": {
+    "prefix": "structure",
+    "body": [
+      "structure ${1:Name} {",
+      "\t${2:field}: ${3:Integer}",
+      "}"
+    ],
+    "description": "Structure definition"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Class definition"
+  },
+  "Enumerator": {
+    "prefix": ["enum", "enumerator"],
+    "body": [
+      "enumerator ${1:Name} {",
+      "\t${2:Variant}",
+      "}"
+    ],
+    "description": "Enumerator definition"
+  },
+  "Map literal": {
+    "prefix": "map",
+    "body": [
+      "let ${1:m} -> {",
+      "\t`${2:key}` -> ${3:value}",
+      "}"
+    ],
+    "description": "Map / record literal"
+  },
+  "Result map": {
+    "prefix": "result",
+    "body": [
+      "<- {",
+      "\t`ok` -> ${1:True},",
+      "\t`value` -> ${2:value},",
+      "\t`error` -> ${3:``}",
+      "}"
+    ],
+    "description": "Return ok/value/error result map"
+  },
+  "Lambda": {
+    "prefix": ["lambda", "fn"],
+    "body": [
+      "function(${1:x}) { <- ${0:x} }"
+    ],
+    "description": "Anonymous function"
+  },
+  "Write line": {
+    "prefix": ["writeln", "print"],
+    "body": [
+      "io.writeln(`${1:message}`)"
+    ],
+    "description": "Write a line (needs import zen.io.io as io)"
+  },
+  "Doc comment": {
+    "prefix": "doc",
+    "body": [
+      "/!",
+      "  ${1:Description}",
+      "",
+      "  Run:",
+      "    ./bin/zen ${2:path/to/file.zl}",
+      "!/"
+    ],
+    "description": "File / module documentation block"
+  },
+  "Test assert": {
+    "prefix": "assert",
+    "body": [
+      "! ${1:condition}"
+    ],
+    "description": "Test assertion (! condition)"
+  },
+  "Task": {
+    "prefix": "task",
+    "body": [
+      "task ${1:name} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Task definition"
+  },
+  "Export function": {
+    "prefix": "exportfn",
+    "body": [
+      "export function ${1:name}(${2:params}) {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Exported function"
+  },
+  "Check or handle": {
+    "prefix": "checkor",
+    "body": [
+      "let ${1:r} -> check ${2:expr} or {",
+      "\t${3:/* handle */}",
+      "\t${4:fallback}",
+      "}"
+    ],
+    "description": "check … or { } error handling"
+  }
 }

@@ -1,6 +1,0 @@
-from zen.io import write
-from zen.io import out, write as legacy_write
-
-out.info(`Testing selective import and alias`)
-legacy_write(`Legacy print with alias working`)
-out.warn(`All systems normal`)

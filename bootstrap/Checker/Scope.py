@@ -1,7 +1,5 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-from Logging.Trace import zen_trace
-zen_trace("SCOPE.PY LOADED")
 
 @dataclass
 class RegionNode:
@@ -39,13 +37,15 @@ class Scope:
         self.region: RegionNode | None = region
 
     def define(self, symbol: 'Symbol'):
-        from Zen import zen_trace
-        # zen_trace(f"SCOPE DEFINE: {symbol.name} in scope {id(self)}")
         if symbol.name in self.symbols:
+            # Allow prelude/stdlib rebinding: enums, and module-local __builtin aliases
+            # (e.g. lib/zen/memory.zl: let __builtin -> __builtin_memory).
+            if symbol.name in ("Option", "Result", "Some", "Nothing", "Ok", "Error") or symbol.name == "__builtin" or symbol.name.startswith("__builtin_"):
+                self.symbols[symbol.name] = symbol
+                return
             raise Exception(f"redeclaration: {symbol.name}")
 
         self.symbols[symbol.name] = symbol
-        # zen_trace(f"SCOPE DEFINE: {symbol.name} DONE")
 
     def lookup(self, name: str, current_scope_only: bool = False):
         if current_scope_only:
@@ -94,10 +94,7 @@ class ScopeManager:
         self.level -= 1
 
     def define(self, symbol: 'Symbol'):
-        from Zen import zen_trace
-        zen_trace(f"SCOPEMANAGER DEFINE: {symbol.name}")
         self.current_scope.define(symbol)
-        zen_trace(f"SCOPEMANAGER DEFINE DONE: {symbol.name}")
 
     def lookup(self, name: str, current_scope_only: bool = False):
         return self.current_scope.lookup(name, current_scope_only)

@@ -1,6 +1,6 @@
 %YAML 1.2
 ---
-name: ZenLang
+name: Zenlang
 file_extensions:
   - zl
   - zs
@@ -8,67 +8,94 @@ scope: source.zenlang
 
 contexts:
   main:
-    # Comments
-    - match: '//.*$'
-      scope: comment.line.zenlang
+    - match: '/!'
+      scope: punctuation.definition.comment.begin.zenlang
+      push: doc_comment
+
+    - match: '//'
+      scope: punctuation.definition.comment.zenlang
+      push: line_comment
 
     - match: '/\*'
+      scope: punctuation.definition.comment.begin.zenlang
       push: block_comment
 
-    # Strings (backticks)
-    - match: '`'
+    - match: '([a-zA-Z_][a-zA-Z0-9_]*)?(`)'
+      captures:
+        1: storage.type.string-prefix.zenlang
+        2: punctuation.definition.string.begin.zenlang
       push: backtick_string
 
-    # Characters
-    - match: "'[^']'"
-      scope: string.character.zenlang
+    - match: '"'
+      scope: punctuation.definition.string.begin.zenlang
+      push: double_string
 
-    # Numbers
-    - match: '\b\d+(\.\d+)?\b'
-      scope: constant.numeric.zenlang
+    - match: "'(\\\\.|[^'])'"
+      scope: constant.character.zenlang
 
-    # Booleans
+    - match: '\b0[xX][0-9a-fA-F_]+\b'
+      scope: constant.numeric.hex.zenlang
+    - match: '\b0[bB][01_]+\b'
+      scope: constant.numeric.binary.zenlang
+    - match: '\b\d[\d_]*\.\d[\d_]*([eE][+-]?\d+)?\b'
+      scope: constant.numeric.float.zenlang
+    - match: '\b\d[\d_]*\b'
+      scope: constant.numeric.integer.zenlang
+
     - match: '\b(True|False)\b'
       scope: constant.language.boolean.zenlang
+    - match: '\b(Nothing|nothing|Void|Default)\b'
+      scope: constant.language.null.zenlang
 
-    # Keywords
-    - match: '\b(if|else|do|for|while|until|when|break|continue|in|and|or|not|let|set|function|class|structure|type|return|nothing)\b'
+    - match: '\b(when|or|and|not|xor|do|while|until|for|in|break|continue|return|case|with|check|raise|assert|defer|export|extends?|object|scope|task|is|type)\b'
       scope: keyword.control.zenlang
+    - match: '\b(let|set|function|class|structure|enumerator|import|use|from|as|auto)\b'
+      scope: storage.type.zenlang
+    - match: '\b(self|parent)\b'
+      scope: variable.language.zenlang
 
-    # Types
-    - match: '\b(Void|Variant|Integer|Float|String|Character|Boolean|Structure|Function|Class|Dictionary|Vector|List|Tuple|Set|Iterator|Iterable)\b'
+    - match: '\b(Void|Variant|Integer|Decimal|String|Boolean|Rune|List|Map|Dictionary|Tuple|Vector|Set|Error|Task|Function|Structure|Class|Object|Enumerator)\b'
       scope: storage.type.zenlang
 
-    # Operators
-    - match: '->|<-|:>|==|!=|>=|<=|\+\+|--|[+\-*/%^=<>:]'
+    - match: '->|<-|:>|=>|\.\.=|\.\.'
       scope: keyword.operator.zenlang
+    - match: '==|!=|>=|<=|>|<|\+\+|--|\*\*|//|[+\-*/%]'
+      scope: keyword.operator.zenlang
+
+    - match: '\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()'
+      scope: meta.function-call.zenlang
+      captures:
+        1: variable.function.zenlang
+
+  line_comment:
+    - meta_scope: comment.line.double-slash.zenlang
+    - match: $\n?
+      pop: true
+
+  doc_comment:
+    - meta_scope: comment.block.documentation.zenlang
+    - match: '!/'
+      scope: punctuation.definition.comment.end.zenlang
+      pop: true
 
   block_comment:
     - meta_scope: comment.block.zenlang
     - match: '\*/'
+      scope: punctuation.definition.comment.end.zenlang
       pop: true
-    - match: '.'
-      scope: comment.block.zenlang
 
   backtick_string:
-    - meta_scope: string.quoted.other.zenlang
+    - meta_content_scope: string.quoted.other.zenlang
     - match: '`'
+      scope: punctuation.definition.string.end.zenlang
       pop: true
-    - match: '.'
-      scope: string.quoted.other.zenlang
+    - match: '\\.'
+      scope: constant.character.escape.zenlang
 
-#let zenlang-theme = (
-  "comment.line": (fill: rgb("#6a9955")),
-  "comment.block": (fill: rgb("#6a9955")),
-  "string": (fill: rgb("#ce9178")),
-  "number": (fill: rgb("#b5cea8")),
-  "keyword": (fill: rgb("#569cd6"), weight: "bold"),
-)
-
-#show raw.where(lang: "zenlang"): it => raw(
-  it.text,
-  lang: "zenlang",
-  block: it.block,
-  syntaxes: (zenlang: zenlang-syntax),
-  theme: zenlang-theme,
-)
+  double_string:
+    - meta_content_scope: string.quoted.double.zenlang
+    - match: '"'
+      scope: punctuation.definition.string.end.zenlang
+      pop: true
+    - match: '\\.'
+      scope: constant.character.escape.zenlang

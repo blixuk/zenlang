@@ -1,5 +1,5 @@
 from zen.io import write
-import zen.string as Str
+import zen.text.string as Str
 from ../../src/compiler/Lexer import Lexer
 from ../../src/compiler/Parser import Parser
 from ../../src/compiler/CTranspiler import Transpiler

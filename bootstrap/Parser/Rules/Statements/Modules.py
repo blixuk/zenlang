@@ -38,26 +38,48 @@ class ModuleParserMixin:
         return path
 
     def import_statement(self) -> ImportStatement:
-        token = self.token_handler.expect_type_value(TokenType.KEYWORD, "import", "Expected `import` keyword")
-        
+        # `import` and `use` are aliases (prefer `use` in new code; full migration later)
+        if self.token_handler.check_value("use"):
+            token = self.token_handler.expect_type_value(
+                TokenType.KEYWORD, "use", "Expected `use` keyword"
+            )
+        else:
+            token = self.token_handler.expect_type_value(
+                TokenType.KEYWORD, "import", "Expected `import` or `use` keyword"
+            )
+
         path = self.parse_import_path()
-        
+
         alias: str | None = None
         if self.token_handler.check_value("as"):
             self.token_handler.advance()
-            alias_token = self.token_handler.expect_type(TokenType.IDENTIFIER, "Expected alias identifier after `as`")
+            alias_token = self.token_handler.expect_type(
+                TokenType.IDENTIFIER, "Expected alias identifier after `as`"
+            )
             alias = getattr(alias_token, "value")
-        
-        name = alias if alias else path.split('.')[-1]
-        statement = ImportStatement(getattr(token, "line"), getattr(token, "column"), name, path, alias)
+
+        name = alias if alias else path.split(".")[-1]
+        statement = ImportStatement(
+            getattr(token, "line"), getattr(token, "column"), name, path, alias
+        )
         return statement
 
     def from_import_statement(self) -> FromImportStatement:
-        token = self.token_handler.expect_type_value(TokenType.KEYWORD, "from", "Expected `from` keyword")
-        
+        token = self.token_handler.expect_type_value(
+            TokenType.KEYWORD, "from", "Expected `from` keyword"
+        )
+
         path = self.parse_import_path()
-        
-        self.token_handler.expect_type_value(TokenType.KEYWORD, "import", "Expected `import` keyword after path")
+
+        # `from path import …` or `from path use …`
+        if self.token_handler.check_value("use"):
+            self.token_handler.expect_type_value(
+                TokenType.KEYWORD, "use", "Expected `use` keyword after path"
+            )
+        else:
+            self.token_handler.expect_type_value(
+                TokenType.KEYWORD, "import", "Expected `import` or `use` keyword after path"
+            )
 
         symbols = []
         while True:
@@ -69,13 +91,17 @@ class ModuleParserMixin:
                 symbol_token = self.token_handler.advance()
                 symbol_name = getattr(symbol_token, "value")
             else:
-                raise self.logger.error_expect_token("Expected symbol name in import list", self.token_handler.peek())
+                raise self.logger.error_expect_token(
+                    "Expected symbol name in import list", self.token_handler.peek()
+                )
 
             symbol_alias = None
 
             if self.token_handler.check_value("as"):
                 self.token_handler.advance()
-                alias_token = self.token_handler.expect_type(TokenType.IDENTIFIER, "Expected alias after `as`")
+                alias_token = self.token_handler.expect_type(
+                    TokenType.IDENTIFIER, "Expected alias after `as`"
+                )
                 symbol_alias = getattr(alias_token, "value")
 
             symbols.append({"name": symbol_name, "alias": symbol_alias})
@@ -85,10 +111,7 @@ class ModuleParserMixin:
             break
 
         return FromImportStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            path,
-            symbols
+            getattr(token, "line"), getattr(token, "column"), path, symbols
         )
 
     def scope_statement(self) -> ScopeStatement:

@@ -1,4 +1,4 @@
-import zen.io as io
+import zen.io.io as io
 
 // Full names
 let l -> List{1, 2, 3}

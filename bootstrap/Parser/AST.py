@@ -13,6 +13,7 @@ from Checker.Type import (
     TypeList,
     TypeMember,
     TypeNothing,
+    TypeDefault,
     TypeNumber,
     TypeParameter,
     TypeRune,
@@ -152,6 +153,7 @@ class StructureStatement(ASTNode):
     name: str
     members: list
     parent: Optional[str] = None
+    reflectable: bool = False
     declared_type: str = "Structure"
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "StructureStatement"
@@ -165,6 +167,7 @@ class ObjectStatement(ASTNode):
     name: str
     members: list
     parent: Optional[str] = None
+    reflectable: bool = False
     declared_type: str = "Object"
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "ObjectStatement"
@@ -200,6 +203,7 @@ class ClassStatement(ASTNode):
     parent: Optional[str]
     members: list
     methods: list
+    reflectable: bool = False
     declared_type: str = "Class"
     resolved_type: Optional[Type] = None
     node_type: Optional[str] = "ClassStatement"
@@ -551,6 +555,16 @@ class NothingLiteral(ASTNode):
     value: Optional[Any] = None
     type: Optional[Type] = TypeNothing()
     node_type: Optional[str] = "NothingLiteral"
+
+
+@dataclass
+class DefaultLiteral(ASTNode):
+    line: int | None = None
+    column: int | None = None
+    value: Optional[Any] = "Default"
+    type: Optional[Type] = TypeDefault()
+    node_type: Optional[str] = "DefaultLiteral"
+
 
 
 @dataclass

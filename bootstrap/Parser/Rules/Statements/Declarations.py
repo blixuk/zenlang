@@ -8,10 +8,13 @@ from Parser.AST import (
     IndexReassignmentStatement,
     FunctionStatement,
     StructureStatement,
+    TaskStatement,
     ObjectStatement,
     EnumeratorStatement,
     ClassStatement,
     Identifier,
+    MemberExpression,
+    IndexExpression,
     TypeLiteral
 )
 from Checker.Type import Type, TypeVoid
@@ -56,95 +59,40 @@ class DeclarationParserMixin:
     def reassignment_statement(self) -> ReassignmentStatement:
         from Zen import zen_trace
         zen_trace(f"ENTER reassignment_statement at line {self.token_handler.peek().line}")
-        statement: ReassignmentStatement | None = None
-        token: Token | None = None
-        value: ASTNode | None = None
-        inferred_type: Type | None = None
-        mutable: bool = True
-
-        # Identifier
-        token = self.token_handler.expect_types(
-            [TokenType.IDENTIFIER, TokenType.KEYWORD],
-            "Expected `identifier` before assignment operator `->`",
+        
+        # Parse the left-hand side as an expression (MemberExpression, Identifier, or IndexExpression)
+        target = self.expression_handler.expression()
+        
+        # Expect assignment operator
+        self.token_handler.expect_types(
+            [TokenType.ASSIGNMENT, TokenType.EQUAL],
+            "Expected `->` or `=` after reassignment target"
         )
-
-        # check for member reassignment
-        if self.token_handler.check_type(TokenType.DOT):
-             self.token_handler.advance() # consume '.'
-             property_token = self.token_handler.expect_types(
-                 [TokenType.IDENTIFIER, TokenType.KEYWORD], 
-                 "Expected property name after `.`"
-             )
-             
-             # Create callee node for MemberReassignment
-             callee_node = Identifier(
-                 getattr(token, "line"),
-                 getattr(token, "column"),
-                 self.scope_manager.get_current_scope_level(),
-                 getattr(token, "value"),
-                 "Identifier"
-             )
-             
-             # Assignment
-             value = self.handle_assignment(value, mutable)
-             
-             statement = MemberReassignmentStatement(
-                 getattr(token, "line"),
-                 getattr(token, "column"),
-                 self.scope_manager.get_current_scope_level(),
-                 callee_node,
-                 getattr(property_token, "value"),
-                 value,
-                 "MemberReassignment"
-             )
-             self.logger.debug("member_reassignment_statement", statement)
-             return statement
-
-        # check for index reassignment
-        if self.token_handler.check_type(TokenType.LEFT_BRACKET):
-             self.token_handler.advance() # consume '['
-             index_expr = self.expression_handler.expression()
-             self.token_handler.expect_type(TokenType.RIGHT_BRACKET, "Expected `]` after index")
-             
-             # Create callee node
-             callee_node = Identifier(
-                 getattr(token, "line"),
-                 getattr(token, "column"),
-                 self.scope_manager.get_current_scope_level(),
-                 getattr(token, "value"),
-                 "Identifier"
-             )
-             
-             # Assignment
-             value = self.handle_assignment(value, mutable)
-             
-             statement = IndexReassignmentStatement(
-                 getattr(token, "line"),
-                 getattr(token, "column"),
-                 self.scope_manager.get_current_scope_level(),
-                 callee_node,
-                 index_expr,
-                 value
-             )
-             self.logger.debug("index_reassignment_statement", statement)
-             return statement
-
-        # Assignment
-        value = self.handle_assignment(value, mutable)
-
-        statement = ReassignmentStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            getattr(token, "value"),
-            value,
-            inferred_type,
-            mutable,
-            self.scope_manager.get_current_scope_level(),
-        )
-
-        self.logger.debug("reassignment_statement", statement)
-
-        return statement
+        
+        # Parse the value
+        value = self.expression_handler.expression()
+        
+        from Parser.AST import UnaryOperation, DereferenceReassignmentStatement
+        if isinstance(target, UnaryOperation) and target.operator == "target":
+            return DereferenceReassignmentStatement(
+                target.line, target.column, target.right, value, self.scope_manager.get_current_scope_level()
+            )
+        elif isinstance(target, MemberExpression):
+            return MemberReassignmentStatement(
+                target.line, target.column, self.scope_manager.get_current_scope_level(),
+                target.object, target.property, value, "MemberReassignment"
+            )
+        elif isinstance(target, IndexExpression):
+            return IndexReassignmentStatement(
+                target.line, target.column, self.scope_manager.get_current_scope_level(),
+                target.object, target.index, value, "IndexReassignment"
+            )
+        else:
+            # Fallback to simple variable reassignment
+            name = getattr(target, "name", str(target))
+            return ReassignmentStatement(
+                target.line, target.column, name, value, None, True, self.scope_manager.get_current_scope_level()
+            )
 
     def function_statement(self) -> FunctionStatement:
         """
@@ -192,16 +140,85 @@ class DeclarationParserMixin:
             block,
             inferred_return_type,
         )
+        if self.filename: statement.filename = self.filename
 
         self.logger.debug("function_statement", statement)
 
         return statement
 
+    def task_statement(self) -> TaskStatement:
+        token: Token | None = None
+        token = self.handle_declaration("task")
+        parameters = []
+        inferred_return_type = None
+
+        # Identifier
+        identifier = self.handle_identifier()
+
+        # Parameters
+        if self.token_handler.check_type(TokenType.LEFT_PAREN):
+            parameters = self.expression_handler.parse_parameters()
+
+        # Return Type
+        inferred_return_type, _ = self.handle_typing()
+        if not inferred_return_type: inferred_return_type = TypeVoid()
+
+        # Block Scope
+        if self.token_handler.check_type(TokenType.LEFT_BRACE):
+            block = self.block_statement("task")
+        else:
+            raise self.logger.error_expect_token(
+                "Expected block after task identifier", self.token_handler.peek()
+            )
+
+        statement = TaskStatement(
+            getattr(token, "line"),
+            getattr(token, "column"),
+            self.scope_manager.get_current_scope_level(),
+            getattr(identifier, "value"),
+            parameters,
+            block,
+            inferred_return_type,
+        )
+        if self.filename: statement.filename = self.filename
+
+        self.logger.debug("task_statement", statement)
+        return statement
+
+    def _parse_is_traits(self) -> list:
+        """Parse zero or more `is Trait` (optionally `is A, B`) after a type name."""
+        traits: list = []
+        while True:
+            tok = self.token_handler.peek()
+            is_kw = (
+                tok
+                and getattr(tok, "value", None) == "is"
+                and tok.type in (TokenType.KEYWORD, TokenType.IS, TokenType.IDENTIFIER)
+            )
+            if not is_kw:
+                break
+            self.token_handler.advance()
+            # trait name: identifier (reflectable) or keyword
+            if self.token_handler.check_types([TokenType.IDENTIFIER, TokenType.KEYWORD]):
+                traits.append(getattr(self.token_handler.advance(), "value"))
+            else:
+                raise self.logger.error_expect_token(
+                    "Expected trait name after `is`", self.token_handler.peek()
+                )
+            while self.token_handler.match_type(TokenType.COMMA):
+                if self.token_handler.check_types([TokenType.IDENTIFIER, TokenType.KEYWORD]):
+                    traits.append(getattr(self.token_handler.advance(), "value"))
+                else:
+                    raise self.logger.error_expect_token(
+                        "Expected trait name after `,`", self.token_handler.peek()
+                    )
+        return traits
+
     def structure_statement(self) -> StructureStatement:
         """
         Entry for 'structure' statement.
         Supports:
-            structure <identifier> { ... }
+            structure <identifier> [is reflectable] [extends Parent] { ... }
         """
         token: Token | None = None
         identifier: Token | None = None
@@ -213,6 +230,9 @@ class DeclarationParserMixin:
 
         # Identifier
         identifier = self.handle_identifier()
+
+        traits = self._parse_is_traits()
+        reflectable = "reflectable" in traits
 
         parent: Token | None = None
         if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
@@ -229,6 +249,7 @@ class DeclarationParserMixin:
             getattr(identifier, "value"),
             members,
             parent=getattr(parent, "value") if parent else None,
+            reflectable=reflectable,
         )
 
         self.logger.debug("structure_statement", statement)
@@ -238,7 +259,7 @@ class DeclarationParserMixin:
         """
         Entry for 'object' statement.
         Supports:
-            object <identifier> { ... }
+            object <identifier> [is reflectable] [extends Parent] { ... }
         """
         token: Token | None = None
         identifier: Token | None = None
@@ -250,6 +271,9 @@ class DeclarationParserMixin:
 
         # Identifier
         identifier = self.handle_identifier()
+
+        traits = self._parse_is_traits()
+        reflectable = "reflectable" in traits
 
         parent: Token | None = None
         if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
@@ -266,6 +290,7 @@ class DeclarationParserMixin:
             getattr(identifier, "value"),
             members,
             parent=getattr(parent, "value") if parent else None,
+            reflectable=reflectable,
         )
 
         self.logger.debug("object_statement", statement)
@@ -306,6 +331,8 @@ class DeclarationParserMixin:
     def class_statement(self) -> ClassStatement:
         token = self.handle_declaration("class")
         identifier = self.handle_identifier()
+        traits = self._parse_is_traits()
+        reflectable = "reflectable" in traits
         parent_identifier: Token | None = None
 
         if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
@@ -337,7 +364,17 @@ class DeclarationParserMixin:
 
         self.scope_manager.exit("class")
         self.token_handler.expect_type(TokenType.RIGHT_BRACE, "Expected `}` after class body")
-        statement = ClassStatement(getattr(token, "line"), getattr(token, "column"), 0, getattr(identifier, "value"), getattr(parent_identifier, "value") if parent_identifier else None, members, methods)
+        statement = ClassStatement(
+            getattr(token, "line"),
+            getattr(token, "column"),
+            0,
+            getattr(identifier, "value"),
+            getattr(parent_identifier, "value") if parent_identifier else None,
+            members,
+            methods,
+            reflectable=reflectable,
+        )
+        if self.filename: statement.filename = self.filename
         return statement
 
     def handle_declaration(self, value: str) -> Token | None:
@@ -368,4 +405,4 @@ class DeclarationParserMixin:
             return self.expression_handler.expression()
         elif mutable and value is None:
             if self.token_handler.match_types([TokenType.ASSIGNMENT, TokenType.EQUAL]): return self.expression_handler.expression()
-        return None
+        return value

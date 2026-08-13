@@ -22,6 +22,10 @@ class SymbolKind(Enum):
     COLLECTION = "COLLECTION"
     CONTAINER = "CONTAINER"
     TYPE = "TYPE"
+    VARIANT = "VARIANT"
+    MODULE = "MODULE"
+    CLASS = "CLASS"
+    NAMESPACE = "NAMESPACE"
 
 
 class Value:
@@ -30,6 +34,11 @@ class Value:
 
 @dataclass(frozen=True)
 class ValueNothing(Value):
+    pass
+
+
+@dataclass(frozen=True)
+class ValueDefault(Value):
     pass
 
 
@@ -45,7 +54,7 @@ class TypeVoid(Type):
     name: str = "Void"
 
 
-@dataclass(frozen=True)
+@dataclass
 class TypeVariant(Type):
     name: str = "Variant"
 
@@ -53,6 +62,11 @@ class TypeVariant(Type):
 @dataclass(frozen=True)
 class TypeNothing(Type):
     name: str = "Nothing"
+
+
+@dataclass(frozen=True)
+class TypeDefault(Type):
+    name: str = "Default"
 
 
 @dataclass(frozen=True)
@@ -88,6 +102,7 @@ class TypeRune(Type):
 PRIMITIVE_TYPES: Dict = {
     "Void": TypeVoid,
     "Nothing": TypeNothing,
+    "Default": TypeDefault,
     "Variant": TypeVariant,
     "Integer": TypeInteger,
     "Float": TypeDecimal,
@@ -96,6 +111,12 @@ PRIMITIVE_TYPES: Dict = {
     "Rune": TypeRune,
     "Boolean": TypeBoolean,
 }
+
+def TypePrimitive(name: str) -> Type:
+    if name in PRIMITIVE_TYPES:
+        return PRIMITIVE_TYPES[name]()
+    return TypeVariant()
+
 
 
 # Abstract Types
@@ -209,9 +230,6 @@ COLLECTION_TYPES: Dict = {
 }
 
 
-# Container Types
-
-
 @dataclass(frozen=True)
 class TypeFunction(Type):
     name: str
@@ -220,17 +238,34 @@ class TypeFunction(Type):
 
 
 @dataclass(frozen=True)
+class TypeTask(Type):
+    name: str
+    parameters: Optional[List[TypeParameter]]
+    return_type: Type
+
+
+@dataclass(frozen=True)
+class TypeTaskHandle(Type):
+    inner_type: Type
+    name: str = "TaskHandle"
+
+
+@dataclass
 class TypeStructure(Type):
     name: str
     members: Any # Dict[str, Type]
     parent: Optional['TypeStructure'] = None
+    filename: Optional[str] = None
+    methods: Optional[Any] = None # Dict[str, TypeFunction]
 
-@dataclass(frozen=True)
+
+@dataclass
 class TypeClass(Type):
     name: str
     members: Any # Dict[str, TypeVariable]
     methods: Any # Dict[str, TypeFunction]
     parent: Optional['TypeClass'] = None
+    filename: Optional[str] = None
 
 
 
@@ -244,6 +279,7 @@ class TypeEnumerator(Type):
 class TypeEnum(Type):
     name: str
     variants: Dict[str, "TypeEnumVariant"]
+    filename: Optional[str] = None
 
 @dataclass(frozen=True)
 class TypeEnumVariant(Type):
@@ -251,11 +287,37 @@ class TypeEnumVariant(Type):
     params: List[Type]
     parent_enum: str
 
+@dataclass(frozen=True)
+class TypeOption(Type):
+    inner_type: Type
+    name: str = "Option"
+
+@dataclass(frozen=True)
+class TypeResult(Type):
+    inner_type: Type
+    error_type: Type
+    name: str = "Result"
+
+@dataclass(frozen=True)
+class TypeReference(Type):
+    inner_type: Type
+    name: str = "Reference"
+    borrowed_name: Optional[str] = None
+
+@dataclass(frozen=True)
+class TypePointer(Type):
+    inner_type: Type
+    name: str = "Pointer"
+
 OBJECT_TYPES: Dict = {
     "Function": TypeFunction,
     "Structure": TypeStructure,
     "Class": TypeClass,
     "Enumerator": TypeEnum,
+    "Task": TypeTask,
+    "TaskHandle": TypeTaskHandle,
+    "Option": TypeOption,
+    "Result": TypeResult,
 }
 
 
@@ -293,3 +355,4 @@ class Symbol:
     memory_kind: MemoryKind = MemoryKind.STACK
     state: SymbolState = SymbolState.VALID
     region: Optional[Any] = None # Will hold RegionNode
+    filename: Optional[str] = None

@@ -7,21 +7,44 @@ venv/
 env/
 .env/
 
-# Build and Output
+# Build and output (generated; never hand-edit)
 output/
 build/
 out/
 bin/
+tmp/
 self_hosted_output.c
 self_hosted_test.c
 
-# Logs and Debugging
+# Object files and backups
+*.o
+*.a
+*.so
+*.bak
+*~
+
+# Logs and debugging
+*.log
+ZEN_DEBUG.log
+**/ZEN_DEBUG.log
 log.txt
 debug_*.txt
 temp_test.txt
 
-# Editors
+# Editors / local IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor tooling
+editors/**/node_modules/
+
+# Nested local git used only for Zed grammar rev checkout
+editors/tree-sitter-zen/.git/
+editors/tree-sitter-zen/*.so
+editors/tree-sitter-zen/*.wasm

@@ -1,20 +1,25 @@
-from ../../src/compiler/Lexer import Lexer
-from zen.io import write
-import zen.string as s
+/!
+ Native-compiler folder smoke for selfhost lexer (paths under selfhost/).
+ !/
+
+import compiler.Lexer as Lexer
+import zen.io.io as io
+import zen.text.string as Str
 
 function main() {
-    let source -> `/* Comment */ let x -> 10 + 20 /*
-    Multi
-    Line
-    */`
-    let lexer -> Lexer(source)
-    let tokens -> lexer.tokenize()
-    
-    write(`Tokens found: ` + s.length(tokens))
-    
+    let source -> `/* Comment */ let x -> 10 + 20`
+    let tokens -> Lexer.tokenize_source(source)
+    io.writeln(`Tokens found: ` + Str.to_string(tokens.length))
     do for token in tokens {
-        write(`Token: ` + token.value)
+        when token[`value`] != `` {
+            io.writeln(`Token: ` + token[`value`])
+        }
+    }
+    when tokens.length >= 6 {
+        io.writeln(`PASS`)
+        <- 0
+    } or {
+        io.writeln(`FAIL`)
+        <- 1
     }
 }
-
-main()

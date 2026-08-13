@@ -1,7 +1,7 @@
 from ../../src/compiler/Lexer import Lexer
 from ../../src/compiler/Token import TokenType
 from zen.io import write
-import zen.string as s
+import zen.text.string as s
 
 function main() {
     write(`Running Comprehensive Lexer Test...`)

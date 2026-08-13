@@ -101,4 +101,14 @@ project types:
 Zenlang 'build' command for building projects.
 
 ---
+Zenlang Tools:
+- Todo/Fixme manager
+- Version Control System
+- Documentation Generator
+- Langauge Manual / man Pages / Language Feature lookup / Builtin Documentation
+- Build System
+- Debug System
+- Page management System
+- Project management System
 
+----

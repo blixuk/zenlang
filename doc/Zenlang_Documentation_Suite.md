@@ -26,44 +26,37 @@ Zenlang is guided by the **Zen Manifesto**:
 
 ## 2. Getting Started
 
-### Installation
-Zenlang is currently in a developer-preview bootstrap phase. To set up the environment on Linux or macOS:
+**Preferred on-ramp:** **[Getting_Started.md](Getting_Started.md)** — install, dual execution (interpret vs `-g`), full language tour, stdlib taste, and design patterns.
 
-1.  **Clone the repository**:
+**Module / reflect / plugins:** **[Language_Module_and_Reflect.md](Language_Module_and_Reflect.md)** — built-in `module`, `module.entry`, `use`, `zen.reflect`, `is reflectable`, `zen.plugins`.
+
+### Installation (short)
+
+Zenlang is in an active bootstrap phase. On Linux/macOS:
+
+1. Clone this repository and `cd` into it.
+2. Ensure `python3` and a C compiler (`gcc` or `clang`) are available.
+3. Install the daily CLI:
     ```bash
-    git clone https://github.com/your-repo/zenlang.git
-    cd zenlang
+    ./scripts/zen install
+    ./bin/zen tests/hello.zl
     ```
-2.  **Dependencies**: Ensure you have `python3` and a C compiler (`gcc` or `clang`) installed.
-3.  **Build the Host Compiler**:
-    ```bash
-    make
-    ```
-    This builds the Zenlang driver in `bin/zen`.
 
 ### Hello, World!
-Create a file named `hello.zl`:
 
-```zenlang
-import zen.io
+```zl
+import zen.io.io as io
 
-function main {
-    io.write(`Hello, Zenlang!`)
+function main() {
+    io.writeln(`Hello, Zenlang!`)
+    <- 0
 }
 ```
 
-### Basic CLI Usage
-You can run Zenlang code in two modes:
-
-*   **Interpreted (Default)**: Ideal for scripts and quick iteration.
-    ```bash
-    python3 bootstrap/Zen.py hello.zl
-    ```
-*   **Ahead-of-Time Compiled**: Generates a fast, native binary via C.
-    ```bash
-    python3 bootstrap/Zen.py hello.zl --generate
-    ./output/build/out
-    ```
+```bash
+./bin/zen hello.zl          # interpret
+./bin/zen -g hello.zl       # native via C
+```
 
 ---
 
@@ -109,7 +102,20 @@ do while x < 10 { x++ }
 do for item in [1, 2, 3] {
     io.write(item)
 }
+
+// Ranges (lists of ints or single characters)
+do for i in 0..10 { }          // 0..9
+do for ch in `a`..=`c` { }     // a, b, c
 ```
+
+### Ranges
+```zenlang
+0..5           // [0, 1, 2, 3, 4]      exclusive end
+0..=5          // [0, 1, 2, 3, 4, 5]   inclusive end
+`a`..=`z`      // character list
+5..2           // [5, 4, 3]            descending
+```
+Do not use `...` for ranges (that is rest/spread in patterns).
 
 ### Functions
 Functions are declared using the `function` keyword and return values using the `<-` operator.
@@ -119,8 +125,10 @@ function add(a: Integer, b: Integer) : Integer {
     <- a + b
 }
 
-// Anonymous function / Closure
+// Anonymous function (lambda); outer locals are captured by value
 let multiply -> function(x, y) { <- x * y }
+let n -> 2
+let scale -> function(x) { <- x * n }
 ```
 
 ### Data Structures
@@ -199,29 +207,29 @@ function main {
 
 | Module | Description | Key Functions |
 | :--- | :--- | :--- |
-| **`zen.io`** | Basic Input/Output & Logging | `write()`, `read()`, `info()`, `warn()`, `error()`, `debug()` |
-| **`zen.string`**| String Manipulation | `split()`, `join()`, `trim()`, `substring()`, `to_string()` |
-| **`zen.list`** | Functional List Utilities | `map()`, `filter()`, `reduce()`, `each()`, `find()`, `contains()` |
+| **`zen.io.io`** | Basic Input/Output & Logging | `write()`, `read()`, `info()`, `warn()`, `error()`, `debug()` |
+| **`zen.text.string`**| String Manipulation | `split()`, `join()`, `trim()`, `substring()`, `to_string()` |
+| **`zen.collections.list`** | Functional List Utilities | `map()`, `filter()`, `reduce()`, `each()`, `find()`, `contains()` |
 | **`zen.collections`**| Map/Set Utilities | `Map.keys()`, `Map.values()`, `Set.from_list()`, `Set.to_list()` |
 | **`zen.time`** | Time & Delays | `now()`, `sleep()`, `monotonic()`, `wallclock()`, `500.ms`, `2.seconds` |
-| **`zen.process`**| Process Management | `run()`, `get_id()` |
+| **`zen.sys.process`**| Process Management | `run()`, `get_id()` |
 | **`zen.test`** | Unit Testing | `assert_equal()`, `run_unit()`, `run_suite()` |
 | **`zen.collections`**| Data Structures | `Map`, `Set`, `Stack`, `Queue` |
 | **`zen.error`**| Error Creation | `new()`, `literal()` |
-| **`zen.math`** | Mathematical Utilities | `abs()`, `sqrt()`, `pow()`, `sin()`, `cos()`, `pi`, `e` |
-| **`zen.sys`** | System Environment | `get_args()`, `get_env()`, `get_cwd()`, `platform()`, `version()` |
-| **`zen.file`** | File System Ops | `read()`, `write()`, `append()`, `exists()`, `remove()` |
-| **`zen.path`** | Path Manipulation | `join()`, `basename()`, `dirname()`, `extname()` |
-| **`zen.json`** | JSON Serialization | `parse()`, `stringify()` |
+| **`zen.math.math`** | Mathematical Utilities | `abs()`, `sqrt()`, `pow()`, `sin()`, `cos()`, `pi`, `e` |
+| **`zen.sys.sys`** | System Environment | `get_args()`, `get_env()`, `get_cwd()`, `platform()`, `version()` |
+| **`zen.io.file`** | File System Ops | `read()`, `write()`, `append()`, `exists()`, `remove()`, `walk()`, `list_files()` |
+| **`zen.io.path`** | Path Manipulation | `join()`, `basename()`, `dirname()`, `extname()` |
+| **`zen.data.json`** | JSON Serialization | `parse()`, `stringify()` |
 | **`zen.memory`**| Arena Management | `Region()`, `Arena()`, `push_arena()`, `pop_arena()` |
-| **`zen.term`** | Terminal UI | `clear()`, `move()`, `color()`, `reset()`, `alt_screen()`, `get_size()` |
-| **`zen.random`** | Randomness | `seed()`, `integer()`, `decimal()`, `range()` |
+| **`zen.sys.term`** | Terminal UI | `clear()`, `move()`, `color()`, `reset()`, `alt_screen()`, `get_size()`, `raw_enter()`/`raw_exit()`, `read_key()`/`poll_key()`, `write()`/`flush()`, cursor helpers |
+| **`zen.math.random`** | Randomness | `seed()`, `integer()`, `decimal()`, `range()` |
 | **`zen.geometry`** | Geometry | `Point`, `Rect`, `Size`, `point()`, `rectangle()`, `size()` |
-| **`zen.text`** | Semantic Text | `Word`, `Sentence`, `Paragraph`, `capitalize()`, `to_words()`, `wrap()` |
+| **`zen.text.text`** | Semantic Text | `Word`, `Sentence`, `Paragraph`, `capitalize()`, `to_words()`, `wrap()` |
 
 ### Logging
 
-Zenlang provides standardized, color-coded logging via the `zen.io` module:
+Zenlang provides standardized, color-coded logging via the `zen.io.io` module:
 
 - `io.info(msg)`: Blue prefix `[INFO]`
 - `io.warn(msg)`: Yellow prefix `[WARN]`

@@ -1,40 +1,115 @@
 {
-    "name": "zenlang",
-    "displayName": "ZenLang",
-    "description": "Syntax highlighting and language support for ZenLang",
-    "version": "0.0.2",
-    "engines": {
-        "vscode": "^1.75.0"
+  "name": "zenlang",
+  "displayName": "ZenLang",
+  "description": "Syntax highlighting, snippets, and diagnostics for Zenlang (.zl / .zs)",
+  "version": "0.1.0",
+  "publisher": "zenlang",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "zen",
+    "zenlang",
+    "syntax"
+  ],
+  "main": "./src/extension.js",
+  "activationEvents": [
+    "onLanguage:zenlang",
+    "onCommand:zenlang.checkFile",
+    "onCommand:zenlang.runFile",
+    "onCommand:zenlang.runFileNative"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "zenlang",
+        "aliases": [
+          "Zenlang",
+          "ZenLang",
+          "zen"
+        ],
+        "extensions": [
+          ".zl",
+          ".zs"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "zenlang",
+        "scopeName": "source.zenlang",
+        "path": "./syntaxes/zen.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "zenlang",
+        "path": "./snippets.json"
+      }
+    ],
+    "configuration": {
+      "title": "Zenlang",
+      "properties": {
+        "zenlang.bootstrapPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to bootstrap/Zen.py (absolute or workspace-relative). Empty = auto-detect from workspace."
+        },
+        "zenlang.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run bootstrap --check on save/open and show diagnostics."
+        },
+        "zenlang.diagnostics.onSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh diagnostics when a .zl/.zs file is saved."
+        },
+        "zenlang.diagnostics.onOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh diagnostics when a .zl/.zs file is opened."
+        },
+        "zenlang.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Python executable used to run the bootstrap compiler."
+        }
+      }
     },
-    "publisher": "zenlang",
-    "main": "./src/extension.js",
-    "contributes": {
-        "languages": [
-            {
-                "id": "zenlang",
-                "aliases": [
-                    "ZenLang",
-                    "zen"
-                ],
-                "extensions": [
-                    ".zl",
-                    ".zs"
-                ],
-                "configuration": "./language-configuration.json"
-            }
-        ],
-        "grammars": [
-            {
-                "language": "zenlang",
-                "scopeName": "source.zenlang",
-                "path": "./syntaxes/zen.tmLanguage.json"
-            }
-        ],
-        "snippets": [
-            {
-                "language": "zenlang",
-                "path": "./snippets.json"
-            }
-        ]
+    "commands": [
+      {
+        "command": "zenlang.checkFile",
+        "title": "Zenlang: Typecheck Current File"
+      },
+      {
+        "command": "zenlang.runFile",
+        "title": "Zenlang: Run Current File (interpret)"
+      },
+      {
+        "command": "zenlang.runFileNative",
+        "title": "Zenlang: Run Current File (native -g)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == zenlang",
+          "command": "zenlang.checkFile",
+          "group": "zenlang@1"
+        },
+        {
+          "when": "resourceLangId == zenlang",
+          "command": "zenlang.runFile",
+          "group": "zenlang@2"
+        }
+      ]
     }
+  }
 }

@@ -1,5 +1,10 @@
 import `lib/zen/io` as IO
 
-function main() {
+function test {
+    IO.write(`Testing...`)
+}
+
+function main () {
     IO.write(`Hello from Self-Hosted Zen!\n`)
+    test()
 }

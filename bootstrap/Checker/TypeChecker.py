@@ -21,6 +21,7 @@ from Checker.Type import (
     TypeVariant,
     TypeVoid,
     TypeNothing,
+    TypeDefault,
     TypeVector,
     TypeSet,
     TypeMap,
@@ -86,6 +87,7 @@ from Parser.AST import (
     BlockStatement,
     VectorLiteral,
     DictionaryLiteral,
+    MapLiteral,
     SetLiteral,
     TupleLiteral,
     ExportStatement,
@@ -110,7 +112,13 @@ def TypePrimitive(name: str) -> Type:
     return TypeVariant
 
 
-class TypeChecker:
+
+from Checker.Handlers.ExpressionHandler import ExpressionHandler
+from Checker.Handlers.StatementHandler import StatementHandler
+from Checker.Handlers.PatternHandler import PatternHandler
+from Checker.Handlers.LiteralHandler import LiteralHandler
+
+class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHandler):
     def __init__(
         self,
         AST: Statements,
@@ -158,8 +166,20 @@ class TypeChecker:
         )
         
         # Built-in capabilities
+        self.scope.define(Symbol("__builtin", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_io", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("IO", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("io", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_output", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_input", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+
+        # Built-in Enums
+        self.scope.define(Symbol("Result", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Option", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Some", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Nothing", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Ok", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Error", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         
         self.scope.define(Symbol("__builtin_file", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("file", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
@@ -174,9 +194,19 @@ class TypeChecker:
         self.scope.define(Symbol("process", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         
         self.scope.define(Symbol("__builtin_dictionary", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_string", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_list", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_map", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_set", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
-        
+        self.scope.define(Symbol("__builtin_range", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_error", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_reflect", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_net", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+
+        # Internal compiler structures
+        self.scope.define(Symbol("__builtin_memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_math", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_regex", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("math", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         
         self.scope.define(Symbol("__builtin_term", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
@@ -337,743 +367,32 @@ class TypeChecker:
         else:
             raise self.logger.error("unknown statement type", statement)
 
-    def check_break_statement(self, statement: BreakStatement) -> Type:
-        return PRIMITIVE_TYPES["Void"]()
 
-    def check_continue_statement(self, statement: ContinueStatement) -> Type:
-        return PRIMITIVE_TYPES["Void"]()
 
     ## Statements
 
-    def check_assignment_statement(self, statement: AssignmentStatement):
-        self.logger.debug("check_assignment_statement", statement)
-        
-        declared_type: Type | None = None
-        
-        if statement.declared_type:
-             if isinstance(statement.declared_type, str):
-                  type_name = statement.declared_type
-             else:
-                  type_name = getattr(statement.declared_type, "name", None)
-             if type_name:
-                 # Check Primitives
-                 if type_name in PRIMITIVE_TYPES:
-                     # Instantiate the type (e.g. TypeString())
-                     declared_type = PRIMITIVE_TYPES[type_name]()
-                 else:
-                     # Check Symbol Table (Class, Struct, Enum)
-                     symbol = self.scope.lookup(type_name)
-                     if symbol:
-                         declared_type = symbol.type
-                     else:
-                         # Fallback/Error
-                         print(f"[TypeChecker] Warning: Type '{type_name}' not resolved.")
-                         declared_type = self.new_typevariable()
-        
-        #     declared_type = self.new_typevariable()
-        
-        value_type: Type = (
-            self.check_expression(statement.value)
-            if statement.value is not None
-            else self.new_typevariable()
-        )
 
-        if declared_type is None:
-            declared_type = value_type
 
-        # if declared_type is None:
-        #    declared_type = TypeVariant # Explicitly set to Variant instead of typevariable for now to match symptoms
-        #    # declared_type = self.new_typevariable()
 
-        resolved_type: Type = self.unify(declared_type, value_type)
 
-        kind: SymbolKind = (
-            SymbolKind.VARIABLE if statement.mutable else SymbolKind.CONSTANT
-        )
 
-        symbol: Symbol = Symbol(
-            statement.name,
-            resolved_type,
-            statement.value,
-            statement.mutable,
-            kind,
-            statement.scope_level,
-        )
 
-        self.scope.define(symbol)
 
-        statement.resolved_type = resolved_type
-        print(f"DEBUG [TC]: Assignment {statement.name} resolved to {resolved_type}")
-        return resolved_type
 
-    def check_reassignment_statement(self, statement: ReassignmentStatement):
-        self.logger.debug("check_reassignment_statement", statement)
 
-        symbol: Symbol = self.scope.lookup(statement.name)
 
-        if not symbol:
-            raise self.logger.error_variable_undefined(statement)
 
-        elif not symbol.mutable:
-            raise self.logger.error_variable_immutable(statement)
 
-        else:
-            declared_type: Type = (
-                symbol.type if symbol.type else self.new_typevariable()
-            )
 
-            value_type: Type = self.check_expression(statement.value)
 
-            resolved_type: Type = self.unify(declared_type, value_type, statement)
 
-            symbol.type = resolved_type
 
-            statement.resolved_type = resolved_type
 
-    def check_function_statement(self, statement: FunctionStatement):
-        from Zen import zen_trace
-        zen_trace(f"ENTER check_function_statement: {statement.name}")
-        self.logger.debug("check_function_statement", statement)
 
-        symbol: Symbol = Symbol(
-            statement.name,
-            TypeFunction(statement.name, statement.parameters, statement.return_type),
-            None,
-            True,
-            SymbolKind.FUNCTION,
-            statement.scope_level,
-        )
 
-        try:
-            zen_trace(f"Defining symbol: {statement.name}")
-            self.scope.define(symbol)
-        except Exception as e:
-            zen_trace(f"Redeclaration check for {statement.name}")
-            if "redeclaration" in str(e) and statement.scope_level == 0:
-                 pass # Ignore global redeclarations for bootstrap
-            else:
-                 zen_trace(f"ERROR defining symbol {statement.name}: {e}")
-                 raise e
 
-        zen_trace(f"Pushing scope for {statement.name}")
-        self.scope.push(region_id=f"func_{statement.name}")
-    
-        # Define 'self' if in class context
-        if self.current_class:
-            self_symbol = Symbol(
-                "self",
-                self.current_class,
-                None,
-                False, # self is usually immutable pointer
-                SymbolKind.VARIABLE, # or PARAMETER
-                statement.scope_level
-            )
-            self.scope.define(self_symbol)
 
-        for parameter in statement.parameters:
-            zen_trace(f"Processing parameter: {parameter.name}")
-            p_type_name = parameter.declared_type if hasattr(parameter, 'declared_type') else None
-            # If it's a TypeLiteral object, get name.
-            if hasattr(p_type_name, 'name'):
-                 p_type_name = p_type_name.name
-            
-            parameter_type: Type | None = None
-            if p_type_name:
-                 zen_trace(f"Resolving param type: {p_type_name}")
-                 if p_type_name in PRIMITIVE_TYPES:
-                     parameter_type = PRIMITIVE_TYPES[p_type_name]()
-                 else:
-                     sym = self.scope.lookup(p_type_name)
-                     if sym:
-                         parameter_type = sym.type
-            
-            if parameter_type is None:
-                 zen_trace(f"Creating TypeVariable for {parameter.name}")
-                 parameter_type = self.new_typevariable()
-            
-            zen_trace(f"Defining parameter symbol: {parameter.name}")
-            symbol_parameter: Symbol = Symbol(
-                parameter.name,
-                parameter_type,
-                parameter.value,
-                True,
-                SymbolKind.PARAMETER,
-                statement.scope_level,
-            )
 
-            self.scope.define(symbol_parameter)
-            
-            # Update AST node
-            parameter.declared_type = parameter_type
-
-        result_type: Type = self.check_block_statement(statement.block)
-        self.scope.pop()
-
-        symbol.resolved_type = result_type
-        # symbol.type.return_type = result_type (frozen)
-        
-        # Create new TypeFunction with updated return type
-        new_func_type = TypeFunction(
-             symbol.type.name,
-             symbol.type.parameters,
-             result_type
-        )
-        symbol.type = new_func_type
-
-        statement.resolved_type = result_type
-        return result_type
-
-    def check_member_reassignment_statement(self, statement: MemberReassignmentStatement):
-        self.logger.debug("check_member_reassignment_statement", statement)
-        
-        # In the new parser version, statement.callee is the full MemberExpression LHS
-        if isinstance(statement.callee, MemberExpression):
-             member_type = self.check_expression(statement.callee)
-        else:
-             # Fallback: resolve property on base object
-             obj_type = self.check_expression(statement.callee)
-             prop = statement.expression
-             member_type = self._resolve_member_type(obj_type, prop, statement)
-        
-        value_type = self.check_expression(statement.value)
-        resolved_type = self.unify(member_type, value_type, statement)
-        
-        statement.resolved_type = resolved_type
-        print(f"DEBUG [TC]: Member reassignment resolved to {resolved_type}")
-        return resolved_type
-
-    def check_index_reassignment_statement(self, statement: IndexReassignmentStatement):
-        self.logger.debug("check_index_reassignment_statement", statement)
-        
-        obj_type = self.check_expression(statement.callee)
-        index_type = self.check_expression(statement.index)
-        value_type = self.check_expression(statement.value)
-        
-        # In a real compiler, we'd verify the object is a list/map and index type matches.
-        # For bootstrap, we'll unify and return value_type or unified.
-        resolved_type = self.unify(obj_type, value_type, statement)
-        statement.resolved_type = value_type
-        return value_type
-
-    def check_block_statement(self, statement: BlockStatement, region_id: Optional[str] = None):
-        self.logger.debug("check_block_statement", statement)
-
-        self.scope.push(region_id=region_id or f"block_{statement.line}")
-
-        result_type: Type = TypeVoid
-
-        for _statement in statement.statements:
-            _type: Type = self.check_statement(_statement)
-            result_type = _type
-            if isinstance(_statement, ReturnStatement):
-                self.scope.pop()
-                return result_type
-
-        statement.return_type = result_type
-
-        self.scope.pop()
-        return result_type
-
-        return result_type
-
-    def check_return_statement(self, statement: ReturnStatement):
-        self.logger.debug("check_return_statement", statement)
-
-        if statement.value:
-            value_type: Type = self.check_expression(statement.value)
-
-            statement.resolved_type = value_type
-
-            return value_type
-        else:
-            statement.resolved_type = TypeVoid
-
-            return TypeVoid
-
-    def check_structure_statement(self, statement: StructureStatement):
-        self.logger.debug("check_structure_statement", statement)
-        self.scope.push()
-#        self.scope.define(Symbol(statement.name, TypeStructure(statement.name, {})))
-# The above line was already there or being handled
-
-        parent_type = None
-        if statement.parent:
-            parent_symbol = self.scope.lookup(statement.parent)
-            if parent_symbol:
-                parent_type = parent_symbol.type
-            else:
-                print(f"[TypeChecker] Warning: Parent structure '{statement.parent}' not found for '{statement.name}'")
-
-        member_types: dict = {}
-        if parent_type and hasattr(parent_type, "members"):
-            member_types.update(parent_type.members)
-
-        for member in statement.members:  # MembersLiteral
-            m_type_name = member.declared_type
-            if hasattr(m_type_name, 'name'):
-                m_type_name = m_type_name.name
-            
-            print(f"DEBUG: member {member.name} type name: {m_type_name}")
-
-            declared_type = (
-                TypePrimitive(m_type_name)
-                if m_type_name
-                else self.new_typevariable()
-            )
-            value_type = (
-                self.check_expression(member.value)
-                if member.value is not None
-                else self.new_typevariable()
-            )
-
-            resolved_type: Type = self.unify(declared_type, value_type)
-            member_types[member.name] = resolved_type
-            member.declared_type = resolved_type
-
-            symbol = Symbol(
-                member.name,
-                resolved_type,
-                member.mutable,
-                True, # exported?
-                SymbolKind.MEMBER,
-                statement.scope_level,
-            )
-            self.scope.define(symbol)
-
-        self.scope.pop()
-
-        struct_type = TypeStructure(statement.name, member_types, parent_type)
-        symbol = Symbol(statement.name, struct_type, None, True, SymbolKind.STRUCTURE, statement.scope_level)
-        self.scope.define(symbol)
-
-        statement.resolved_type = struct_type
-        return struct_type
-
-    def check_enumerator_statement(self, statement: EnumeratorStatement):
-        self.logger.debug("check_enumerator_statement", statement)
-        
-        variants: Dict[str, TypeEnumVariant] = {}
-        for variant in statement.members:
-            # variant is EnumVariant
-            # For now, all params are TypeVariant because Zenlang is mostly dynamic
-            param_types = [TypeVariant() for _ in variant.params]
-            v_type = TypeEnumVariant(variant.name, param_types, statement.name)
-            variants[variant.name] = v_type
-            
-            # Define each variant in the current scope
-            if not variant.params:
-                symbol = Symbol(
-                    variant.name,
-                    v_type,
-                    None,
-                    False,
-                    SymbolKind.CONSTANT,
-                    statement.scope_level
-                )
-            else:
-                symbol = Symbol(
-                    variant.name,
-                    TypeFunction(variant.name, param_types, v_type),
-                    None,
-                    False,
-                    SymbolKind.FUNCTION,
-                    statement.scope_level
-                )
-            self.scope.define(symbol)
-                
-        enum_type = TypeEnum(statement.name, variants)
-        self.scope.define(Symbol(
-            statement.name,
-            enum_type,
-            None,
-            False,
-            SymbolKind.TYPE,
-            statement.scope_level
-        ))
-        statement.resolved_type = enum_type
-        return enum_type
-
-    def check_scope_statement(self, statement: ScopeStatement):
-        self.logger.debug("check_scope_statement", statement)
-
-        # We need to register the scope name as a symbol in the parent scope
-        
-        # But wait, named scope is a Namespace.
-        # We process the block.
-        self.check_block_statement(statement.block)
-        
-        target_type = TypeVariant # Simplify for now
-        symbol = Symbol(statement.name, target_type, None, False, SymbolKind.VARIABLE, self.scope.get_current_level())
-        
-
-        self.scope.define(symbol)
-        
-        statement.resolved_type = target_type
-        return target_type
-
-    def check_when_statement(self, statement: WhenStatement):
-        self.logger.debug("check_when_statement", statement)
-
-        # Structural pattern match branches (match-like)
-        if hasattr(statement, "branches") and statement.branches is not None:
-            condition_type = self.check_expression(statement.condition)
-            
-            for branch in statement.branches:
-                # Create a local scope for bindings in the branch
-                self.scope.push(region_id=f"case_{branch.line}")
-                
-                # Bind pattern variables in scope
-                self._bind_pattern(branch.pattern, condition_type)
-                
-                self.check_block_statement(branch.block)
-                self.scope.pop()
-            
-            if statement.or_block:
-                self.check_block_statement(statement.or_block)
-            return TypeVoid()
-
-        # Traditional conditional when-block
-        if statement.when_block:
-            self.scope.push(region_id=f"when_{statement.line}_main")
-            condition_type: Type = self.check_expression(statement.condition)
-            self.unify(condition_type, TypeBoolean(), statement.condition)
-            res = self.check_block_statement(statement.when_block)
-            self.scope.pop()
-            
-            if res and not isinstance(res, TypeVoid): return res
-
-        # conditional or-blocks
-        for conditional_block in statement.conditional_blocks:
-            self.scope.push(region_id=f"when_or_{conditional_block['condition'].line}")
-            condition_type: Type = self.check_expression(conditional_block["condition"])
-            self.unify(condition_type, TypeBoolean(), conditional_block["condition"])
-            res = self.check_block_statement(conditional_block["block"])
-            self.scope.pop()
-            if res and not isinstance(res, TypeVoid): return res
-
-        # optional final or-block
-        if statement.or_block:
-            self.scope.push(region_id=f"when_else_{statement.line}")
-            res = self.check_block_statement(statement.or_block)
-            self.scope.pop()
-            if res and not isinstance(res, TypeVoid): return res
-
-        return TypeVoid()
-
-    def _bind_pattern(self, pattern: Pattern, value_type: Type):
-        if isinstance(pattern, IdentifierPattern):
-            symbol = Symbol(
-                pattern.name,
-                value_type,
-                None,
-                False, # matched variables are usually immutable
-                SymbolKind.VARIABLE,
-                self.scope.get_current_level(),
-            )
-            self.scope.define(symbol)
-        elif isinstance(pattern, VariantPattern):
-            # For now, just recurse on params with TypeVariant
-            for param in pattern.params:
-                self._bind_pattern(param, TypeVariant())
-        elif isinstance(pattern, ListPattern):
-            for elem in pattern.elements:
-                self._bind_pattern(elem, TypeVariant())
-        elif isinstance(pattern, MapPattern):
-            for _, p in pattern.pairs:
-                self._bind_pattern(p, TypeVariant())
-
-    def check_do_statement(self, statement: DoStatement):
-        self.logger.debug("check_do_statement", statement)
-        
-        # Check condition if present (for 'loop' it might be None? Spec says 'loop' is infinite?)
-        # StatementHandler:
-        # 'loop' -> no condition
-        # 'while' -> condition
-        # 'until' -> condition
-        # 'for' -> iterator/iterable
-        
-        if statement.condition:
-            condition_type: Type = self.check_expression(statement.condition)
-            resolved_type: Type = self.unify(
-                condition_type, TypeBoolean(), statement.condition
-            )
-            
-            if not (isinstance(resolved_type, TypeBoolean) or resolved_type == TypeBoolean):
-               pass # TODO: raise error? Unify already logs error if strict?
-
-        if statement.iterator and statement.iterable:
-            iterable_type = self.check_expression(statement.iterable)
-            # TODO: Infer element type from iterable_type
-            element_type = PRIMITIVE_TYPES["Variant"]()
-            
-            self.scope.push(region_id=f"loop_{statement.line}")
-            print(f"[DEBUG] check_do: Defining iterator '{statement.iterator}' in scope level {self.scope.level}")
-            symbol = Symbol(
-                statement.iterator,
-                element_type,
-                None,
-                False, # Immutable iterator?
-                SymbolKind.VARIABLE,
-                self.scope.level
-            )
-            self.scope.define(symbol)
-            print(f"[DEBUG] Scope check: lookup('{statement.iterator}') -> {self.scope.lookup(statement.iterator)}")
-            
-            self.check_block_statement(statement.block)
-            
-            self.scope.pop()
-        else:
-            self.check_block_statement(statement.block)
-        
-        if statement.or_block:
-            self.check_block_statement(statement.or_block)
-
-        statement.resolved_type = TypeVoid
-        return TypeVoid
-
-    def check_import_statement(self, statement: ImportStatement):
-        self.logger.debug("check_import_statement", statement)
-        
-        # Mock module as a Variant variable so we can access properties on it
-        symbol_name = statement.alias if statement.alias else statement.name
-        symbol = Symbol(
-            symbol_name,
-            TypeVariant(), # Use instance
-            None,
-            False,
-            SymbolKind.VARIABLE, # or MODULE if we add it
-            0 # scope_level
-        )
-        # Check if already defined
-        existing = self.scope.lookup(symbol_name, current_scope_only=True)
-        if not existing:
-            self.scope.define(symbol)
-
-        
-        statement.resolved_type = TypeVariant
-        return TypeVariant
-
-    def check_from_import_statement(self, statement: FromImportStatement):
-        self.logger.debug("check_from_import_statement", statement)
-        for symbol_info in statement.symbols:
-            name = symbol_info["name"]
-            alias = symbol_info["alias"]
-            
-            symbol_name = alias if alias else name
-            
-            symbol = Symbol(
-                symbol_name,
-                TypeStructure(symbol_name, {}), # Type stub for imported class/struct
-                None,
-                False,
-                SymbolKind.VARIABLE,
-                0
-            )
-            # Check if already defined
-            existing = self.scope.lookup(symbol_name, current_scope_only=True)
-            if not existing:
-                self.scope.define(symbol)
-
-            
-        statement.resolved_type = TypeVariant
-        return TypeVariant
-
-
-    def check_class_statement(self, statement: ClassStatement):
-        self.logger.debug("check_class_statement", statement)
-        
-        parent_type = None
-        if statement.parent:
-            # Resolve parent class
-            parent_symbol = self.scope.lookup(statement.parent)
-            if parent_symbol and isinstance(parent_symbol.type, TypeClass):
-                parent_type = parent_symbol.type
-            else:
-                print(f"[TypeChecker] Error: Parent class '{statement.parent}' not found or not a class.")
-
-        # New scope for class members
-        self.scope.push()
-        if parent_type:
-            pass
-
-        member_types: dict = {}
-        # members are AssignmentStatements
-        for member in statement.members:
-             member_type = self.check_statement(member)
-             member_types[member.name] = member_type
-             
-        method_types: dict = {}
-        # methods are FunctionStatements
-        
-        # Set context
-        previous_class = self.current_class
-        # We need the TypeClass OBJECT for the current class.
-        # It's not created yet? Wait.
-        # We need a TypeClass representing the class being defined to set as 'self' type.
-        # declared members above?
-        # Actually, to define 'self', we need a TypeClass instance referring to THIS class.
-        # Using TypeClass(statement.name, ...) potentially partial.
-        
-        # Construct TypeClass
-        current_class_type = TypeClass(
-             name=statement.name,
-             members=member_types, # partially filled? Members are processed above.
-             methods=method_types, # Empty for now but will be filled.
-             parent=parent_type
-        )
-        self.current_class = current_class_type
-
-        for method in statement.methods:
-             method_type = self.check_statement(method)
-             method_types[method.name] = method_type
-
-        # Restore
-        self.current_class = previous_class
-
-        # Update methods in the type (since we passed empty dict)
-        # current_class_type.methods = method_types # TypeClass is frozen dataclass?
-        # If frozen, we can't update.
-        # But we need 'self' to have the type.
-        # It's fine if methods are missing in 'self' type during checking of methods (usually).
-        # Important is the Name and Members.
-        
-        statement.resolved_type = current_class_type
-             
-        self.scope.pop()
-        
-        class_type: TypeClass = TypeClass(statement.name, member_types, method_types, parent_type)
-        symbol = Symbol(statement.name, class_type, None, False, SymbolKind.VARIABLE, self.scope.get_current_level())
-        self.scope.define(symbol)
-        
-        statement.resolved_type = class_type
-        return class_type
-
-    def check_with_statement(self, statement: WithStatement):
-        self.logger.debug("check_with_statement", statement)
-        
-        # Check the expression (the resource/arena)
-        resource_type = self.check_expression(statement.expression)
-        
-        # New scope for the with block
-        self.scope.push(region_id=statement.alias if statement.alias else f"with_{statement.line}")
-        
-        if statement.alias:
-            symbol = Symbol(
-                statement.alias,
-                resource_type,
-                None,
-                False,
-                SymbolKind.VARIABLE,
-                self.scope.level
-            )
-            self.scope.define(symbol)
-            
-        result_type = self.check_block_statement(statement.block)
-        self.scope.pop()
-        
-        statement.resolved_type = result_type
-        return result_type
-
-    def check_object_statement(self, statement: ObjectStatement):
-        self.logger.debug("check_object_statement", statement)
-        self.scope.push()
-        parent_type = None
-        if statement.parent:
-            parent_symbol = self.scope.lookup(statement.parent)
-            if parent_symbol:
-                parent_type = parent_symbol.type
-            else:
-                 print(f"[TypeChecker] Warning: Parent object '{statement.parent}' not found for '{statement.name}'")
-
-        member_types: dict = {}
-        if parent_type and hasattr(parent_type, "members"):
-             member_types.update(parent_type.members)
-
-        for member in statement.members:
-            m_type_name = member.declared_type
-            if hasattr(m_type_name, 'name'):
-                m_type_name = m_type_name.name
-            
-            declared_type = (
-                TypePrimitive(m_type_name)
-                if m_type_name
-                else self.new_typevariable()
-            )
-            value_type = (
-                self.check_expression(member.value)
-                if member.value is not None
-                else self.new_typevariable()
-            )
-
-            resolved_type: Type = self.unify(declared_type, value_type)
-            member_types[member.name] = resolved_type
-            member.declared_type = resolved_type
-
-            symbol = Symbol(
-                member.name,
-                resolved_type,
-                member.mutable,
-                True,
-                SymbolKind.MEMBER,
-                statement.scope_level,
-            )
-            self.scope.define(symbol)
-
-        self.scope.pop()
-
-        obj_type = TypeStructure(statement.name, member_types, parent_type)
-        # Define as a type/structure
-        type_symbol = Symbol(statement.name, obj_type, None, True, SymbolKind.STRUCTURE, statement.scope_level)
-        self.scope.define(type_symbol)
-        
-        # ALSO define as a variable instance (singleton)
-        instance_symbol = Symbol(statement.name, obj_type, None, False, SymbolKind.VARIABLE, statement.scope_level)
-        existing = self.scope.lookup(statement.name, current_scope_only=True)
-        if not existing:
-             self.scope.define(instance_symbol)
-
-        statement.resolved_type = obj_type
-        return obj_type
-
-    def check_defer_statement(self, statement: DeferStatement):
-        self.logger.debug("check_defer_statement", statement)
-        return self.check_block_statement(statement.block)
-
-    def check_raise_statement(self, statement: RaiseStatement):
-        self.logger.debug("check_raise_statement", statement)
-        if statement.value:
-            self.check_expression(statement.value)
-        if statement.with_value:
-            self.check_expression(statement.with_value)
-        return TypeVoid()
-
-    def check_assert_statement(self, statement: AssertStatement):
-        self.logger.debug("check_assert_statement", statement)
-        condition_type = self.check_expression(statement.condition)
-        self.unify(condition_type, TypeBoolean(), statement.condition)
-        
-        if statement.raise_expression:
-            self.check_expression(statement.raise_expression)
-            
-        return TypeVoid()
-
-    def check_check_statement(self, statement: CheckStatement):
-        self.logger.debug("check_check_statement", statement)
-        matched_type = self.check_expression(statement.expression)
-        
-        for case in statement.cases:
-            self.scope.push(region_id=f"check_case_{case.line}")
-            # Bind variables from pattern
-            self.check_pattern(case.pattern, matched_type)
-            res = self.check_block_statement(case.block)
-            self.scope.pop()
-            if res and not isinstance(res, TypeVoid): return res
-            
-        if statement.or_block:
-            res = self.check_statement(statement.or_block)
-            if res and not isinstance(res, TypeVoid): return res
-            
-        return TypeVoid()
 
     ## Check Expressions
 
@@ -1172,6 +491,9 @@ class TypeChecker:
         elif isinstance(expression, DictionaryLiteral):
             return self.check_dictionary_literal(expression)
 
+        elif isinstance(expression, MapLiteral):
+            return self.check_map_literal(expression)
+
         elif isinstance(expression, SetLiteral):
             return self.check_set_literal(expression)
 
@@ -1180,387 +502,22 @@ class TypeChecker:
 
         return None
 
-    def check_check_expression(self, expression: CheckExpression) -> Type:
-        self.logger.debug("check_check_expression", expression)
-        expr_type = self.check_expression(expression.expression)
-        
-        if expression.or_value:
-            or_type = self.check_expression(expression.or_value)
-            # Both branches should unify
-            resolved_type = self.unify(expr_type, or_type, expression)
-            expression.resolved_type = resolved_type
-            return resolved_type
-            
-        expression.resolved_type = expr_type
-        return expr_type
 
-    def check_structure_expression(self, expression: StructureExpression) -> Type:
-        self.logger.debug("check_structure_expression", expression)
-        
-        # Look up the structure/object type by name
-        symbol = self.scope.lookup(expression.name)
-        if not symbol:
-            print(f"[TypeChecker] Warning: Structure/Object '{expression.name}' not found.")
-            return TypeVariant()
-            
-        struct_type = symbol.type
-        if not isinstance(struct_type, (TypeStructure, TypeClass)):
-            print(f"[TypeChecker] Warning: '{expression.name}' is not a structure or class.")
-            return TypeVariant()
-            
-        # Check members
-        for member in expression.members:
-            # members is a list of Member (Assignments but in expression form)
-            # Actually parse_members likely returns something like list of Member assignments.
-            # Let's check Parser/ExpressionHandler.parse_members
-            member_name = member.name
-            if member_name in struct_type.members:
-                declared_type = struct_type.members[member_name]
-                value_type = self.check_expression(member.value)
-                self.unify(declared_type, value_type, member)
-            else:
-                print(f"[TypeChecker] Warning: Member '{member_name}' not in '{expression.name}'")
-                
-        expression.resolved_type = struct_type
-        return struct_type
 
     ## Expressions
 
-    def check_function_expression(self, expression: FunctionExpression):
-        self.logger.debug("check_function_expression", expression)
 
-        symbol: TypeSymbol = TypeSymbol(
-            expression.name,
-            TypeFunction(
-                expression.name, expression.parameters, expression.return_type
-            ),
-            True,
-            Kind.FUNCTION,
-        )
 
-        self.scope.define(symbol)
 
-        self.scope.push()
-
-        result_type: Type = TypeVoid
-
-        for statement in expression.block.statements:
-            type = self.check_statement(statement)
-
-            if isinstance(statement, ReturnStatement):
-                result_type = type
-                break
-
-            result_type = type or TypeVoid
-            statement.return_type = result_type
-
-        self.scope.pop()
-
-        symbol.resolved_type = result_type
-        symbol.type.return_type = result_type
-
-        return result_type
-
-    def check_block_expression(self, expression: BlockExpression) -> Type:
-        self.logger.debug("check_block_expression", expression)
-
-        self.scope.push()
-
-        result_type: Type = TypeVoid
-
-        for statement in expression.statements:
-            type: Type = self.check_statement(statement)
-
-            if isinstance(statement, ReturnStatement):
-                result_type = type
-                break
-
-            result_type = type if type is not None else TypeVoid
-            statement.return_type = result_type
-
-        self.scope.pop()
-        expression.resolved_type = result_type
-        return result_type
-
-    def check_when_expression(self, expression: WhenExpression) -> Type:
-        self.logger.debug("check_when_expression", expression)
-
-        branch_types: list[Type] = []
-
-        # Main branch
-        self.scope.push(region_id=f"when_expr_{expression.line}_main")
-        condition_type: Type = self.check_expression(expression.condition)
-        self.unify(condition_type, TypeBoolean(), expression.condition)
-        
-        when_type = self.check_block_expression(expression.when_block)
-        if when_type:
-            branch_types.append(when_type)
-        self.scope.pop()
-
-        for conditional_block in getattr(expression, "conditional_blocks", []):
-            self.scope.push(region_id=f"when_expr_or_{conditional_block['condition'].line}")
-            condition_type: Type = self.check_expression(conditional_block["condition"])
-            self.unify(condition_type, TypeBoolean(), conditional_block["condition"])
-
-            conditional_type = self.check_block_expression(conditional_block["block"])
-            if conditional_type:
-                branch_types.append(conditional_type)
-            self.scope.pop()
-
-        if expression.or_block:
-            or_type = self.check_block_expression(expression.or_block)
-            if or_type:
-                branch_types.append(or_type)
-
-        if not branch_types:
-            return TypeVoid()
-
-        result_type = branch_types[0]
-        for type in branch_types[1:]:
-            result_type = self.unify(result_type, type, expression)
-
-        expression.return_type = result_type
-        expression.resolved_type = result_type
-
-        return result_type
-
-    def check_when_inline_expression(self, expression: WhenInlineExpression) -> Type:
-        self.logger.debug("check_when_inline_expression", expression)
-
-        self.scope.push(region_id=f"when_inline_{expression.line}")
-        condition_type: Type = self.check_expression(expression.condition)
-        self.unify(condition_type, TypeBoolean(), expression.condition)
-
-        when_type: Type = (
-            self.check_expression(expression.when_value)
-            if expression.when_value
-            else TypeVoid()
-        )
-        self.scope.pop()
-        
-        or_type: Type = (
-            self.check_expression(expression.or_value)
-            if expression.or_value
-            else TypeVoid()
-        )
-
-        result_type: Type = self.unify(when_type, or_type, expression)
-        expression.return_type = result_type
-        expression.resolved_type = result_type
-
-        return result_type
-
-    def check_identifier(self, expression: Identifier) -> Type:
-        self.logger.debug("check_identifier", expression)
-
-        symbol: TypeSymbol = self.scope.lookup(expression.name)
-
-        if not symbol:
-            raise self.logger.error_variable_undefined(expression)
-
-        expression.symbol = symbol
-        expression.resolved_type = symbol.type
-
-        return symbol.type
-        
-    def check_list_literal(self, expression: ListLiteral) -> Type:
-        self.logger.debug("check_list_literal", expression)
-        
-        element_types = []
-        for element in expression.elements:
-             # Unwrap ElementLiteral
-             item_node = element.value
-             t = self.check_expression(item_node)
-             # Store type on both element and value for safety
-             element.resolved_type = t
-             item_node.resolved_type = t
-             element_types.append(t)
-             
-        # For now, return a generic list or infer type
-        # TODO: Homogenous check
-        expression.resolved_type = TypeList(None, [])
-        return expression.resolved_type
-
-    def check_call_expression(self, expression: CallExpression) -> Type:
-        self.logger.debug("check_call_expression", expression)
-
-        callee_type = self.check_expression(expression.callee)
-
-        # Allow calls on Variants (e.g. io.write)
-        if isinstance(callee_type, TypeVariant) or callee_type == TypeVariant:
-             # Variant call returns Variant (dynamic)
-             expression.resolved_type = TypeVariant()
-             return TypeVariant()
-        elif isinstance(callee_type, TypeFunction):
-             expression.resolved_type = callee_type.return_type
-        elif isinstance(callee_type, TypeClass):
-             # Constructor call returns instance of the class
-             expression.resolved_type = callee_type
-             return callee_type
-        else:
-             # Fallback
-             expression.resolved_type = TypeVariant()
-
-        # callee_type: Type = self.check_expression(expression.callee)
-
-        for i, argument in enumerate(expression.arguments):
-            argument_type = self.check_expression(argument)
-            argument.resolved_type = argument_type
-
-        return expression.resolved_type
-
-    def check_member_expression(self, expression: MemberExpression) -> Type:
-        self.logger.debug("check_member_expression", expression)
-
-        object_type = self.check_expression(expression.object)
-        
-        if isinstance(object_type, TypeVariant) or object_type == TypeVariant:
-            # If it's a variant, we allow dynamic access. 
-            expression.resolved_type = TypeVariant()
-            return TypeVariant()
-            
-        # Resolve member type (with Inheritance)
-        member_name = expression.property
-        t = self._resolve_member_type(object_type, member_name, expression)
-        expression.resolved_type = t
-        return t
-
-    def _resolve_member_type(self, object_type: Type, member_name: str, node: ASTNode) -> Type:
-        # Structure Member Access
-        if isinstance(object_type, TypeStructure):
-            if member_name in object_type.members:
-                return object_type.members[member_name]
-            else:
-                print(f"[TypeChecker] Error: Member '{member_name}' not found in Structure '{object_type.name}'")
-                return TypeVariant()
-
-        # Class Member Access (with Inheritance)
-        if isinstance(object_type, TypeClass):
-            # 1. Check current class members/methods
-            if member_name in object_type.members:
-                return object_type.members[member_name]
-            
-            if member_name in object_type.methods:
-                return object_type.methods[member_name]
-            
-            # 2. Check Parent Hierarchy
-            current_type = object_type.parent
-            while current_type:
-                if member_name in current_type.members:
-                    return current_type.members[member_name]
-                
-                if member_name in current_type.methods:
-                    return current_type.methods[member_name]
-
-                current_type = current_type.parent
-        
-        # Fallback
-        return TypeVariant()
 
         
-    def check_index_expression(self, expression: IndexExpression) -> Type:
-        self.logger.debug("check_index_expression", expression)
+
+
+
+
         
-        object_type = self.check_expression(expression.object)
-        index_type = self.check_expression(expression.index)
-        
-        if not isinstance(index_type, (TypeInteger, TypeVariant)): # Allow variant for now?
-             print(f"[TypeChecker] Error: Index must be Integer, got {index_type}")
-             # raise self.logger.error_type_mismatch(TypeInteger, index_type, expression)
-        
-        if isinstance(object_type, TypeList):
-            # TODO: Return specific element type if known
-            expression.resolved_type = TypeVariant()
-            return TypeVariant()
-        elif isinstance(object_type, TypeVariant):
-            expression.resolved_type = TypeVariant()
-            return TypeVariant()
-        elif isinstance(object_type, TypeString):
-            # String indexing returns Rune or String?
-            expression.resolved_type = TypeString() # or TypeRune
-            return TypeString()
-            
-        print(f"[TypeChecker] Error: Indexing not supported on {object_type}")
-        expression.resolved_type = TypeVariant()
-        return TypeVariant()
 
-    def check_unary_operation(self, expression: UnaryOperation) -> Type:
-        self.logger.debug("check_unary_operation", expression)
-        right_type = self.check_expression(expression.right)
-        
-        if expression.operator == "not":
-            self.unify(right_type, TypeBoolean(), expression)
-            expression.resolved_type = TypeBoolean()
-            return TypeBoolean()
-        
-        if expression.operator == "!!":
-            self.unify(right_type, TypeInteger(), expression)
-            expression.resolved_type = TypeInteger()
-            return TypeInteger()
-            
-        return right_type
 
-    def check_binary_operation(self, expression: BinaryOperation) -> Type:
-        self.logger.debug("check_binary_operation", expression)
-
-        left_type: Type = self.check_expression(expression.left)
-        right_type: Type = self.check_expression(expression.right)
-
-        operator: str = expression.operator
-
-        if operator in OPERATORS.keys() or operator in ["xor", "nor", "nand", "xnor"]:
-            if (isinstance(left_type, TypeVariant) or left_type == TypeVariant) or \
-               (isinstance(right_type, TypeVariant) or right_type == TypeVariant):
-                return TypeVariant()
-
-            # Logical operators expect Boolean
-            if operator in ["and", "or", "xor", "nor", "nand", "xnor"]:
-                self.unify(left_type, TypeBoolean(), expression)
-                self.unify(right_type, TypeBoolean(), expression)
-                expression.resolved_type = TypeBoolean()
-                return TypeBoolean()
-
-            # Bitwise operators expect Integer
-            if operator in ["&&", "||", "^^", "!&", "!|", "!^", "<<", ">>", "%%"]:
-                self.unify(left_type, TypeInteger(), expression)
-                self.unify(right_type, TypeInteger(), expression)
-                expression.resolved_type = TypeInteger()
-                return TypeInteger()
-
-            result: Type = self.unify(left_type, right_type, expression)
-
-            # Check if result is Numeric (Integer or Decimal) or String (concatenation)
-            if isinstance(result, (TypeInteger, TypeDecimal, TypeVariant, TypeString)) or \
-               result in (TypeInteger, TypeDecimal, TypeVariant, TypeString):
-                expression.type = result
-                expression.resolved_type = result
-                return result
-
-            # Allow String + Rune -> String
-            if (isinstance(left_type, TypeString) or left_type == TypeString) and \
-               (isinstance(right_type, TypeRune) or right_type == TypeRune) and \
-               operator == "+":
-               expression.type = TypeString()
-               expression.resolved_type = TypeString()
-               return TypeString()
-
-            raise self.logger.error_type_unification(left_type, right_type, expression)
-
-        if operator in COMPARATORS.keys():
-            if (isinstance(left_type, TypeVariant) or left_type == TypeVariant) or \
-               (isinstance(right_type, TypeVariant) or right_type == TypeVariant):
-                return TypeBoolean()
-
-            try:
-                result: Type = self.unify(left_type, right_type, expression)
-
-                if result:
-                    expression.type = TypeBoolean()
-                    expression.resolved_type = TypeBoolean()
-                    return TypeBoolean()
-
-            except Exception as error:
-                raise error
 
     def unify(
         self, a: Type, b: Type, attachment: any = None, variant_fallback: bool = True
@@ -1591,6 +548,49 @@ class TypeChecker:
             return b
 
         if isinstance(b, TypeVariable):
+            return self.unify(b, a, attachment)
+
+        # Handle Default literal zero-value materialization
+        if isinstance(a, TypeDefault) and b is not None and not isinstance(b, (TypeDefault, TypeVariant)):
+            a.zero_value_target = b
+            
+            # Find the DefaultLiteral node via attachment
+            node_to_materialize = None
+            if attachment is not None:
+                from Parser.AST import DefaultLiteral
+                if isinstance(attachment, DefaultLiteral):
+                    node_to_materialize = attachment
+                elif hasattr(attachment, "value") and isinstance(attachment.value, DefaultLiteral):
+                    node_to_materialize = attachment.value
+                elif hasattr(attachment, "expression") and isinstance(attachment.expression, DefaultLiteral):
+                    node_to_materialize = attachment.expression
+                elif hasattr(attachment, "left") and isinstance(attachment.left, DefaultLiteral):
+                    node_to_materialize = attachment.left
+                elif hasattr(attachment, "right") and isinstance(attachment.right, DefaultLiteral):
+                    node_to_materialize = attachment.right
+            
+            if node_to_materialize is not None:
+                # Materialize the correct zero value in the AST
+                if isinstance(b, TypeInteger):
+                    node_to_materialize.node_type = "IntegerLiteral"
+                    node_to_materialize.value = 0
+                elif isinstance(b, TypeBoolean):
+                    node_to_materialize.node_type = "BooleanLiteral"
+                    node_to_materialize.value = False
+                elif isinstance(b, TypeDecimal):
+                    node_to_materialize.node_type = "DecimalLiteral"
+                    node_to_materialize.value = 0.0
+                elif isinstance(b, TypeRune):
+                    node_to_materialize.node_type = "RuneLiteral"
+                    node_to_materialize.value = '`\0`'
+                elif isinstance(b, TypeString):
+                    node_to_materialize.node_type = "StringLiteral"
+                    node_to_materialize.value = '``'
+                
+                node_to_materialize.__class__ = self._get_literal_class_for_type(node_to_materialize.node_type)
+            return b
+
+        if isinstance(b, TypeDefault) and a is not None and not isinstance(a, (TypeDefault, TypeVariant)):
             return self.unify(b, a, attachment)
 
         # Void unification (used in optional returns or empty blocks)
@@ -1641,121 +641,9 @@ class TypeChecker:
         # TODO: add FunctionType/StructType structural checks here
 
         raise self.logger.error_type_unification(a, b, attachment)
-    def check_vector_literal(self, expression: VectorLiteral) -> Type:
-        self.logger.debug("check_vector_literal", expression)
-        # Infer element type from first element or Variant
-        element_types = [self.check_expression(el.value) for el in expression.elements]
-        if not element_types:
-            expression.resolved_type = TypeVector(None, TypeVariant(), 0)
-            return expression.resolved_type
-            
-        common_type = element_types[0]
-        for t in element_types[1:]:
-            common_type = self.unify(common_type, t, expression)
-            
-        expression.resolved_type = TypeVector(None, common_type, len(expression.elements))
-        return expression.resolved_type
 
-    def check_dictionary_literal(self, expression: DictionaryLiteral) -> Type:
-        self.logger.debug("check_dictionary_literal", expression)
-        # Infer key and value types
-        if not expression.elements:
-            expression.resolved_type = TypeMap(None, TypeVariant(), TypeVariant())
-            return expression.resolved_type
-            
-        key_types = [self.check_expression(el.name) for el in expression.elements]
-        value_types = [self.check_expression(el.value) for el in expression.elements]
-        
-        common_key_type = key_types[0]
-        for t in key_types[1:]:
-            common_key_type = self.unify(common_key_type, t, expression)
-            
-        common_value_type = value_types[0]
-        for t in value_types[1:]:
-            common_value_type = self.unify(common_value_type, t, expression)
-            
-        expression.resolved_type = TypeMap(None, common_key_type, common_value_type)
-        return expression.resolved_type
 
-    def check_set_literal(self, expression: SetLiteral) -> Type:
-        self.logger.debug("check_set_literal", expression)
-        element_types = [self.check_expression(el.value) for el in expression.elements]
-        if not element_types:
-            expression.resolved_type = TypeSet(None, TypeVariant())
-            return expression.resolved_type
-            
-        common_type = element_types[0]
-        for t in element_types[1:]:
-            common_type = self.unify(common_type, t, expression)
-            
-        expression.resolved_type = TypeSet(None, common_type)
-        return expression.resolved_type
 
-    def check_tuple_literal(self, expression: TupleLiteral) -> Type:
-        self.logger.debug("check_tuple_literal", expression)
-        element_types = [TypeElement(getattr(el, "name") if hasattr(el, "name") else None, self.check_expression(el.value)) for el in expression.elements]
-        expression.resolved_type = TypeTuple(None, element_types)
-        return expression.resolved_type
 
-    def check_export_statement(self, statement: ExportStatement) -> Type:
-        self.logger.debug("check_export_statement", statement)
-        return self.check_statement(statement.statement)
-    def check_in_expression(self, expression: InExpression) -> Type:
-        self.logger.debug("check_in_expression", expression)
-        # Verify the arena exists in scope
-        self.scope.lookup(expression.arena)
-        
-        inner_type = self.check_expression(expression.expression)
-        expression.resolved_type = inner_type
-        return inner_type
 
-    def check_is_expression(self, expression: IsExpression) -> Type:
-        left_type = self.check_expression(expression.left)
-        # Patterns can bind variables in the current scope.
-        self.check_pattern(expression.right, left_type)
-        expression.resolved_type = TypeBoolean()
-        return expression.resolved_type
 
-    def check_pattern(self, pattern: Pattern, matched_type: Type):
-        if isinstance(pattern, WildcardPattern):
-            return
-
-        if isinstance(pattern, IdentifierPattern):
-            # Bind the variable to the matched type in the current scope.
-            # We use the matched_type (which might be Variant if unknown).
-            self.scope.define(Symbol(
-                pattern.name,
-                matched_type,
-                None,
-                False, # Immutable binding by default in patterns
-                SymbolKind.VARIABLE,
-                self.scope.level
-            ))
-            return
-
-        if isinstance(pattern, IsMatchPattern):
-            # Validates that it's a type match (simplified)
-            return
-
-        if isinstance(pattern, ListPattern):
-            inner_type = TypeVariant()
-            if isinstance(matched_type, TypeList):
-                # TypeList has an 'elements' list of TypeElement, which has a 'type' field
-                inner_type = matched_type.elements[0].type if matched_type.elements else TypeVariant()
-            
-            for element_pattern in pattern.elements:
-                self.check_pattern(element_pattern, inner_type)
-            return
-
-        if isinstance(pattern, MapPattern):
-            value_type = TypeVariant()
-            if isinstance(matched_type, TypeMap):
-                value_type = matched_type.value_type
-                
-            for key, val_pattern in pattern.pairs:
-                self.check_pattern(val_pattern, value_type)
-            return
-
-        if isinstance(pattern, LiteralPattern):
-            self.check_expression(pattern.value)
-            return

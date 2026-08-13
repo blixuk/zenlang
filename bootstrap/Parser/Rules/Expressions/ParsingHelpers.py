@@ -16,7 +16,13 @@ from Checker.Type import PRIMITIVE_TYPES, Type, TypeVariant, TypeMember, TypeEle
 
 class ParsingHelpersMixin:
     def parse_types(self) -> TypeLiteral:
-        token = self.token_handler.expect_types([TokenType.TYPE, TokenType.IDENTIFIER], "Expected type name")
+        qualifier = None
+        if self.token_handler.check_type_value(TokenType.KEYWORD, "borrowed") or \
+           self.token_handler.check_type_value(TokenType.KEYWORD, "owned"):
+            qual_tok = self.token_handler.advance()
+            qualifier = qual_tok.value
+
+        token = self.token_handler.expect_types([TokenType.TYPE, TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected type name")
         name = getattr(token, "value")
         
         while self.token_handler.match_type(TokenType.DOT):
@@ -42,6 +48,12 @@ class ParsingHelpersMixin:
                 TokenType.GREATER_THAN, "Expected '>' after type arguments"
             )
             node.subtypes = subtypes
+            
+        if qualifier:
+            wrapper = TypeLiteral(getattr(token, "line"), getattr(token, "column"), name=qualifier)
+            wrapper.subtypes = [node]
+            return wrapper
+            
         return node
 
     def parse_parameters(self) -> list:
@@ -67,14 +79,7 @@ class ParsingHelpersMixin:
                     TokenType.TYPE_SET, "Expected type setter `:` after parameter name"
                 )
 
-                if self.token_handler.match_types([TokenType.TYPE, TokenType.IDENTIFIER]):
-                    type_token: Token | None = self.token_handler.previous()
-                else:
-                    raise self.logger.error_expect_token("Expected parameter type", self.token_handler.peek())
-                
-                type_name = getattr(type_token, "value")
-                type_val: Type = PRIMITIVE_TYPES.get(type_name, TypeVariant)
-                parameter_type = type_val
+                parameter_type = self.parse_types()
 
             parameter_value: ASTNode | None = NothingLiteral()
             if self.token_handler.match_type(TokenType.ASSIGNMENT):

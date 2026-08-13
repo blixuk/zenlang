@@ -1,5 +1,5 @@
 import zen.memory as memory
-import zen.io as io
+import zen.io.io as io
 
 class Data {
     let val

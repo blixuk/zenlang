@@ -75,7 +75,7 @@ function test_when_expressions() {
     let val -> when x = 10 { <- `ten` } or { <- `other` }
     assert_eq(val, `ten`, `when block expression`)
 //    
-    let val_inline -> (x = 10 ? `ten` : `other`)
+    let val_inline -> `ten` when x = 10 or `other`
     assert_eq(val_inline, `ten`, `when inline expression`)
 }
 

@@ -9,7 +9,8 @@ from Parser.AST import (
     WhenStatement,
     CaseBranch,
     IteratorLiteral,
-    VariantLiteral
+    VariantLiteral,
+    Identifier
 )
 from Checker.Type import Type, TypeVoid, TypeVariant
 
@@ -74,8 +75,13 @@ class ControlFlowParserMixin:
                 while not self.token_handler.check_type(TokenType.RIGHT_BRACE) and not self.token_handler.at_end():
                     if self.token_handler.match_type_value(TokenType.KEYWORD, "is"):
                         pattern = self.parse_pattern()
+                        
+                        guard = None
+                        if self.token_handler.match_type_value(TokenType.KEYWORD, "when"):
+                            guard = self.expression_handler.expression()
+                            
                         block = self.block_statement("case")
-                        branches.append(CaseBranch(pattern.line, pattern.column, pattern, block))
+                        branches.append(CaseBranch(pattern.line, pattern.column, pattern, block, guard))
                     elif self.token_handler.match_type(TokenType.OR):
                         or_block = self.block_statement("or")
                         break
@@ -158,7 +164,15 @@ class ControlFlowParserMixin:
             iterators = self.expression_handler.parse_iterators()
             iterator = IteratorLiteral(getattr(token, "line"), getattr(token, "column"), iterators if iterators else [VariantLiteral(getattr(token, "line"), getattr(token, "column"), "key"), VariantLiteral(getattr(token, "line"), getattr(token, "column"), "value")])
         else:
-            iterator = getattr(self.token_handler.advance(), "value") if self.token_handler.check_type(TokenType.IDENTIFIER) else "iterator"
+            iter_token = self.token_handler.peek()
+            iter_name = getattr(self.token_handler.advance(), "value") if self.token_handler.check_type(TokenType.IDENTIFIER) else "iterator"
+            
+            iter_type_name = "Variable"
+            if self.token_handler.match_type(TokenType.TYPE_SET):
+                iter_type_node = self.expression_handler.parse_types()
+                iter_type_name = iter_type_node.name
+            
+            iterator = Identifier(getattr(iter_token, "line"), getattr(iter_token, "column"), self.scope_manager.get_current_scope_level(), iter_name, iter_type_name)
 
         if not self.token_handler.match_type_value(TokenType.KEYWORD, "in"):
             raise self.logger.error_expect_token("Expected `in` after iterator in `for` loop", self.token_handler.peek())

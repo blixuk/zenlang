@@ -35,8 +35,10 @@ class ZenCompiler:
         
         self.resolver = Resolver()
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.resolver.search_paths.append(os.path.join(root, "src"))
+        self.resolver.search_paths.append(root)
+        self.resolver.search_paths.append(os.path.join(root, "selfhost"))
         self.resolver.search_paths.append(os.path.join(root, "lib"))
+        self.resolver.search_paths.append(os.path.join(root, "lib", "zen"))
         self.graph = DependencyGraph()
         self.modules: dict[str, ASTNode] = {} # path -> AST
 
@@ -86,12 +88,14 @@ class ZenCompiler:
             lexer.logger.print_errors()
             sys.exit(1)
             
-        print(f"DEBUG: Parsing {path} (bootstrap)...", flush=True)
+        if self.debug:
+            print(f"DEBUG: Parsing {path} (bootstrap)...", flush=True)
         parser = Parser(tokens, path, strict=True, debug=self.debug)
         ast = parser.parse()
         for stmt in ast.statements:
             stmt.filename = path
-        print(f"DEBUG: Parsed {path}. Statements: {len(ast.statements)}", flush=True)
+        if self.debug:
+            print(f"DEBUG: Parsed {path}. Statements: {len(ast.statements)}", flush=True)
         if parser.logger.has_errors:
             parser.logger.print_errors()
             sys.exit(1)
@@ -106,6 +110,7 @@ class ZenCompiler:
                 
                 try:
                     resolved_path = self.resolver.resolve(import_path, os.path.dirname(path))
+                    statement.resolved_path = resolved_path
                     if resolved_path not in self.modules:
                          self.graph.add_edge(path, resolved_path)
                          self.parse_file(resolved_path) # Recurse
@@ -159,25 +164,61 @@ class ZenCompiler:
             print(f"DEBUG: Found {token_type_count} declarations of TokenType in merged AST")
 
     def validate(self) -> None:
-        print(f"DEBUG: validate() called on {self.source_path}", file=sys.stderr, flush=True)
+        if self.debug:
+            print(f"DEBUG: validate() called on {self.source_path}", file=sys.stderr, flush=True)
         if not self.ast:
-            print("DEBUG: validate() aborted - NO AST", file=sys.stderr, flush=True)
+            if self.debug:
+                print("DEBUG: validate() aborted - NO AST", file=sys.stderr, flush=True)
             return
 
         if self.debug:
             print("-- CHECKING TYPES -- ")
             
         sys.setrecursionlimit(1000000)
-        print("DEBUG: Instantiating TypeChecker", file=sys.stderr, flush=True)
-        typechecker = TypeChecker(self.ast, self.source_path, debug=self.debug)
-        print("DEBUG: Calling typechecker.check_program()", file=sys.stderr, flush=True)
-        self.ast_typed = typechecker.check_program()
-        print(f"DEBUG: typechecker.check_program() returned {self.ast_typed is not None}", file=sys.stderr, flush=True)
-        
         if self.debug:
-            # typechecker.logger.print_debugs()
-            pass
-        # typechecker.logger.print_errors()
+            print("DEBUG: Instantiating TypeChecker", file=sys.stderr, flush=True)
+
+        from Logging.TypeCheckerLogger import (
+            Error,
+            TypeUnificationError,
+            VariableImmutableError,
+            VariableTypeError,
+            VariableUndefinedError,
+        )
+        diagnostic_types = (
+            Error,
+            TypeUnificationError,
+            VariableImmutableError,
+            VariableTypeError,
+            VariableUndefinedError,
+        )
+
+        typechecker = TypeChecker(self.ast, self.source_path, debug=self.debug)
+        try:
+            if self.debug:
+                print("DEBUG: Calling typechecker.check_program()", file=sys.stderr, flush=True)
+            self.ast_typed = typechecker.check_program()
+            if self.debug:
+                print(f"DEBUG: typechecker.check_program() returned {self.ast_typed is not None}", file=sys.stderr, flush=True)
+        except diagnostic_types as e:
+            print(e, file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            # Surface unexpected checker failures without a full unhandled stack when possible.
+            typechecker.logger.print_errors()
+            if typechecker.logger.has_errors:
+                sys.exit(1)
+            print(f"Type check failed: {e}", file=sys.stderr)
+            if self.debug:
+                raise
+            sys.exit(1)
+
+        if typechecker.logger.has_errors:
+            typechecker.logger.print_errors()
+            sys.exit(1)
+
+        if self.debug:
+            typechecker.logger.print_debugs()
 
         if self.ast_typed:
             if self.debug:
@@ -186,11 +227,6 @@ class ZenCompiler:
                 self.ast_typed, self.source_path, debug=self.debug
             )
             self.ast_typed = semanticchecker.check_program()
-            
-            if self.debug:
-                 # semanticchecker.logger.print_debugs()
-                 pass
-            # semanticchecker.logger.print_errors()
 
     def get_global_environment(self) -> Any:
         # Create a fresh interpreter and run Pass 1 of the program to populate the environment
@@ -207,11 +243,11 @@ class ZenCompiler:
         runner = TestRunner(self)
         return runner.run_file(path)
 
-    def interpret(self, arguments: List[str]) -> None:
+    def interpret(self, arguments: List[str]) -> Any:
         if not self.ast_typed:
             if self.debug:
                 print("Skipping interpretation (Analysis failed or skipped)")
-            return
+            return None
 
         if self.debug:
             print("-- RUNNING INTERPRETER -- ")
@@ -219,21 +255,24 @@ class ZenCompiler:
         interpreter: Interpreter = Interpreter(self.ast_typed, self.source_path, debug=self.debug, resolver=self.resolver)
         try:
             result: any = interpreter.interpret(arguments=arguments)
-            # Auto-call zen_entry or main if they exist in the global environment
-            for entry in ["zen_entry", "main"]:
-                if entry in interpreter.global_environment.values:
-                    func = interpreter.global_environment.get(entry)
-                    interpreter._call_function(func, [])
-                    break
+            entry_point = getattr(self.ast_typed, "entry_point", None)
+            # Fall back to legacy auto-dispatch only when the parsed program
+            # does not declare an explicit entry point.
+            if not entry_point:
+                for entry in ["zen_entry", "main"]:
+                    if entry in interpreter.global_environment.values:
+                        func = interpreter.global_environment.get(entry)
+                        result = interpreter._call_function(func, [])
+                        break
             
             if self.debug:
                 print()
                 print("RESULT: ", result)
             return result
         except ReturnException as return_exception:
-            return f"Return value: '{return_exception.value}'"
+            return return_exception.value
 
-    def generate(self, source_map: bool = True) -> None:
+    def generate(self, source_map: bool = True, run_args: list | None = None) -> None:
         if not self.ast_typed:
             return
             
@@ -253,7 +292,7 @@ class ZenCompiler:
             print("-- RUNNING C COMPILER -- ")
             
         ccompiler = CCompiler()
-        ccompiler.compile(result)
+        ccompiler.compile(result, run_args=run_args)
 
         if self.debug:
             print("-- RUNNING PROGRAM -- ")
@@ -293,8 +332,9 @@ def main():
     parser.add_argument("-o", "--output", help="Output file path")
     parser.add_argument("--repl", action="store_true", help="Start REPL")
     parser.add_argument("--interpret", action="store_true", help="Interpret the source code (default)")
-    parser.add_argument("--generate", action="store_true", help="Generate and compile C code")
+    parser.add_argument("-g", "--generate", action="store_true", help="Generate and compile C code")
     parser.add_argument("--test", action="store_true", help="Run tests in the source file")
+    parser.add_argument("--check", action="store_true", help="Parse and type-check the source code without executing")
     parser.add_argument("--build", action="store_true", help="Build the project using .zbuild")
     parser.add_argument("--source-map", dest="source_map", action="store_true", help="Enable C source mapping (#line directives)")
     parser.add_argument("--no-source-map", dest="source_map", action="store_false", help="Disable C source mapping")
@@ -326,30 +366,30 @@ def main():
         compiler.load_source(args.source)
         compiler.tokenize()
         compiler.parse()
-        # compiler.validate()
-        compiler.ast_typed = compiler.ast
+        compiler.validate()
     
     # Execution Mode
-    if args.test:
-        compiler.test(args.source)
+    if args.check:
+        pass # Already loaded, tokenized, parsed, and validated
+    elif args.test:
+        ok = compiler.test(args.source)
+        if not ok:
+            sys.exit(1)
     elif args.build:
         from Build.BuildSystem import BuildSystem
         build_system = BuildSystem(os.getcwd())
         build_system.run_build(compiler)
     elif args.generate:
-        compiler.generate(args.source_map)
+        # Forward script argv to the native binary (same extras as interpret mode).
+        compiler.generate(args.source_map, run_args=list(args.args) + list(script_args))
     else:
-        # Default to interpret
-        # Pass remaining arguments to interpreter
-        # We need to construct argv: [script_path, source_to_compile, result_path]
-        # args.source is the script path (../src/zen.zl)
-        # args.args is [output_path] (../build/zen.c)
-        # We need to pass [args.source] + args.args? 
-        # But zen_entry expects args[1] to be source.
-        # So we need [args.source, args.source] + args.args
-        
-        interpreter_args = [args.source, args.source] + args.args
-        compiler.interpret(interpreter_args)
+        # Pass only user/script args; interpreter prepends source_path as argv[0].
+        result = compiler.interpret(list(args.args) + list(script_args))
+        # Propagate integer/bool main() exit codes to the process.
+        if isinstance(result, bool):
+            sys.exit(0 if result else 1)
+        if isinstance(result, int) and result != 0:
+            sys.exit(result)
         
     # Optional: Write debug output
     if debug:

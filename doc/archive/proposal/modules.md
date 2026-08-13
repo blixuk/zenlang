@@ -93,7 +93,7 @@ Path: zen/io.zl
 Path: libs/zen/io.zl
 Path: runtime/zen/io.zl
 
-import zen.io
+import zen.io.io
 io.write(`Hello World!`)
 
 from zen.io import write

@@ -52,8 +52,8 @@ function test_error_handling() {
     write(`Case 1 kind: ` + check_expr.cases[1].kind)
     
     let else_branch -> check_expr.else_branch
-    when else_branch = nothing {
-        write(`ERROR: else_branch is nothing!`)
+    when else_branch = Nothing {
+        write(`ERROR: else_branch is Nothing!`)
         // Debug cases count just in case iteration failed early?
         // write(`Cases count: ` + check_expr.cases.length())
     } or {

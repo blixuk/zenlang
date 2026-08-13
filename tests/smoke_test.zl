@@ -6,7 +6,7 @@
    Line */
 
 
-import zen.io
+import zen.io.io
 
 
 // 2. Variables
@@ -54,53 +54,33 @@ structure MyOtherVector {
     y: Integer
 }
 
-let my_other_vector -> MyOtherVector
-my_other_vector.x -> 10
-my_other_vector.y -> 20
-
-// 6. Scope
-scope MyScope {
-    let z -> 100
-}
-
-scope level_1 {
-    let level -> `level_1`
-    scope level_2 {
-        let level -> `level_2`
-    }
-}
-
+let my_other_vector -> MyOtherVector(10, 20)
 
 io.write(`\nvariable: x: `)
-io.write_int(x) // Should display '0'
+io.write(x) // Should display '0'
 io.write(`\nvariable: y: `)
-io.write_int(y) // Should display '30'
+io.write(y) // Should display '30'
 
 io.write(`\nfunction: add: `)
-io.write_int(add(50, 10)) // Should display '60'
+io.write(add(50, 10)) // Should display '60'
 
 io.write(`\nfunction: sub: `)
-io.write_int(sub(50, 10)) // Should display '40'
+io.write(sub(50, 10)) // Should display '40'
 
-io.write(`\nstructure: MyVector: `)
+let my_vector -> MyVector(0, 0)
+
+io.write(`\nstructure: my_vector: `)
 io.write(`MyVector`) // need a way to display structures
-io.write(`\nstructure: MyVector.x: `)
-io.write(MyVector.x) // Should display 'Nothing'
-io.write(`\nstructure: MyVector.y: `)
-io.write(MyVector.y) // Should display 'Nothing'
+io.write(`\nstructure: my_vector.x: `)
+io.write(my_vector.x) // Should display '0'
+io.write(`\nstructure: my_vector.y: `)
+io.write(my_vector.y) // Should display '0'
 
-io.write(`\nstructure: MyOtherVector: `)
+io.write(`\nstructure: my_other_vector: `)
 io.write(`MyOtherVector`) // need a way to display structures
-io.write(`\nstructure: MyOtherVector.x: `)
-io.write(MyOtherVector.x) // Should display '10'
-io.write(`\nstructure: MyOtherVector.y: `)
-io.write(MyOtherVector.y) // Should display '20'
+io.write(`\nstructure: my_other_vector.x: `)
+io.write(my_other_vector.x) // Should display '10'
+io.write(`\nstructure: my_other_vector.y: `)
+io.write(my_other_vector.y) // Should display '20'
 
-io.write(`\nscope: MyScope.z: `)
-io.write(MyScope.z) // Should display '100'
-
-io.write(`\nscope: level_1.level: `)
-io.write(level_1.level) // Should display 'level_1'
-io.write(`\nscope: level_2.level: `)
-io.write(level_1.level_2.level) // Should display 'level_2'
 io.write(`\n`)

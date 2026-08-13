@@ -123,17 +123,36 @@ class GetAttr(MIRInstruction):
     target: str = ""
     obj: str = ""
     prop: str = ""
+    type: Optional[str] = None
 
 @dataclass
 class SetAttr(MIRInstruction):
     obj: str = ""
     prop: str = ""
     value: str = ""
+    type: Optional[str] = None
 
 @dataclass
 class Enumerator(MIRInstruction):
     name: str = ""
     variants: List[Any] = field(default_factory=list)
+
+@dataclass
+class Task(MIRInstruction):
+    name: str = ""
+    parameters: List[Any] = field(default_factory=list)
+    body: Any = None
+
+@dataclass
+class Spawn(MIRInstruction):
+    target: str = ""
+    callee: str = ""
+    args: List[str] = field(default_factory=list)
+
+@dataclass
+class Await(MIRInstruction):
+    target: str = ""
+    handle: str = ""
 
 @dataclass
 class Try(MIRInstruction):

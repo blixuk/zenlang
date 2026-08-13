@@ -1,27 +1,88 @@
-import zen.io
+import zen.io.io as io
 
-function main() {
-    io.write(`Testing Complex Map Pattern...\n`)
+function test_list_spread() {
+    io.write_line(`--- Test 1: List Spread ---`)
+    let list -> [1, 2, 3, 4, 5]
     
-    let user -> {
-        `id` -> 101,
-        `profile` -> {
-            `name` -> `Alice`,
-            `role` -> `Admin`
-        },
-        `tags` -> [`active`, `internal`]
-    }
-    
-    when user is {`id` -> 101, `profile` -> {`name` -> n, `role` -> r}, `tags` -> [t1, t2]} {
-        io.write(`Matched User!\n`)
-        io.write(`Name: `)
-        io.write(n)
-        io.write(`\nRole: `)
-        io.write(r)
-        io.write(`\nFirst Tag: `)
-        io.write(t1)
-        io.write(`\n`)
+    check list {
+        case [first, ...rest] {
+            io.write_line(`First: ` + first) // 1
+            io.write_line(`Rest: ` + rest)   // [2, 3, 4, 5]
+        }
     } or {
-        io.write(`Failed to match complex user\n`)
+        io.write_line(`[FAIL] Match failed`)
     }
 }
+
+structure Point {
+    x: Integer,
+    y: Integer
+}
+
+function test_destructuring() {
+    io.write_line(`--- Test 2: Destructuring ---`)
+    let p -> Point { x -> 10, y -> 20 }
+    
+    check p {
+        case Point { x, y } {
+            io.write_line(`Point: x=` + x + `, y=` + y)
+        }
+    } or {
+        io.write_line(`[FAIL] Match failed`)
+    }
+}
+
+function test_guards() {
+    io.write_line(`--- Test 3: Guards ---`)
+    let x -> 15
+    
+    check x {
+        case n when n < 10 {
+            io.write_line(`Small number: ` + n)
+        }
+        case n when n >= 10 {
+            io.write_line(`Large number: ` + n)
+        }
+    } or {
+        io.write_line(`[FAIL] Match failed`)
+    }
+}
+
+function test_variants() {
+    io.write_line(`--- Test 4: Variants ---`)
+    let opt -> Result.Ok(42)
+    
+    check opt {
+        case Result.Ok(v) {
+            io.write_line(`Result is Ok: ` + v)
+        }
+        case Result.Error(e) {
+            io.write_line(`Result is Error: ` + e)
+        }
+    } or {
+        io.write_line(`[FAIL] Match failed`)
+    }
+}
+
+function test_namespaced_destructuring() {
+    io.write_line(`--- Test 5: Namespaced Destructuring ---`)
+    let p -> Point { x -> 1, y -> 2 }
+    
+    check p {
+        case Point { x -> x_val } when x_val > 0 {
+            io.write_line(`X is positive: ` + x_val)
+        }
+    } or {
+        io.write_line(`[FAIL] Match failed`)
+    }
+}
+
+function run_all() {
+    test_list_spread()
+    test_destructuring()
+    test_guards()
+    test_variants()
+    test_namespaced_destructuring()
+}
+
+run_all()

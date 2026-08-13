@@ -1,28 +1,27 @@
-import zen.io as io
+import zen.io.io as io
 
 enumerator Option {
     Nothing,
-    Some(value)
+    Something(value)
 }
 
 function print_option(opt) {
     when opt {
-        is Option.Some(v) {
-            io.write(`Some: `)
-            io.write(v)
-            io.write(`\n`)
+        is Option.Something(v) {
+            io.write(`Got something: `)
+            io.writeln(v)
         }
         is Option.Nothing {
-            io.write(`Nothing\n`)
+            io.writeln(`Nothing`)
         }
         or {
-            io.write(`Not an option\n`)
+            io.writeln(`Not an option`)
         }
     }
 }
 
 function main() {
-    let s -> Option.Some(42)
+    let s -> Option.Something(42)
     let n -> Option.Nothing
 
     io.write(`Testing ADT Option...\n`)

@@ -75,7 +75,8 @@ class ErrorParserMixin:
         else:
             token = self.token_handler.expect_type_value(TokenType.KEYWORD, "check", "Expected `check` keyword or symbol `?`")
 
-        expression = self.expression_handler.expression()
+        # Use logical_xor to avoid consuming 'or' which should be handled by check_statement
+        expression = self.expression_handler.logical_xor()
         
         cases: list = []
         or_block: ASTNode | None = None
@@ -85,12 +86,18 @@ class ErrorParserMixin:
                 if self.token_handler.match_type_value(TokenType.KEYWORD, "case"):
                     case_token = self.token_handler.previous()
                     case_pattern = self.parse_pattern()
+                    
+                    case_guard = None
+                    if self.token_handler.match_type_value(TokenType.KEYWORD, "when"):
+                        case_guard = self.expression_handler.expression()
+                        
                     case_block = self.block_statement("case")
                     cases.append(CaseBranch(
                         getattr(case_token, "line"),
                         getattr(case_token, "column"),
                         case_pattern,
-                        case_block
+                        case_block,
+                        case_guard
                     ))
                     if self.token_handler.match_type(TokenType.COMMA):
                         continue
@@ -107,7 +114,11 @@ class ErrorParserMixin:
         elif self.token_handler.match_type_value(TokenType.KEYWORD, "raise") or self.token_handler.match_type(TokenType.RAISE_SYMBOL):
             raise_expr = self.expression_handler.expression()
         elif isinstance(expression, BinaryOperation) and expression.operator == "or":
-            or_block = ExpressionStatement(expression.right)
+            or_block = ExpressionStatement(
+                getattr(expression.right, "line", 0),
+                getattr(expression.right, "column", 0),
+                expression.right
+            )
             expression = expression.left
 
         return CheckStatement(
