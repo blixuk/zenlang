@@ -483,12 +483,8 @@ function cg_flush_buf() {
         <- false
     }
     let s -> join_parts_tree(b, b.length)
-    when CG[`wrote`] == true {
-        io.append(p, s)
-    } or {
-        io.write_file(p, s)
-        CG[`wrote`] -> true
-    }
+    io.write_file(p, s)
+    CG[`wrote`] -> true
     CG[`buf`] -> []
     <- true
 }
@@ -500,9 +496,6 @@ function cg_put(text) {
     }
     b.append(text)
     CG[`buf`] -> b
-    when b.length >= 200 {
-        cg_flush_buf()
-    }
     <- Nothing
 }
 
@@ -667,8 +660,6 @@ function transpile_unit_ex(prog, with_main, init_name, extern_block) {
     when dest != Nothing and dest != `` {
         CG[`out_path`] -> dest
         CG[`wrote`] -> false
-        __builtin_file.write(dest, `/* selfhost codegen */`)
-        CG[`wrote`] -> true
     }
     let iname -> init_name
     when iname == Nothing or iname == `` {

@@ -64,7 +64,7 @@ Part of `selfhost/` parity effort.
 - **Bytecode.zl & Mixed ABI:** `compile_program`, `eval_chunk`, `eval_chunk_fn`, `invoke_callable` — compiles AST directly to compact bytecode chunks for fast evaluation without GCC. `OP_CALL` dispatches seamlessly between bytecode chunks, native Zen functions, closures with captured environments, and host APIs. Tests: `test_vm.zl` (7 dual-path), `test_mixed_abi.zl` (6 dual-path).
 - **Stage 7:** Native + E2E + namespaced self-rebuild.
   - `selfhost-smoke` → fixtures + class + enum/closure/with + native interpret + multi-unit; self-rebuild of `selfhost/zen.zl` (`ZEN_SELFHOST_REBUILD=1`) is 100% green (native selfhost parses and emits selfhost compiler to C, gcc links secondary binary `zen_from_self`, which executes help and compiles fixtures to working binaries with zero Python involvement).
-  - Codegen file emit: `transpile_program_to_file` / `CG.out_path` streams chunks; `do`/`while` → `while (1)` + `break` so emit_expr temps stay in scope
+  - Codegen file emit: `transpile_program_to_file` / `CG.out_path` buffers in-memory for single-pass file emission (`io.write_file`); `do`/`while` → `while (1)` + `break` so emit_expr temps stay in scope
   - **STRING/RUNE token_kind** stay C strings (`emit_literal_node`); `looks_int("0")` is true and would turn `` `0` `` into `ZenValue_make_integer(0LL)`
   - Lexer `_is_digit` uses `Str.contains(`0123456789`)` (not `` `0` ``/`` `9` `` range) so the self-built lexer still tokenizes integers
   - Driver merge uses `drv_list_push` (capture `.append` return)
