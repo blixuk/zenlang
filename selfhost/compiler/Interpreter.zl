@@ -927,8 +927,8 @@ function load_module_file(path, is_entry) {
 }
 
 function eval_program_in(prog, env, call_main, path) {
-    let stmts -> AST.prog_stmts(prog)
-    when stmts == Nothing {
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
+    when stmts == Nothing or stmts.length == 0 {
         remember_exports(path, {})
         when call_main != true {
             <- {`ok` -> true, `value` -> Nothing, `error` -> Nothing}
@@ -1013,7 +1013,7 @@ function load_module_file_env(path) {
         }
     }
     let env -> env_prelude()
-    let stmts -> AST.prog_stmts(prog)
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
     env -> bind_imports(stmts, env, path)
     when get_error() != Nothing {
         <- {`ok` -> false, `env` -> Nothing, `program` -> Nothing, `error` -> get_error()}

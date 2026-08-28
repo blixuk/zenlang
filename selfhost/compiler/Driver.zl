@@ -637,14 +637,16 @@ function rewrite_alias_calls_list(lst, pairs) {
 
 /!
  Append statements from one dependency file into `acc`.
- - Strip imports; drop non-entry `main`
- - Namespace free functions as Prefix_name (all deps, not only stdlib)
- - Rewrite same-file bare calls to Prefix_name
- Entry file statements are appended elsewhere without rename (or prefix ``).
+/!
+  Prepare a single module file's statements into an isolated StmtChunk:
+  - Strip imports; drop non-entry `main`
+  - Namespace free functions as Prefix_name (all deps, not only stdlib)
+  - Rewrite same-file bare calls to Prefix_name
+  Returns a StmtChunk or Nothing if no statements remain.
  !/
-function append_file_stmts(acc, stmts, path, entry_path, seen_names) {
+function prepare_file_chunk(stmts, path, entry_path) {
     when stmts == Nothing {
-        <- acc
+        <- Nothing
     }
     let is_entry -> path == entry_path
     // Namespace compiler + stdlib only. Fixtures keep bare free-fn names (multi_lib_val).
@@ -658,6 +660,7 @@ function append_file_stmts(acc, stmts, path, entry_path, seen_names) {
     when prefix != `` {
         local_names -> collect_local_fn_names(stmts, 0, n, [])
     }
+    let file_stmts -> []
     let i -> 0
     do while i < n {
         let s -> stmts[i]
@@ -686,8 +689,26 @@ function append_file_stmts(acc, stmts, path, entry_path, seen_names) {
             }
         }
         when skip == false {
-            acc -> drv_list_push(acc, s)
+            file_stmts.append(s)
         }
+        i -> i + 1
+    }
+    when file_stmts.length == 0 {
+        <- Nothing
+    }
+    <- AST.stmt_chunk(file_stmts, Nothing)
+}
+
+function append_file_stmts(acc, stmts, path, entry_path, seen_names) {
+    let chunk -> prepare_file_chunk(stmts, path, entry_path)
+    when chunk == Nothing {
+        <- acc
+    }
+    let chunk_stmts -> AST.stmt_chunk_stmts(chunk)
+    let n -> chunk_stmts.length
+    let i -> 0
+    do while i < n {
+        acc -> drv_list_push(acc, chunk_stmts[i])
         i -> i + 1
     }
     <- acc
@@ -705,11 +726,11 @@ function drv_list_push(lst, node) {
 }
 
 /!
- Parse files in dependency order and merge into one Program map.
- Entry file's `main` is kept; dependency mains are dropped.
+  Parse files in dependency order and merge into one Program using O(1) StmtChunk linking.
+  Eliminates large array reallocations and copies across module boundaries.
  !/
 function merge_program_files(order, entry_path) {
-    let acc -> []
+    let chunks -> []
     let n -> order.length
     let i -> 0
     let last_err -> Nothing
@@ -720,7 +741,10 @@ function merge_program_files(order, entry_path) {
             when AST.prog_err(prog) != Nothing {
                 last_err -> `parse ` + path + `: ` + Str.to_string(AST.prog_err(prog))
             } or {
-                acc -> append_file_stmts(acc, AST.prog_stmts(prog), path, entry_path, Nothing)
+                let chunk -> prepare_file_chunk(AST.prog_stmts(prog), path, entry_path)
+                when chunk != Nothing {
+                    chunks.append(chunk)
+                }
             }
         }
         i -> i + 1
@@ -728,7 +752,16 @@ function merge_program_files(order, entry_path) {
     when last_err != Nothing {
         <- AST.program_error(last_err)
     }
-    <- AST.program(acc)
+    let cn -> chunks.length
+    when cn == 0 {
+        <- AST.program([])
+    }
+    let ci -> 0
+    do while ci < cn - 1 {
+        AST.set_stmt_chunk_next(chunks[ci], chunks[ci + 1])
+        ci -> ci + 1
+    }
+    <- AST.program(chunks[0])
 }
 
 function prof_on() {

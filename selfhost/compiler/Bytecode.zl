@@ -257,7 +257,7 @@ function declare_local(ctx, name) {
 function compile_program(prog) {
     let ctx -> make_compiler(`<main>`)
     enter_scope(ctx)
-    let stmts -> prog[3] // AST.prog_stmts
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
     let n -> stmts.length
     let has_main -> false
     let i -> 0

@@ -66,8 +66,7 @@ Part of `selfhost/` parity effort.
   - `selfhost-smoke` → fixtures + class + enum/closure/with + native interpret + multi-unit; self-rebuild of `selfhost/zen.zl` (`ZEN_SELFHOST_REBUILD=1`) is 100% green (native selfhost parses and emits selfhost compiler to C, gcc links secondary binary `zen_from_self`, which executes help and compiles fixtures to working binaries with zero Python involvement).
   - Codegen file emit: `transpile_program_to_file` / `CG.out_path` buffers in-memory for single-pass file emission (`io.write_file`); `do`/`while` → `while (1)` + `break` so emit_expr temps stay in scope
   - **STRING/RUNE token_kind** stay C strings (`emit_literal_node`); `looks_int("0")` is true and would turn `` `0` `` into `ZenValue_make_integer(0LL)`
-  - Lexer `_is_digit` uses `Str.contains(`0123456789`)` (not `` `0` ``/`` `9` `` range) so the self-built lexer still tokenizes integers
-  - Driver merge uses `drv_list_push` (capture `.append` return)
+  - Driver merge uses in-place `StmtChunk` pointer linking (`AST.stmt_chunk` / `AST.set_stmt_chunk_next`) for $O(1)$ zero-copy module merging.
   - Bare `io.write` → `ZenIO_write_*` (`emit_builtin_call` includes `io`, not only `IO`)
   - Interpreter prelude binds `io` / `IO` / `output` (bootstrap injects these without import)
   - CLink `run_exe` reprints captured child stdout/stderr so `run` matches bootstrap `-g`

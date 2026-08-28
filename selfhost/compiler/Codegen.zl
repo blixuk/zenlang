@@ -732,6 +732,18 @@ function proto_block_for_program(prog) {
     when stmts == Nothing {
         <- ``
     }
+    when AST.ast_kind(stmts) == AST.K_STMT_CHUNK {
+        let acc -> ``
+        let chunk -> stmts
+        do while chunk != Nothing and AST.ast_kind(chunk) == AST.K_STMT_CHUNK {
+            let slice -> AST.stmt_chunk_stmts(chunk)
+            when slice != Nothing {
+                acc -> proto_block_walk(slice, 0, slice.length, acc)
+            }
+            chunk -> AST.stmt_chunk_next(chunk)
+        }
+        <- acc
+    }
     <- proto_block_walk(stmts, 0, stmts.length, ``)
 }
 
@@ -830,7 +842,22 @@ function cg_walk_stmts(stmts, i, mode) {
     when stmts == Nothing {
         <- Nothing
     }
-    let n -> stmts.length
+    when AST.ast_kind(stmts) == AST.K_STMT_CHUNK {
+        let chunk -> stmts
+        do while chunk != Nothing and AST.ast_kind(chunk) == AST.K_STMT_CHUNK {
+            let slice -> AST.stmt_chunk_stmts(chunk)
+            when slice != Nothing {
+                cg_walk_stmt_slice(slice, 0, slice.length, mode)
+            }
+            chunk -> AST.stmt_chunk_next(chunk)
+        }
+        <- Nothing
+    }
+    cg_walk_stmt_slice(stmts, i, stmts.length, mode)
+    <- Nothing
+}
+
+function cg_walk_stmt_slice(stmts, i, n, mode) {
     let j -> i
     do while j < n {
         let s -> stmts[j]

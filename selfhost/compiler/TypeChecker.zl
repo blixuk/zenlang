@@ -123,8 +123,8 @@ function check_program(prog) {
     // Two passes over statements by index (native for-in moves/consumes lists).
     let stmts -> AST.prog_stmts(prog)
     when stmts != Nothing {
-        walk_stmts(stmts, 0, 0)
-        walk_stmts(stmts, 0, 1)
+        walk_stmts_entry(stmts, 0)
+        walk_stmts_entry(stmts, 1)
     }
 
     let errs -> err_list()
@@ -139,18 +139,39 @@ function check_program(prog) {
 
 /!
  mode 0 = declare_toplevel, mode 1 = check_stmt
+ Supports both flat statement lists and linked StmtChunk chains.
  !/
-function walk_stmts(stmts, i, mode) {
-    when i >= stmts.length {
+function walk_stmts_entry(stmts, mode) {
+    when stmts == Nothing {
         <- Nothing
     }
-    let s -> stmts[i]
-    when mode == 0 {
-        declare_toplevel(s)
-    } or {
-        check_stmt(s)
+    when AST.ast_kind(stmts) == AST.K_STMT_CHUNK {
+        let chunk -> stmts
+        do while chunk != Nothing and AST.ast_kind(chunk) == AST.K_STMT_CHUNK {
+            let slice -> AST.stmt_chunk_stmts(chunk)
+            when slice != Nothing {
+                walk_stmts_slice(slice, 0, slice.length, mode)
+            }
+            chunk -> AST.stmt_chunk_next(chunk)
+        }
+        <- Nothing
     }
-    walk_stmts(stmts, i + 1, mode)
+    walk_stmts_slice(stmts, 0, stmts.length, mode)
+    <- Nothing
+}
+
+function walk_stmts_slice(stmts, i, n, mode) {
+    let j -> i
+    do while j < n {
+        let s -> stmts[j]
+        when mode == 0 {
+            declare_toplevel(s)
+        } or {
+            check_stmt(s)
+        }
+        j -> j + 1
+    }
+    <- Nothing
 }
 
 // ---------- Declare ----------

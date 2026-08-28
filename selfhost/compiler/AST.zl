@@ -53,6 +53,7 @@ let K_SCOPE -> 42
 let K_PROGRAM -> 43
 let K_INDEX_ASSIGN -> 44
 let K_TYPE_ANN -> 45
+let K_STMT_CHUNK -> 46
 let K_REASSIGN -> 9
 let K_REASSIGNMENT -> 9
 
@@ -441,6 +442,55 @@ function type_ann_qual(n) { <- n[4] }
 
 function prog_stmts(n) { <- n[3] }
 function prog_err(n) { <- n[4] }
+
+// --- Statement Chunk (Zero-Copy Arena Chaining) ---
+function stmt_chunk(statements, next_chunk) {
+    <- [K_STMT_CHUNK, 0, 0, statements, next_chunk]
+}
+
+function stmt_chunk_stmts(n) {
+    when n == Nothing { <- [] }
+    <- n[3]
+}
+
+function stmt_chunk_next(n) {
+    when n == Nothing { <- Nothing }
+    <- n[4]
+}
+
+function set_stmt_chunk_next(n, next) {
+    when n != Nothing {
+        n[4] -> next
+    }
+}
+
+/!
+  Flatten a statement chunk chain or flat list into a single flat array.
+  Used as a bridge for legacy array-indexing consumers.
+ !/
+function flatten_stmts(node_or_list) {
+    when node_or_list == Nothing {
+        <- []
+    }
+    when ast_kind(node_or_list) != K_STMT_CHUNK {
+        <- node_or_list
+    }
+    let res -> []
+    let cur -> node_or_list
+    do while cur != Nothing and ast_kind(cur) == K_STMT_CHUNK {
+        let chunk_stmts -> stmt_chunk_stmts(cur)
+        when chunk_stmts != Nothing {
+            let n -> chunk_stmts.length
+            let i -> 0
+            do while i < n {
+                res.append(chunk_stmts[i])
+                i -> i + 1
+            }
+        }
+        cur -> stmt_chunk_next(cur)
+    }
+    <- res
+}
 
 // --- Node Mutation Helpers ---
 function set_ast_kind(n, k) { n[0] -> k }
