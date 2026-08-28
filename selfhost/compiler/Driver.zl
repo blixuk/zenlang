@@ -11,6 +11,7 @@ import compiler.Codegen as Codegen
 import compiler.CLink as CLink
 import compiler.Interpreter as Interp
 import compiler.Bytecode as Bytecode
+import compiler.Daemon as Daemon
 import compiler.Module.GraphBuilder as GraphBuilder
 import compiler.Module.DependencyGraph as Graph
 import compiler.Module.Resolver as Resolver
@@ -909,11 +910,10 @@ function prepare_unit(path, entry_path) {
             `path` -> path
         }
     }
-    let acc -> []
-    acc -> append_file_stmts(acc, AST.prog_stmts(prog), path, entry_path, Nothing)
+    let chunk -> prepare_file_chunk(AST.prog_stmts(prog), path, entry_path)
     <- {
         `ok` -> true,
-        `program` -> AST.program(acc),
+        `program` -> AST.program(chunk),
         `error` -> Nothing,
         `stem` -> file_stem(path),
         `path` -> path,
@@ -1182,7 +1182,7 @@ function is_cli_token(s) {
     when s == `help` or s == `-h` or s == `--help` {
         <- true
     }
-    when s == `check` or s == `deps` or s == `compile` or s == `build` or s == `run` or s == `interpret` or s == `eval` or s == `vm` or s == `test` or s == `--test` or s == `lsp` {
+    when s == `daemon` or s == `check` or s == `deps` or s == `compile` or s == `build` or s == `run` or s == `interpret` or s == `eval` or s == `vm` or s == `test` or s == `--test` or s == `lsp` {
         <- true
     }
     when s == `-g` or s == `--generate` {
@@ -1235,9 +1235,14 @@ function compile_cli(src_path, args, opt_start, n) {
     let err_msg -> ``
     when multi == true {
         let multi_res -> compile_cli_multi(src_path, out_path, do_check)
+        let m_code -> multi_res[`code`]
+        let m_msg -> Str.to_string(multi_res[`message`])
         __builtin_memory.pop_arena()
         __builtin_memory.free_arena(arena)
-        <- multi_res
+        <- {
+            `code` -> m_code,
+            `message` -> m_msg
+        }
     } or {
         let r -> compile_file(src_path, out_path, do_check)
         when r[`ok`] == true {
@@ -1317,6 +1322,50 @@ function run_args(args) {
     }
     let cmd -> Str.to_string(args[i0])
 
+    when cmd == `daemon` {
+        let sub -> `start`
+        when i0 + 1 < n {
+            sub -> Str.to_string(args[i0 + 1])
+        }
+        when sub == `start` {
+            let sock -> Daemon.DEFAULT_SOCKET_PATH
+            when i0 + 2 < n {
+                sock -> Str.to_string(args[i0 + 2])
+            }
+            let code -> Daemon.start_daemon(sock, [])
+            <- {`code` -> code, `message` -> ``}
+        }
+        when sub == `stop` or sub == `status` or sub == `clear` or sub == `ping` {
+            let sock -> Daemon.DEFAULT_SOCKET_PATH
+            let resp -> Daemon.try_proxy_request(sock, sub, [])
+            when resp == Nothing {
+                <- {`code` -> 1, `message` -> `zen daemon is not running`}
+            }
+            <- resp
+        }
+        <- {`code` -> 1, `message` -> `unknown daemon subcommand: ` + sub}
+    }
+
+    // Transparent proxying to background compiler daemon
+    when Sys.get_env(`ZEN_NO_DAEMON`) == Nothing and Sys.get_env(`ZEN_DAEMON_WORKER`) == Nothing {
+        when cmd == `compile` or cmd == `build` or cmd == `check` {
+            let proxy_args -> []
+            let pi -> i0 + 1
+            do while pi < n {
+                proxy_args.append(args[pi])
+                pi -> pi + 1
+            }
+            let proxy_resp -> Daemon.try_proxy_request(Daemon.DEFAULT_SOCKET_PATH, cmd, proxy_args)
+            when proxy_resp != Nothing {
+                <- proxy_resp
+            }
+        }
+    }
+
+    <- run_args_local(args, i0, n, cmd)
+}
+
+export function run_args_local(args, i0, n, cmd) {
     when cmd == `help` or cmd == `-h` or cmd == `--help` {
         <- {
             `code` -> 0,

@@ -3072,6 +3072,12 @@ function emit_builtin_call(oname, m, alist) {
         <- `ZenString_` + m + `(` + alist + `)`
     }
     when oname == `__builtin_sys` {
+        when Str.starts_with(m, `inotify_`) {
+            when alist == `` {
+                <- `ZenSys_` + m + `()`
+            }
+            <- `ZenSys_` + m + `(` + alist + `)`
+        }
         <- `ZenSystem_` + m + `(` + alist + `)`
     }
     when oname == `__builtin_process` {
@@ -3229,6 +3235,12 @@ function emit_builtin_call(oname, m, alist) {
             <- `ZenReflect_apply(` + alist + `)`
         }
         <- `ZenReflect_` + m + `(` + alist + `)`
+    }
+    when oname == `__builtin_net` or oname == `net` or oname == `Net` {
+        when alist == `` {
+            <- `ZenNet_` + m + `()`
+        }
+        <- `ZenNet_` + m + `(` + alist + `)`
     }
     <- ``
 }

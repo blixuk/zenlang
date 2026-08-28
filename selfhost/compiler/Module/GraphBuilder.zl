@@ -84,6 +84,19 @@ export function parse_cached(path) {
     <- prog
 }
 
+export function invalidate_cache(path) {
+    path -> canon_path(path)
+    when path == Nothing or path == `` {
+        <- Nothing
+    }
+    let cache -> B[`cache`]
+    when cache != Nothing and cache.has(path) {
+        cache.remove(path)
+        B[`cache`] -> cache
+    }
+    <- Nothing
+}
+
 function fs_is_file(path) {
     <- __builtin_file.is_file(path)
 }

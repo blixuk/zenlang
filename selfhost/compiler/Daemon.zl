@@ -1,0 +1,256 @@
+/!
+  Zenlang Persistent Compiler Daemon
+  Provides background resident compilation service over Unix Domain Sockets
+  with in-memory AST caching and Linux inotify file invalidation.
+ !/
+
+import zen.io.io as io
+import zen.sys.sys as Sys
+import zen.text.string as Str
+import zen.io.path as Path
+import compiler.Driver as Driver
+import compiler.Module.GraphBuilder as GraphBuilder
+
+export let DEFAULT_SOCKET_PATH -> `/tmp/zen_compiler.sock`
+
+/!
+  Encodes a command request for the wire protocol.
+  Format: cmd\0arg1\0arg2\0...
+ !/
+export function encode_request(cmd, args) {
+    let out -> Str.to_string(cmd)
+    when args != Nothing {
+        let i -> 0
+        let n -> args.length
+        do while i < n {
+            out -> out + `\t` + Str.to_string(args[i])
+            i -> i + 1
+        }
+    }
+    <- out
+}
+
+/!
+  Decodes a request string into { cmd, args }.
+ !/
+export function decode_request(raw) {
+    when raw == Nothing or raw == `` {
+        <- Nothing
+    }
+    let trimmed -> Str.trim(raw)
+    let parts -> Str.split(trimmed, `\t`)
+    when parts == Nothing or parts.length == 0 {
+        <- Nothing
+    }
+    let cmd -> parts[0]
+    let args -> []
+    let i -> 1
+    let n -> parts.length
+    do while i < n {
+        args.append(parts[i])
+        i -> i + 1
+    }
+    <- {
+        `cmd` -> cmd,
+        `args` -> args
+    }
+}
+
+/!
+  Encodes response as code\tmessage
+ !/
+export function encode_response(code, message) {
+    when message == Nothing {
+        message -> ``
+    }
+    <- Str.to_string(code) + `\t` + Str.to_string(message)
+}
+
+/!
+  Decodes response into { code, message }
+ !/
+export function decode_response(raw) {
+    when raw == Nothing or raw == `` {
+        <- { `code` -> 1, `message` -> `empty response from daemon` }
+    }
+    let idx -> Str.index_of(raw, `\t`)
+    when idx < 0 {
+        <- { `code` -> 0, `message` -> raw }
+    }
+    let code_str -> Str.substring(raw, 0, idx)
+    let msg -> Str.substring(raw, idx + 1, Str.length(raw))
+    let code -> 0
+    when code_str == `1` {
+        code -> 1
+    } or when code_str == `2` {
+        code -> 2
+    }
+    <- {
+        `code` -> code,
+        `message` -> msg
+    }
+}
+
+/!
+  Attempts to proxy a command to a running compiler daemon.
+  Returns response map { code, message }, or Nothing if daemon is unreachable.
+ !/
+export function try_proxy_request(socket_path, cmd, args) {
+    when socket_path == Nothing or socket_path == `` {
+        socket_path -> DEFAULT_SOCKET_PATH
+    }
+    let client_fd -> __builtin_net.unix_connect(socket_path)
+    when client_fd < 0 {
+        <- Nothing
+    }
+
+    let payload -> encode_request(cmd, args)
+    let sent -> __builtin_net.socket_write(client_fd, payload)
+    when sent <= 0 {
+        __builtin_net.socket_close(client_fd)
+        <- Nothing
+    }
+
+    // Wait for response with 10s timeout
+    let ready -> __builtin_net.poll([client_fd], 10000)
+    when ready.length == 0 {
+        __builtin_net.socket_close(client_fd)
+        <- { `code` -> 1, `message` -> `daemon request timed out` }
+    }
+
+    let raw_resp -> __builtin_net.socket_read(client_fd, 1048576) // 1MB buffer
+    __builtin_net.socket_close(client_fd)
+
+    when raw_resp == Nothing {
+        <- { `code` -> 1, `message` -> `failed reading daemon response` }
+    }
+
+    <- decode_response(raw_resp)
+}
+
+/!
+  Dispatches a request within the resident daemon process.
+ !/
+function handle_request(req_map) {
+    when req_map == Nothing {
+        <- encode_response(1, `invalid request payload`)
+    }
+    let cmd -> req_map[`cmd`]
+    let args -> req_map[`args`]
+
+    when cmd == `ping` {
+        <- encode_response(0, `pong`)
+    }
+
+    when cmd == `status` {
+        let msg -> `zen daemon status: running\n`
+        <- encode_response(0, msg)
+    }
+
+    when cmd == `clear` {
+        GraphBuilder.clear_cache()
+        <- encode_response(0, `daemon cache cleared`)
+    }
+
+    when cmd == `stop` {
+        <- encode_response(0, `daemon stopping`)
+    }
+
+    // Standard compiler CLI commands (compile, build, run, check, deps, vm, test)
+    let full_args -> [cmd]
+    when args != Nothing {
+        do for a in args {
+            full_args.append(a)
+        }
+    }
+
+    let res -> Driver.run_args_local(full_args, 0, full_args.length, cmd)
+    let code -> 0
+    let msg -> ``
+    when res != Nothing {
+        when res.has(`code`) {
+            code -> res[`code`]
+        }
+        when res.has(`message`) {
+            msg -> res[`message`]
+        }
+    }
+    <- encode_response(code, msg)
+}
+
+/!
+  Starts the resident compiler daemon.
+ !/
+export function start_daemon(socket_path, watch_dirs) {
+    when socket_path == Nothing or socket_path == `` {
+        socket_path -> DEFAULT_SOCKET_PATH
+    }
+
+    let server_fd -> __builtin_net.unix_listen(socket_path)
+    when server_fd < 0 {
+        io.writeln(`zen daemon: failed to bind socket at ` + socket_path)
+        <- 1
+    }
+
+    io.writeln(`zen daemon: listening on ` + socket_path)
+
+    let inotify_fd -> __builtin_sys.inotify_init()
+    when inotify_fd >= 0 {
+        // Watch common source directories
+        let dirs -> [`.`, `selfhost`, `selfhost/compiler`, `lib`, `lib/zen`]
+        when watch_dirs != Nothing and watch_dirs.length > 0 {
+            dirs -> watch_dirs
+        }
+        do for d in dirs {
+            when __builtin_file.is_dir(d) {
+                __builtin_sys.inotify_add_watch(inotify_fd, d, 2) // IN_MODIFY
+            }
+        }
+    }
+
+    let running -> true
+    let dirty_map -> {}
+    let poll_fds -> [server_fd]
+    when inotify_fd >= 0 {
+        poll_fds.append(inotify_fd)
+    }
+
+    do while running {
+        let ready -> __builtin_net.poll(poll_fds, 50)
+        let i -> 0
+        let rn -> ready.length
+        do while i < rn {
+            let fd -> ready[i]
+            when fd == server_fd {
+                let client_fd -> __builtin_net.unix_accept(server_fd)
+                when client_fd >= 0 {
+                    let raw_req -> __builtin_net.socket_read(client_fd, 65536)
+                    let req_map -> decode_request(raw_req)
+                    let resp_str -> handle_request(req_map)
+                    __builtin_net.socket_write(client_fd, resp_str)
+                    __builtin_net.socket_close(client_fd)
+
+                    when req_map != Nothing and req_map[`cmd`] == `stop` {
+                        running -> false
+                    }
+                }
+            }
+            or when fd == inotify_fd {
+                let events -> __builtin_sys.inotify_read(inotify_fd)
+                do for filename in events {
+                    when filename != `` and Str.ends_with(filename, `.zl`) {
+                        GraphBuilder.invalidate_cache(filename)
+                    }
+                }
+            }
+            i -> i + 1
+        }
+    }
+
+    __builtin_net.socket_close(server_fd)
+    when inotify_fd >= 0 {
+        __builtin_net.socket_close(inotify_fd)
+    }
+    io.writeln(`zen daemon: stopped`)
+    <- 0
+}

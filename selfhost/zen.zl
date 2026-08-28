@@ -13,6 +13,9 @@ import zen.sys.sys as Sys
 function main() {
     let args -> Sys.get_args()
     let r -> Driver.run_args(args)
+    when r == Nothing {
+        <- 0
+    }
     let msg -> r[`message`]
     when msg != Nothing and msg != `` {
         io.writeln(msg)

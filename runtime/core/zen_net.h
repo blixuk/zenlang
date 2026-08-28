@@ -12,4 +12,13 @@
 
 ZenValue ZenNet_http_request(ZenValue url, ZenValue method, ZenValue body, ZenValue headers);
 
+/* Unix Domain Sockets & Poll Multiplexing for Compiler Daemon */
+ZenValue ZenNet_unix_listen(ZenValue path);
+ZenValue ZenNet_unix_connect(ZenValue path);
+ZenValue ZenNet_unix_accept(ZenValue fd);
+ZenValue ZenNet_socket_read(ZenValue fd, ZenValue max_bytes);
+ZenValue ZenNet_socket_write(ZenValue fd, ZenValue content);
+ZenValue ZenNet_socket_close(ZenValue fd);
+ZenValue ZenNet_poll(ZenValue fds_list, ZenValue timeout_ms);
+
 #endif /* ZEN_NET_H */

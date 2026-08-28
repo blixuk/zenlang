@@ -1279,3 +1279,48 @@ ZenValue ZenSignal_restore_default(ZenValue signum) {
     return ZenValue_make_boolean(false);
 }
 
+/* Linux inotify capability for Compiler Daemon */
+#include <sys/inotify.h>
+
+ZenValue ZenSys_inotify_init(void) {
+    int fd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    return ZenValue_make_integer((long long)fd);
+}
+
+ZenValue ZenSys_inotify_add_watch(ZenValue fd_v, ZenValue path_v, ZenValue mask_v) {
+    if (fd_v.type != ZEN_INTEGER) return ZenValue_make_integer(-1);
+    int fd = (int)fd_v.as.integer;
+    const char* path = ZenString_get_pointer(path_v);
+    if (!path || fd < 0) return ZenValue_make_integer(-1);
+
+    uint32_t mask = IN_MODIFY | IN_MOVED_TO | IN_CREATE | IN_DELETE;
+    if (mask_v.type == ZEN_INTEGER) {
+        mask = (uint32_t)mask_v.as.integer;
+    }
+
+    int wd = inotify_add_watch(fd, path, mask);
+    return ZenValue_make_integer((long long)wd);
+}
+
+ZenValue ZenSys_inotify_read(ZenValue fd_v) {
+    if (fd_v.type != ZEN_INTEGER) return ZenList_make_from_arguments(0);
+    int fd = (int)fd_v.as.integer;
+    if (fd < 0) return ZenList_make_from_arguments(0);
+
+    char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+    ssize_t len = read(fd, buf, sizeof(buf));
+    if (len <= 0) {
+        return ZenList_make_from_arguments(0);
+    }
+
+    struct ZenList* list = ZenList_new();
+    const struct inotify_event* event;
+    for (char* ptr = buf; ptr < buf + len; ptr += sizeof(struct inotify_event) + event->len) {
+        event = (const struct inotify_event*)ptr;
+        if (event->len > 0 && event->name[0] != '\0') {
+            ZenList_append_value(ZenValue_from_list(list), ZenValue_make_string(event->name));
+        }
+    }
+    return ZenValue_from_list(list);
+}
+

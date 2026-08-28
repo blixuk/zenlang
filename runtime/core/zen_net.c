@@ -8,6 +8,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <poll.h>
+#include <fcntl.h>
+#include <errno.h>
 
 static ZenValue http_error(const char* msg) {
     ZenValue m = ZenMap_make_from_arguments(0);
@@ -187,4 +192,178 @@ ZenValue ZenNet_http_request(ZenValue url_v, ZenValue method_v, ZenValue body_v,
                             ZenMap_make_from_arguments(0));
     free(body_data);
     return result;
+}
+
+/* Unix Domain Sockets & Poll Multiplexing for Compiler Daemon */
+
+ZenValue ZenNet_unix_listen(ZenValue path_v) {
+    const char* path = ZenString_get_pointer(path_v);
+    if (!path || !*path) return ZenValue_make_integer(-1);
+
+    unlink(path);
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return ZenValue_make_integer(-1);
+
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags >= 0) fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return ZenValue_make_integer(-1);
+    }
+
+    if (listen(fd, 32) < 0) {
+        close(fd);
+        return ZenValue_make_integer(-1);
+    }
+
+    return ZenValue_make_integer(fd);
+}
+
+ZenValue ZenNet_unix_connect(ZenValue path_v) {
+    const char* path = ZenString_get_pointer(path_v);
+    if (!path || !*path) return ZenValue_make_integer(-1);
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return ZenValue_make_integer(-1);
+
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(fd);
+        return ZenValue_make_integer(-1);
+    }
+
+    return ZenValue_make_integer(fd);
+}
+
+ZenValue ZenNet_unix_accept(ZenValue fd_v) {
+    if (fd_v.type != ZEN_INTEGER) return ZenValue_make_integer(-1);
+    int fd = (int)fd_v.as.integer;
+    if (fd < 0) return ZenValue_make_integer(-1);
+
+    int client_fd = accept(fd, NULL, NULL);
+    if (client_fd < 0) {
+        return ZenValue_make_integer(-1);
+    }
+
+    int flags = fcntl(client_fd, F_GETFL, 0);
+    if (flags >= 0) fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+    fcntl(client_fd, F_SETFD, FD_CLOEXEC);
+
+    return ZenValue_make_integer(client_fd);
+}
+
+ZenValue ZenNet_socket_read(ZenValue fd_v, ZenValue max_bytes_v) {
+    if (fd_v.type != ZEN_INTEGER) return ZenValue_make_nothing();
+    int fd = (int)fd_v.as.integer;
+    if (fd < 0) return ZenValue_make_nothing();
+
+    int max_bytes = 65536;
+    if (max_bytes_v.type == ZEN_INTEGER && max_bytes_v.as.integer > 0) {
+        max_bytes = (int)max_bytes_v.as.integer;
+        if (max_bytes > 10 * 1024 * 1024) max_bytes = 10 * 1024 * 1024;
+    }
+
+    char* buf = (char*)malloc(max_bytes + 1);
+    if (!buf) return ZenValue_make_nothing();
+
+    ssize_t n = read(fd, buf, max_bytes);
+    if (n < 0) {
+        free(buf);
+        return ZenValue_make_nothing();
+    }
+    if (n == 0) {
+        free(buf);
+        return ZenValue_make_string("");
+    }
+    buf[n] = '\0';
+    ZenValue res = ZenValue_make_string(buf);
+    free(buf);
+    return res;
+}
+
+ZenValue ZenNet_socket_write(ZenValue fd_v, ZenValue content_v) {
+    if (fd_v.type != ZEN_INTEGER) return ZenValue_make_integer(-1);
+    int fd = (int)fd_v.as.integer;
+    if (fd < 0) return ZenValue_make_integer(-1);
+
+    const char* str = ZenString_get_pointer(content_v);
+    if (!str) return ZenValue_make_integer(0);
+
+    size_t len = strlen(str);
+    size_t written = 0;
+    while (written < len) {
+        ssize_t n = write(fd, str + written, len - written);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd pfd;
+                pfd.fd = fd;
+                pfd.events = POLLOUT;
+                pfd.revents = 0;
+                if (poll(&pfd, 1, 1000) > 0) continue;
+            }
+            break;
+        }
+        written += (size_t)n;
+    }
+    return ZenValue_make_integer((long long)written);
+}
+
+ZenValue ZenNet_socket_close(ZenValue fd_v) {
+    if (fd_v.type == ZEN_INTEGER) {
+        int fd = (int)fd_v.as.integer;
+        if (fd >= 0) {
+            close(fd);
+        }
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenNet_poll(ZenValue fds_list_v, ZenValue timeout_ms_v) {
+    int timeout = 0;
+    if (timeout_ms_v.type == ZEN_INTEGER) {
+        timeout = (int)timeout_ms_v.as.integer;
+    }
+
+    if (fds_list_v.type != ZEN_LIST) {
+        return ZenList_make_from_arguments(0);
+    }
+    ZenList* l = fds_list_v.as.list;
+    if (!l || l->count == 0) {
+        if (timeout > 0) usleep((useconds_t)timeout * 1000);
+        return ZenList_make_from_arguments(0);
+    }
+
+    int count = l->count > 64 ? 64 : l->count;
+    struct pollfd pfds[64];
+    for (int i = 0; i < count; i++) {
+        pfds[i].fd = (l->items[i].type == ZEN_INTEGER) ? (int)l->items[i].as.integer : -1;
+        pfds[i].events = POLLIN | POLLPRI;
+        pfds[i].revents = 0;
+    }
+
+    int r = poll(pfds, (nfds_t)count, timeout);
+    struct ZenList* ready = ZenList_new();
+    if (r > 0) {
+        for (int i = 0; i < count; i++) {
+            if (pfds[i].revents & (POLLIN | POLLPRI | POLLHUP | POLLERR)) {
+                ZenList_append_value(ZenValue_from_list(ready), ZenValue_make_integer(pfds[i].fd));
+            }
+        }
+    }
+    return ZenValue_from_list(ready);
 }

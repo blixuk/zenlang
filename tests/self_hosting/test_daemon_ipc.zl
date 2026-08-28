@@ -1,0 +1,94 @@
+/!
+  Test Unix Domain Sockets, poll multiplexing, and inotify builtins.
+ !/
+
+import zen.io.io as io
+import zen.sys.sys as Sys
+import zen.text.string as Str
+
+function main() {
+    let sock_path -> `/tmp/zen_test_ipc.sock`
+    
+    // 1. Listen on Unix domain socket
+    let server_fd -> __builtin_net.unix_listen(sock_path)
+    when server_fd < 0 {
+        io.writeln(`FAIL: unix_listen`)
+        <- 1
+    }
+
+    // 2. Connect client to Unix domain socket
+    let client_fd -> __builtin_net.unix_connect(sock_path)
+    when client_fd < 0 {
+        io.writeln(`FAIL: unix_connect`)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 3. Poll to verify server_fd has incoming connection
+    let ready -> __builtin_net.poll([server_fd], 500)
+    when ready.length == 0 {
+        io.writeln(`FAIL: poll did not detect connection`)
+        __builtin_net.socket_close(client_fd)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 4. Accept client connection on server
+    let conn_fd -> __builtin_net.unix_accept(server_fd)
+    when conn_fd < 0 {
+        io.writeln(`FAIL: unix_accept`)
+        __builtin_net.socket_close(client_fd)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 5. Client sends request
+    let msg -> `{"cmd":"ping"}\n`
+    let sent -> __builtin_net.socket_write(client_fd, msg)
+    when sent <= 0 {
+        io.writeln(`FAIL: socket_write`)
+        __builtin_net.socket_close(conn_fd)
+        __builtin_net.socket_close(client_fd)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 6. Server reads request
+    let received -> __builtin_net.socket_read(conn_fd, 1024)
+    when received != msg {
+        io.writeln(`FAIL: socket_read mismatch: ` + Str.to_string(received))
+        __builtin_net.socket_close(conn_fd)
+        __builtin_net.socket_close(client_fd)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 7. Server sends response
+    let resp -> `{"ok":true,"code":0}\n`
+    __builtin_net.socket_write(conn_fd, resp)
+
+    // 8. Client reads response
+    let client_recv -> __builtin_net.socket_read(client_fd, 1024)
+    when client_recv != resp {
+        io.writeln(`FAIL: client_recv mismatch`)
+        __builtin_net.socket_close(conn_fd)
+        __builtin_net.socket_close(client_fd)
+        __builtin_net.socket_close(server_fd)
+        <- 1
+    }
+
+    // 9. Clean up sockets
+    __builtin_net.socket_close(conn_fd)
+    __builtin_net.socket_close(client_fd)
+    __builtin_net.socket_close(server_fd)
+
+    // 10. Test inotify initialization
+    let ifd -> __builtin_sys.inotify_init()
+    when ifd >= 0 {
+        let wd -> __builtin_sys.inotify_add_watch(ifd, `/tmp`, 2) // IN_MODIFY
+        __builtin_net.socket_close(ifd)
+    }
+
+    io.writeln(`PASS: socket IPC and inotify test`)
+    <- 0
+}

@@ -117,4 +117,9 @@ ZenValue ZenObject_get_stdout(void* self);
 ZenValue ZenObject_get_code(void* self);
 ZenValue ZenObject_kill(void* self);
 
+// Linux inotify capability for Compiler Daemon
+ZenValue ZenSys_inotify_init(void);
+ZenValue ZenSys_inotify_add_watch(ZenValue fd, ZenValue path, ZenValue mask);
+ZenValue ZenSys_inotify_read(ZenValue fd);
+
 #endif // ZEN_SYS_H

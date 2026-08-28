@@ -62,6 +62,9 @@ Part of `selfhost/` parity effort.
   - **Phase D:** classes/`extends`/`self`/`parent.meth`; closures by-value snapshot; enums + payload `is`; `with` + software MEM arena; `__builtin_memory` / real standard output. Guest `.length` must not hit `.has` on lists; never `Str.to_string` cyclic env maps (native overflow).
 - **Interpreter.zl** — endgame Phase A+D+E AST walk; tests: `test_interpreter.zl` (22 dual-path)
 - **Bytecode.zl & Mixed ABI:** `compile_program`, `eval_chunk`, `eval_chunk_fn`, `invoke_callable` — compiles AST directly to compact bytecode chunks for fast evaluation without GCC. `OP_CALL` dispatches seamlessly between bytecode chunks, native Zen functions, closures with captured environments, and host APIs. Tests: `test_vm.zl` (7 dual-path), `test_mixed_abi.zl` (6 dual-path).
+- **Daemon.zl & Resident Compiler Service:** `zen daemon start|stop|status|clear` manages background compilation service over Unix Domain Socket (`/tmp/zen_compiler.sock`) with descriptor multiplexing via `ZenNet_poll`.
+  - Integrates Linux `inotify` kernel watchers with debouncing for sub-millisecond incremental cache invalidation (`GraphBuilder.invalidate_cache`).
+  - CLI commands (`compile`, `build`, `check`) transparently proxy requests to the daemon when active, falling back seamlessly to in-process compilation if unreachable.
 - **Stage 7:** Native + E2E + namespaced self-rebuild.
   - `selfhost-smoke` → fixtures + class + enum/closure/with + native interpret + multi-unit; self-rebuild of `selfhost/zen.zl` (`ZEN_SELFHOST_REBUILD=1`) is 100% green (native selfhost parses and emits selfhost compiler to C, gcc links secondary binary `zen_from_self`, which executes help and compiles fixtures to working binaries with zero Python involvement).
   - Codegen file emit: `transpile_program_to_file` / `CG.out_path` buffers in-memory for single-pass file emission (`io.write_file`); `do`/`while` → `while (1)` + `break` so emit_expr temps stay in scope

@@ -622,15 +622,17 @@ class MIRHandler:
                      if call_args and call_args[0] in ("__builtin_process", "process"):
                          call_args = call_args[1:]
                 elif obj_name in ("__builtin_net", "net"):
-                     if prop_name == "http_request":
-                         callee_str = "ZenNet_http_request"
-                     else:
-                         callee_str = f"ZenNet_{prop_name}"
-                     if call_args and call_args[0] in ("__builtin_net", "net"):
-                         call_args = call_args[1:]
-                     # Pad optional body/headers so C always gets 4 args
-                     while len(call_args) < 4:
-                         call_args.append("ZenValue_make_nothing()")
+                    if prop_name == "http_request":
+                        callee_str = "ZenNet_http_request"
+                        if call_args and call_args[0] in ("__builtin_net", "net"):
+                            call_args = call_args[1:]
+                        # Pad optional body/headers so C always gets 4 args
+                        while len(call_args) < 4:
+                            call_args.append("ZenValue_make_nothing()")
+                    else:
+                        callee_str = f"ZenNet_{prop_name}"
+                        if call_args and call_args[0] in ("__builtin_net", "net"):
+                            call_args = call_args[1:]
                 elif obj_name in ("__builtin_reflect",):
                      mapping = {
                          "fields": "ZenReflect_fields",

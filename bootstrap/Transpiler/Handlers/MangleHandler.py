@@ -206,6 +206,7 @@ class MangleHandler:
             if obj_name == "__builtin_sys":
                  if raw_prop == "get_args": return "ZenSystem_get_args"
                  if raw_prop == "exit": return "ZenSystem_exit"
+                 if raw_prop.startswith("inotify_"): return f"ZenSys_{raw_prop}"
                  return f"ZenSystem_{raw_prop}"
 
             if obj_name == "__builtin_time":
