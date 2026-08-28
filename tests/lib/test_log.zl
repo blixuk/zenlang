@@ -1,0 +1,45 @@
+import zen.log as log
+import zen.test as test
+
+function test_log_levels() {
+    let l -> log.Logger(log.LEVEL_WARN, `text`)
+    // Because the logger writes to io.writeln, we can't easily capture stdout in a test here without mocking.
+    // So we'll just test the initialization and levels.
+    
+    let pass -> test.assert_equal(l.level, log.LEVEL_WARN, `level should be WARN`)
+    pass -> pass and test.assert_equal(l.format, `text`, `format should be text`)
+    
+    <- pass
+}
+
+function test_logfmt_formatting() {
+    let l -> log.Logger(log.LEVEL_INFO, `logfmt`)
+    let val1 -> l._format_logfmt_value(`simple`)
+    let val2 -> l._format_logfmt_value(`has spaces`)
+    let val3 -> l._format_logfmt_value(`has=equals`)
+    let val4 -> l._format_logfmt_value(`has"quotes"`)
+    
+    let pass -> test.assert_equal(val1, `simple`, `simple values should not be quoted`)
+    pass -> pass and test.assert_equal(val2, `"has spaces"`, `spaces should trigger quotes`)
+    pass -> pass and test.assert_equal(val3, `"has=equals"`, `equals should trigger quotes`)
+    pass -> pass and test.assert_equal(val4, `"has\"quotes\""`, `quotes should trigger quotes and be escaped`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Log.levels`, `fn` -> test_log_levels},
+        {`name` -> `Log.logfmt_formatting`, `fn` -> test_logfmt_formatting}
+    ]
+
+    <- test.run_suite(`Log Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

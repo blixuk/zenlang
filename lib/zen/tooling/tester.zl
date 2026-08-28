@@ -1,0 +1,128 @@
+/!
+  Test runner module for Zenlang project tooling.
+  Discovers automated test suites in tests/, runs test files,
+  and generates formatted summary reports.
+!/
+
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.time.time as time
+
+import zen.tooling.builder as builder
+
+/!
+  Discovers all test files in a project's tests/ directory.
+  @param root Project root directory.
+  @param pattern Optional filename filter substring.
+  @return List of absolute test file paths.
+!/
+export function discover_tests(root, pattern) {
+    let tests_dir -> path.join(root, `tests`)
+    when not file.exists(tests_dir) {
+        <- []
+    }
+
+    let all_files -> file.find_files(tests_dir, `.zl`)
+    let matches -> []
+
+    do for f in all_files {
+        let base -> path.base_name(f)
+        when Str.starts_with(base, `test_`) or Str.ends_with(base, `_test.zl`) {
+            when pattern == Nothing or pattern == `` or Str.contains(base, pattern) {
+                matches.append(f)
+            }
+        }
+    }
+    <- matches
+}
+
+/!
+  Runs all discovered test files for a project.
+  @param proj Project map.
+  @param pattern Optional test name filter pattern.
+  @return Map with { total, passed, failed, results, elapsed_ms, ok }
+!/
+export function test_project(proj, pattern) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let test_files -> discover_tests(root, pattern)
+
+    when test_files.length == 0 {
+        io.writeln(`[TEST] No test files matching '` + Str.to_string(pattern) + `' found in tests/`)
+        <- {
+            `ok` -> true,
+            `total` -> 0,
+            `passed` -> 0,
+            `failed` -> 0,
+            `results` -> [],
+            `elapsed_ms` -> 0
+        }
+    }
+
+    let rt_dir -> builder.get_runtime_path()
+    let repo_root -> path.join(rt_dir, `..`)
+    let zen_path_val -> root + `:` + path.join(root, `deps`) + `:` + path.join(repo_root, `lib`) + `:` + repo_root
+    let bin_zen -> path.join(path.join(rt_dir, `../bin`), `zen`)
+    let py_zen -> path.join(path.join(rt_dir, `../bootstrap`), `Zen.py`)
+    let run_cmd -> `python3 ` + process.shell_quote(py_zen)
+    when file.exists(bin_zen) and process.available(bin_zen) {
+        run_cmd -> process.shell_quote(bin_zen)
+    }
+
+    io.writeln(`==============================================`)
+    io.writeln(`  Running Tests for: ` + manifest_map[`name`] + ` (` + Str.to_string(test_files.length) + ` suites)`)
+    io.writeln(`==============================================`)
+
+    let start_t -> time.now()
+    let passed -> 0
+    let failed -> 0
+    let results -> []
+
+    do for f in test_files {
+        let rel_path -> f.replace(root + `/`, ``)
+        io.write(`[SUITE] ` + rel_path + ` ... `)
+
+        let cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` ` + run_cmd + ` ` + process.shell_quote(f)
+        let r -> process.result_in(root, cmd)
+
+        when r.code == 0 {
+            io.writeln(`PASS`)
+            passed -> passed + 1
+            results.append({ `file` -> rel_path, `status` -> `PASS`, `output` -> r.stdout })
+        } or {
+            io.writeln(`FAIL (exit ` + Str.to_string(r.code) + `)`)
+            failed -> failed + 1
+            results.append({ `file` -> rel_path, `status` -> `FAIL`, `output` -> r.stderr + `\n` + r.stdout })
+            when r.stdout != `` {
+                io.writeln(r.stdout)
+            }
+            when r.stderr != `` {
+                io.error(r.stderr)
+            }
+        }
+    }
+
+    let end_t -> time.now()
+    let elapsed_ms -> (end_t - start_t) * 1000
+
+    io.writeln(`----------------------------------------------`)
+    io.writeln(`Test Summary: ` + Str.to_string(passed) + ` passed, ` + Str.to_string(failed) + ` failed (` + Str.to_string(elapsed_ms) + ` ms)`)
+    io.writeln(`==============================================`)
+
+    <- {
+        `ok` -> failed == 0,
+        `total` -> test_files.length,
+        `passed` -> passed,
+        `failed` -> failed,
+        `results` -> results,
+        `elapsed_ms` -> elapsed_ms
+    }
+}
+
+export function run_tests(proj, pattern) {
+    <- test_project(proj, pattern)
+}

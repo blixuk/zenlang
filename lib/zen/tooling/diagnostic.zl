@@ -1,0 +1,236 @@
+/!
+  Zen Tooling Diagnostic Module.
+  Provides structured diagnostic creation, ANSI source frame rendering,
+  and native serialization to Zen Data (.zd) and Zen Mark (.zm) Callouts.
+!/
+
+import zen.text.string as Str
+
+/!
+  Constructs a source code Span.
+!/
+function Span(file, line, column, length, label) {
+    let f -> when (file != Nothing) { file } or { `unknown` }
+    let l -> when (line != Nothing and line > 0) { line } or { 1 }
+    let c -> when (column != Nothing and column > 0) { column } or { 1 }
+    let len -> when (length != Nothing and length > 0) { length } or { 1 }
+    let lbl -> when (label != Nothing) { label } or { `` }
+    <- {
+        `file` -> f,
+        `line` -> l,
+        `column` -> c,
+        `length` -> len,
+        `label` -> lbl
+    }
+}
+
+/!
+  Constructs a Diagnostic structure.
+!/
+function Diagnostic(severity, message, code, span, hints, notes) {
+    let sev -> when (severity != Nothing) { severity } or { `error` }
+    let msg -> when (message != Nothing) { message } or { `` }
+    let cd -> when (code != Nothing) { code } or { `` }
+    let h -> when (hints != Nothing) { hints } or { [] }
+    let n -> when (notes != Nothing) { notes } or { [] }
+    <- {
+        `severity` -> sev,
+        `message` -> msg,
+        `code` -> cd,
+        `span` -> span,
+        `hints` -> h,
+        `notes` -> n
+    }
+}
+
+function make_error(message, code, span) {
+    <- Diagnostic(`error`, message, code, span, [], [])
+}
+
+function make_warning(message, code, span) {
+    <- Diagnostic(`warning`, message, code, span, [], [])
+}
+
+/!
+  Renders a Diagnostic as a color-coded source code frame.
+!/
+function render_frame(item, source_text, use_color) {
+    let red -> when (use_color) { `\033[1;31m` } or { `` }
+    let yellow -> when (use_color) { `\033[1;33m` } or { `` }
+    let blue -> when (use_color) { `\033[1;34m` } or { `` }
+    let cyan -> when (use_color) { `\033[1;36m` } or { `` }
+    let bold -> when (use_color) { `\033[1m` } or { `` }
+    let dim -> when (use_color) { `\033[2m` } or { `` }
+    let reset -> when (use_color) { `\033[0m` } or { `` }
+
+    let sev_color -> when (item.severity == `error`) { red } or { yellow }
+    let code_str -> when (Str.length(item.code) > 0) { `[` + item.code + `]` } or { `` }
+    let header -> sev_color + bold + item.severity + code_str + reset + `: ` + bold + item.message + reset
+
+    when item.span == Nothing {
+        let out -> header
+        do for note in item.notes {
+            out -> out + `\n` + cyan + `   = note:` + reset + ` ` + note
+        }
+        do for hint in item.hints {
+            out -> out + `\n` + cyan + `   = help:` + reset + ` ` + hint
+        }
+        <- out
+    }
+
+    let sp -> item.span
+    let file_loc -> cyan + `  --> ` + reset + sp.file + `:` + Str.to_string(sp.line) + `:` + Str.to_string(sp.column)
+
+    when source_text == Nothing or Str.length(source_text) == 0 {
+        let out -> header + `\n` + file_loc
+        do for note in item.notes {
+            out -> out + `\n` + cyan + `   = note:` + reset + ` ` + note
+        }
+        do for hint in item.hints {
+            out -> out + `\n` + cyan + `   = help:` + reset + ` ` + hint
+        }
+        <- out
+    }
+
+    let lines -> Str.split(source_text, `\n`)
+    let line_count -> lines.length
+    when sp.line > line_count {
+        <- header + `\n` + file_loc
+    }
+
+    let start_line -> when (sp.line > 1) { sp.line - 1 } or { 1 }
+    let end_line -> when (sp.line + 1 <= line_count) { sp.line + 1 } or { line_count }
+
+    let out -> header + `\n` + file_loc + `\n` + blue + `   |` + reset + `\n`
+
+    let cur -> start_line
+    do while cur <= end_line {
+        let line_content -> lines[cur - 1]
+        let num_str -> Str.to_string(cur)
+        when Str.length(num_str) < 2 {
+            num_str -> ` ` + num_str
+        }
+
+        when cur == sp.line {
+            out -> out + blue + num_str + ` |` + reset + ` ` + line_content + `\n`
+            
+            // Build caret line
+            let spaces -> ``
+            let sp_idx -> 1
+            do while sp_idx < sp.column {
+                spaces -> spaces + ` `
+                sp_idx -> sp_idx + 1
+            }
+            let carets -> ``
+            let c_idx -> 0
+            do while c_idx < sp.length {
+                carets -> carets + `^`
+                c_idx -> c_idx + 1
+            }
+            let label_part -> when (Str.length(sp.label) > 0) { ` ` + sp.label } or { `` }
+            out -> out + blue + `   |` + reset + ` ` + spaces + sev_color + bold + carets + label_part + reset + `\n`
+        } or {
+            out -> out + dim + num_str + ` |` + reset + ` ` + line_content + `\n`
+        }
+        cur -> cur + 1
+    }
+
+    out -> out + blue + `   |` + reset
+
+    do for note in item.notes {
+        out -> out + `\n` + cyan + `   = note:` + reset + ` ` + note
+    }
+    do for hint in item.hints {
+        out -> out + `\n` + cyan + `   = help:` + reset + ` ` + hint
+    }
+
+    <- out
+}
+
+/!
+  Serializes a Diagnostic to Zen Data (.zd) format.
+!/
+function to_zendata(item) {
+    let out -> `Diagnostic {\n`
+    out -> out + `    severity -> "` + item.severity + `",\n`
+    when Str.length(item.code) > 0 {
+        out -> out + `    code -> "` + item.code + `",\n`
+    }
+    out -> out + `    message -> "` + item.message + `",\n`
+    when item.span != Nothing {
+        out -> out + `    span -> {\n`
+        out -> out + `        file -> "` + item.span.file + `",\n`
+        out -> out + `        line -> ` + Str.to_string(item.span.line) + `,\n`
+        out -> out + `        column -> ` + Str.to_string(item.span.column) + `,\n`
+        out -> out + `        length -> ` + Str.to_string(item.span.length) + `\n`
+        out -> out + `    },\n`
+    }
+    when item.hints.length > 0 {
+        out -> out + `    hints -> [`
+        let first -> True
+        do for h in item.hints {
+            when not first { out -> out + `, ` }
+            out -> out + `"` + h + `"`
+            first -> False
+        }
+        out -> out + `],\n`
+    }
+    when item.notes.length > 0 {
+        out -> out + `    notes -> [`
+        let first -> True
+        do for n in item.notes {
+            when not first { out -> out + `, ` }
+            out -> out + `"` + n + `"`
+            first -> False
+        }
+        out -> out + `],\n`
+    }
+    out -> out + `}`
+    <- out
+}
+
+/!
+  Serializes a Diagnostic to Zen Mark (.zm) Callout format.
+!/
+function to_zenmark(item, source_text) {
+    let callout_type -> when (item.severity == `error`) { `caution` } or { `warning` }
+    let code_tag -> when (Str.length(item.code) > 0) { `[` + item.code + `]` } or { `` }
+    let title -> item.severity + code_tag + `: ` + item.message
+
+    let body -> ``
+    when item.span != Nothing {
+        body -> body + `In **` + item.span.file + `:` + Str.to_string(item.span.line) + `:` + Str.to_string(item.span.column) + `**:\n\n`
+        when source_text != Nothing {
+            let lines -> Str.split(source_text, `\n`)
+            when item.span.line <= lines.length {
+                let line_str -> lines[item.span.line - 1]
+                body -> body + `\`\`\`zen\n` + line_str + `\n`
+                let carets -> ``
+                let i -> 1
+                do while i < item.span.column {
+                    carets -> carets + ` `
+                    i -> i + 1
+                }
+                let j -> 0
+                do while j < item.span.length {
+                    carets -> carets + `^`
+                    j -> j + 1
+                }
+                when Str.length(item.span.label) > 0 {
+                    carets -> carets + ` ` + item.span.label
+                }
+                body -> body + carets + `\n\`\`\`\n\n`
+            }
+        }
+    }
+
+    do for h in item.hints {
+        body -> body + `**Help:** ` + h + `\n\n`
+    }
+    do for n in item.notes {
+        body -> body + `**Note:** ` + n + `\n\n`
+    }
+
+    <- `Callout {\n    type -> "` + callout_type + `",\n    title -> "` + title + `",\n    text -> "` + body + `"\n}`
+}
+

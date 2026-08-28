@@ -1,0 +1,16 @@
+import io
+structure Point {
+    x: Integer
+    y: Integer
+}
+
+function test_struct() {
+    let p -> Point(10, 20)
+    ! p.x == 10
+    ! p.y == 20
+}
+
+function main() {
+    test_struct()
+    io.write(`Struct test passed!`)
+}

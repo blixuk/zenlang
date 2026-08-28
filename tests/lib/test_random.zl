@@ -1,0 +1,44 @@
+import zen.math.random as random
+import zen.test as test
+
+function test_seeded_random() {
+    let left -> random.seed(42)
+    let right -> random.seed(42)
+
+    let left_next -> random.next(left)
+    let left_int -> random.rng_integer(left, 1, 100)
+    let right_next -> random.next(right)
+    let right_int -> random.rng_integer(right, 1, 100)
+
+    let pass -> test.assert_equal(left_next, right_next, `seeded generators should produce the same next value`)
+    pass -> pass and test.assert_equal(left_int, right_int, `seeded generators should produce the same integer value`)
+    <- pass
+}
+
+function test_global_random_bounds() {
+    let i -> random.integer(10, 20)
+    let d -> random.decimal(0.25, 0.75)
+    let r -> random.range(1, 3)
+
+    let pass -> test.assert_true(i >= 10 and i <= 20, `integer should stay within the requested bounds`)
+    pass -> pass and test.assert_true(d >= 0.25 and d <= 0.75, `decimal should stay within the requested bounds`)
+    pass -> pass and test.assert_true(r >= 1 and r <= 3, `range should stay within the requested bounds`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Random.seeded`, `fn` -> test_seeded_random},
+        {`name` -> `Random.global_bounds`, `fn` -> test_global_random_bounds}
+    ]
+
+    <- test.run_suite(`Random Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -1,0 +1,50 @@
+/!
+ Class inheritance MVP: extends, field inherit, method override, parent.meth.
+ Exit 0 iff Dog(`Buddy`).speak() == `woof` and name is Buddy and parent speak is sound.
+ !/
+
+class Animal {
+    let name
+
+    function init(n) {
+        self.name -> n
+    }
+
+    function speak() {
+        <- `sound`
+    }
+
+    function label() {
+        <- self.name
+    }
+}
+
+class Dog extends Animal {
+    function speak() {
+        <- `woof`
+    }
+
+    function both() {
+        // parent.speak → Animal_speak(self)
+        let p -> parent.speak()
+        let s -> self.speak()
+        <- p + `:` + s
+    }
+}
+
+function main() {
+    let d -> Dog(`Buddy`)
+    when d.speak() != `woof` {
+        <- 1
+    }
+    when d.label() != `Buddy` {
+        <- 2
+    }
+    when d.both() != `sound:woof` {
+        <- 3
+    }
+    when d.name != `Buddy` {
+        <- 4
+    }
+    <- 0
+}

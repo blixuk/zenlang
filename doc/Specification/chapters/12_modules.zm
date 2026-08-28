@@ -1,0 +1,19 @@
+// Chapter 12: Module System & Standard Library
+
+Heading { text -> `12. Module System & Standard Library`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang provides clean hierarchical imports with the use keyword, supporting nested domain namespaces, module aliasing, and symbol re-export:`
+},
+
+Table {
+    headers -> [`Import Pattern`, `Example`, `Semantic Effect`],
+    rows -> [
+        [`Domain Import`, `use zen.io`, `Binds the io module in current scope`],
+        [`Aliased Import`, `use zen.sys.term as term`, `Binds the term module under an explicit alias`],
+        [`Selective Import`, `from zen.math import sqrt, pow`, `Imports individual functions into local scope`],
+        [`Trinity Aliases`, `use zen.zenmark as zm`, `Binds the standard Zen Mark engine`]
+    ]
+},
+
+HorizontalRule { symbol -> `*` }

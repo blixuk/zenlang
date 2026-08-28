@@ -1,0 +1,97 @@
+/!
+  zen.reflect dual-path smoke.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_reflect.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_reflect.zl
+!/
+
+use zen.reflect as reflect
+use zen.test as test
+use zen.text.string as Str
+use zen.collections.collections as Col
+
+function test_type_names() {
+    let pass -> test.assert_equal(reflect.type_name(1), `Integer`, `int`)
+    pass -> pass and test.assert_equal(reflect.type_name(1.5), `Decimal`, `dec`)
+    pass -> pass and test.assert_equal(reflect.type_name(True), `Boolean`, `bool`)
+    pass -> pass and test.assert_equal(reflect.type_name(`hi`), `String`, `str`)
+    pass -> pass and test.assert_equal(reflect.type_name([]), `List`, `list`)
+    pass -> pass and test.assert_equal(reflect.type_name({}), `Map`, `map`)
+    pass -> pass and test.assert_equal(reflect.type_name(Nothing), `Nothing`, `Nothing`)
+    pass -> pass and test.assert_equal(reflect.kind(42), `Integer`, `kind alias`)
+    <- pass
+}
+
+function test_predicates() {
+    let pass -> test.assert_equal(reflect.is_integer(3), true, `is_integer`)
+    pass -> pass and test.assert_equal(reflect.is_string(`a`), true, `is_string`)
+    pass -> pass and test.assert_equal(reflect.is_list([1]), true, `is_list`)
+    pass -> pass and test.assert_equal(reflect.is_map({`k` -> 1}), true, `is_map`)
+    pass -> pass and test.assert_equal(reflect.is_boolean(False), true, `is_boolean`)
+    pass -> pass and test.assert_equal(reflect.is_nothing(Nothing), true, `is_nothing`)
+    pass -> pass and test.assert_equal(reflect.is_map(1), false, `not map`)
+    <- pass
+}
+
+function test_function_kind() {
+    let f -> function(x) { <- x }
+    let pass -> test.assert_equal(reflect.is_function(f), true, `is_function`)
+    pass -> pass and test.assert_equal(reflect.type_name(f), `Function`, `fn type_name`)
+    <- pass
+}
+
+function test_map_fields() {
+    let m -> { `a` -> 10, `b` -> 20 }
+    let fs -> reflect.fields(m)
+    let pass -> test.assert_equal(fs.length, 2, `fields len`)
+    pass -> pass and test.assert_equal(reflect.has_field(m, `a`), true, `has a`)
+    pass -> pass and test.assert_equal(reflect.has_field(m, `z`), false, `no z`)
+    pass -> pass and test.assert_equal(reflect.field(m, `a`), 10, `field a`)
+    m -> reflect.set_field(m, `c`, 30)
+    pass -> pass and test.assert_equal(reflect.field(m, `c`), 30, `set_field c`)
+    <- pass
+}
+
+function test_map_keys_values_items() {
+    let m -> { `x` -> 1, `y` -> 2 }
+    let ks -> m.keys()
+    let vs -> m.values()
+    let its -> m.items()
+    let pass -> test.assert_equal(ks.length, 2, `keys`)
+    pass -> pass and test.assert_equal(vs.length, 2, `values`)
+    pass -> pass and test.assert_equal(its.length, 2, `items`)
+    // Free helpers
+    pass -> pass and test.assert_equal(reflect.keys(m).length, 2, `reflect.keys`)
+    pass -> pass and test.assert_equal(Col.Map.items(m).length, 2, `Col.Map.items`)
+    // Pair shape
+    let p0 -> its[0]
+    pass -> pass and test.assert_equal(p0.has(`key`), true, `pair key`)
+    pass -> pass and test.assert_equal(p0.has(`value`), true, `pair value`)
+    <- pass
+}
+
+function test_methods_stub() {
+    let pass -> test.assert_equal(reflect.methods(1).length, 0, `methods empty`)
+    pass -> pass and test.assert_equal(reflect.has_method({}, `x`), false, `has_method`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Reflect.type_names`, `fn` -> test_type_names},
+        {`name` -> `Reflect.predicates`, `fn` -> test_predicates},
+        {`name` -> `Reflect.function`, `fn` -> test_function_kind},
+        {`name` -> `Reflect.map_fields`, `fn` -> test_map_fields},
+        {`name` -> `Reflect.map_kv_items`, `fn` -> test_map_keys_values_items},
+        {`name` -> `Reflect.methods_stub`, `fn` -> test_methods_stub}
+    ]
+    <- test.run_suite(`zen.reflect`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

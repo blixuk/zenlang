@@ -20,6 +20,7 @@
 #include "core/zen_bytes.h"
 #include "core/zen_reflect.h"
 #include "core/zen_net.h"
+#include "core/zen_vm.h"
 
 // Memory
 #include "memory/zen_memory.h"

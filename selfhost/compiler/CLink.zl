@@ -1,0 +1,255 @@
+/!
+ Link + run generated C (bootstrap CCompile.py equivalent for selfhost).
+ Dual-path free functions; uses zen.sys.process for shell/argv runs.
+ !/
+
+import zen.text.string as Str
+import zen.io.path as Path
+import zen.io.io as io
+import zen.sys.process as Proc
+import zen.sys.sys as Sys
+
+function fs_write(path, content) {
+    <- __builtin_file.write(path, content)
+}
+
+function fs_is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function mkdir_p(path) {
+    <- __builtin_file.mkdir_p(path)
+}
+
+/!
+ Prefer gcc, then clang, then tcc (same as bootstrap CCompile).
+ Override: ZEN_CC=tcc|gcc|clang. Opt: ZEN_OPT=0|1|2|3|s (default 2).
+ !/
+function find_c_compiler() {
+    let want -> Sys.get_env(`ZEN_CC`)
+    when want != Nothing and want != `` {
+        when Proc.available(want) == true {
+            <- want
+        }
+    }
+    when Proc.available(`gcc`) == true {
+        <- `gcc`
+    }
+    when Proc.available(`clang`) == true {
+        <- `clang`
+    }
+    when Proc.available(`tcc`) == true {
+        <- `tcc`
+    }
+    <- ``
+}
+
+function c_opt_flag() {
+    let v -> Sys.get_env(`ZEN_OPT`)
+    when v == `0` { <- ` -O0` }
+    when v == `1` { <- ` -O1` }
+    when v == `3` { <- ` -O3` }
+    when v == `s` or v == `Os` { <- ` -Os` }
+    when v == `g` or v == `Og` { <- ` -Og` }
+    <- ` -O2`
+}
+
+function shell_q(s) {
+    <- `'` + Str.to_string(s) + `'`
+}
+
+function result_code(r) {
+    when r == Nothing {
+        <- 1
+    }
+    when r[`code`] == Nothing {
+        <- 1
+    }
+    <- r[`code`]
+}
+
+function result_err(r) {
+    when r == Nothing {
+        <- ``
+    }
+    let e -> r[`stderr`]
+    when e != Nothing and e != `` {
+        <- Str.to_string(e)
+    }
+    let o -> r[`stdout`]
+    when o != Nothing {
+        <- Str.to_string(o)
+    }
+    <- ``
+}
+
+function runtime_include_flags() {
+    <- ` -I runtime -I runtime/core -I runtime/collections -I runtime/io -I runtime/memory -I runtime/concurrency`
+}
+
+/!
+ Compile runtime/bootstrap_runtime.c once to output/selfhost_rt/*.o.
+ Subsequent links reuse the object (delete that dir after runtime edits).
+ !/
+function ensure_runtime_obj() {
+    let obj -> `output/selfhost_rt/bootstrap_runtime.o`
+    when fs_is_file(obj) {
+        <- {`ok` -> true, `obj` -> obj, `message` -> ``}
+    }
+    when not fs_is_file(`runtime/bootstrap_runtime.c`) {
+        <- {`ok` -> false, `obj` -> ``, `message` -> `missing runtime/bootstrap_runtime.c`}
+    }
+    mkdir_p(`output/selfhost_rt`)
+    let cc -> find_c_compiler()
+    when cc == `` {
+        <- {`ok` -> false, `obj` -> ``, `message` -> `no C compiler found (gcc/clang/tcc)`}
+    }
+    let cmd -> cc
+        + ` -c runtime/bootstrap_runtime.c -o `
+        + shell_q(obj)
+        + c_opt_flag()
+        + ` -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+        + runtime_include_flags()
+    let r -> Proc.result(cmd)
+    when result_code(r) != 0 {
+        <- {
+            `ok` -> false,
+            `obj` -> ``,
+            `message` -> `runtime object compile failed:\n` + result_err(r)
+        }
+    }
+    <- {`ok` -> true, `obj` -> obj, `message` -> ``}
+}
+
+/!
+ Prepare workdir with out.c only. Headers come from repo runtime/ via -I.
+ @return { ok, message, out_c, workdir }
+ !/
+function prepare_link_dir(c_code, workdir) {
+    when workdir == Nothing or workdir == `` {
+        workdir -> `output/build/selfhost_native`
+    }
+    mkdir_p(workdir)
+    let out_c -> Path.join(workdir, `out.c`)
+    // Streamed compile_file already wrote out.c; do not overwrite with the marker.
+    when c_code != `__streamed__` {
+        fs_write(out_c, c_code)
+    }
+    when not fs_is_file(out_c) {
+        <- {
+            `ok` -> false,
+            `message` -> `missing ` + out_c,
+            `out_c` -> ``,
+            `workdir` -> workdir
+        }
+    }
+    <- {
+        `ok` -> true,
+        `message` -> ``,
+        `out_c` -> out_c,
+        `workdir` -> workdir
+    }
+}
+
+/!
+ gcc/clang: out.c + cached runtime .o → exe_path.
+ !/
+function link_c(workdir, exe_path) {
+    let cc -> find_c_compiler()
+    when cc == `` {
+        <- {
+            `ok` -> false,
+            `message` -> `no C compiler found (gcc/clang/tcc)`,
+            `exe` -> ``
+        }
+    }
+    when exe_path == Nothing or exe_path == `` {
+        exe_path -> Path.join(workdir, `zen_program`)
+    }
+    let out_c -> Path.join(workdir, `out.c`)
+    when not fs_is_file(out_c) {
+        <- {`ok` -> false, `message` -> `missing ` + out_c, `exe` -> ``}
+    }
+    let rt -> ensure_runtime_obj()
+    when rt[`ok`] != true {
+        <- {`ok` -> false, `message` -> rt[`message`], `exe` -> ``}
+    }
+    // out.c only; runtime is a cached .o + -I runtime/ (no per-build copy).
+    let cmd -> cc
+        + ` ` + shell_q(out_c)
+        + ` ` + shell_q(rt[`obj`])
+        + ` -o ` + shell_q(exe_path)
+        + c_opt_flag()
+        + ` -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+        + runtime_include_flags()
+        + ` -lm -lpthread -ldl`
+    let r -> Proc.result(cmd)
+    let code -> result_code(r)
+    when code != 0 {
+        <- {
+            `ok` -> false,
+            `message` -> `C link failed:\n` + result_err(r),
+            `exe` -> ``
+        }
+    }
+    // chmod +x
+    Proc.result(`chmod +x ` + shell_q(exe_path))
+    <- {
+        `ok` -> true,
+        `message` -> `linked ` + exe_path,
+        `exe` -> exe_path
+    }
+}
+
+/!
+ Write out.c, link against cached runtime .o. Returns { ok, message, exe, workdir }.
+ !/
+function build_c_code(c_code, workdir, exe_path) {
+    let prep -> prepare_link_dir(c_code, workdir)
+    when prep[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `message` -> prep[`message`],
+            `exe` -> ``,
+            `workdir` -> workdir
+        }
+    }
+    let wd -> prep[`workdir`]
+    let lr -> link_c(wd, exe_path)
+    <- {
+        `ok` -> lr[`ok`],
+        `message` -> lr[`message`],
+        `exe` -> lr[`exe`],
+        `workdir` -> wd
+    }
+}
+
+/!
+ Run executable; argv is list of extra args (may be empty).
+ Returns process exit code (integer).
+ !/
+function run_exe(exe_path, argv) {
+    when exe_path == Nothing or exe_path == `` {
+        <- 1
+    }
+    let args -> []
+    when argv != Nothing {
+        let i -> 0
+        let n -> argv.length
+        do while i < n {
+            args.append(argv[i])
+            i -> i + 1
+        }
+    }
+    let r -> Proc.run_result(exe_path, args)
+    // Inherit program output (run_result captures). Match bootstrap -g.
+    let out -> r[`stdout`]
+    when out != Nothing and out != `` {
+        io.write(Str.to_string(out))
+    }
+    let err -> r[`stderr`]
+    when err != Nothing and err != `` {
+        io.write(Str.to_string(err))
+    }
+    <- result_code(r)
+}

@@ -1,0 +1,61 @@
+import zen.text.string as Str
+import zen.io.file as file
+
+/!
+ Text Columns module.
+ Provides simple, predictable delimiter-based record parsing.
+ !/
+class Columns {
+    let rows: List
+    let delimiter: String
+
+    /!
+     Initializes the Columns parser from a string.
+     @param text The input text.
+     @param delimiter The column delimiter.
+     !/
+    function init(text, delimiter) {
+        self.delimiter -> delimiter
+        self.rows -> []
+        let lines -> Str.split(text, `\n`)
+        do for line in lines {
+            let trimmed -> Str.trim(line)
+            when trimmed.length > 0 {
+                let columns -> Str.split(trimmed, delimiter)
+                let cleaned -> []
+                do for col in columns {
+                    cleaned.append(Str.trim(col))
+                }
+                self.rows.append(cleaned)
+            }
+        }
+    }
+
+    /!
+     Gets a row at the given index.
+     @param index The row index.
+     @return The row as a list of strings.
+     !/
+    function row(index) {
+        <- self.rows[index]
+    }
+
+    /!
+     Gets the number of rows.
+     @return The row count.
+     !/
+    function count() {
+        <- self.rows.length
+    }
+}
+
+/!
+ Helper function to load columns from a file.
+ @param path The file path.
+ @param delimiter The column delimiter.
+ @return A Columns instance.
+ !/
+function from_file(path, delimiter) {
+    let content -> file.read(path)
+    <- Columns(content, delimiter)
+}

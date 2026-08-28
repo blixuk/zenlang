@@ -1,0 +1,327 @@
+/!
+ Type and symbol model — Stage 4.
+ Map-backed for dual-path (interpret + -g). Mirrors bootstrap/Checker/Type.py names loosely.
+ !/
+
+import compiler.AST as AST
+import zen.text.string as Str
+
+// --- Type constructors (maps with `kind` string) ---
+
+function t_void() {
+    <- {`kind` -> `Void`, `name` -> `Void`}
+}
+
+function t_nothing() {
+    <- {`kind` -> `Nothing`, `name` -> `Nothing`}
+}
+
+function t_default() {
+    <- {`kind` -> `Default`, `name` -> `Default`}
+}
+
+function t_boolean() {
+    <- {`kind` -> `Boolean`, `name` -> `Boolean`}
+}
+
+function t_integer() {
+    <- {`kind` -> `Integer`, `name` -> `Integer`}
+}
+
+function t_decimal() {
+    <- {`kind` -> `Decimal`, `name` -> `Decimal`}
+}
+
+function t_string() {
+    <- {`kind` -> `String`, `name` -> `String`}
+}
+
+function t_rune() {
+    <- {`kind` -> `Rune`, `name` -> `Rune`}
+}
+
+function t_variant() {
+    <- {`kind` -> `Variant`, `name` -> `Variant`}
+}
+
+function t_unknown() {
+    <- {`kind` -> `Unknown`, `name` -> `Unknown`}
+}
+
+function t_list(elem) {
+    <- {`kind` -> `List`, `name` -> `List`, `element` -> elem}
+}
+
+function t_function(name, params, ret) {
+    <- {
+        `kind` -> `Function`,
+        `name` -> name,
+        `params` -> params,
+        `return` -> ret
+    }
+}
+
+function t_structure(name, members) {
+    <- {
+        `kind` -> `Structure`,
+        `name` -> name,
+        `members` -> members,
+        `methods` -> {}
+    }
+}
+
+function t_class(name, members, methods) {
+    let ms -> methods
+    when ms == Nothing {
+        ms -> {}
+    }
+    <- {
+        `kind` -> `Class`,
+        `name` -> name,
+        `members` -> members,
+        `methods` -> ms
+    }
+}
+
+function t_arena() {
+    <- {`kind` -> `Arena`, `name` -> `Arena`}
+}
+
+function type_name(t) {
+    when t == Nothing {
+        <- `Unknown`
+    }
+    when t[`name`] != Nothing {
+        <- Str.to_string(t[`name`])
+    }
+    <- Str.to_string(t[`kind`])
+}
+
+function type_equal(a, b) {
+    when a == Nothing or b == Nothing {
+        <- false
+    }
+    let ka -> Str.to_string(a[`kind`])
+    let kb -> Str.to_string(b[`kind`])
+    when ka == `Unknown` or kb == `Unknown` or ka == `Variant` or kb == `Variant` {
+        <- true
+    }
+    when ka == kb {
+        when ka == `List` {
+            <- type_equal(a[`element`], b[`element`])
+        }
+        when ka == `Structure` or ka == `Function` or ka == `Class` {
+            <- type_name(a) == type_name(b)
+        }
+        <- true
+    }
+    <- false
+}
+
+function type_from_name(name) {
+    when name == Nothing or name == `` {
+        <- t_variant()
+    }
+    let s -> Str.to_string(name)
+    when s == `Integer` or s == `int` {
+        <- t_integer()
+    }
+    when s == `Decimal` or s == `Float` {
+        <- t_decimal()
+    }
+    when s == `String` {
+        <- t_string()
+    }
+    when s == `Boolean` or s == `Bool` {
+        <- t_boolean()
+    }
+    when s == `Void` {
+        <- t_void()
+    }
+    when s == `Nothing` {
+        <- t_nothing()
+    }
+    when s == `Default` {
+        <- t_default()
+    }
+    when s == `Variant` {
+        <- t_variant()
+    }
+    when s == `List` {
+        <- t_list(t_variant())
+    }
+    when s == `Arena` or s == `Region` or s == `ZEN_ARENA` {
+        <- t_arena()
+    }
+    // User / structure / class name
+    <- {`kind` -> `Named`, `name` -> s}
+}
+
+function type_ann_name(ann) {
+    when ann == Nothing or ann == `` {
+        <- ``
+    }
+    when is_type_ann(ann) {
+        <- Str.to_string(AST.type_ann_name(ann))
+    }
+    <- Str.to_string(ann)
+}
+
+function type_ann_qual(ann) {
+    when ann == Nothing {
+        <- ``
+    }
+    when is_type_ann(ann) {
+        let q -> AST.type_ann_qual(ann)
+        when q == Nothing {
+            <- ``
+        }
+        <- Str.to_string(q)
+    }
+    <- ``
+}
+
+function is_type_ann(ann) {
+    when ann == Nothing or ann == `` or ann == true or ann == false {
+        <- false
+    }
+    when ann == `Integer` or ann == `int` or ann == `String` or ann == `Boolean` or ann == `Bool` or ann == `Void` or ann == `List` or ann == `Decimal` or ann == `Float` or ann == `Nothing` or ann == `Default` or ann == `Variant` or ann == `Rune` or ann == `Arena` or ann == `Region` {
+        <- false
+    }
+    when AST.ast_kind(ann) == AST.K_TYPE_ANN {
+        <- true
+    }
+    <- false
+}
+
+function type_from_ann(ann) {
+    let s -> type_ann_name(ann)
+    let t -> type_from_name(s)
+    let q -> type_ann_qual(ann)
+    when q != `` {
+        t[`qualifier`] -> q
+    }
+    <- t
+}
+
+function is_arena_type(t) {
+    when t == Nothing {
+        <- false
+    }
+    let n -> type_name(t)
+    when n == `Arena` or n == `Region` or n == `ZEN_ARENA` or n == `Memory` {
+        <- true
+    }
+    let k -> Str.to_string(t[`kind`])
+    when k == `Arena` {
+        <- true
+    }
+    when k == `Variant` or k == `Unknown` {
+        <- true
+    }
+    <- false
+}
+
+function is_owned_type(t) {
+    when t == Nothing {
+        <- false
+    }
+    when t.has(`qualifier`) {
+        when t[`qualifier`] == `owned` {
+            <- true
+        }
+    }
+    <- false
+}
+
+function copy_type_plain(t) {
+    when t == Nothing {
+        <- t
+    }
+    let out -> {
+        `kind` -> t[`kind`],
+        `name` -> t[`name`],
+        `qualifier` -> ``
+    }
+    when t.has(`members`) {
+        out[`members`] -> t[`members`]
+    }
+    when t.has(`methods`) {
+        out[`methods`] -> t[`methods`]
+    }
+    when t.has(`element`) {
+        out[`element`] -> t[`element`]
+    }
+    when t.has(`params`) {
+        out[`params`] -> t[`params`]
+    }
+    when t.has(`return`) {
+        out[`return`] -> t[`return`]
+    }
+    <- out
+}
+
+function is_borrowed_type(t) {
+    when t == Nothing {
+        <- false
+    }
+    when t.has(`qualifier`) {
+        when t[`qualifier`] == `borrowed` {
+            <- true
+        }
+    }
+    <- false
+}
+
+// --- Scope ---
+
+function sc_create(parent_sc) {
+    let level -> 0
+    when parent_sc != Nothing {
+        level -> parent_sc[`level`] + 1
+    }
+    <- {
+        `parent` -> parent_sc,
+        `symbols` -> {},
+        `level` -> level
+    }
+}
+
+function sc_define(sc, name, type_obj, kind, mutable) {
+    let q -> ``
+    when type_obj != Nothing {
+        when type_obj.has(`qualifier`) {
+            q -> Str.to_string(type_obj[`qualifier`])
+        }
+    }
+    let syms -> sc[`symbols`]
+    syms[name] -> {
+        `name` -> name,
+        `type` -> type_obj,
+        `kind` -> kind,
+        `mutable` -> mutable,
+        `qualifier` -> q,
+        `moved` -> false
+    }
+    sc[`symbols`] -> syms
+    <- sc
+}
+
+function sc_lookup(sc, name) {
+    when sc == Nothing {
+        <- Nothing
+    }
+    let syms -> sc[`symbols`]
+    when syms.has(name) {
+        <- syms[name]
+    }
+    <- sc_lookup(sc[`parent`], name)
+}
+
+function sc_has_local(sc, name) {
+    when sc == Nothing {
+        <- false
+    }
+    let syms -> sc[`symbols`]
+    <- syms.has(name)
+}

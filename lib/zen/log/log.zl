@@ -1,0 +1,126 @@
+/!
+ Structured Logging module.
+ Provides log levels and configurable output formats (text, json, logfmt).
+ !/
+
+import zen.io.io as io
+import zen.time as time
+import zen.text.string as Str
+import zen.data.json as json
+
+set LEVEL_DEBUG -> 0
+set LEVEL_INFO  -> 1
+set LEVEL_WARN  -> 2
+set LEVEL_ERROR -> 3
+set LEVEL_FATAL -> 4
+
+class Logger {
+    let level: Integer
+    let format: String
+
+    function init(level, format) {
+        self.level -> level
+        self.format -> format
+    }
+
+    function _format_logfmt_value(val) {
+        let s -> Str.to_string(val)
+        when Str.index_of(s, ` `) != -1 or Str.index_of(s, `=`) != -1 or Str.index_of(s, `"`) != -1 {
+            <- `"` + Str.replace(s, `"`, `\"`) + `"`
+        }
+        <- s
+    }
+
+    function _log(level_name, level_val, msg, data) {
+        when level_val >= self.level {
+            let ts -> time.now()
+            let formatted -> ``
+            
+            when self.format == `json` {
+                let payload -> {
+                    `time` -> ts,
+                    `level` -> level_name,
+                    `msg` -> msg
+                }
+                when data != Nothing and data is Map {
+                    let keys -> __builtin_map.keys(data)
+                    do for k in keys {
+                        payload[k] -> data[k]
+                    }
+                }
+                formatted -> json.stringify(payload)
+                
+            } or when self.format == `logfmt` {
+                formatted -> `time=` + Str.to_string(ts) + ` level=` + Str.to_lower(level_name) + ` msg=` + self._format_logfmt_value(msg)
+                when data != Nothing and data is Map {
+                    let keys -> __builtin_map.keys(data)
+                    do for k in keys {
+                        formatted -> formatted + ` ` + Str.to_string(k) + `=` + self._format_logfmt_value(data[k])
+                    }
+                }
+                
+            } or {
+                // Default plain text
+                formatted -> `[` + Str.to_string(ts) + `] [` + level_name + `] ` + msg
+                when data != Nothing and data is Map {
+                    let keys -> __builtin_map.keys(data)
+                    when keys.length > 0 {
+                        formatted -> formatted + ` ` + json.stringify(data)
+                    }
+                }
+            }
+            
+            io.writeln(formatted)
+        }
+    }
+
+    function debug(msg, data) { self._log(`DEBUG`, LEVEL_DEBUG, msg, data) }
+    function info(msg, data) { self._log(`INFO`, LEVEL_INFO, msg, data) }
+    function warn(msg, data) { self._log(`WARN`, LEVEL_WARN, msg, data) }
+    function error(msg, data) { self._log(`ERROR`, LEVEL_ERROR, msg, data) }
+    function fatal(msg, data) { self._log(`FATAL`, LEVEL_FATAL, msg, data) }
+}
+
+// Global Default logger
+let _default_logger -> Logger(LEVEL_INFO, `text`)
+
+/!
+ Sets the global log level.
+ @param level The log level (e.g. log.LEVEL_DEBUG).
+ !/
+function set_level(level) {
+    _default_logger.level -> level
+}
+
+/!
+ Sets the global log format.
+ @param format The format (`text`, `json`, or `logfmt`).
+ !/
+function set_format(format) {
+    _default_logger.format -> format
+}
+
+/!
+ Logs a debug message using the global logger.
+ !/
+function debug(msg, data) { _default_logger.debug(msg, data) }
+
+/!
+ Logs an info message using the global logger.
+ !/
+function info(msg, data) { _default_logger.info(msg, data) }
+
+/!
+ Logs a warning message using the global logger.
+ !/
+function warn(msg, data) { _default_logger.warn(msg, data) }
+
+/!
+ Logs an error message using the global logger.
+ !/
+function error(msg, data) { _default_logger.error(msg, data) }
+
+/!
+ Logs a fatal message using the global logger.
+ !/
+function fatal(msg, data) { _default_logger.fatal(msg, data) }

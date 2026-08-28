@@ -1,0 +1,40 @@
+Entry {
+    `title` -> `Zenlang Compiler Architecture & Internals`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-27`,
+    `version` -> `1.0.0`,
+    `archetype` -> `specification`,
+    `theme` -> `antiquarian`
+}
+
+Document {
+    Heading { `text` -> `Zenlang Compiler Architecture & Internals`, `size` -> 1 },
+    Paragraph {
+        `text` -> `Zenlang employs a high-performance Three-Layer Architecture designed to deliver sub-millisecond script startup, instantaneous feedback, and bare-metal AOT native C compilation with 100% behavioral parity.`
+    },
+    
+    Heading { `text` -> `Layer 1: Unified ZenValue ABI`, `size` -> 2 },
+    Paragraph {
+        `text` -> `Every runtime entity is represented as a uniform 16-byte ZenValue struct shared between the C runtime, the Bytecode VM, and AOT-compiled binaries.`
+    },
+    
+    Heading { `text` -> `Layer 2: Zero-Overhead Compiler IR`, `size` -> 2 },
+    Table {
+        `headers` -> [`Component`, `Representation`, `Performance Benefit`],
+        `rows` -> [
+            [`Token Spans`, `[kind, start, length, line, col, el, ec]`, `Zero-copy offset indexing into source buffer`],
+            [`AST Nodes`, `[kind, line, column, ...payload]`, `Flat positional tuples with direct integer index access`],
+            [`Arenas`, `ZenRuntime_allocate`, `Chunk-chained bump allocation with O(1) bulk free`],
+            [`Diagnostics`, `Diagnostics.zl`, `Clang/Rust-style source-mapped caret error reporting`]
+        ]
+    },
+    
+    Heading { `text` -> `Layer 3: Dual Execution Paths`, `size` -> 2 },
+    Table {
+        `headers` -> [`Execution Mode`, `Pipeline`, `Primary Advantage`],
+        `rows` -> [
+            [`Bytecode VM`, `Bytecode.zl -> zen_vm.c`, `Instantaneous startup with zero GCC compile latency`],
+            [`Native C AOT`, `Codegen.zl -> CLink.zl -> GCC`, `Maximum execution throughput and standalone binary production`]
+        ]
+    }
+}

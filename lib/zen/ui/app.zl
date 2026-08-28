@@ -1,0 +1,372 @@
+/!
+  Zen TUI app shell — Bubble Tea–style loop (init / update / view).
+
+  Architecture (dual-path: maps + free functions):
+    model  = application state (usually a map; set `quit` -> true to exit)
+    msg    = event map with `type`: key | tick | resize | quit | custom
+    update = (model, msg) -> model
+    view   = (model) -> canvas map (or Nothing to skip paint)
+
+  Interactive:
+    app.run(init_fn, update_fn, view_fn, opts)
+
+  Headless / tests:
+    app.step(model, msg, update_fn)
+    app.run_msgs(model, msgs, update_fn)
+
+  Options map (all optional):
+    poll_ms       — key poll timeout ms (Default 50; games often 12–16)
+    max_frames    — stop after N frames (0 = unlimited)
+    tick          — emit tick msgs each frame (Default false)
+    mouse         — enable mouse tracking (Default false)
+    resize_every  — check terminal size every N frames (Default 8)
+    always_paint  — if true, paint every frame (Default false)
+                    When false, paint only if model has no `dirty` field
+                    or `dirty` is true. After paint, `dirty` is cleared.
+!/
+
+use zen.sys.term as term
+use zen.ui.canvas as canvas
+
+// ---------------------------------------------------------------------------
+// Messages
+// ---------------------------------------------------------------------------
+
+/!
+  Key message from a term key map (`kind`, `name`, `ch`, `ctrl`, `code`).
+!/
+function msg_key(key) {
+    let kind -> ``
+    let name -> ``
+    let ch -> ``
+    let ctrl -> false
+    let code -> 0
+    when key != Nothing {
+        when key.has(`kind`) { kind -> key[`kind`] }
+        when key.has(`name`) { name -> key[`name`] }
+        when key.has(`ch`) { ch -> key[`ch`] }
+        when key.has(`ctrl`) { ctrl -> key[`ctrl`] }
+        when key.has(`code`) { code -> key[`code`] }
+    }
+    <- {
+        `type` -> `key`,
+        `kind` -> kind,
+        `name` -> name,
+        `ch` -> ch,
+        `ctrl` -> ctrl,
+        `code` -> code
+    }
+}
+
+/!
+  Char key shortcut: { type: key, kind: char, ch: c }.
+!/
+function msg_char(c) {
+    <- {
+        `type` -> `key`,
+        `kind` -> `char`,
+        `name` -> ``,
+        `ch` -> c,
+        `ctrl` -> false,
+        `code` -> 0
+    }
+}
+
+/!
+  Named special key: enter, left, ctrl_c, …
+!/
+function msg_special(name) {
+    <- {
+        `type` -> `key`,
+        `kind` -> `special`,
+        `name` -> name,
+        `ch` -> ``,
+        `ctrl` -> false,
+        `code` -> 0
+    }
+}
+
+function msg_tick(n) {
+    <- { `type` -> `tick`, `n` -> n }
+}
+
+function msg_resize(w, h) {
+    <- { `type` -> `resize`, `width` -> w, `height` -> h }
+}
+
+function msg_quit() {
+    <- { `type` -> `quit` }
+}
+
+function msg_custom(name, data) {
+    <- { `type` -> `custom`, `name` -> name, `data` -> data }
+}
+
+// ---------------------------------------------------------------------------
+// Message queries
+// ---------------------------------------------------------------------------
+
+function msg_type(msg) {
+    when msg == Nothing { <- `` }
+    when msg.has(`type`) { <- msg[`type`] }
+    <- ``
+}
+
+function is_quit(msg) {
+    <- msg_type(msg) == `quit`
+}
+
+function is_key(msg) {
+    <- msg_type(msg) == `key`
+}
+
+function is_tick(msg) {
+    <- msg_type(msg) == `tick`
+}
+
+function is_resize(msg) {
+    <- msg_type(msg) == `resize`
+}
+
+/!
+  True when msg is a char key equal to `c`.
+!/
+function key_char(msg, c) {
+    when is_key(msg) == false { <- false }
+    when msg[`kind`] != `char` { <- false }
+    <- msg[`ch`] == c
+}
+
+/!
+  True when msg is a special key named `name` (e.g. `ctrl_c`, `enter`).
+!/
+function key_name(msg, name) {
+    when is_key(msg) == false { <- false }
+    <- msg[`name`] == name
+}
+
+/!
+  True when model requests exit (`quit` field set).
+!/
+function model_wants_quit(model) {
+    when model == Nothing { <- false }
+    when model.has(`quit`) {
+        <- model[`quit`] == true
+    }
+    <- false
+}
+
+/!
+  True when the frame should be painted.
+  Models without a `dirty` key always repaint (backward compatible).
+!/
+function model_is_dirty(model) {
+    when model == Nothing { <- true }
+    when model.has(`dirty`) == false { <- true }
+    <- model[`dirty`] == true
+}
+
+function clear_dirty(model) {
+    when model != Nothing and model.has(`dirty`) {
+        model[`dirty`] -> false
+    }
+    <- model
+}
+
+function mark_dirty(model) {
+    model[`dirty`] -> true
+    <- model
+}
+
+// ---------------------------------------------------------------------------
+// Headless step / fold (tests + pure simulation)
+// ---------------------------------------------------------------------------
+
+/!
+  Apply one message: update(model, msg) -> model.
+  Also handles global quit msg by setting model.quit when update does not.
+!/
+function step(model, msg, update_fn) {
+    let next -> update_fn(model, msg)
+    when is_quit(msg) {
+        when next.has(`quit`) == false or next[`quit`] != true {
+            next[`quit`] -> true
+        }
+    }
+    <- next
+}
+
+/!
+  Apply a list of messages in order. Returns final model.
+!/
+function run_msgs(model, msgs, update_fn) {
+    let m -> model
+    let i -> 0
+    do while i < msgs.length {
+        m -> step(m, msgs[i], update_fn)
+        when model_wants_quit(m) {
+            <- m
+        }
+        i -> i + 1
+    }
+    <- m
+}
+
+// ---------------------------------------------------------------------------
+// Interactive run loop
+// ---------------------------------------------------------------------------
+
+function opt_int(opts, key, default_val) {
+    when opts == Nothing { <- default_val }
+    when opts.has(key) {
+        let v -> opts[key]
+        when v == Nothing { <- default_val }
+        <- v
+    }
+    <- default_val
+}
+
+function opt_bool(opts, key, default_val) {
+    when opts == Nothing { <- default_val }
+    when opts.has(key) {
+        let v -> opts[key]
+        when v == true { <- true }
+        when v == false { <- false }
+        <- default_val
+    }
+    <- default_val
+}
+
+/!
+  Run an interactive TUI program.
+
+  @param init_fn   () -> model
+  @param update_fn (model, msg) -> model
+  @param view_fn   (model) -> canvas map (or Nothing)
+  @param opts      options map (see module header)
+  @return final model
+!/
+function run(init_fn, update_fn, view_fn, opts) {
+    let poll_ms -> opt_int(opts, `poll_ms`, 50)
+    let max_frames -> opt_int(opts, `max_frames`, 0)
+    let do_tick -> opt_bool(opts, `tick`, false)
+    let do_mouse -> opt_bool(opts, `mouse`, false)
+    let resize_every -> opt_int(opts, `resize_every`, 8)
+    when resize_every < 1 { resize_every -> 1 }
+    let always_paint -> opt_bool(opts, `always_paint`, false)
+
+    let model -> init_fn()
+    // Ensure first frame paints when using dirty tracking
+    when model.has(`dirty`) {
+        model[`dirty`] -> true
+    }
+
+    term.alt_screen_enter()
+    term.hide_cursor()
+    let raw_ok -> term.raw_enter()
+    when do_mouse {
+        __builtin_term.mouse_enable()
+    }
+
+    let size -> term.get_size()
+    let last_w -> size[`width`]
+    let last_h -> size[`height`]
+    model -> step(model, msg_resize(size[`width`], size[`height`]), update_fn)
+    when model.has(`dirty`) {
+        model[`dirty`] -> true
+    }
+
+    // Initial paint
+    when model_wants_quit(model) == false {
+        let c0 -> view_fn(model)
+        when c0 != Nothing {
+            canvas.render(c0)
+            model -> clear_dirty(model)
+        }
+    }
+
+    let frame -> 0
+    do while model_wants_quit(model) == false {
+        when max_frames > 0 and frame >= max_frames {
+            break
+        }
+
+        // --- Input ---
+        // 1) Wait up to poll_ms for first event (frame pacing)
+        // 2) Drain any queued keys with poll(0) so input isn't one-key-per-frame
+        let k -> term.poll_key(poll_ms)
+        do while k[`kind`] != `none` {
+            when k[`name`] == `ctrl_c` {
+                model -> step(model, msg_quit(), update_fn)
+            } or {
+                model -> step(model, msg_key(k), update_fn)
+            }
+            when model_wants_quit(model) {
+                break
+            }
+            k -> term.poll_key(0)
+        }
+
+        when model_wants_quit(model) {
+            break
+        }
+
+        // Resize (throttled — ioctl is not free)
+        when frame % resize_every == 0 {
+            let s2 -> term.get_size()
+            when s2[`width`] != last_w or s2[`height`] != last_h {
+                last_w -> s2[`width`]
+                last_h -> s2[`height`]
+                model -> step(model, msg_resize(s2[`width`], s2[`height`]), update_fn)
+                when model.has(`dirty`) {
+                    model[`dirty`] -> true
+                }
+            }
+        }
+
+        when model_wants_quit(model) {
+            break
+        }
+
+        // Tick (game step) after input so direction applies this frame
+        when do_tick {
+            model -> step(model, msg_tick(frame), update_fn)
+        }
+
+        when model_wants_quit(model) {
+            break
+        }
+
+        // View only when dirty (or always_paint / no dirty field)
+        when always_paint or model_is_dirty(model) {
+            let c -> view_fn(model)
+            when c != Nothing {
+                canvas.render(c)
+            }
+            model -> clear_dirty(model)
+        }
+
+        frame -> frame + 1
+    }
+
+    when do_mouse {
+        __builtin_term.mouse_disable()
+    }
+    term.show_cursor()
+    term.raw_exit()
+    term.alt_screen_exit()
+    term.reset()
+    <- model
+}
+
+/!
+  Convenience: quit if `q` or ctrl_c / esc.
+  Returns true if update should treat this as quit (caller sets model.quit).
+!/
+function is_default_quit_key(msg) {
+    when key_char(msg, `q`) { <- true }
+    when key_char(msg, `Q`) { <- true }
+    when key_name(msg, `ctrl_c`) { <- true }
+    when key_name(msg, `escape`) { <- true }
+    <- false
+}

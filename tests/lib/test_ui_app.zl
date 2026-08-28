@@ -1,0 +1,136 @@
+/!
+  zen.ui.app headless dual-path (Bubble Tea–style update fold).
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_ui_app.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_ui_app.zl
+!/
+
+use zen.ui.app as app
+use zen.ui.canvas as canvas
+use zen.text.string as Str
+use zen.test as test
+
+// --- Tiny counter program (same shape as examples/tui_counter.zl) ---
+
+function counter_init() {
+    <- {
+        `n` -> 0,
+        `width` -> 40,
+        `height` -> 12,
+        `quit` -> false
+    }
+}
+
+function counter_update(model, msg) {
+    when app.is_quit(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    when app.is_resize(msg) {
+        model[`width`] -> msg[`width`]
+        model[`height`] -> msg[`height`]
+        <- model
+    }
+    when app.key_char(msg, `+`) or app.key_char(msg, `=`) {
+        model[`n`] -> model[`n`] + 1
+        <- model
+    }
+    when app.key_char(msg, `-`) {
+        model[`n`] -> model[`n`] - 1
+        <- model
+    }
+    when app.is_default_quit_key(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    <- model
+}
+
+function counter_view(model) {
+    let w -> model[`width`]
+    let h -> model[`height`]
+    when w < 10 { w -> 40 }
+    when h < 5 { h -> 12 }
+    let c -> canvas.create(w, h)
+    canvas.clear(c, ` `, `white`, `black`)
+    canvas.draw_text(c, 2, 1, `Counter TUI`, `cyan`, `black`)
+    canvas.draw_text(c, 2, 3, `n = ` + Str.to_string(model[`n`]), `yellow`, `black`)
+    canvas.draw_text(c, 2, 5, `+/−  q quit`, `bright_black`, `black`)
+    <- c
+}
+
+function test_msg_helpers() {
+    let k -> app.msg_char(`a`)
+    let pass -> test.assert_equal(app.msg_type(k), `key`, `type key`)
+    pass -> pass and test.assert_true(app.key_char(k, `a`), `key_char a`)
+    pass -> pass and test.assert_false(app.key_char(k, `b`), `not b`)
+    pass -> pass and test.assert_true(app.key_name(app.msg_special(`enter`), `enter`), `special`)
+    pass -> pass and test.assert_true(app.is_quit(app.msg_quit()), `quit msg`)
+    pass -> pass and test.assert_true(app.is_tick(app.msg_tick(3)), `tick`)
+    pass -> pass and test.assert_equal(app.msg_resize(80, 24)[`width`], 80, `resize w`)
+    <- pass
+}
+
+function test_step_and_fold() {
+    let m -> counter_init()
+    m -> app.step(m, app.msg_char(`+`), counter_update)
+    m -> app.step(m, app.msg_char(`+`), counter_update)
+    m -> app.step(m, app.msg_char(`-`), counter_update)
+    let pass -> test.assert_equal(m[`n`], 1, `n after + + -`)
+
+    let m2 -> counter_init()
+    let msgs -> [
+        app.msg_char(`+`),
+        app.msg_char(`+`),
+        app.msg_char(`+`),
+        app.msg_char(`q`)
+    ]
+    m2 -> app.run_msgs(m2, msgs, counter_update)
+    pass -> pass and test.assert_equal(m2[`n`], 3, `fold count`)
+    pass -> pass and test.assert_true(m2[`quit`], `quit after q`)
+    <- pass
+}
+
+function test_view_buffer() {
+    let m -> counter_init()
+    m[`n`] -> 42
+    m[`width`] -> 20
+    m[`height`] -> 8
+    let c -> counter_view(m)
+    let pass -> test.assert_equal(c[`width`], 20, `view width`)
+    // "n = 42" starts at (2,3)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 2, 3), `n`, `label n`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 6, 3), `4`, `digit 4`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 7, 3), `2`, `digit 2`)
+    <- pass
+}
+
+function test_ctrl_c_quit() {
+    let m -> counter_init()
+    m -> app.step(m, app.msg_special(`ctrl_c`), counter_update)
+    // is_default_quit_key handles ctrl_c in counter_update
+    let pass -> test.assert_true(m[`quit`], `ctrl_c quits`)
+    // explicit quit msg
+    let m2 -> counter_init()
+    m2 -> app.step(m2, app.msg_quit(), counter_update)
+    pass -> pass and test.assert_true(m2[`quit`], `msg_quit`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `App.msg_helpers`, `fn` -> test_msg_helpers},
+        {`name` -> `App.step_fold`, `fn` -> test_step_and_fold},
+        {`name` -> `App.view_buffer`, `fn` -> test_view_buffer},
+        {`name` -> `App.quit_keys`, `fn` -> test_ctrl_c_quit}
+    ]
+    <- test.run_suite(`UI.App Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

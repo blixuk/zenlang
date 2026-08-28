@@ -1,0 +1,169 @@
+/!
+    Data Structure and Schema Validation Module.
+    Validates data structures against declarative schema definitions.
+!/
+
+import zen.text.string as Str
+
+function _get_type_name(val) {
+    when (val == Nothing) { <- `nothing` }
+    when (val.kind != Nothing) {
+        let k -> Str.to_lower(Str.to_string(val.kind))
+        when (k == `string`) { <- `string` }
+        when (k == `integer`) { <- `integer` }
+        when (k == `decimal`) { <- `number` }
+        when (k == `boolean`) { <- `boolean` }
+        when (k == `list`) { <- `array` }
+        when (k == `map`) { <- `object` }
+        <- k
+    }
+    // C runtime fallback using string conversion / properties
+    let s -> Str.to_string(val)
+    when (s == `true` or s == `false`) { <- `boolean` }
+    when (Str.starts_with(s, `[`)) { <- `array` }
+    when (Str.starts_with(s, `{`)) { <- `object` }
+    <- `string`
+}
+
+function _validate_node(data, sch, path, errors) {
+    when (sch == Nothing) { <- errors }
+
+    // Type checking
+    when (sch.has(`type`)) {
+        let expected_type -> sch[`type`]
+        when (expected_type != Nothing) {
+            let exp -> Str.to_lower(Str.to_string(expected_type))
+            let actual -> _get_type_name(data)
+
+            let type_match -> when (exp == `any`) { True }
+                              or when (exp == `number` and (actual == `number` or actual == `integer`)) { True }
+                              or when (exp == `integer` and actual == `integer`) { True }
+                              or when (exp == `string` and actual == `string`) { True }
+                              or when (exp == `boolean` and actual == `boolean`) { True }
+                              or when (exp == `array` and actual == `array`) { True }
+                              or when (exp == `object` and actual == `object`) { True }
+                              or { False }
+
+            when (not type_match and data != Nothing) {
+                errors.append(path + `: Expected type ` + exp + `, got ` + actual)
+                <- errors
+            }
+        }
+    }
+
+    // Enum check
+    when (sch.has(`enum`)) {
+        let enum_vals -> sch[`enum`]
+        when (enum_vals != Nothing and enum_vals.length > 0) {
+            let matched -> False
+            let i -> 0
+            let count -> enum_vals.length
+            do while i < count {
+                when (data == enum_vals[i]) {
+                    matched -> True
+                }
+                i -> i + 1
+            }
+            when (not matched) {
+                errors.append(path + `: Value not in allowed enum values`)
+            }
+        }
+    }
+
+    // String constraints: min_length, max_length
+    when (data != Nothing and sch.has(`min_length`)) {
+        let min_l -> 0 + sch[`min_length`]
+        let s_len -> Str.length(Str.to_string(data))
+        when (s_len < min_l) {
+            errors.append(path + `: String length ` + Str.to_string(s_len) + ` is less than min_length ` + Str.to_string(min_l))
+        }
+    }
+    when (data != Nothing and sch.has(`max_length`)) {
+        let max_l -> 0 + sch[`max_length`]
+        let s_len -> Str.length(Str.to_string(data))
+        when (s_len > max_l) {
+            errors.append(path + `: String length ` + Str.to_string(s_len) + ` exceeds max_length ` + Str.to_string(max_l))
+        }
+    }
+
+    // Number constraints: min, max
+    when (data != Nothing and sch.has(`min`)) {
+        let min_v -> 0.0 + sch[`min`]
+        let d_v -> 0.0 + data
+        when (d_v < min_v) {
+            errors.append(path + `: Value is less than minimum ` + Str.to_string(min_v))
+        }
+    }
+    when (data != Nothing and sch.has(`max`)) {
+        let max_v -> 0.0 + sch[`max`]
+        let d_v -> 0.0 + data
+        when (d_v > max_v) {
+            errors.append(path + `: Value exceeds maximum ` + Str.to_string(max_v))
+        }
+    }
+
+    // Array constraints: items, min_items, max_items
+    when (data != Nothing and sch.has(`items`)) {
+        let item_schema -> sch[`items`]
+        let count -> data.length
+        let i -> 0
+        do while i < count {
+            let item_path -> path + `[` + Str.to_string(i) + `]`
+            _validate_node(data[i], item_schema, item_path, errors)
+            i -> i + 1
+        }
+    }
+
+    // Object constraints: required, properties
+    when (data != Nothing and sch.has(`required`)) {
+        let req_list -> sch[`required`]
+        let i -> 0
+        let req_count -> req_list.length
+        do while i < req_count {
+            let k_item -> req_list[i]
+            let key -> Str.to_string(k_item)
+            when (not data.has(key)) {
+                errors.append(path + `: Missing required property '` + key + `'`)
+            }
+            i -> i + 1
+        }
+    }
+
+    when (data != Nothing and sch.has(`properties`)) {
+        let props -> sch[`properties`]
+        when (sch.has(`required`)) {
+            let req_list -> sch[`required`]
+            let i -> 0
+            let req_count -> req_list.length
+            do while i < req_count {
+                let k_item -> req_list[i]
+                let key -> Str.to_string(k_item)
+                when (data.has(key) and props.has(key)) {
+                    let p_schema -> props[key]
+                    let p_val -> data[key]
+                    let prop_path -> when (path == ``) { key } or { path + `.` + key }
+                    _validate_node(p_val, p_schema, prop_path, errors)
+                }
+                i -> i + 1
+            }
+        }
+    }
+
+    <- errors
+}
+
+/!
+    Validates a data structure against a schema definition.
+    @param data Data object (map, list, primitive) to validate.
+    @param schema_spec Schema specification map.
+    @return Map with "valid" (boolean) and "errors" (list of error strings).
+!/
+function validate(data, schema_spec) {
+    let errors -> []
+    errors -> _validate_node(data, schema_spec, `root`, errors)
+    let is_valid -> (errors.length == 0)
+    <- {
+        `valid` -> is_valid,
+        `errors` -> errors
+    }
+}

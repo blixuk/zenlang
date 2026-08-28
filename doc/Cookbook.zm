@@ -1,0 +1,48 @@
+Entry {
+    `title` -> `Zenlang Cookbook & Integration Patterns`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-27`,
+    `version` -> `1.0.0`,
+    `archetype` -> `guide`,
+    `theme` -> `antiquarian`
+}
+
+Document {
+    Heading { `text` -> `Zenlang Cookbook & Integration Patterns`, `size` -> 1 },
+    Paragraph {
+        `text` -> `Practical, executable recipes for building CLI utilities, terminal user interfaces, data processing pipelines, and high-performance native integrations in Zenlang.`
+    },
+    
+    Heading { `text` -> `Recipe 1: Unix CLI Utility with Color`, `size` -> 2 },
+    CodeBlock {
+        `language` -> `zen`,
+        `code` -> `import zen.sys.sys as sys
+import zen.color.color as color
+import zen.io.io as io
+
+function main() {
+    let args -> sys.get_args()
+    when args.length < 2 {
+        io.writeln(color.format(\`[USAGE] mycli <file>\`, color.YELLOW, Default))
+        <- 1
+    }
+    io.writeln(color.format(\`Processing: \` + args[1], color.GREEN, Default))
+    <- 0
+}`
+    },
+    
+    Heading { `text` -> `Recipe 2: Scoped Memory Arenas`, `size` -> 2 },
+    CodeBlock {
+        `language` -> `zen`,
+        `code` -> `import zen.memory as memory
+
+function process_large_stream(chunks) {
+    with memory.create_arena(32 * 1024 * 1024) as arena {
+        do for chunk in chunks {
+            let upper -> Str.to_upper(chunk)
+            io.writeln(upper)
+        }
+    }
+}`
+    }
+}

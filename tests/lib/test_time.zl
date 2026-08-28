@@ -1,0 +1,46 @@
+import zen.test as test
+import zen.time as time
+
+function test_clock_functions() {
+    let start -> time.monotonic()
+    let duration -> Duration { seconds -> 0.01 }
+    time.sleep(0.01)
+    let end -> time.monotonic()
+
+    let pass -> test.assert_equal(duration.seconds, 0.01, `Duration should store the provided seconds value`)
+    pass -> pass and test.assert_true(time.now() > 0, `now should return a positive timestamp`)
+    pass -> pass and test.assert_true(time.wallclock() > 0, `wallclock should return a positive timestamp`)
+    pass -> pass and test.assert_true(end >= start, `monotonic should not move backwards`)
+    <- pass
+}
+
+function test_timer() {
+    let timer -> time.Timer()
+    timer.start()
+    time.sleep(0.01)
+
+    let elapsed -> timer.elapsed()
+    let elapsed_ms -> timer.elapsed_ms()
+    timer.stop()
+
+    let pass -> test.assert_true(elapsed > 0, `elapsed should be positive after the timer runs`)
+    pass -> pass and test.assert_true(elapsed_ms >= 5, `elapsed_ms should reflect the sleep duration`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Time.clock_functions`, `fn` -> test_clock_functions},
+        {`name` -> `Time.timer`, `fn` -> test_timer}
+    ]
+
+    <- test.run_suite(`Time Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

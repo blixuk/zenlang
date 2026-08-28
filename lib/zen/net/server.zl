@@ -1,0 +1,152 @@
+/!
+    HTTP / Network Server Abstractions and Routing Module.
+    Provides route registration, parameter extraction, and request dispatch.
+!/
+
+import zen.text.string as Str
+
+/!
+    Creates a new request router.
+!/
+function create_router() {
+    <- {
+        `routes` -> []
+    }
+}
+
+/!
+    Registers a route handler for a given HTTP method and path pattern.
+    @param router Router object created via create_router().
+    @param method HTTP method ("GET", "POST", "PUT", "DELETE", "*").
+    @param path URL path pattern (e.g. "/users", "/users/:id").
+    @param handler Function taking (request, params) and returning response map.
+!/
+function add_route(router, method, path, handler) {
+    when (router == Nothing or router.has(`routes`) == false) { <- Nothing }
+    let m -> Str.to_upper(Str.to_string(method))
+    let p -> Str.trim(Str.to_string(path))
+    router[`routes`].append({
+        `method` -> m,
+        `path` -> p,
+        `handler` -> handler
+    })
+}
+
+/!
+    Matches an incoming request method and path against registered routes.
+!/
+function match_route(router, method, path) {
+    when (router == Nothing or router.has(`routes`) == false) { <- Nothing }
+    let req_m -> Str.to_upper(Str.to_string(method))
+    let req_p -> Str.trim(Str.to_string(path))
+    let routes -> router[`routes`]
+    let count -> routes.length
+
+    let i -> 0
+    do while i < count {
+        let r -> routes[i]
+        let r_m -> r[`method`]
+        let r_p -> r[`path`]
+
+        let method_matches -> (r_m == `*` or r_m == req_m)
+        when (method_matches) {
+            // Exact match
+            when (r_p == req_p) {
+                <- {
+                    `handler` -> r[`handler`],
+                    `params` -> {},
+                    `route` -> r
+                }
+            }
+
+            // Path parameter match: /users/:id
+            when (Str.contains(r_p, `:`)) {
+                let r_parts -> Str.split(r_p, `/`)
+                let q_parts -> Str.split(req_p, `/`)
+                when (r_parts.length == q_parts.length) {
+                    let matched -> True
+                    let params -> {}
+                    let p_idx -> 0
+                    let p_count -> r_parts.length
+                    do while p_idx < p_count {
+                        let rp -> r_parts[p_idx]
+                        let qp -> q_parts[p_idx]
+                        when (Str.starts_with(rp, `:`)) {
+                            let param_key -> Str.substring(rp, 1, Str.length(rp))
+                            params[param_key] -> qp
+                        } or when (rp != qp) {
+                            matched -> False
+                        }
+                        p_idx -> p_idx + 1
+                    }
+                    when (matched) {
+                        <- {
+                            `handler` -> r[`handler`],
+                            `params` -> params,
+                            `route` -> r
+                        }
+                    }
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    <- Nothing
+}
+
+/!
+    Creates a plain text HTTP response map.
+!/
+function text_response(status, body_text) {
+    <- {
+        `status` -> status,
+        `headers` -> {
+            `Content-Type` -> `text/plain; charset=utf-8`
+        },
+        `body` -> Str.to_string(body_text)
+    }
+}
+
+/!
+    Creates a JSON HTTP response map.
+!/
+function json_response(status, json_body_str) {
+    <- {
+        `status` -> status,
+        `headers` -> {
+            `Content-Type` -> `application/json`
+        },
+        `body` -> Str.to_string(json_body_str)
+    }
+}
+
+/!
+    Dispatches an incoming request through the router.
+    @param router Router object.
+    @param request Map containing: { "method" -> "GET", "path" -> "/users/42", ... }
+    @return Response map with status, headers, and body.
+!/
+function handle_request(router, request) {
+    when (request == Nothing) {
+        <- text_response(400, `Bad Request`)
+    }
+
+    let method -> when (request.has(`method`)) { request[`method`] } or { `GET` }
+    let path -> when (request.has(`path`)) { request[`path`] } or { `/` }
+
+    let matched -> match_route(router, method, path)
+    when (matched == Nothing) {
+        <- text_response(404, `Not Found`)
+    }
+
+    let handler_fn -> matched[`handler`]
+    let params -> matched[`params`]
+
+    let resp -> handler_fn(request, params)
+    when (resp == Nothing) {
+        <- text_response(204, ``)
+    }
+
+    <- resp
+}

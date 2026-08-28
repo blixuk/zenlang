@@ -1,0 +1,1 @@
+gdb -batch -ex "run" -ex "bt" -ex "frame 0" -ex "print self->tokens" -ex "print self->tokens.as.list" -ex "print self->tokens.as.list->count" --args ./output/build/zen_program ../examples/sys_dashboard.zl out2.c

@@ -1,0 +1,17 @@
+/!
+ Phase B4: nested lambda capturing outer lambda param.
+ Exit 0 iff make(5)(3)==8.
+ !/
+
+function main() {
+    let make -> function(n) {
+        <- function(x) {
+            <- x + n
+        }
+    }
+    let add5 -> make(5)
+    when add5(3) != 8 {
+        <- 1
+    }
+    <- 0
+}

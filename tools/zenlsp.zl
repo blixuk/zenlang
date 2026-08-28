@@ -1,0 +1,11 @@
+/!
+  Zenlang Language Server Protocol (LSP) Server CLI Entry.
+  Runs the JSON-RPC language server over standard I/O for IDE integration.
+!/
+
+import selfhost.lsp.Server as Server
+
+function main() {
+    Server.run_lsp_loop()
+    <- 0
+}

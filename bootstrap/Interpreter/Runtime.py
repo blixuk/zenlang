@@ -42,21 +42,10 @@ class Environment:
 
     def _find_env_containing(self, name: str) -> Optional["Environment"]:
         environment: Environment = self
-        seen = set()
-
-        while environment:
-            if id(environment) in seen:
-                # Cycle detected. Break and return None to avoid infinite loop.
-                # In a real environment this should probably be a RuntimeError, 
-                # but for debugging let's just break.
-                return None
-            seen.add(id(environment))
-            
+        while environment is not None:
             if name in environment.values:
                 return environment
-
             environment = environment.parent
-
         return None
 
 

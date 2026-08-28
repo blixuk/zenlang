@@ -1,0 +1,111 @@
+/!
+  zen.ui.layout map API dual-path (VBox/HBox without classes).
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_layout.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_layout.zl
+!/
+
+use zen.ui.layout as layout
+use zen.ui.canvas as canvas
+use zen.test as test
+
+function test_vbox_fixed() {
+    // Root 10x10: header height 2, footer height 1, body expands
+    let root -> layout.vbox()
+    let header -> layout.box(10, 2)
+    let body -> layout.box(0, 0)
+    layout.set_expand(body, true)
+    let footer -> layout.box(10, 1)
+    layout.add(root, header)
+    layout.add(root, body)
+    layout.add(root, footer)
+    layout.layout(root, 0, 0, 10, 10)
+
+    let pass -> test.assert_equal(header[`y`], 0, `header y`)
+    pass -> pass and test.assert_equal(header[`h`], 2, `header h`)
+    pass -> pass and test.assert_equal(body[`y`], 2, `body y`)
+    pass -> pass and test.assert_equal(body[`h`], 7, `body expands 10-2-1`)
+    pass -> pass and test.assert_equal(footer[`y`], 9, `footer y`)
+    pass -> pass and test.assert_equal(footer[`h`], 1, `footer h`)
+    pass -> pass and test.assert_equal(body[`w`], 10, `body width full`)
+    <- pass
+}
+
+function test_hbox_sidebar() {
+    // Root 20x5: sidebar w=5, main expands
+    let root -> layout.hbox()
+    let side -> layout.box(5, 5)
+    let main -> layout.box(0, 0)
+    layout.set_expand(main, true)
+    layout.add(root, side)
+    layout.add(root, main)
+    layout.layout(root, 0, 0, 20, 5)
+
+    let pass -> test.assert_equal(side[`x`], 0, `side x`)
+    pass -> pass and test.assert_equal(side[`w`], 5, `side w`)
+    pass -> pass and test.assert_equal(main[`x`], 5, `main x`)
+    pass -> pass and test.assert_equal(main[`w`], 15, `main expands`)
+    pass -> pass and test.assert_equal(main[`h`], 5, `main h`)
+    <- pass
+}
+
+function test_nested_and_paint() {
+    // Classic app shell: header / (side|content) / footer
+    let root -> layout.vbox()
+    let header -> layout.box(0, 1)
+    layout.set_size(header, 0, 1)
+    let mid -> layout.hbox()
+    layout.set_expand(mid, true)
+    let side -> layout.box(4, 0)
+    layout.set_size(side, 4, 0)
+    let content -> layout.box(0, 0)
+    layout.set_expand(content, true)
+    layout.add(mid, side)
+    layout.add(mid, content)
+    let footer -> layout.box(0, 1)
+    layout.set_size(footer, 0, 1)
+    layout.add(root, header)
+    layout.add(root, mid)
+    layout.add(root, footer)
+
+    layout.layout(root, 0, 0, 12, 8)
+
+    let pass -> test.assert_equal(header[`h`], 1, `nested header`)
+    pass -> pass and test.assert_equal(footer[`y`], 7, `nested footer y`)
+    pass -> pass and test.assert_equal(mid[`h`], 6, `mid expand h`)
+    pass -> pass and test.assert_equal(side[`w`], 4, `side w`)
+    pass -> pass and test.assert_equal(content[`x`], 4, `content x`)
+    pass -> pass and test.assert_equal(content[`w`], 8, `content w`)
+
+    // Paint onto canvas without terminal render (headless)
+    let c -> canvas.create(12, 8)
+    canvas.clear(c, ` `, `white`, `black`)
+    canvas.fill_node(c, header, `=`, `black`, `cyan`)
+    canvas.fill_node(c, side, `|`, `white`, `blue`)
+    canvas.fill_node(c, content, `.`, `white`, `black`)
+    canvas.fill_node(c, footer, `-`, `black`, `white`)
+    canvas.text_node(c, content, `Hi`, `yellow`, `black`)
+
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 0), `=`, `header paint`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 1), `|`, `side paint`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 4, 1), `H`, `content text`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 7), `-`, `footer paint`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Layout.vbox_fixed`, `fn` -> test_vbox_fixed},
+        {`name` -> `Layout.hbox_sidebar`, `fn` -> test_hbox_sidebar},
+        {`name` -> `Layout.nested_paint`, `fn` -> test_nested_and_paint}
+    ]
+    <- test.run_suite(`UI.Layout Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

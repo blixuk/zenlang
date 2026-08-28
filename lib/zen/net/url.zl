@@ -1,0 +1,267 @@
+/!
+    URL parsing, serialization, and query string encoding module.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+import zen.crypto.hex as hex
+
+function _is_unreserved(c) {
+    let unreserved -> `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~`
+    <- Str.contains(unreserved, c)
+}
+
+/!
+    Percent-encodes a string for safe inclusion in URLs.
+    @param s The string to encode.
+    @return Percent-encoded string.
+!/
+function encode_component(s) {
+    when s == Nothing { <- `` }
+    let text -> Str.to_string(s)
+    let bytes -> __builtin.string_to_bytes(text)
+    let out -> ``
+    let i -> 0
+    let len -> bytes.length
+
+    do while i < len {
+        let b -> bytes[i]
+        when b < 0 { b -> b + 256 }
+        let char_str -> __builtin.bytes_to_string([b])
+        when _is_unreserved(char_str) {
+            out -> out + char_str
+        } or {
+            let h -> hex.encode([b])
+            out -> out + `%` + Str.to_upper(h)
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Decodes a percent-encoded URL component string.
+    @param s The percent-encoded string.
+    @return Decoded string.
+!/
+function decode_component(s) {
+    when s == Nothing { <- `` }
+    let text -> Str.to_string(s)
+    let len -> Str.length(text)
+    let bytes -> []
+    let i -> 0
+
+    do while i < len {
+        let c -> Str.at(text, i)
+        when c == `%` and (i + 2) < len {
+            let hex_sub -> Str.substring(text, i + 1, i + 3)
+            let decoded_str -> hex.decode(hex_sub)
+            let decoded_byte -> __builtin.string_to_bytes(decoded_str)
+            when decoded_byte.length > 0 {
+                bytes.append(decoded_byte[0])
+            }
+            i -> i + 3
+        } or when c == `+` {
+            bytes.append(32) // ASCII space
+            i -> i + 1
+        } or {
+            let raw_byte -> __builtin.string_to_bytes(c)
+            when raw_byte.length > 0 {
+                bytes.append(raw_byte[0])
+            }
+            i -> i + 1
+        }
+    }
+
+    <- __builtin.bytes_to_string(bytes)
+}
+
+/!
+    Encodes a map of key-value parameters into a URL query string.
+    @param params Map of parameters.
+    @return URL-encoded query string without leading '?'.
+!/
+function encode_query(params) {
+    when params == Nothing { <- `` }
+    let keys -> params.keys()
+    let parts -> []
+    let i -> 0
+    let len -> keys.length
+
+    do while i < len {
+        let k -> keys[i]
+        let v -> params[k]
+        when v != Nothing {
+            let encoded_k -> encode_component(k)
+            let encoded_v -> encode_component(v)
+            parts.append(encoded_k + `=` + encoded_v)
+        }
+        i -> i + 1
+    }
+
+    <- Str.join(parts, `&`)
+}
+
+/!
+    Decodes a URL query string into a map of parameters.
+    @param query_str URL query string (with or without leading '?').
+    @return Map of decoded key-value pairs.
+!/
+function decode_query(query_str) {
+    when query_str == Nothing or query_str == `` { <- {} }
+    let clean -> query_str
+    when Str.starts_with(clean, `?`) {
+        clean -> Str.substring(clean, 1, Str.length(clean))
+    }
+
+    let result -> {}
+    let pairs -> Str.split(clean, `&`)
+    let i -> 0
+    let len -> pairs.length
+
+    do while i < len {
+        let pair -> pairs[i]
+        when Str.length(pair) > 0 {
+            let eq_idx -> Str.index_of(pair, `=`)
+            when eq_idx != -1 {
+                let k -> Str.substring(pair, 0, eq_idx)
+                let v -> Str.substring(pair, eq_idx + 1, Str.length(pair))
+                result[decode_component(k)] -> decode_component(v)
+            } or {
+                result[decode_component(pair)] -> ``
+            }
+        }
+        i -> i + 1
+    }
+
+    <- result
+}
+
+/!
+    Parses a URL string into a structured URL map.
+    @param url_str Full URL string.
+    @return Map with fields: scheme, host, port, path, query, query_map, fragment.
+!/
+function parse(url_str) {
+    let res -> {
+        `scheme` -> ``,
+        `host` -> ``,
+        `port` -> Nothing,
+        `path` -> `/`,
+        `query` -> ``,
+        `query_map` -> {},
+        `fragment` -> ``
+    }
+
+    when url_str == Nothing or url_str == `` {
+        <- res
+    }
+
+    let rem -> url_str
+
+    // 1. Fragment
+    let hash_idx -> Str.index_of(rem, `#`)
+    when hash_idx != -1 {
+        let frag_sub -> Str.substring(rem, hash_idx + 1, Str.length(rem))
+        let rem_sub -> Str.substring(rem, 0, hash_idx)
+        res[`fragment`] -> frag_sub
+        rem -> rem_sub
+    }
+
+    // 2. Query
+    let q_idx -> Str.index_of(rem, `?`)
+    when q_idx != -1 {
+        let q_str -> Str.substring(rem, q_idx + 1, Str.length(rem))
+        let rem_sub -> Str.substring(rem, 0, q_idx)
+        res[`query`] -> q_str
+        res[`query_map`] -> decode_query(q_str)
+        rem -> rem_sub
+    }
+
+    // 3. Scheme
+    let scheme_idx -> Str.index_of(rem, `://`)
+    when scheme_idx != -1 {
+        let sch_sub -> Str.to_lower(Str.substring(rem, 0, scheme_idx))
+        let rem_sub -> Str.substring(rem, scheme_idx + 3, Str.length(rem))
+        res[`scheme`] -> sch_sub
+        rem -> rem_sub
+    }
+
+    // 4. Authority vs Path
+    let authority -> ``
+    let slash_idx -> Str.index_of(rem, `/`)
+    when slash_idx != -1 {
+        authority -> Str.substring(rem, 0, slash_idx)
+        let path_sub -> Str.substring(rem, slash_idx, Str.length(rem))
+        res[`path`] -> path_sub
+    } or {
+        authority -> rem
+        res[`path`] -> `/`
+    }
+
+    // 5. Host and Port
+    when Str.contains(authority, `:`) {
+        let colon_idx -> Str.index_of(authority, `:`)
+        res[`host`] -> Str.substring(authority, 0, colon_idx)
+        let port_str -> Str.substring(authority, colon_idx + 1, Str.length(authority))
+        res[`port`] -> port_str.to_number()
+    } or {
+        res[`host`] -> authority
+        when res[`scheme`] == `http` {
+            res[`port`] -> 80
+        } or when res[`scheme`] == `https` {
+            res[`port`] -> 443
+        }
+    }
+
+    <- res
+}
+
+/!
+    Builds a URL string from a structured URL map.
+    @param u Map with scheme, host, port, path, query / query_map, fragment.
+    @return Constructed URL string.
+!/
+function build(u) {
+    when u == Nothing { <- `` }
+    let out -> ``
+
+    when u[`scheme`] != Nothing and u[`scheme`] != `` {
+        out -> out + u[`scheme`] + `://`
+    }
+
+    when u[`host`] != Nothing and u[`host`] != `` {
+        out -> out + u[`host`]
+        let port -> u[`port`]
+        when port != Nothing and port != 80 and port != 443 {
+            out -> out + `:` + Str.to_string(port)
+        }
+    }
+
+    let p -> u[`path`]
+    when p != Nothing and p != `` {
+        when not Str.starts_with(p, `/`) and Str.length(out) > 0 {
+            out -> out + `/`
+        }
+        out -> out + p
+    } or when Str.length(out) > 0 {
+        out -> out + `/`
+    }
+
+    let q -> u[`query`]
+    when q == Nothing or q == `` {
+        when u[`query_map`] != Nothing and u[`query_map`].keys().length > 0 {
+            q -> encode_query(u[`query_map`])
+        }
+    }
+    when q != Nothing and q != `` {
+        out -> out + `?` + q
+    }
+
+    let frag -> u[`fragment`]
+    when frag != Nothing and frag != `` {
+        out -> out + `#` + frag
+    }
+
+    <- out
+}

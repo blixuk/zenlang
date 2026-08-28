@@ -1,0 +1,141 @@
+/!
+    Priority Queue implementation.
+    Maintains items ordered by priority (Min-Heap / Max-Heap).
+!/
+
+/!
+    Creates a new Priority Queue.
+    @param is_min_heap If True, lowest priority value pops first. If False, highest priority pops first.
+!/
+function create(is_min_heap) {
+    let min_mode -> True
+    when (is_min_heap != Nothing) {
+        min_mode -> is_min_heap
+    }
+    <- {
+        `is_min` -> min_mode,
+        `nodes` -> []
+    }
+}
+
+/!
+    Returns number of elements in priority queue.
+!/
+function size(q) {
+    when (q == Nothing) { <- 0 }
+    let nodes -> q[`nodes`]
+    when (nodes == Nothing) { <- 0 }
+    <- nodes.length
+}
+
+/!
+    Checks if priority queue is empty.
+!/
+function is_empty(q) {
+    let sz -> size(q)
+    let empty -> when (sz == 0) { True } or { False }
+    <- empty
+}
+
+/!
+    Internal helper: finds insertion index for a new item.
+!/
+function find_insert_pos(nodes, pri, is_min) {
+    let count -> nodes.length
+    let i -> 0
+    do while i < count {
+        let cur_pri -> nodes[i][`priority`]
+        let should_insert -> when is_min { (pri < cur_pri) } or { (pri > cur_pri) }
+        when should_insert {
+            <- i
+        }
+        i -> i + 1
+    }
+    <- count
+}
+
+/!
+    Pushes an item with a priority score into the queue.
+    @return Updated priority queue map.
+!/
+function push(q, priority, item) {
+    when (q == Nothing) { <- q }
+    let nodes -> q[`nodes`]
+    let pri -> 0.0 + priority
+    let node -> {
+        `priority` -> pri,
+        `item` -> item
+    }
+
+    let is_min -> q[`is_min`]
+    let count -> nodes.length
+    let insert_pos -> find_insert_pos(nodes, pri, is_min)
+
+    let new_nodes -> []
+    let i -> 0
+    do while i < insert_pos {
+        new_nodes.append(nodes[i])
+        i -> i + 1
+    }
+    new_nodes.append(node)
+    do while i < count {
+        new_nodes.append(nodes[i])
+        i -> i + 1
+    }
+
+    q[`nodes`] -> new_nodes
+    <- q
+}
+
+/!
+    Peeks at the top item with highest priority without removing it.
+    @return Map with "item" and "priority", or Nothing if empty.
+!/
+function peek(q) {
+    when (q == Nothing) { <- Nothing }
+    let nodes -> q[`nodes`]
+    when (nodes == Nothing or nodes.length == 0) { <- Nothing }
+    <- nodes[0]
+}
+
+/!
+    Pops the top item with highest priority from the queue.
+    @return Map containing "item", "priority", and updated "queue".
+!/
+function pop(q) {
+    when (q == Nothing) {
+        <- {
+            `item` -> Nothing,
+            `priority` -> Nothing,
+            `queue` -> q
+        }
+    }
+
+    let nodes -> q[`nodes`]
+    when (nodes == Nothing or nodes.length == 0) {
+        <- {
+            `item` -> Nothing,
+            `priority` -> Nothing,
+            `queue` -> q
+        }
+    }
+
+    let top_node -> nodes[0]
+    let ret_item -> top_node[`item`]
+    let ret_priority -> top_node[`priority`]
+
+    let new_nodes -> []
+    let i -> 1
+    let count -> nodes.length
+    do while i < count {
+        new_nodes.append(nodes[i])
+        i -> i + 1
+    }
+
+    q[`nodes`] -> new_nodes
+    <- {
+        `item` -> ret_item,
+        `priority` -> ret_priority,
+        `queue` -> q
+    }
+}

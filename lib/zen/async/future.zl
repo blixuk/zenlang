@@ -1,0 +1,137 @@
+/!
+  Future, Promise, and Deferred asynchronous abstractions for Zenlang.
+  Provides monadic then/catch transformations, deferred completion triggers,
+  and settlement inspection.
+!/
+
+/!
+  Creates a new Promise instance.
+  @param executor Optional callback fn(resolve_fn, reject_fn) to initialize work.
+!/
+export function create_promise(executor) {
+    let p -> {
+        `kind` -> `PROMISE`,
+        `state` -> `PENDING`, // PENDING, FULFILLED, REJECTED
+        `value` -> Nothing,
+        `error` -> Nothing,
+        `then_callbacks` -> [],
+        `catch_callbacks` -> []
+    }
+
+    when executor != Nothing {
+        executor(p)
+    }
+
+    <- p
+}
+
+/!
+  Resolves a promise with a successful value.
+!/
+export function promise_resolve(promise, value) {
+    when promise == Nothing { <- false }
+    when promise[`state`] != `PENDING` { <- false }
+    promise[`state`] -> `FULFILLED`
+    promise[`value`] -> value
+
+    // Execute attached fulfillment callbacks
+    do for cb in promise[`then_callbacks`] {
+        when cb != Nothing {
+            cb(value)
+        }
+    }
+    <- true
+}
+
+/!
+  Rejects a promise with an error.
+!/
+export function promise_reject(promise, error) {
+    when promise == Nothing { <- false }
+    when promise[`state`] != `PENDING` { <- false }
+    promise[`state`] -> `REJECTED`
+    promise[`error`] -> error
+
+    // Execute attached error callbacks
+    do for cb in promise[`catch_callbacks`] {
+        when cb != Nothing {
+            cb(error)
+        }
+    }
+    <- true
+}
+
+/!
+  Attaches fulfillment and rejection handlers to the promise.
+!/
+export function promise_then(promise, on_fulfilled, on_rejected) {
+    when promise == Nothing { <- Nothing }
+    when on_fulfilled != Nothing {
+        when promise[`state`] == `FULFILLED` {
+            on_fulfilled(promise[`value`])
+        } or when promise[`state`] == `PENDING` {
+            promise[`then_callbacks`].append(on_fulfilled)
+        }
+    }
+    when on_rejected != Nothing {
+        when promise[`state`] == `REJECTED` {
+            on_rejected(promise[`error`])
+        } or when promise[`state`] == `PENDING` {
+            promise[`catch_callbacks`].append(on_rejected)
+        }
+    }
+    <- promise
+}
+
+/!
+  Attaches a rejection handler to the promise.
+!/
+export function promise_catch(promise, on_rejected) {
+    <- promise_then(promise, Nothing, on_rejected)
+}
+
+/!
+  Checks if the promise has completed (fulfilled or rejected).
+!/
+export function is_settled(promise) {
+    when promise == Nothing { <- true }
+    <- (promise[`state`] == `FULFILLED` or promise[`state`] == `REJECTED`)
+}
+
+/!
+  Checks if the promise was fulfilled.
+!/
+export function is_fulfilled(promise) {
+    when promise == Nothing { <- false }
+    <- promise[`state`] == `FULFILLED`
+}
+
+/!
+  Checks if the promise was rejected.
+!/
+export function is_rejected(promise) {
+    when promise == Nothing { <- false }
+    <- promise[`state`] == `REJECTED`
+}
+
+/!
+  Creates a Deferred object containing a decoupled promise.
+  @return Map { kind: "DEFERRED", promise: Promise }
+!/
+export function create_deferred() {
+    let p -> create_promise(Nothing)
+    <- {
+        `kind` -> `DEFERRED`,
+        `promise` -> p
+    }
+}
+
+export function deferred_resolve(def, val) {
+    when def == Nothing { <- false }
+    <- promise_resolve(def[`promise`], val)
+}
+
+export function deferred_reject(def, err) {
+    when def == Nothing { <- false }
+    <- promise_reject(def[`promise`], err)
+}

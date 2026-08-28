@@ -1,0 +1,43 @@
+import zen.patterns.fsm as fsm
+import zen.test as test
+
+function test_fsm_basic() {
+    let machine -> fsm.FSM(`IDLE`)
+    
+    machine.add_transition(`IDLE`, `START`, `RUNNING`)
+    machine.add_transition(`RUNNING`, `STOP`, `IDLE`)
+    machine.add_transition(`RUNNING`, `PAUSE`, `PAUSED`)
+    machine.add_transition(`PAUSED`, `RESUME`, `RUNNING`)
+    
+    let pass -> test.assert_equal(machine.get_state(), `IDLE`, `initial state should be IDLE`)
+    
+    machine.handle_event(`START`)
+    pass -> pass and test.assert_equal(machine.get_state(), `RUNNING`, `state should be RUNNING after START`)
+    
+    machine.handle_event(`PAUSE`)
+    pass -> pass and test.assert_equal(machine.get_state(), `PAUSED`, `state should be PAUSED after PAUSE`)
+    
+    machine.handle_event(`STOP`) // Invalid transition from PAUSED
+    pass -> pass and test.assert_equal(machine.get_state(), `PAUSED`, `state should still be PAUSED after invalid transition`)
+    
+    machine.handle_event(`RESUME`)
+    pass -> pass and test.assert_equal(machine.get_state(), `RUNNING`, `state should be RUNNING after RESUME`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `FSM.basic`, `fn` -> test_fsm_basic}
+    ]
+
+    <- test.run_suite(`Patterns.FSM Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

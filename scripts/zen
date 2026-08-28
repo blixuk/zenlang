@@ -1,0 +1,251 @@
+#!/usr/bin/env bash
+# Zenlang developer CLI (transitional host tool).
+# Long-term: replaced by a self-hosted zen build/test/pkg ecosystem.
+set -euo pipefail
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$ROOT"
+export ZEN_PATH="${ZEN_PATH:-$ROOT:$ROOT/selfhost:$ROOT/lib}"
+BOOTSTRAP="${ZEN_BOOTSTRAP:-python3 $ROOT/bootstrap/Zen.py}"
+BIN_DIR="$ROOT/bin"
+BUILD_DIR="$ROOT/build"
+
+usage() {
+  cat <<'EOF'
+zen — Zenlang developer entry (host scripts)
+
+Usage:
+  ./scripts/zen <command> [args]
+
+Commands:
+  help              Show this help
+  install           Install hybrid bin/zen (selfhost primary, bootstrap fallback)
+  install-bootstrap Install bin/zen-bootstrap → bootstrap/Zen.py
+  install-rollback  Emergency: bin/zen → bootstrap language host
+  install-driver    Install bin/zen → selfhost/zen.zl via bootstrap (experimental)
+  install-selfhost  Build native selfhost compiler → bin/zen-selfhost (-O2)
+  install-selfhost-fast  Same with ZEN_OPT=0 (edit-loop; not a release binary)
+  install-handoff   Hybrid bin/zen: selfhost compiler CLI + bootstrap language host
+  handoff-soak      Gate: selfhost-smoke + hybrid wrapper checks + golden
+  selfhost-smoke    Stage 7 E2E: native driver compile → gcc/runtime → run
+  test-golden       Bootstrap vs selfhost interpret + AOT (GOLDEN.txt)
+  multi-selfhost-smoke  Multi-unit compile selfhost → link → help + fixture
+  run [args...]     Run bootstrap compiler/interpreter
+  test              Core + parity + lib + native lib smoke
+  test-core         Interpret core language ladder
+  test-parity       Interpret vs native (-g) parity
+  test-lib          Stdlib suite (interpreter)
+  test-lib-native   Native stdlib smoke (-g)
+  ci                Fast local smoke (install + core + parity + lib-native)
+  ci-soak           Local soak: handoff-soak (smoke + hybrid + golden)
+  check <file.zl>   Typecheck only (bootstrap --check)
+  init [dir]        Initialize a Zenlang project in directory
+  new <name>        Create a new Zenlang project with scaffolding
+  build             Build the current project via .zbuild
+  watch             Watch source directory and auto-rebuild
+  dash              Interactive multi-pane development dashboard
+  graph [--html]    Visualize dependency graph in terminal or interactive HTML
+  todo              Scan codebase for TODO, FIXME, BUG tags
+  doc               Generate Markdown and HTML API docs
+  pkg <cmd>         Package management (install, add, remove, list)
+  bump <type>       Bump version (patch, minor, major)
+  publish           Create release tarball package
+  benchmark         Run benchmark suites in benches/
+  profile [file.zl] Profile performance, hot spots & flame graph
+  playground [file] Live interactive terminal playground & code lab
+  fm [path]         Interactive terminal file manager & code explorer
+  fmt [file.zl...]  Zenlang source code formatter
+  view [file.zm]    Terminal reader & interactive pager for Zen Mark (.zm) docs
+  clean             Remove build/, output/, bin/zen* (not source)
+
+Handoff model:
+  bin/zen-bootstrap  full language host (bare .zl, --check, --test, -g fallback)
+  bin/zen-selfhost   selfhost compiler (compile / build / run / interpret / check / deps / help)
+  bin/zen            hybrid (default install): compiler CLI + interpret/test → selfhost;
+                     bare scripts stay bootstrap; -g tries selfhost then bootstrap
+  Overrides: ZEN_FORCE_BOOTSTRAP=1  ZEN_INTERPRET=selfhost  ZEN_GENERATE=bootstrap
+             ZEN_OPT=0|1|2|3|s  ZEN_CC=gcc|clang|tcc  (C compile of -g / selfhost)
+
+Examples:
+  ./scripts/zen install
+  ./scripts/zen install-rollback
+  ./scripts/zen install-handoff
+  ./scripts/zen handoff-soak
+  ./scripts/zen ci-soak
+  ./scripts/zen test-golden
+  ./scripts/zen run tests/hello.zl
+  ./scripts/zen install-selfhost && ./scripts/zen selfhost-smoke
+  ./bin/zen compile tests/self_hosting/fixtures/stage7_add.zl /tmp/out.c
+EOF
+}
+
+cmd_install_bootstrap() {
+  mkdir -p "$BIN_DIR"
+  cat > "$BIN_DIR/zen-bootstrap" <<EOF
+#!/bin/sh
+# Zenlang language host: Python bootstrap (authoritative full pipeline)
+SCRIPT_DIR=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)
+ROOT=\$(CDPATH= cd -- "\$SCRIPT_DIR/.." && pwd)
+export ZEN_PATH="\${ZEN_PATH:-\$ROOT:\$ROOT/selfhost:\$ROOT/lib}"
+exec python3 "\$ROOT/bootstrap/Zen.py" "\$@"
+EOF
+  chmod +x "$BIN_DIR/zen-bootstrap"
+  echo "Installed $BIN_DIR/zen-bootstrap → bootstrap/Zen.py"
+}
+
+cmd_install() {
+  # Default install (Host-1.0): hybrid handoff with native selfhost primary and bootstrap fallback
+  cmd_install_handoff
+}
+
+cmd_install_driver() {
+  mkdir -p "$BIN_DIR"
+  cat > "$BIN_DIR/zen" <<EOF
+#!/bin/sh
+# Experimental: selfhost/zen.zl only (not a full language host)
+SCRIPT_DIR=\$(CDPATH= cd -- "\$(dirname -- "\$0")" && pwd)
+ROOT=\$(CDPATH= cd -- "\$SCRIPT_DIR/.." && pwd)
+export ZEN_PATH="\${ZEN_PATH:-\$ROOT:\$ROOT/selfhost:\$ROOT/lib}"
+exec python3 "\$ROOT/bootstrap/Zen.py" "\$ROOT/selfhost/zen.zl" "\$@"
+EOF
+  chmod +x "$BIN_DIR/zen"
+  echo "Installed experimental driver $BIN_DIR/zen → selfhost/zen.zl (compile CLI only)"
+  echo "Prefer: ./scripts/zen install-handoff"
+}
+
+cmd_install_selfhost() {
+  # Stage 7: native binary of selfhost/zen.zl (bootstrap -g, then copy).
+  # Edit-loop: ZEN_OPT=0 and/or ZEN_CC=tcc for faster gcc/tcc of the huge C.
+  mkdir -p "$BIN_DIR"
+  # shellcheck disable=SC2086
+  if ! $BOOTSTRAP -g "$ROOT/selfhost/zen.zl" help >/dev/null; then
+    echo "Failed: bootstrap -g selfhost/zen.zl" >&2
+    exit 1
+  fi
+  local prog="$ROOT/output/build/zen_program"
+  if [[ ! -x "$prog" ]]; then
+    echo "Missing $prog after -g build" >&2
+    exit 1
+  fi
+  cp -f "$prog" "$BIN_DIR/zen-selfhost"
+  chmod +x "$BIN_DIR/zen-selfhost"
+  echo "Installed $BIN_DIR/zen-selfhost (native selfhost compiler)"
+  echo "  ./bin/zen-selfhost help"
+  echo "  ./bin/zen-selfhost compile path/to/file.zl out.c --typecheck"
+  echo "  ./scripts/zen selfhost-smoke"
+}
+
+cmd_install_rollback() {
+  # Emergency: daily bin/zen is the Python bootstrap. Selfhost sources stay in-tree.
+  cmd_install_bootstrap
+  cp -f "$BIN_DIR/zen-bootstrap" "$BIN_DIR/zen"
+  chmod +x "$BIN_DIR/zen"
+  echo "Rollback: $BIN_DIR/zen → bootstrap/Zen.py (full language host)"
+  echo "  $BIN_DIR/zen-bootstrap  → same"
+  echo "Restore Host-1.0 hybrid: ./scripts/zen install"
+  echo "Temporary override without reinstall: ZEN_FORCE_BOOTSTRAP=1"
+}
+
+cmd_install_handoff() {
+  # Production hybrid: selfhost compiler surface + bootstrap language host.
+  cmd_install_bootstrap
+  cmd_install_selfhost
+  mkdir -p "$BIN_DIR"
+  cp -f "$ROOT/scripts/zen_bin_handoff.sh" "$BIN_DIR/zen"
+  chmod +x "$BIN_DIR/zen"
+  echo "Installed hybrid handoff:"
+  echo "  $BIN_DIR/zen              → hybrid (compile/build/run/interpret/check/deps/help → selfhost;"
+  echo "                              bare .zl / --test / --check → bootstrap;"
+  echo "                              -g tries selfhost, falls back to bootstrap)"
+  echo "  $BIN_DIR/zen-bootstrap    → full language host"
+  echo "  $BIN_DIR/zen-selfhost     → native selfhost compiler"
+  echo "Overrides: ZEN_FORCE_BOOTSTRAP=1  ZEN_INTERPRET=selfhost  ZEN_GENERATE=bootstrap"
+  echo "Gate: ./scripts/zen handoff-soak"
+}
+
+cmd_run() {
+  # shellcheck disable=SC2086
+  exec $BOOTSTRAP "$@"
+}
+
+cmd_clean() {
+  rm -rf "$BUILD_DIR"/* "$ROOT/output"/* 2>/dev/null || true
+  rm -f "$BIN_DIR/zen" "$BIN_DIR/zen-bootstrap" "$BIN_DIR/zen-selfhost"
+  echo "Cleaned build/, output/, bin/zen, bin/zen-bootstrap, bin/zen-selfhost"
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  help|-h|--help) usage ;;
+  install) cmd_install ;;
+  install-bootstrap) cmd_install_bootstrap ;;
+  install-rollback) cmd_install_rollback ;;
+  install-driver) cmd_install_driver ;;
+  install-selfhost) cmd_install_selfhost ;;
+  install-selfhost-fast) ZEN_OPT=0 cmd_install_selfhost ;;
+  install-handoff) cmd_install_handoff ;;
+  handoff-soak) bash "$ROOT/scripts/handoff_soak.sh" ;;
+  selfhost-smoke) bash "$ROOT/scripts/selfhost_smoke.sh" ;;
+  test-golden) bash "$ROOT/scripts/run_golden.sh" ;;
+  multi-selfhost-smoke) bash "$ROOT/scripts/multi_selfhost_smoke.sh" ;;
+  run) cmd_run "$@" ;;
+  check)
+    # shellcheck disable=SC2086
+    exec $BOOTSTRAP --check "$@"
+    ;;
+  playground)
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" tools/playground.zl "$@"
+    ;;
+  fm)
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" tools/zenfm.zl "$@"
+    ;;
+  fmt)
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" tools/zenfmt.zl "$@"
+    ;;
+  view|zenview)
+    if [ -x "$ROOT/output/zenview" ]; then
+      exec "$ROOT/output/zenview" "$@"
+    fi
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" tools/zenview.zl "$@"
+    ;;
+  lsp)
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" lsp "$@"
+    ;;
+  init|new|watch|dash|dashboard|graph|todo|doc|pkg|bump|publish|benchmark|bench|profile)
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" tools/zenpm.zl "$cmd" "$@"
+    ;;
+  build)
+    if [ -f ".zbuild" ] || [ -f "../.zbuild" ] || [ "$#" -eq 0 ]; then
+      # shellcheck disable=SC2086
+      exec "$ROOT/bin/zen" tools/zenpm.zl build "$@"
+    fi
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" build "$@"
+    ;;
+  test-core) bash "$ROOT/scripts/run_core_tests.sh" ;;
+  test-parity) bash "$ROOT/scripts/run_core_parity.sh" ;;
+  test-lib) bash "$ROOT/tests/lib/run_all.sh" ;;
+  test-lib-native) bash "$ROOT/scripts/run_lib_smoke_native.sh" ;;
+  test)
+    bash "$ROOT/scripts/run_core_tests.sh"
+    bash "$ROOT/scripts/run_core_parity.sh"
+    bash "$ROOT/tests/lib/run_all.sh"
+    bash "$ROOT/scripts/run_lib_smoke_native.sh"
+    ;;
+  ci) bash "$ROOT/scripts/ci_smoke.sh" ;;
+  ci-soak) bash "$ROOT/scripts/ci_soak.sh" ;;
+  clean) cmd_clean ;;
+  *)
+    echo "Unknown command: $cmd" >&2
+    usage >&2
+    exit 2
+    ;;
+esac

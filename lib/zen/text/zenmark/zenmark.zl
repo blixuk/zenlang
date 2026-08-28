@@ -1,0 +1,732 @@
+/!
+  Zen Mark (ZM) Module — Technical document model, 2-character inline span parser, and renderers.
+  Canonical path: `zen.text.zenmark` (alias: `zen.zenmark`).
+!/
+
+use zen.text.string as Str
+use zen.color as color
+use zen.text.zenmark.themes as themes
+use zen.text.zenmark.archetypes as arch
+use zen.text.zenmark.render.pdf as pdf_ren
+
+// ==========================================
+// 1. 2-Character Doubled Inline Span Parser
+// ==========================================
+
+function _find_closing_pair(text, start, open_tok, close_tok) {
+    let tok_len -> Str.length(open_tok)
+    let close_len -> Str.length(close_tok)
+    let pos -> start + tok_len
+    let len -> Str.length(text)
+    
+    do while pos <= len - close_len {
+        when Str.substring(text, pos, pos + close_len) == close_tok {
+            <- {
+                `content` -> Str.substring(text, start + tok_len, pos),
+                `end_pos` -> pos + close_len
+            }
+        }
+        pos -> pos + 1
+    }
+    <- Nothing
+}
+
+/!
+  Parses an inline text string into an array of structured span tuples:
+  (type, text, optional_extra).
+!/
+function parse_spans(text) {
+    let spans -> []
+    when text == Nothing or text == `` {
+        <- spans
+    }
+    
+    let i -> 0
+    let len -> Str.length(text)
+    let raw_buf -> ``
+    
+    do while i < len {
+        let pair -> when (i + 1 < len) { Str.substring(text, i, i + 2) } or { `` }
+        
+        let matched -> False
+        let tag_type -> ``
+        let open_tok -> ``
+        let close_tok -> ``
+        
+        when pair == `**` {
+            tag_type -> `bold`
+            open_tok -> `**`
+            close_tok -> `**`
+            matched -> True
+        } or when pair == `^^` {
+            tag_type -> `italic`
+            open_tok -> `^^`
+            close_tok -> `^^`
+            matched -> True
+        } or when pair == `__` {
+            tag_type -> `underline`
+            open_tok -> `__`
+            close_tok -> `__`
+            matched -> True
+        } or when pair == `~~` {
+            tag_type -> `strike`
+            open_tok -> `~~`
+            close_tok -> `~~`
+            matched -> True
+        } or when pair == `!!` {
+            tag_type -> `keyboard`
+            open_tok -> `!!`
+            close_tok -> `!!`
+            matched -> True
+        } or when pair == `[[` {
+            tag_type -> `monospace`
+            open_tok -> `[[`
+            close_tok -> `]]`
+            matched -> True
+        } or when pair == `{{` {
+            tag_type -> `code`
+            open_tok -> `{{`
+            close_tok -> `}}`
+            matched -> True
+        } or when pair == `++` {
+            tag_type -> `superscript`
+            open_tok -> `++`
+            close_tok -> `++`
+            matched -> True
+        } or when pair == `--` {
+            tag_type -> `subscript`
+            open_tok -> `--`
+            close_tok -> `--`
+            matched -> True
+        } or when pair == `%%` {
+            tag_type -> `datetime`
+            open_tok -> `%%`
+            close_tok -> `%%`
+            matched -> True
+        } or when pair == `$$` {
+            tag_type -> `equation`
+            open_tok -> `$$`
+            close_tok -> `$$`
+            matched -> True
+        }
+        
+        // Link [text](url) check
+        when not matched and Str.substring(text, i, i + 1) == `[` {
+            let close_bracket -> Str.index_of(Str.substring(text, i, len), `]`)
+            when close_bracket > 0 {
+                let after_bracket_pos -> i + close_bracket + 1
+                when after_bracket_pos < len and Str.substring(text, after_bracket_pos, after_bracket_pos + 1) == `(` {
+                    let close_paren -> Str.index_of(Str.substring(text, after_bracket_pos, len), `)`)
+                    when close_paren > 0 {
+                        let link_text -> Str.substring(text, i + 1, after_bracket_pos - 1)
+                        let link_url -> Str.substring(text, after_bracket_pos + 1, after_bracket_pos + close_paren)
+                        
+                        when raw_buf != `` {
+                            spans.append({ `type` -> `raw`, `text` -> raw_buf })
+                            raw_buf -> ``
+                        }
+                        spans.append({ `type` -> `link`, `text` -> link_text, `url` -> link_url })
+                        i -> after_bracket_pos + close_paren + 1
+                        continue
+                    }
+                }
+            }
+        }
+        
+        when matched {
+            let res -> _find_closing_pair(text, i, open_tok, close_tok)
+            when res != Nothing {
+                when raw_buf != `` {
+                    spans.append({ `type` -> `raw`, `text` -> raw_buf })
+                    raw_buf -> ``
+                }
+                spans.append({ `type` -> tag_type, `text` -> res[`content`] })
+                i -> res[`end_pos`]
+                continue
+            }
+        }
+        
+        raw_buf -> raw_buf + Str.substring(text, i, i + 1)
+        i -> i + 1
+    }
+    
+    when raw_buf != `` {
+        spans.append({ `type` -> `raw`, `text` -> raw_buf })
+    }
+    
+    <- spans
+}
+
+// ==========================================
+// 2. Span Renderers (Terminal & HTML)
+// ==========================================
+
+function render_spans_term(spans) {
+    let out -> ``
+    let i -> 0
+    let len -> spans.length
+    do while i < len {
+        let s -> spans[i]
+        let stype -> s[`type`]
+        let txt -> s[`text`]
+        
+        when stype == `raw` {
+            out -> out + txt
+        } or when stype == `bold` {
+            out -> out + color.bold(txt)
+        } or when stype == `italic` {
+            out -> out + color.italic(txt)
+        } or when stype == `underline` {
+            out -> out + color.underline(txt)
+        } or when stype == `strike` {
+            out -> out + color.strikethrough(txt)
+        } or when stype == `keyboard` {
+            // Inverted keycap badge
+            out -> out + color.inverse(` ` + txt + ` `)
+        } or when stype == `code` or stype == `monospace` {
+            out -> out + color.paint(txt, color.hex(`#38bdf8`), color.hex(`#1e293b`))
+        } or when stype == `superscript` {
+            out -> out + `^(` + txt + `)`
+        } or when stype == `subscript` {
+            out -> out + `_(` + txt + `)`
+        } or when stype == `datetime` {
+            out -> out + color.paint(txt, color.hex(`#a855f7`), Nothing)
+        } or when stype == `equation` {
+            out -> out + color.paint(txt, color.hex(`#eab308`), Nothing)
+        } or when stype == `link` {
+            out -> out + color.underline(color.paint(txt, color.hex(`#60a5fa`), Nothing)) + ` (` + s[`url`] + `)`
+        } or {
+            out -> out + txt
+        }
+        
+        i -> i + 1
+    }
+    <- out
+}
+
+function render_spans_html(spans) {
+    let out -> ``
+    let i -> 0
+    let len -> spans.length
+    do while i < len {
+        let s -> spans[i]
+        let stype -> s[`type`]
+        let txt -> s[`text`]
+        
+        when stype == `raw` {
+            out -> out + txt
+        } or when stype == `bold` {
+            out -> out + `<strong>` + txt + `</strong>`
+        } or when stype == `italic` {
+            out -> out + `<em>` + txt + `</em>`
+        } or when stype == `underline` {
+            out -> out + `<u>` + txt + `</u>`
+        } or when stype == `strike` {
+            out -> out + `<s>` + txt + `</s>`
+        } or when stype == `keyboard` {
+            out -> out + `<kbd class="zen-key">` + txt + `</kbd>`
+        } or when stype == `code` {
+            out -> out + `<code class="zen-code">` + txt + `</code>`
+        } or when stype == `monospace` {
+            out -> out + `<tt>` + txt + `</tt>`
+        } or when stype == `superscript` {
+            out -> out + `<sup>` + txt + `</sup>`
+        } or when stype == `subscript` {
+            out -> out + `<sub>` + txt + `</sub>`
+        } or when stype == `datetime` {
+            out -> out + `<time>` + txt + `</time>`
+        } or when stype == `equation` {
+            out -> out + `<span class="zen-math">` + txt + `</span>`
+        } or when stype == `link` {
+            out -> out + `<a href="` + s[`url`] + `">` + txt + `</a>`
+        } or {
+            out -> out + txt
+        }
+        
+        i -> i + 1
+    }
+    <- out
+}
+
+// ==========================================
+// 3. Document DOM Struct Constructors
+// ==========================================
+
+function Entry(opts) {
+    let title -> when (opts != Nothing and opts.has(`title`)) { opts.title } or { `Untitled Document` }
+    let archetype -> when (opts != Nothing and opts.has(`archetype`)) { opts.archetype } or { `document` }
+    let theme -> when (opts != Nothing and opts.has(`theme`)) { opts.theme } or { `modernist_dark` }
+    let author -> when (opts != Nothing and opts.has(`author`)) { opts.author } or { `` }
+    let date -> when (opts != Nothing and opts.has(`date`)) { opts.date } or { `` }
+    let version -> when (opts != Nothing and opts.has(`version`)) { opts.version } or { `` }
+    <- {
+        `__element__` -> `Entry`,
+        `title` -> title,
+        `archetype` -> archetype,
+        `theme` -> theme,
+        `author` -> author,
+        `date` -> date,
+        `version` -> version
+    }
+}
+
+function Heading(opts) {
+    when opts.kind == `String` { opts -> { `text` -> opts, `size` -> 1 } }
+    let size -> when (opts.has(`size`)) { opts.size } or { 1 }
+    let align -> when (opts.has(`align`)) { opts.align } or { `left` }
+    let numbered -> when (opts.has(`numbered`)) { opts.numbered } or { Nothing }
+    let id_val -> when (opts.has(`id`)) { opts.id } or { Nothing }
+    <- {
+        `__element__` -> `Heading`,
+        `text` -> opts.text,
+        `size` -> size,
+        `align` -> align,
+        `numbered` -> numbered,
+        `id` -> id_val
+    }
+}
+
+function Callout(opts) {
+    when opts.kind == `String` { opts -> { `text` -> opts, `type` -> `note` } }
+    let callout_type -> when (opts.has(`type`)) { opts.type } or { `note` }
+    let title -> when (opts.has(`title`)) { opts.title } or { Nothing }
+    let text -> when (opts.has(`text`)) { opts.text } or { `` }
+    <- {
+        `__element__` -> `Callout`,
+        `type` -> callout_type,
+        `title` -> title,
+        `text` -> text
+    }
+}
+
+function Diagram(opts) {
+    let diag_type -> when (opts.has(`type`)) { opts.type } or { `flow` }
+    let dir_val -> `right`
+    when opts.has(`direction`) {
+        dir_val -> opts.direction
+    } or when opts.has(`flow`) {
+        dir_val -> opts.flow
+    }
+    let nodes_list -> when (opts.has(`nodes`)) { opts.nodes } or { [] }
+    let edges_list -> when (opts.has(`edges`)) { opts.edges } or { [] }
+    <- {
+        `__element__` -> `Diagram`,
+        `type` -> diag_type,
+        `direction` -> dir_val,
+        `nodes` -> nodes_list,
+        `edges` -> edges_list
+    }
+}
+
+function Link(opts) {
+    let target_val -> ``
+    when opts.has(`target`) {
+        target_val -> opts.target
+    } or when opts.has(`url`) {
+        target_val -> opts.url
+    }
+    let text_val -> when (opts.has(`text`)) { opts.text } or { target_val + `` }
+    <- {
+        `__element__` -> `Link`,
+        `target` -> target_val,
+        `text` -> text_val
+    }
+}
+
+function TableOfContents(opts) {
+    let title -> when (opts != Nothing and opts.has(`title`)) { opts.title } or { `Table of Contents` }
+    let max_depth -> when (opts != Nothing and opts.has(`max_depth`)) { opts.max_depth } or { 2 }
+    <- {
+        `__element__` -> `TableOfContents`,
+        `title` -> title,
+        `max_depth` -> max_depth
+    }
+}
+
+function Paragraph(opts) {
+    when opts.kind == `String` { opts -> { `text` -> opts } }
+    let text -> when (opts.has(`text`)) { opts.text } or { `` }
+    let content -> when (opts.has(`content`)) { opts.content } or { parse_spans(text) }
+    let align -> when (opts.has(`align`)) { opts.align } or { `left` }
+    <- {
+        `__element__` -> `Paragraph`,
+        `text` -> text,
+        `content` -> content,
+        `align` -> align
+    }
+}
+
+function CodeBlock(opts) {
+    let lang -> when (opts.has(`language`)) { opts.language } or { `zen` }
+    let code_str -> when (opts.has(`code`)) { opts.code } or { `` }
+    let line_nums -> when (opts.has(`line_numbers`)) { opts.line_numbers } or { False }
+    <- {
+        `__element__` -> `CodeBlock`,
+        `language` -> lang,
+        `code` -> code_str,
+        `line_numbers` -> line_nums
+    }
+}
+
+function Table(opts) {
+    let hdrs -> when (opts.has(`headers`)) { opts.headers } or { [] }
+    let rows_list -> when (opts.has(`rows`)) { opts.rows } or { [] }
+    <- {
+        `__element__` -> `Table`,
+        `headers` -> hdrs,
+        `rows` -> rows_list
+    }
+}
+
+function HorizontalRule(opts) {
+    let symbol -> when (opts != Nothing and opts.has(`symbol`)) { opts.symbol } or { `─` }
+    <- {
+        `__element__` -> `HorizontalRule`,
+        `symbol` -> symbol
+    }
+}
+
+function Include(opts) {
+    when opts.kind == `String` { opts -> { `path` -> opts } }
+    let path_str -> when (opts.has(`path`)) { opts.path } or { `` }
+    <- {
+        `__element__` -> `Include`,
+        `path` -> path_str
+    }
+}
+
+function _flatten_elements(elements) {
+    let flat -> []
+    let i -> 0
+    do while i < elements.length {
+        let el -> elements[i]
+        when el == Nothing {
+            i -> i + 1
+            continue
+        }
+        when el.kind == `List` {
+            let nested -> _flatten_elements(el)
+            let ni -> 0
+            do while ni < nested.length {
+                flat.append(nested[ni])
+                ni -> ni + 1
+            }
+        } or when el.has(`__element__`) and el[`__element__`] == `Document` {
+            let doc_els -> _flatten_elements(el.elements)
+            let di -> 0
+            do while di < doc_els.length {
+                flat.append(doc_els[di])
+                di -> di + 1
+            }
+        } or {
+            flat.append(el)
+        }
+        i -> i + 1
+    }
+    <- flat
+}
+
+function Document(elements, entry) {
+    when elements.kind != `List` {
+        elements -> [elements]
+    }
+    elements -> _flatten_elements(elements)
+    when entry == Nothing {
+        entry -> Entry({})
+    }
+    <- {
+        `__element__` -> `Document`,
+        `entry` -> entry,
+        `elements` -> elements
+    }
+}
+
+// ==========================================
+// 4. Document Renderers (Terminal & HTML)
+// ==========================================
+
+function render_term(doc) {
+    when doc == Nothing { <- `` }
+    let elements -> when (doc.has(`elements`)) { doc.elements } or { [doc] }
+    let out -> ``
+    
+    let i -> 0
+    let len -> elements.length
+    do while i < len {
+        let el -> elements[i]
+        let el_type -> when (el.has(`__element__`)) { el[`__element__`] } or when (el.has(`__type__`)) { el[`__type__`] } or { Nothing }
+        
+        when el_type == `Entry` {
+            let title -> when (el.has(`title`)) { el.title } or { `` }
+            let author -> when (el.has(`author`)) { el.author } or { `` }
+            let date -> when (el.has(`date`)) { el.date } or { `` }
+            let ver -> when (el.has(`version`)) { el.version } or { `` }
+            out -> out + color.bold(color.paint(`╔══════════════════════════════════════════════════════════════════════╗\n`, color.hex(`#6366f1`), Nothing))
+            when title != `` {
+                out -> out + color.bold(color.paint(`║  ` + title + `\n`, color.hex(`#38bdf8`), Nothing))
+            }
+            when author != `` or ver != `` {
+                let sub -> `║  `
+                when author != `` { sub -> sub + `By ` + author + `  ` }
+                when ver != `` { sub -> sub + `v` + ver + `  ` }
+                when date != `` { sub -> sub + `(` + date + `)` }
+                out -> out + color.dim(sub + `\n`)
+            }
+            out -> out + color.bold(color.paint(`╚══════════════════════════════════════════════════════════════════════╝\n\n`, color.hex(`#6366f1`), Nothing))
+        } or when el_type == `Document` {
+            let doc_els -> when (el.has(`elements`)) { el.elements } or when (el.has(`content`)) { el.content } or { [] }
+            out -> out + render_term({ `elements` -> doc_els })
+        } or when el_type == `TableOfContents` {
+            let toc_title -> when (el.has(`title`)) { el.title } or { `Table of Contents` }
+            out -> out + color.bold(color.paint(`📑 ` + toc_title + `\n`, color.hex(`#38bdf8`), Nothing))
+            out -> out + color.dim(`────────────────────────────────────────\n\n`)
+        } or when el_type == `Heading` {
+            let prefix -> `# `
+            let hsize -> when (el.has(`size`)) { el.size } or when (el.has(`level`)) { el.level } or { 1 }
+            let htext -> when (el.has(`text`)) { el.text } or when (el.has(`title`)) { el.title } or { `` }
+            when hsize == 2 { prefix -> `## ` }
+            or when hsize == 3 { prefix -> `### ` }
+            or when hsize >= 4 { prefix -> `#### ` }
+            out -> out + `\n` + color.bold(color.paint(prefix + htext, color.hex(`#38bdf8`), Nothing)) + `\n`
+        } or when el_type == `Paragraph` {
+            let ptext -> when (el.has(`text`)) { el.text } or { `` }
+            let spans -> when (el.has(`content`)) { el.content } or { parse_spans(ptext) }
+            out -> out + render_spans_term(spans) + `\n\n`
+        } or when el_type == `List` {
+            let items -> when (el.has(`items`)) { el.items } or { [] }
+            when items != Nothing {
+                let li -> 0
+                do while li < items.length {
+                    let item_text -> items[li]
+                    let prefix -> `• `
+                    when el.has(`type`) and el.type == `numbered` {
+                        prefix -> Str.to_string(li + 1) + `. `
+                    }
+                    out -> out + `  ` + color.paint(prefix, color.hex(`#38bdf8`), Nothing) + item_text + `\n`
+                    li -> li + 1
+                }
+                out -> out + `\n`
+            }
+        } or when el_type == `CodeBlock` {
+            let lang -> when (el.has(`language`)) { el.language } or { `code` }
+            let code_body -> when (el.has(`code`)) { el.code } or when (el.has(`text`)) { el.text } or when (el.has(`content`)) { el.content } or { `` }
+            out -> out + color.paint(`┌── ` + lang + ` ──────────────────────────────────\n`, color.hex(`#6366f1`), Nothing)
+            out -> out + code_body + `\n`
+            out -> out + color.paint(`└──────────────────────────────────────────────\n\n`, color.hex(`#6366f1`), Nothing)
+        } or when el_type == `HorizontalRule` {
+            out -> out + color.dim(`────────────────────────────────────────────────────────\n\n`)
+        } or when el_type == `Table` {
+            let hdrs -> when (el.has(`headers`)) { el.headers } or { [] }
+            when hdrs != Nothing and hdrs.length > 0 {
+                let h_str -> Str.join(hdrs, ` │ `)
+                out -> out + color.bold(color.paint(`┌─ ` + h_str + ` ─┐\n`, color.hex(`#38bdf8`), Nothing))
+                out -> out + color.dim(`├───────────────────────────────────────────────────────┤\n`)
+                when el.has(`rows`) and el.rows != Nothing {
+                    let r_i -> 0
+                    do while r_i < el.rows.length {
+                        let row -> el.rows[r_i]
+                        out -> out + `│  ` + Str.join(row, ` │ `) + `\n`
+                        r_i -> r_i + 1
+                    }
+                }
+                out -> out + color.dim(`└───────────────────────────────────────────────────────┘\n\n`)
+            }
+        } or when el_type == `Callout` {
+            let badge -> `[NOTE]`
+            let border_c -> color.hex(`#0284c7`)
+            let ctype -> when (el.has(`type`)) { el.type } or { `note` }
+            when ctype == `tip` { badge -> `[TIP]` border_c -> color.hex(`#16a34a`) }
+            or when ctype == `warning` { badge -> `[WARNING]` border_c -> color.hex(`#d97706`) }
+            or when ctype == `important` { badge -> `[IMPORTANT]` border_c -> color.hex(`#7c3aed`) }
+            or when ctype == `caution` { badge -> `[CAUTION]` border_c -> color.hex(`#dc2626`) }
+            let callout_title -> when (el.has(`title`) and el.title != Nothing) { el.title } or { badge }
+            let ctext -> when (el.has(`text`)) { el.text } or { `` }
+            out -> out + color.paint(`▌ ` + callout_title + `\n`, border_c, Nothing)
+            out -> out + `  ` + ctext + `\n\n`
+        } or when el_type == `Diagram` {
+            let node_labels -> []
+            let ni -> 0
+            do while ni < el.nodes.length {
+                let nitem -> el.nodes[ni]
+                let nlbl -> when (nitem.kind == `Map` and nitem.has(`label`)) { nitem.label } or { Str.to_string(nitem) }
+                node_labels.append(`[ ` + nlbl + ` ]`)
+                ni -> ni + 1
+            }
+            out -> out + `\n` + color.paint(Str.join(node_labels, ` ──► `), color.hex(`#38bdf8`), Nothing) + `\n\n`
+        }
+        
+        i -> i + 1
+    }
+    
+    <- out
+}
+
+function render_html(doc) {
+    when doc == Nothing { <- `` }
+    let entry -> when (doc.has(`entry`)) { doc.entry } or { Entry({}) }
+    let theme_name -> entry[`theme`]
+    let arch_name -> entry[`archetype`]
+    let arch_cfg -> arch.get_archetype(arch_name)
+    let theme_cfg -> themes.get_theme(theme_name)
+    
+    let html -> `<!DOCTYPE html>\n<html lang="en">\n<head>\n`
+    html -> html + `  <meta charset="UTF-8">\n`
+    html -> html + `  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n`
+    html -> html + `  <title>` + entry[`title`] + `</title>\n`
+    html -> html + `  <style>\n`
+    html -> html + themes.get_theme_css(theme_name)
+    html -> html + arch.get_archetype_css(arch_name)
+    html -> html + `  </style>\n</head>\n<body>\n`
+    html -> html + `  <div class="zen-document">\n`
+    html -> html + `    <div class="zen-archetype-badge">` + arch_cfg[`badge`] + `</div>\n`
+    
+    let elements -> when (doc.has(`elements`)) { doc.elements } or { [doc] }
+    let i -> 0
+    let len -> elements.length
+    do while i < len {
+        let el -> elements[i]
+        let el_type -> el[`__element__`]
+        
+        when el_type == `Heading` {
+            let tag -> `h` + Str.to_string(el.size)
+            html -> html + `    <` + tag + `>` + el.text + `</` + tag + `>\n`
+        } or when el_type == `Paragraph` {
+            let spans -> when (el.has(`content`)) { el.content } or { parse_spans(el.text) }
+            html -> html + `    <p>` + render_spans_html(spans) + `</p>\n`
+        } or when el_type == `CodeBlock` {
+            html -> html + `    <pre class="zen-code-block"><code class="language-` + el.language + `">` + el.code + `</code></pre>\n`
+        } or when el_type == `HorizontalRule` {
+            html -> html + `    <hr class="zen-hr" />\n`
+        } or when el_type == `Table` {
+            html -> html + `    <table class="zen-table">\n      <thead><tr>`
+            let hi -> 0
+            do while hi < el.headers.length {
+                html -> html + `<th>` + el.headers[hi] + `</th>`
+                hi -> hi + 1
+            }
+            html -> html + `</tr></thead>\n      <tbody>\n`
+            let ri -> 0
+            do while ri < el.rows.length {
+                let row -> el.rows[ri]
+                html -> html + `        <tr>`
+                let ci -> 0
+                do while ci < row.length {
+                    html -> html + `<td>` + row[ci] + `</td>`
+                    ci -> ci + 1
+                }
+                html -> html + `</tr>\n`
+                ri -> ri + 1
+            }
+            html -> html + `      </tbody>\n    </table>\n`
+        } or when el_type == `Callout` {
+            let c_title -> when (el.title != Nothing) { el.title } or { Str.to_upper(el.type) }
+            html -> html + `    <div class="zen-callout zen-callout-` + el.type + `"><div class="zen-callout-title">` + c_title + `</div><div class="zen-callout-body">` + el.text + `</div></div>\n`
+        } or when el_type == `Diagram` {
+            html -> html + `    <div class="zen-diagram zen-diagram-` + el.type + `">\n`
+            let ni -> 0
+            do while ni < el.nodes.length {
+                let nitem -> el.nodes[ni]
+                let nlbl -> when (nitem.kind == `Map` and nitem.has(`label`)) { nitem.label } or { Str.to_string(nitem) }
+                html -> html + `      <div class="zen-diagram-node">` + nlbl + `</div>\n`
+                when ni < el.nodes.length - 1 {
+                    html -> html + `      <div class="zen-diagram-arrow">&rarr;</div>\n`
+                }
+                ni -> ni + 1
+            }
+            html -> html + `    </div>\n`
+        }
+        
+        i -> i + 1
+    }
+    
+    html -> html + `  </div>\n</body>\n</html>\n`
+    <- html
+}
+
+function render_pdf(doc, output_path) {
+    <- pdf_ren.render_pdf(doc, output_path)
+}
+
+// ==========================================
+// 5. Doc-Comment Parser (Backwards Compatibility)
+// ==========================================
+
+function parse(text) {
+    let lines -> Str.split(text, `\n`)
+    let summary -> ``
+    let params -> {}
+    let returns -> ``
+    let extra -> {}
+    let current_tag -> ``
+    let last_param -> ``
+
+    do for line in lines {
+        let trimmed -> Str.trim(line)
+        when Str.starts_with(trimmed, `*`) {
+            let tlen -> Str.length(trimmed)
+            trimmed -> Str.trim(Str.substring(trimmed, 1, tlen))
+        }
+
+        when Str.starts_with(trimmed, `@param`) {
+            current_tag -> `param`
+            let content -> Str.trim(Str.substring(trimmed, 6, Str.length(trimmed)))
+            let space_idx -> Str.index_of(content, ` `)
+            when space_idx >= 0 {
+                let name -> Str.substring(content, 0, space_idx)
+                let desc -> Str.trim(Str.substring(content, space_idx + 1, Str.length(content)))
+                params[name] -> desc
+                last_param -> name
+            } or {
+                params[content] -> ``
+                last_param -> content
+            }
+        } or when Str.starts_with(trimmed, `@return`) {
+            current_tag -> `return`
+            let rest -> Str.substring(trimmed, 7, Str.length(trimmed))
+            when Str.starts_with(trimmed, `@returns`) {
+                rest -> Str.substring(trimmed, 8, Str.length(trimmed))
+            }
+            returns -> Str.trim(rest)
+        } or when Str.starts_with(trimmed, `@`) {
+            let space_idx -> Str.index_of(trimmed, ` `)
+            when space_idx >= 0 {
+                let section -> Str.substring(trimmed, 1, space_idx)
+                let content -> Str.trim(Str.substring(trimmed, space_idx + 1, Str.length(trimmed)))
+                extra[section] -> content
+                current_tag -> section
+            } or {
+                let section -> Str.substring(trimmed, 1, Str.length(trimmed))
+                extra[section] -> ``
+                current_tag -> section
+            }
+        } or when trimmed != `` {
+            when current_tag == `` {
+                when summary == `` {
+                    summary -> trimmed
+                } or {
+                    summary -> summary + ` ` + trimmed
+                }
+            } or when current_tag == `return` {
+                returns -> returns + ` ` + trimmed
+            } or when current_tag == `param` {
+                when last_param != `` {
+                    params[last_param] -> params[last_param] + ` ` + trimmed
+                }
+            } or {
+                let prev -> extra[current_tag]
+                when prev == Nothing or prev == `` {
+                    extra[current_tag] -> trimmed
+                } or {
+                    extra[current_tag] -> prev + `\n` + trimmed
+                }
+            }
+        }
+    }
+
+    <- {
+        `summary` -> summary,
+        `params` -> params,
+        `returns` -> returns,
+        `extra` -> extra
+    }
+}

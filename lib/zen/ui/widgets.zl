@@ -1,0 +1,140 @@
+import zen.ui.geometry as geom
+import zen.text.string as str
+
+/!
+ Base UI Widget.
+ !/
+class Widget {
+    let rect: geom.UIRect
+    let fg: String
+    let bg: String
+    let visible: Boolean
+    let expand: Boolean
+
+    function init(rect) {
+        self.rect -> rect
+        self.fg -> `white`
+        self.bg -> `black`
+        self.visible -> true
+        self.expand -> false
+    }
+
+    /!
+     Updates the widget bounds during layout passes.
+     !/
+    function layout(rect) {
+        self.rect -> rect
+    }
+
+    /!
+     Draws the widget to a canvas.
+     @param canvas The Canvas to draw on.
+     !/
+    function draw(canvas) {
+        // Base implementation does Nothing
+    }
+}
+
+/!
+ Simple Text Label.
+ !/
+class Label extends Widget {
+    let text: String
+
+    function init(x, y, text) {
+        let r -> geom.UIRect(x, y, text.length, 1)
+        parent.init(r)
+        self.text -> text
+    }
+
+    function draw(canvas) {
+        when self.visible {
+            import zen.ui.canvas as canvas_mod
+            canvas_mod.draw_text(canvas, self.rect.x, self.rect.y, self.text, self.fg, self.bg)
+        }
+    }
+}
+
+/!
+ Visual Progress Bar.
+ !/
+class ProgressBar extends Widget {
+    let value: Float
+    let max: Float
+
+    function init(x, y, width, max) {
+        let r -> geom.UIRect(x, y, width, 1)
+        parent.init(r)
+        self.value -> 0.0
+        self.max -> max
+    }
+
+    function draw(canvas) {
+        when self.visible {
+            let percent -> self.value / self.max
+            let filled -> (percent * self.rect.width).to_integer()
+            import zen.ui.canvas as canvas_mod
+            // Draw track
+            canvas_mod.fill_rect(canvas, self.rect.x, self.rect.y, self.rect.width, self.rect.height, `-`, `bright_black`, self.bg)
+            
+            // Draw bar
+            when filled > 0 {
+                canvas_mod.fill_rect(canvas, self.rect.x, self.rect.y, filled, 1, `=`, `green`, self.bg)
+            }
+        }
+    }
+}
+
+/!
+ Interactive Button.
+ !/
+class Button extends Widget {
+    let text: String
+    let active: Boolean
+
+    function init(x, y, text) {
+        let r -> geom.UIRect(x, y, text.length + 4, 3)
+        parent.init(r)
+        self.text -> text
+        self.active -> false
+    }
+
+    function draw(canvas) {
+        when self.visible {
+            let border_char -> `+`
+            let border_fg -> self.fg
+            when self.active {
+                border_fg -> `yellow`
+            }
+            import zen.ui.canvas as canvas_mod
+            canvas_mod.draw_rect(canvas, self.rect.x, self.rect.y, self.rect.width, self.rect.height, border_char, border_fg, self.bg)
+            canvas_mod.draw_text(canvas, self.rect.x + 2, self.rect.y + 1, self.text, self.fg, self.bg)
+        }
+    }
+}
+
+/!
+ Widget Container / Panel.
+ !/
+class Panel extends Widget {
+    let children: List
+
+    function init(rect) {
+        parent.init(rect)
+        self.children -> []
+    }
+
+    function add(child) {
+        self.children.append(child)
+    }
+
+    function draw(canvas) {
+        when self.visible {
+            import zen.ui.canvas as canvas_mod
+            canvas_mod.fill_rect(canvas, self.rect.x, self.rect.y, self.rect.width, self.rect.height, ` `, self.fg, self.bg)
+            do for child in self.children {
+                child.draw(canvas)
+            }
+        }
+    }
+}

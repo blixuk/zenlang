@@ -1,0 +1,881 @@
+/!
+  Zen Mark PDF Generator — Pure Zenlang Vector PDF typesetter.
+  Produces standard PDF 1.4 documents with Type 1 vector fonts, multi-language syntax highlighting,
+  automatic hierarchical heading numbering, Table of Contents, rich Callout admonitions,
+  interactive PDF hyperlinks, and native vector diagrams with zero external dependencies.
+  Canonical path: `zen.text.zenmark.render.pdf`.
+!/
+
+use zen.text.string as Str
+use zen.io.file as file
+use zen.text.zenmark.themes as themes
+use zen.text.zenmark.archetypes as arch
+
+// ==========================================
+// 1. Text Escaping & PDF Primitives
+// ==========================================
+
+function _sanitize_text(s) {
+    when s == Nothing { <- `` }
+    let out -> Str.replace(s, `•`, `-`)
+    out -> Str.replace(out, `❧`, `*`)
+    out -> Str.replace(out, `❦`, `*`)
+    out -> Str.replace(out, `—`, `--`)
+    out -> Str.replace(out, `“`, `"`)
+    out -> Str.replace(out, `”`, `"`)
+    out -> Str.replace(out, `‘`, `'`)
+    out -> Str.replace(out, `’`, `'`)
+    <- out
+}
+
+function _pdf_escape(s) {
+    let clean -> _sanitize_text(s)
+    let out -> ``
+    let i -> 0
+    let len -> Str.length(clean)
+    do while i < len {
+        let c -> Str.substring(clean, i, i + 1)
+        when c == `\\` { out -> out + `\\\\` }
+        or when c == `(` { out -> out + `\\(` }
+        or when c == `)` { out -> out + `\\)` }
+        or when c == `\r` { out -> out + ` ` }
+        or when c == `\t` { out -> out + `    ` }
+        or { out -> out + c }
+        i -> i + 1
+    }
+    <- out
+}
+
+function _slugify(text) {
+    let lower -> Str.to_lower(_sanitize_text(text))
+    let out -> ``
+    let i -> 0
+    do while i < Str.length(lower) {
+        let c -> Str.substring(lower, i, i + 1)
+        when (c >= `a` and c <= `z`) or (c >= `0` and c <= `9`) {
+            out -> out + c
+        } or when c == ` ` or c == `_` or c == `-` {
+            when Str.length(out) > 0 and Str.substring(out, Str.length(out) - 1, Str.length(out)) != `-` {
+                out -> out + `-`
+            }
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+function _hex_to_rgb(hex_str) {
+    when hex_str == Nothing {
+        <- { `r` -> 0.1, `g` -> 0.1, `b` -> 0.1 }
+    }
+    let clean -> Str.replace(hex_str, `#`, ``)
+    when Str.length(clean) < 6 {
+        <- { `r` -> 0.1, `g` -> 0.1, `b` -> 0.1 }
+    }
+    
+    let r_hex -> Str.substring(clean, 0, 2)
+    let g_hex -> Str.substring(clean, 2, 4)
+    let b_hex -> Str.substring(clean, 4, 6)
+    
+    let r_val -> _parse_hex_byte(r_hex) / 255.0
+    let g_val -> _parse_hex_byte(g_hex) / 255.0
+    let b_val -> _parse_hex_byte(b_hex) / 255.0
+    
+    <- { `r` -> r_val, `g` -> g_val, `b` -> b_val }
+}
+
+function _parse_hex_byte(s) {
+    let lower -> Str.to_lower(s)
+    let val -> 0
+    let i -> 0
+    do while i < Str.length(lower) {
+        let c -> Str.substring(lower, i, i + 1)
+        let d -> 0
+        when c == `0` { d -> 0 }
+        or when c == `1` { d -> 1 }
+        or when c == `2` { d -> 2 }
+        or when c == `3` { d -> 3 }
+        or when c == `4` { d -> 4 }
+        or when c == `5` { d -> 5 }
+        or when c == `6` { d -> 6 }
+        or when c == `7` { d -> 7 }
+        or when c == `8` { d -> 8 }
+        or when c == `9` { d -> 9 }
+        or when c == `a` { d -> 10 }
+        or when c == `b` { d -> 11 }
+        or when c == `c` { d -> 12 }
+        or when c == `d` { d -> 13 }
+        or when c == `e` { d -> 14 }
+        or when c == `f` { d -> 15 }
+        val -> val * 16 + d
+        i -> i + 1
+    }
+    <- val
+}
+
+// ==========================================
+// 2. Multi-Language Syntax Highlighting Tokenizer
+// ==========================================
+
+function _is_alpha(c) {
+    when Str.length(c) == 0 { <- False }
+    <- (c >= `a` and c <= `z`) or (c >= `A` and c <= `Z`) or c == `_`
+}
+
+function _is_digit(c) {
+    when Str.length(c) == 0 { <- False }
+    <- c >= `0` and c <= `9`
+}
+
+function _is_zen_keyword(s) {
+    <- s == `function` or s == `class` or s == `structure` or s == `enumerator` or
+       s == `when` or s == `or` or s == `let` or s == `set` or s == `do` or
+       s == `while` or s == `until` or s == `for` or s == `in` or s == `return` or
+       s == `check` or s == `raise` or s == `import` or s == `use` or s == `from` or
+       s == `as` or s == `export` or s == `defer` or s == `is` or s == `extends`
+}
+
+function _is_c_keyword(s) {
+    <- s == `int` or s == `char` or s == `void` or s == `float` or s == `double` or
+       s == `struct` or s == `typedef` or s == `enum` or s == `return` or s == `if` or
+       s == `else` or s == `for` or s == `while` or s == `do` or s == `switch` or
+       s == `case` or s == `break` or s == `continue` or s == `const` or s == `static` or
+       s == `extern` or s == `sizeof` or s == `include` or s == `define`
+}
+
+function _is_bash_keyword(s) {
+    <- s == `if` or s == `then` or s == `else` or s == `elif` or s == `fi` or
+       s == `case` or s == `esac` or s == `for` or s == `while` or s == `until` or
+       s == `do` or s == `done` or s == `in` or s == `function` or s == `select` or
+       s == `time` or s == `export` or s == `local` or s == `readonly` or s == `return` or
+       s == `exit` or s == `echo` or s == `set`
+}
+
+function _is_sentinel(s) {
+    <- s == `Nothing` or s == `Default` or s == `True` or s == `False` or
+       s == `nothing` or s == `default` or s == `true` or s == `false` or
+       s == `null` or s == `nil`
+}
+
+function _tokenize_code_line(line, lang) {
+    let tokens -> []
+    let i -> 0
+    let len -> Str.length(line)
+    
+    do while i < len {
+        let c -> Str.substring(line, i, i + 1)
+        
+        // 1. Whitespace
+        when c == ` ` or c == `\t` {
+            let start -> i
+            do while i < len {
+                let sc -> Str.substring(line, i, i + 1)
+                when sc != ` ` and sc != `\t` { break }
+                i -> i + 1
+            }
+            tokens.append({ `type` -> `ws`, `text` -> Str.substring(line, start, i) })
+            continue
+        }
+        
+        // 2. Comments
+        when (c == `/` and i + 1 < len and Str.substring(line, i + 1, i + 2) == `/`) or
+             (lang == `bash` and c == `#`) or
+             (lang == `c` and c == `#`) {
+            tokens.append({ `type` -> `comment`, `text` -> Str.substring(line, i, len) })
+            break
+        }
+        
+        // 3. Raw / backtick string
+        when c == `\`` {
+            let start -> i
+            i -> i + 1
+            do while i < len {
+                when Str.substring(line, i, i + 1) == `\`` {
+                    i -> i + 1
+                    break
+                }
+                i -> i + 1
+            }
+            tokens.append({ `type` -> `string`, `text` -> Str.substring(line, start, i) })
+            continue
+        }
+        
+        // 4. Double-quoted string
+        when c == `"` or (lang == `bash` and c == `'`) {
+            let quote_char -> c
+            let start -> i
+            i -> i + 1
+            do while i < len {
+                let sc -> Str.substring(line, i, i + 1)
+                when sc == `\\` and i + 1 < len {
+                    i -> i + 2
+                    continue
+                }
+                when sc == quote_char {
+                    i -> i + 1
+                    break
+                }
+                i -> i + 1
+            }
+            tokens.append({ `type` -> `string`, `text` -> Str.substring(line, start, i) })
+            continue
+        }
+        
+        // 5. Flow arrows -> and <-
+        when (c == `-` and i + 1 < len and Str.substring(line, i + 1, i + 2) == `>`) or
+             (c == `<` and i + 1 < len and Str.substring(line, i + 1, i + 2) == `-`) {
+            tokens.append({ `type` -> `flow`, `text` -> Str.substring(line, i, i + 2) })
+            i -> i + 2
+            continue
+        }
+        
+        // 6. Numbers
+        when _is_digit(c) {
+            let start -> i
+            do while i < len {
+                let sc -> Str.substring(line, i, i + 1)
+                when not _is_digit(sc) and sc != `.` and sc != `x` and sc != `X` and sc != `b` and sc != `B` {
+                    break
+                }
+                i -> i + 1
+            }
+            tokens.append({ `type` -> `number`, `text` -> Str.substring(line, start, i) })
+            continue
+        }
+        
+        // 7. Identifiers / Keywords / Sentinels
+        when _is_alpha(c) {
+            let start -> i
+            do while i < len {
+                let sc -> Str.substring(line, i, i + 1)
+                when not _is_alpha(sc) and not _is_digit(sc) { break }
+                i -> i + 1
+            }
+            let word -> Str.substring(line, start, i)
+            when _is_sentinel(word) {
+                tokens.append({ `type` -> `sentinel`, `text` -> word })
+            } or when (lang == `zen` and _is_zen_keyword(word)) or
+                      (lang == `c` and _is_c_keyword(word)) or
+                      (lang == `bash` and _is_bash_keyword(word)) {
+                tokens.append({ `type` -> `keyword`, `text` -> word })
+            } or when word == `structure` or word == `class` or (Str.length(word) > 1 and Str.substring(word, 0, 1) >= `A` and Str.substring(word, 0, 1) <= `Z`) {
+                tokens.append({ `type` -> `type`, `text` -> word })
+            } or {
+                tokens.append({ `type` -> `ident`, `text` -> word })
+            }
+            continue
+        }
+        
+        // 8. Other operators and punctuation
+        tokens.append({ `type` -> `punct`, `text` -> c })
+        i -> i + 1
+    }
+    
+    <- tokens
+}
+
+// ==========================================
+// 3. Newline-Aware Line Wrapping Engine
+// ==========================================
+
+function _wrap_text(text, max_chars_per_line) {
+    let clean -> _sanitize_text(text)
+    let raw_lines -> Str.split(clean, `\n`)
+    let wrapped -> []
+    
+    let rli -> 0
+    do while rli < raw_lines.length {
+        let raw_l -> raw_lines[rli]
+        when Str.length(Str.trim(raw_l)) == 0 {
+            wrapped.append(``)
+            rli -> rli + 1
+            continue
+        }
+        
+        let words -> Str.split(raw_l, ` `)
+        let cur_line -> ``
+        let wi -> 0
+        do while wi < words.length {
+            let w -> words[wi]
+            when Str.length(cur_line) == 0 {
+                cur_line -> w
+            } or when Str.length(cur_line) + 1 + Str.length(w) <= max_chars_per_line {
+                cur_line -> cur_line + ` ` + w
+            } or {
+                wrapped.append(cur_line)
+                cur_line -> w
+            }
+            wi -> wi + 1
+        }
+        when Str.length(cur_line) > 0 {
+            wrapped.append(cur_line)
+        }
+        rli -> rli + 1
+    }
+    
+    <- wrapped
+}
+
+// ==========================================
+// 4. Layout & Page State Machine
+// ==========================================
+
+function _create_page_context() {
+    <- {
+        `pages` -> [],
+        `cur_stream` -> ``,
+        `page_w` -> 612.0,
+        `page_h` -> 792.0,
+        `margin_x` -> 54.0,
+        `margin_top` -> 54.0,
+        `margin_bottom` -> 54.0,
+        `cur_y` -> 738.0,
+        `page_index` -> 0,
+        `destinations` -> {},
+        `links_by_page` -> []
+    }
+}
+
+function _new_page(ctx) {
+    when Str.length(ctx[`cur_stream`]) > 0 {
+        ctx[`pages`].append(ctx[`cur_stream`])
+        ctx[`cur_stream`] -> ``
+    }
+    ctx[`page_index`] -> ctx[`page_index`] + 1
+    ctx[`cur_y`] -> ctx[`page_h`] - ctx[`margin_top`]
+}
+
+function _check_page_space(ctx, needed_h) {
+    when ctx[`cur_y`] - needed_h < ctx[`margin_bottom`] {
+        _new_page(ctx)
+    }
+}
+
+// ==========================================
+// 5. PDF Document Emitter
+// ==========================================
+
+/!
+  Renders a Zen Mark document (.zm) directly to a standard vector PDF file.
+  @param doc The Document DOM tree.
+  @param output_path File path to write the .pdf output.
+  @return The raw PDF string.
+!/
+function render_pdf(doc, output_path) {
+    when doc == Nothing { <- `` }
+    
+    let entry -> { `title` -> `Document`, `archetype` -> `document`, `theme` -> `modernist_dark` }
+    when doc.has(`entry`) and doc.entry != Nothing {
+        entry -> doc.entry
+    }
+    
+    let arch_name -> `document`
+    when entry.has(`archetype`) {
+        arch_name -> entry.archetype
+    }
+    
+    let theme_name -> `modernist_dark`
+    when entry.has(`theme`) {
+        theme_name -> entry.theme
+    }
+    
+    let arch_cfg -> arch.get_archetype(arch_name)
+    let theme_cfg -> themes.get_theme(theme_name)
+    
+    let bg_rgb -> _hex_to_rgb(theme_cfg[`bg`])
+    let fg_rgb -> _hex_to_rgb(theme_cfg[`fg`])
+    let accent_rgb -> _hex_to_rgb(theme_cfg[`accent`])
+    let border_rgb -> _hex_to_rgb(theme_cfg[`border`])
+    let code_bg_rgb -> _hex_to_rgb(theme_cfg[`code_bg`])
+    let code_fg_rgb -> _hex_to_rgb(theme_cfg[`code_fg`])
+    
+    // Pluggable Syntax Highlight Colors
+    let syn_keyword_rgb -> _hex_to_rgb(theme_cfg[`syntax_keyword`])
+    let syn_flow_rgb    -> _hex_to_rgb(theme_cfg[`syntax_flow`])
+    let syn_sentinel_rgb -> _hex_to_rgb(theme_cfg[`syntax_sentinel`])
+    let syn_string_rgb  -> _hex_to_rgb(theme_cfg[`syntax_string`])
+    let syn_comment_rgb -> _hex_to_rgb(theme_cfg[`syntax_comment`])
+    let syn_number_rgb  -> _hex_to_rgb(theme_cfg[`syntax_number`])
+    let syn_type_rgb    -> _hex_to_rgb(theme_cfg[`syntax_type`])
+    
+    let ctx -> _create_page_context()
+    
+    // Choose primary fonts based on theme
+    let font_body -> `/F1`
+    let font_bold -> `/F2`
+    when theme_name == `antiquarian` {
+        font_body -> `/F3`
+        font_bold -> `/F4`
+    } or when theme_name == `retro_terminal` {
+        font_body -> `/F5`
+        font_bold -> `/F6`
+    }
+    let font_mono -> `/F5`
+    let font_mono_bold -> `/F6`
+    
+    // Header Banner on first page
+    let badge_text -> arch_cfg[`badge`]
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + `q\n`
+    // Accent badge pill
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg\n`
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - 14.0) + ` 140 16 re f\n`
+    // Badge text
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT 1 1 1 rg /F2 8 Tf ` + Str.to_string(ctx[`margin_x`] + 6.0) + ` ` + Str.to_string(ctx[`cur_y`] - 10.0) + ` Td (` + _pdf_escape(badge_text) + `) Tj ET\n`
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + `Q\n`
+    ctx[`cur_y`] -> ctx[`cur_y`] - 30.0
+    
+    // Document Title
+    let title_text -> when (entry.has(`title`)) { entry.title } or { `Zen Document` }
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + font_bold + ` 22 Tf ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` Td (` + _pdf_escape(title_text) + `) Tj ET\n`
+    ctx[`cur_y`] -> ctx[`cur_y`] - 28.0
+    
+    // Separator line
+    ctx[`cur_stream`] -> ctx[`cur_stream`] + `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` m 558 ` + Str.to_string(ctx[`cur_y`]) + ` l S Q\n`
+    ctx[`cur_y`] -> ctx[`cur_y`] - 20.0
+    
+    // Section Numbering State Machine
+    let default_numbered -> when (arch_cfg.has(`numbered_sections`)) { arch_cfg.numbered_sections } or { False }
+    let counters -> [0, 0, 0, 0, 0, 0]
+    
+    // Render Elements
+    let elements -> when (doc.has(`elements`)) { doc.elements } or { [doc] }
+    let elem_i -> 0
+    let elem_len -> elements.length
+    
+    do while elem_i < elem_len {
+        let el -> elements[elem_i]
+        let el_type -> el[`__element__`]
+        
+        when el_type == `TableOfContents` {
+            _check_page_space(ctx, 120.0)
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + font_bold + ` 14 Tf ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` Td (` + _pdf_escape(el.title) + `) Tj ET\n`
+            ctx[`cur_y`] -> ctx[`cur_y`] - 18.0
+            
+            // Build Table of Contents entries from document headings
+            let toc_counters -> [0, 0, 0, 0, 0, 0]
+            let ti -> 0
+            do while ti < elem_len {
+                let tel -> elements[ti]
+                when tel[`__element__`] == `Heading` and tel.size <= el.max_depth {
+                    let t_is_num -> tel.numbered
+                    when t_is_num == Nothing { t_is_num -> default_numbered }
+                    
+                    let t_prefix -> ``
+                    when t_is_num {
+                        let t_lvl -> tel.size
+                        when t_lvl < 1 { t_lvl -> 1 }
+                        when t_lvl > 6 { t_lvl -> 6 }
+                        
+                        toc_counters[t_lvl - 1] -> toc_counters[t_lvl - 1] + 1
+                        let t_cl -> t_lvl
+                        do while t_cl < 6 {
+                            toc_counters[t_cl] -> 0
+                            t_cl -> t_cl + 1
+                        }
+                        let t_li -> 0
+                        do while t_li < t_lvl {
+                            when t_li > 0 { t_prefix -> t_prefix + `.` }
+                            t_prefix -> t_prefix + Str.to_string(toc_counters[t_li])
+                            t_li -> t_li + 1
+                        }
+                        when t_lvl == 1 { t_prefix -> t_prefix + `. ` }
+                        or { t_prefix -> t_prefix + ` ` }
+                    }
+                    
+                    let item_x -> ctx[`margin_x`]
+                    let item_font -> font_body
+                    when tel.size == 1 {
+                        item_font -> font_bold
+                    } or {
+                        item_x -> item_x + 14.0
+                    }
+                    
+                    let full_item_text -> t_prefix + tel.text
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg ` + item_font + ` 9 Tf ` + Str.to_string(item_x) + ` ` + Str.to_string(ctx[`cur_y`]) + ` Td (` + _pdf_escape(full_item_text) + `) Tj ET\n`
+                    ctx[`cur_y`] -> ctx[`cur_y`] - 14.0
+                }
+                ti -> ti + 1
+            }
+            
+            ctx[`cur_y`] -> ctx[`cur_y`] - 10.0
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` m 558 ` + Str.to_string(ctx[`cur_y`]) + ` l S Q\n`
+            ctx[`cur_y`] -> ctx[`cur_y`] - 20.0
+        } or when el_type == `Heading` {
+            let is_num -> el.numbered
+            when is_num == Nothing { is_num -> default_numbered }
+            
+            let heading_text -> el.text
+            when is_num {
+                let lvl -> el.size
+                when lvl < 1 { lvl -> 1 }
+                when lvl > 6 { lvl -> 6 }
+                
+                counters[lvl - 1] -> counters[lvl - 1] + 1
+                let cl -> lvl
+                do while cl < 6 {
+                    counters[cl] -> 0
+                    cl -> cl + 1
+                }
+                
+                let prefix -> ``
+                let li -> 0
+                do while li < lvl {
+                    when li > 0 { prefix -> prefix + `.` }
+                    prefix -> prefix + Str.to_string(counters[li])
+                    li -> li + 1
+                }
+                when lvl == 1 { prefix -> prefix + `. ` }
+                or { prefix -> prefix + ` ` }
+                
+                heading_text -> prefix + el.text
+            }
+            
+            let font_sz -> 16.0
+            when el.size == 1 { font_sz -> 18.0 }
+            or when el.size == 2 { font_sz -> 14.0 }
+            or when el.size == 3 { font_sz -> 12.0 }
+            
+            // Keep-With-Next: prevent orphan headings near bottom of page
+            _check_page_space(ctx, font_sz + 45.0)
+            ctx[`cur_y`] -> ctx[`cur_y`] - 10.0
+            
+            // Record heading anchor destination for hyperlinks
+            let heading_id -> when (el.has(`id`) and el.id != Nothing) { el.id } or { _slugify(el.text) }
+            ctx[`destinations`][heading_id] -> {
+                `page` -> ctx[`page_index`],
+                `x` -> ctx[`margin_x`],
+                `y` -> ctx[`cur_y`]
+            }
+            
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + font_bold + ` ` + Str.to_string(font_sz) + ` Tf ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` Td (` + _pdf_escape(heading_text) + `) Tj ET\n`
+            ctx[`cur_y`] -> ctx[`cur_y`] - (font_sz + 8.0)
+        } or when el_type == `Callout` {
+            let c_type -> el.type
+            let c_rgb -> { `r` -> 0.01, `g` -> 0.52, `b` -> 0.78 } // Default Note: blue
+            let c_title -> `NOTE`
+            when c_type == `tip` {
+                c_rgb -> { `r` -> 0.08, `g` -> 0.64, `b` -> 0.29 }
+                c_title -> `TIP`
+            } or when c_type == `important` {
+                c_rgb -> { `r` -> 0.49, `g` -> 0.23, `b` -> 0.93 }
+                c_title -> `IMPORTANT`
+            } or when c_type == `warning` {
+                c_rgb -> { `r` -> 0.85, `g` -> 0.47, `b` -> 0.02 }
+                c_title -> `WARNING`
+            } or when c_type == `caution` {
+                c_rgb -> { `r` -> 0.86, `g` -> 0.15, `b` -> 0.15 }
+                c_title -> `CAUTION`
+            }
+            when el.title != Nothing { c_title -> el.title }
+            
+            let lines -> _wrap_text(el.text, 72)
+            let callout_h -> (lines.length * 13.0) + 26.0
+            _check_page_space(ctx, callout_h + 12.0)
+            
+            // Background box fill
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(code_bg_rgb[`r`]) + ` ` + Str.to_string(code_bg_rgb[`g`]) + ` ` + Str.to_string(code_bg_rgb[`b`]) + ` rg ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG 0.5 w ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - callout_h) + ` 504 ` + Str.to_string(callout_h) + ` re B Q\n`
+            
+            // 3.5pt Left semantic accent bar
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(c_rgb[`r`]) + ` ` + Str.to_string(c_rgb[`g`]) + ` ` + Str.to_string(c_rgb[`b`]) + ` rg ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - callout_h) + ` 3.5 ` + Str.to_string(callout_h) + ` re f Q\n`
+            
+            // Callout Title
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(c_rgb[`r`]) + ` ` + Str.to_string(c_rgb[`g`]) + ` ` + Str.to_string(c_rgb[`b`]) + ` rg ` + font_bold + ` 9 Tf ` + Str.to_string(ctx[`margin_x`] + 12.0) + ` ` + Str.to_string(ctx[`cur_y`] - 14.0) + ` Td (` + _pdf_escape(c_title) + `) Tj ET\n`
+            
+            // Callout text lines
+            let cy -> ctx[`cur_y`] - 27.0
+            let li -> 0
+            do while li < lines.length {
+                let lstr -> lines[li]
+                when Str.length(lstr) > 0 {
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg ` + font_body + ` 9 Tf ` + Str.to_string(ctx[`margin_x`] + 12.0) + ` ` + Str.to_string(cy) + ` Td (` + _pdf_escape(lstr) + `) Tj ET\n`
+                }
+                cy -> cy - 13.0
+                li -> li + 1
+            }
+            ctx[`cur_y`] -> ctx[`cur_y`] - (callout_h + 14.0)
+        } or when el_type == `Diagram` {
+            let nodes -> el.nodes
+            let num_nodes -> nodes.length
+            when num_nodes > 0 {
+                let diag_h -> 56.0
+                _check_page_space(ctx, diag_h + 16.0)
+                
+                let total_w -> 504.0
+                let node_w -> (total_w - ((num_nodes - 1) * 28.0)) / num_nodes
+                let node_h -> 32.0
+                let box_y -> ctx[`cur_y`] - 38.0
+                
+                let ni -> 0
+                do while ni < num_nodes {
+                    let node_item -> nodes[ni]
+                    let node_lbl -> when (node_item.kind == `Map` and node_item.has(`label`)) { node_item.label } or { Str.to_string(node_item) }
+                    let box_x -> ctx[`margin_x`] + (ni * (node_w + 28.0))
+                    
+                    // Node Box fill & border
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(code_bg_rgb[`r`]) + ` ` + Str.to_string(code_bg_rgb[`g`]) + ` ` + Str.to_string(code_bg_rgb[`b`]) + ` rg ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` RG 1 w ` + Str.to_string(box_x) + ` ` + Str.to_string(box_y) + ` ` + Str.to_string(node_w) + ` ` + Str.to_string(node_h) + ` re B Q\n`
+                    
+                    // Node text centered
+                    let text_len -> Str.length(node_lbl)
+                    let text_offset -> (node_w - (text_len * 5.2)) / 2.0
+                    when text_offset < 4.0 { text_offset -> 4.0 }
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg ` + font_bold + ` 8 Tf ` + Str.to_string(box_x + text_offset) + ` ` + Str.to_string(box_y + 11.0) + ` Td (` + _pdf_escape(node_lbl) + `) Tj ET\n`
+                    
+                    // Connection arrow to next node
+                    when ni < num_nodes - 1 {
+                        let arrow_start_x -> box_x + node_w + 3.0
+                        let arrow_end_x -> arrow_start_x + 22.0
+                        let arrow_y -> box_y + (node_h / 2.0)
+                        
+                        // Line
+                        ctx[`cur_stream`] -> ctx[`cur_stream`] + `q 1.2 w ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` RG ` + Str.to_string(arrow_start_x) + ` ` + Str.to_string(arrow_y) + ` m ` + Str.to_string(arrow_end_x) + ` ` + Str.to_string(arrow_y) + ` l S Q\n`
+                        
+                        // Arrowhead
+                        ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + Str.to_string(arrow_end_x) + ` ` + Str.to_string(arrow_y) + ` m ` + Str.to_string(arrow_end_x - 4.0) + ` ` + Str.to_string(arrow_y + 3.0) + ` l ` + Str.to_string(arrow_end_x - 4.0) + ` ` + Str.to_string(arrow_y - 3.0) + ` l f Q\n`
+                    }
+                    
+                    ni -> ni + 1
+                }
+                ctx[`cur_y`] -> ctx[`cur_y`] - (diag_h + 12.0)
+            }
+        } or when el_type == `Paragraph` {
+            let text_val -> el.text
+            let lines -> _wrap_text(text_val, 78)
+            let needed_h -> (lines.length * 14.0) + 8.0
+            _check_page_space(ctx, needed_h)
+            
+            let li -> 0
+            do while li < lines.length {
+                let line_str -> lines[li]
+                when Str.length(line_str) > 0 {
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg ` + font_body + ` 10 Tf ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`]) + ` Td (` + _pdf_escape(line_str) + `) Tj ET\n`
+                }
+                ctx[`cur_y`] -> ctx[`cur_y`] - 14.0
+                li -> li + 1
+            }
+            ctx[`cur_y`] -> ctx[`cur_y`] - 6.0
+        } or when el_type == `CodeBlock` {
+            let lang -> when (el.has(`language`)) { el.language } or { `zen` }
+            let code_lines -> Str.split(el.code, `\n`)
+            let block_h -> (code_lines.length * 12.0) + 20.0
+            _check_page_space(ctx, block_h + 14.0)
+            
+            // Draw background rectangle
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(code_bg_rgb[`r`]) + ` ` + Str.to_string(code_bg_rgb[`g`]) + ` ` + Str.to_string(code_bg_rgb[`b`]) + ` rg ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG 0.5 w ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - block_h) + ` 504 ` + Str.to_string(block_h) + ` re B Q\n`
+            
+            // Left vertical accent bar (3pt)
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - block_h) + ` 3 ` + Str.to_string(block_h) + ` re f Q\n`
+            
+            // Top-right language badge
+            let lang_badge -> `[` + lang + `]`
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT 0.5 0.5 0.5 rg ` + font_mono + ` 7 Tf ` + Str.to_string(ctx[`margin_x`] + 465.0) + ` ` + Str.to_string(ctx[`cur_y`] - 10.0) + ` Td (` + _pdf_escape(lang_badge) + `) Tj ET\n`
+            
+            let code_y -> ctx[`cur_y`] - 14.0
+            let cli -> 0
+            do while cli < code_lines.length {
+                let cl -> code_lines[cli]
+                let tokens -> _tokenize_code_line(cl, lang)
+                let cur_x -> ctx[`margin_x`] + 12.0
+                
+                let ti -> 0
+                do while ti < tokens.length {
+                    let tok -> tokens[ti]
+                    let t_type -> tok[`type`]
+                    let t_txt -> tok[`text`]
+                    
+                    let font -> font_mono
+                    let color -> code_fg_rgb
+                    
+                    when t_type == `keyword` {
+                        font -> font_mono_bold
+                        color -> syn_keyword_rgb
+                    } or when t_type == `flow` {
+                        font -> font_mono_bold
+                        color -> syn_flow_rgb
+                    } or when t_type == `sentinel` {
+                        font -> font_mono_bold
+                        color -> syn_sentinel_rgb
+                    } or when t_type == `string` {
+                        font -> font_mono
+                        color -> syn_string_rgb
+                    } or when t_type == `comment` {
+                        font -> font_mono
+                        color -> syn_comment_rgb
+                    } or when t_type == `number` {
+                        font -> font_mono
+                        color -> syn_number_rgb
+                    } or when t_type == `type` {
+                        font -> font_mono_bold
+                        color -> syn_type_rgb
+                    }
+                    
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(color[`r`]) + ` ` + Str.to_string(color[`g`]) + ` ` + Str.to_string(color[`b`]) + ` rg ` + font + ` 9 Tf ` + Str.to_string(cur_x) + ` ` + Str.to_string(code_y) + ` Td (` + _pdf_escape(t_txt) + `) Tj ET\n`
+                    
+                    cur_x -> cur_x + (Str.length(t_txt) * 5.4)
+                    ti -> ti + 1
+                }
+                
+                code_y -> code_y - 12.0
+                cli -> cli + 1
+            }
+            ctx[`cur_y`] -> ctx[`cur_y`] - (block_h + 14.0)
+        } or when el_type == `Table` {
+            let num_cols -> el.headers.length
+            when num_cols > 0 {
+                let col_w -> 504.0 / num_cols
+                let table_h -> ((el.rows.length + 1) * 18.0) + 10.0
+                _check_page_space(ctx, table_h)
+                
+                // Header row fill
+                ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(code_bg_rgb[`r`]) + ` ` + Str.to_string(code_bg_rgb[`g`]) + ` ` + Str.to_string(code_bg_rgb[`b`]) + ` rg ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - 18.0) + ` 504 18 re f Q\n`
+                
+                // Header text
+                let hi -> 0
+                do while hi < num_cols {
+                    let cell_x -> ctx[`margin_x`] + (hi * col_w) + 6.0
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg ` + font_bold + ` 9 Tf ` + Str.to_string(cell_x) + ` ` + Str.to_string(ctx[`cur_y`] - 13.0) + ` Td (` + _pdf_escape(el.headers[hi]) + `) Tj ET\n`
+                    hi -> hi + 1
+                }
+                ctx[`cur_y`] -> ctx[`cur_y`] - 18.0
+                
+                // Rows with Zebra Shading
+                let ri -> 0
+                do while ri < el.rows.length {
+                    let row -> el.rows[ri]
+                    
+                    // Alternating row background
+                    when ri % 2 == 1 {
+                        ctx[`cur_stream`] -> ctx[`cur_stream`] + `q ` + Str.to_string(code_bg_rgb[`r`]) + ` ` + Str.to_string(code_bg_rgb[`g`]) + ` ` + Str.to_string(code_bg_rgb[`b`]) + ` rg ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - 18.0) + ` 504 18 re f Q\n`
+                    }
+                    
+                    let ci -> 0
+                    do while ci < row.length and ci < num_cols {
+                        let cell_x -> ctx[`margin_x`] + (ci * col_w) + 6.0
+                        ctx[`cur_stream`] -> ctx[`cur_stream`] + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg ` + font_body + ` 9 Tf ` + Str.to_string(cell_x) + ` ` + Str.to_string(ctx[`cur_y`] - 13.0) + ` Td (` + _pdf_escape(row[ci]) + `) Tj ET\n`
+                        ci -> ci + 1
+                    }
+                    // Row underline
+                    ctx[`cur_stream`] -> ctx[`cur_stream`] + `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - 18.0) + ` m 558 ` + Str.to_string(ctx[`cur_y`] - 18.0) + ` l S Q\n`
+                    ctx[`cur_y`] -> ctx[`cur_y`] - 18.0
+                    ri -> ri + 1
+                }
+                ctx[`cur_y`] -> ctx[`cur_y`] - 10.0
+            }
+        } or when el_type == `HorizontalRule` {
+            _check_page_space(ctx, 20.0)
+            ctx[`cur_stream`] -> ctx[`cur_stream`] + `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG ` + Str.to_string(ctx[`margin_x`]) + ` ` + Str.to_string(ctx[`cur_y`] - 10.0) + ` m 558 ` + Str.to_string(ctx[`cur_y`] - 10.0) + ` l S Q\n`
+            ctx[`cur_y`] -> ctx[`cur_y`] - 20.0
+        }
+        
+        elem_i -> elem_i + 1
+    }
+    
+    // Flush final page
+    when Str.length(ctx[`cur_stream`]) > 0 {
+        ctx[`pages`].append(ctx[`cur_stream`])
+        ctx[`cur_stream`] -> ``
+    }
+    
+    let total_pages -> ctx[`pages`].length
+    when total_pages == 0 {
+        total_pages -> 1
+        ctx[`pages`].append(``)
+    }
+    
+    // ==========================================
+    // 6. Binary PDF Assembly & Cross-Reference Table
+    // ==========================================
+    
+    let pdf_out -> `%PDF-1.4\n`
+    let obj_offsets -> []
+    
+    // Obj 1: Catalog
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`
+    
+    // Obj 2: Pages Tree
+    let kids_str -> `[`
+    let p_idx -> 0
+    do while p_idx < total_pages {
+        let page_obj_id -> 7 + (p_idx * 2)
+        kids_str -> kids_str + Str.to_string(page_obj_id) + ` 0 R `
+        p_idx -> p_idx + 1
+    }
+    kids_str -> kids_str + `]`
+    
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `2 0 obj\n<< /Type /Pages /Kids ` + kids_str + ` /Count ` + Str.to_string(total_pages) + ` >>\nendobj\n`
+    
+    // Obj 3-6: Base 14 Standard Type 1 Fonts
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n`
+    
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj\n`
+    
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>\nendobj\n`
+    
+    obj_offsets.append(Str.length(pdf_out))
+    pdf_out -> pdf_out + `6 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n`
+    
+    // Emit Each Page Object and its Content Stream Object
+    let cur_obj_id -> 7
+    p_idx -> 0
+    do while p_idx < total_pages {
+        let stream_obj_id -> cur_obj_id + 1
+        let stream_content -> ctx[`pages`][p_idx]
+        
+        // Running Top Header on pages > 1
+        when p_idx > 0 {
+            let running_hdr -> `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG 54 756 m 558 756 l S Q\n`
+            running_hdr -> running_hdr + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg /F1 8 Tf 54 762 Td (` + _pdf_escape(title_text) + `) Tj ET\n`
+            running_hdr -> running_hdr + `BT ` + Str.to_string(accent_rgb[`r`]) + ` ` + Str.to_string(accent_rgb[`g`]) + ` ` + Str.to_string(accent_rgb[`b`]) + ` rg /F2 8 Tf 460 762 Td (` + _pdf_escape(badge_text) + `) Tj ET\n`
+            stream_content -> running_hdr + stream_content
+        }
+        
+        // Running Bottom Footer
+        let footer_str -> `q 0.5 w ` + Str.to_string(border_rgb[`r`]) + ` ` + Str.to_string(border_rgb[`g`]) + ` ` + Str.to_string(border_rgb[`b`]) + ` RG 54 44 m 558 44 l S Q\n`
+        footer_str -> footer_str + `BT ` + Str.to_string(fg_rgb[`r`]) + ` ` + Str.to_string(fg_rgb[`g`]) + ` ` + Str.to_string(fg_rgb[`b`]) + ` rg /F1 8 Tf 270 30 Td (Page ` + Str.to_string(p_idx + 1) + ` of ` + Str.to_string(total_pages) + `) Tj ET\n`
+        stream_content -> stream_content + footer_str
+        
+        // Full Page Canvas Background Fill
+        let page_bg_rect -> `q ` + Str.to_string(bg_rgb[`r`]) + ` ` + Str.to_string(bg_rgb[`g`]) + ` ` + Str.to_string(bg_rgb[`b`]) + ` rg 0 0 612 792 re f Q\n`
+        stream_content -> page_bg_rect + stream_content
+        
+        // Page Object
+        obj_offsets.append(Str.length(pdf_out))
+        pdf_out -> pdf_out + Str.to_string(cur_obj_id) + ` 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ` + Str.to_string(stream_obj_id) + ` 0 R /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R /F4 4 0 R /F5 6 0 R /F6 6 0 R >> >> >>\nendobj\n`
+        
+        // Content Stream Object
+        let stream_len -> Str.length(stream_content)
+        obj_offsets.append(Str.length(pdf_out))
+        pdf_out -> pdf_out + Str.to_string(stream_obj_id) + ` 0 obj\n<< /Length ` + Str.to_string(stream_len) + ` >>\nstream\n` + stream_content + `\nendstream\nendobj\n`
+        
+        cur_obj_id -> cur_obj_id + 2
+        p_idx -> p_idx + 1
+    }
+    
+    // Cross-Reference Table (xref)
+    let xref_offset -> Str.length(pdf_out)
+    let total_objects -> obj_offsets.length + 1
+    pdf_out -> pdf_out + `xref\n0 ` + Str.to_string(total_objects) + `\n`
+    pdf_out -> pdf_out + `0000000000 65535 f \n`
+    
+    let oi -> 0
+    do while oi < obj_offsets.length {
+        let off_str -> Str.to_string(obj_offsets[oi])
+        let padded_off -> Str.pad_left(off_str, 10, `0`)
+        pdf_out -> pdf_out + padded_off + ` 00000 n \n`
+        oi -> oi + 1
+    }
+    
+    // Trailer
+    pdf_out -> pdf_out + `trailer\n<< /Size ` + Str.to_string(total_objects) + ` /Root 1 0 R >>\nstartxref\n` + Str.to_string(xref_offset) + `\n%%EOF\n`
+    
+    // Write to output path if specified
+    when output_path != Nothing and Str.length(output_path) > 0 {
+        file.write(output_path, pdf_out)
+    }
+    
+    <- pdf_out
+}

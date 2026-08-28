@@ -1,0 +1,9 @@
+import zen.graphics.bmp as bmp
+
+function main() {
+    let img -> bmp.BMP(10, 10)
+    img.set_pixel(1, 1, 255, 0, 0)
+    img.fill(0, 128, 255)
+    img.save(`tests/graphics/test.bmp`)
+    <- 0
+}

@@ -1,0 +1,45 @@
+import zen.collections.list as list
+import zen.test as test
+
+// map/filter/reduce/find accept lambdas; outer locals are by-value captures
+// (see tests/language/closure_01.zl). Live mutation of outer bindings is not portable.
+
+function test_map_filter_reduce() {
+    let numbers -> [1, 2, 3, 4]
+    let doubled -> list.map(numbers, function(x) { <- x * 2 })
+    let evens -> list.filter(numbers, function(x) { <- x % 2 == 0 })
+    let sum -> list.reduce(numbers, 0, function(acc, x) { <- acc + x })
+
+    let pass -> test.assert_equal(doubled, [2, 4, 6, 8], `map should transform every item`)
+    pass -> pass and test.assert_equal(evens, [2, 4], `filter should keep matching items`)
+    pass -> pass and test.assert_equal(sum, 10, `reduce should accumulate the list`)
+    <- pass
+}
+
+function test_find_contains() {
+    let found -> list.find([3, 7, 9], function(x) { <- x > 5 })
+    let missing -> list.find([1, 2, 3], function(x) { <- x > 10 })
+
+    let pass -> test.assert_equal(found, 7, `find should return the first matching item`)
+    pass -> pass and test.assert_equal(missing, Nothing, `find should return Nothing when no item matches`)
+    pass -> pass and test.assert_true(list.contains([`a`, `b`, `c`], `b`), `contains should find present values`)
+    pass -> pass and test.assert_false(list.contains([`a`, `b`, `c`], `z`), `contains should reject missing values`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `List.map_filter_reduce`, `fn` -> test_map_filter_reduce},
+        {`name` -> `List.find_contains`, `fn` -> test_find_contains}
+    ]
+
+    <- test.run_suite(`List Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

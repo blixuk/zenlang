@@ -1,0 +1,83 @@
+/!
+  High-level HTTP client for Zenlang (dual-path).
+
+  - Interpret: Python urllib
+  - Native `-g`: curl (must be on PATH)
+
+  All request helpers return a map:
+    { `status` -> Integer, `body` -> String, `headers` -> Map }
+
+  On transport failure, `status` is `-1` and `body` holds an error message.
+!/
+
+/!
+  True when HTTP status is 2xx.
+!/
+function ok(resp) {
+    when resp == Nothing { <- false }
+    let s -> resp[`status`]
+    when s == Nothing { <- false }
+    <- s >= 200 and s < 300
+}
+
+/!
+  Response body string (empty if missing).
+!/
+function body(resp) {
+    when resp == Nothing { <- `` }
+    let b -> resp[`body`]
+    when b == Nothing { <- `` }
+    <- b
+}
+
+/!
+  Response status code (-1 if missing).
+!/
+function status(resp) {
+    when resp == Nothing { <- -1 }
+    let s -> resp[`status`]
+    when s == Nothing { <- -1 }
+    <- s
+}
+
+/!
+  Performs an HTTP GET request.
+  @param url The URL (http, https, or file:// under curl/urllib).
+  @return Map with status, body, and headers.
+!/
+export function get(url) {
+    <- __builtin_net.http_request(url, `GET`, ``, {})
+}
+
+/!
+  Performs an HTTP POST request.
+  @param url The URL.
+  @param body The request body.
+  @param headers Optional map of headers (may be Nothing/`{}`).
+  @return Map with status, body, and headers.
+!/
+export function post(url, body, headers) {
+    let h -> headers
+    when h == Nothing { h -> {} }
+    let b -> body
+    when b == Nothing { b -> `` }
+    <- __builtin_net.http_request(url, `POST`, b, h)
+}
+
+/!
+  Performs a generic HTTP request.
+  @param url The URL.
+  @param method Method (GET, POST, PUT, DELETE, etc.).
+  @param body Optional request body.
+  @param headers Optional map of headers.
+  @return Map with status, body, and headers.
+!/
+export function request(url, method, body, headers) {
+    let h -> headers
+    when h == Nothing { h -> {} }
+    let b -> body
+    when b == Nothing { b -> `` }
+    let m -> method
+    when m == Nothing { m -> `GET` }
+    <- __builtin_net.http_request(url, m, b, h)
+}

@@ -1,0 +1,79 @@
+import zen.geometry.point as point
+import zen.geometry.rectangle as rect
+import zen.geometry.size as size
+import zen.geometry.vector2 as vector2
+import zen.geometry.vector3 as vector3
+import zen.geometry.line as line
+import zen.geometry.circle as circle
+import zen.geometry.triangle as triangle
+
+import zen.test as test
+
+function test_point_vector() {
+    let p -> point.Point(10, 20)
+    let v -> vector2.Vector2(5, 5)
+
+    let pass -> test.assert_equal(p.x, 10, `point should store x`)
+    pass -> pass and test.assert_equal(v.y, 5, `vector should store y`)
+
+    let p2 -> p.translate(v)
+    pass -> pass and test.assert_equal(p2.x, 15, `translate should add x`)
+    pass -> pass and test.assert_equal(p2.y, 25, `translate should add y`)
+
+    <- pass
+}
+
+function test_vector3() {
+    let v -> vector3.Vector3(1, 2, 2)
+    let pass -> test.assert_equal(v.length(), 3, `vector3 length should be 3`)
+    
+    let v2 -> v.scale(2)
+    pass -> pass and test.assert_equal(v2.y, 4, `vector3 scale should multiply y`)
+    
+    <- pass
+}
+
+function test_rectangle() {
+    let r -> rect.Rectangle(0, 0, 30, 40)
+    let p_inside -> point.Point(15, 20)
+    let p_outside -> point.Point(50, 50)
+
+    let pass -> test.assert_equal(r.w, 30, `rectangle should store width`)
+    pass -> pass and test.assert_equal(r.contains(p_inside), true, `rectangle should contain point`)
+    pass -> pass and test.assert_equal(r.contains(p_outside), false, `rectangle should not contain point`)
+    
+    let c -> r.center()
+    pass -> pass and test.assert_equal(c.x, 15, `center x should be 15`)
+    
+    <- pass
+}
+
+function test_shapes() {
+    let s -> size.Size(80, 24)
+    let pass -> test.assert_equal(s.w, 80, `size should store width`)
+
+    let c -> circle.Circle(point.Point(0, 0), 10)
+    pass -> pass and test.assert_equal(c.contains(point.Point(5, 5)), true, `circle should contain point`)
+    pass -> pass and test.assert_equal(c.contains(point.Point(20, 20)), false, `circle should not contain point`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Geometry.Point_Vector2`, `fn` -> test_point_vector},
+        {`name` -> `Geometry.Vector3`, `fn` -> test_vector3},
+        {`name` -> `Geometry.Rectangle`, `fn` -> test_rectangle},
+        {`name` -> `Geometry.Shapes`, `fn` -> test_shapes}
+    ]
+
+    <- test.run_suite(`Geometry Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -43,6 +43,7 @@ from Parser.AST import (
     CallExpression,
     ContinueStatement,
     DecimalLiteral,
+    DefaultLiteral,
     DoStatement,
     EnumeratorStatement,
     EnumVariant,
@@ -125,10 +126,17 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         source_path: str,
         strict: bool = False,
         debug: bool = False,
+        recover: bool = False,
     ) -> None:
-        print("\n" + "!"*40 + "\nTYPECHECKER __INIT__\n" + "!"*40 + "\n", flush=True)
+        if debug:
+            print("\n" + "!"*40 + "\nTYPECHECKER __INIT__\n" + "!"*40 + "\n", flush=True)
         self.debugging: bool = debug
         self.strict: bool = strict
+        self.recover: bool = recover  # When True: collect all errors without stopping on first
+        # Declare all functions first so later siblings (e.g. Lexer._read_doc)
+        # resolve when an earlier function body is checked.
+        self.defer_function_bodies: bool = True
+        self.deferred_functions: list = []
 
         self.source_path: str = source_path
         self.AST: Statements = AST
@@ -256,22 +264,164 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         if AST is None:
             AST = self.AST
 
-        try:
+        if self.debugging:
             print("First Pass!")
-            for statement in AST.statements:
-                self.check_statement(statement)
-        except Exception as error:
-            import traceback
-            traceback.print_exc()
-            self.logger.print_errors()
 
-            if self.strict:
-                raise error
+        if self.recover:
+            # Recovery mode: check every statement independently so all errors surface.
+            for statement in AST.statements:
+                try:
+                    self.check_statement(statement)
+                except Exception as error:
+                    if self.debugging:
+                        import traceback
+                        traceback.print_exc()
+                    if self.strict:
+                        raise
+                    # Error already appended to self.logger by the raising handler;
+                    # if not (e.g. bare raise), log it now.
+                    if not self.logger.has_errors:
+                        self.logger.error(str(error))
+            try:
+                self._flush_deferred_functions()
+            except Exception as error:
+                if self.debugging:
+                    import traceback
+                    traceback.print_exc()
+                if self.strict:
+                    raise
+                if not self.logger.has_errors:
+                    self.logger.error(str(error))
+        else:
+            try:
+                for statement in AST.statements:
+                    self.check_statement(statement)
+                self._flush_deferred_functions()
+            except Exception as error:
+                if self.debugging:
+                    import traceback
+                    traceback.print_exc()
+                if self.strict:
+                    raise error
+                # Errors already logged via self.logger; let the caller (Zen.py) print and exit.
 
         self.scope.current_scope = self.scope.global_scope
         AST.scope = self.scope
 
         return AST
+
+    def _get_literal_class_for_type(self, node_type: str):
+        from Parser.AST import (
+            IntegerLiteral,
+            BooleanLiteral,
+            DecimalLiteral,
+            RuneLiteral,
+            StringLiteral,
+            NothingLiteral,
+        )
+        return {
+            "IntegerLiteral": IntegerLiteral,
+            "BooleanLiteral": BooleanLiteral,
+            "DecimalLiteral": DecimalLiteral,
+            "RuneLiteral": RuneLiteral,
+            "StringLiteral": StringLiteral,
+            "NothingLiteral": NothingLiteral,
+        }.get(node_type)
+
+    def _flush_deferred_functions(self):
+        while self.deferred_functions:
+            batch = self.deferred_functions
+            self.deferred_functions = []
+            for item in batch:
+                if self.recover:
+                    try:
+                        self._check_deferred_function(item)
+                    except Exception as error:
+                        if self.debugging:
+                            import traceback
+                            traceback.print_exc()
+                        if self.strict:
+                            raise
+                        if not self.logger.has_errors:
+                            self.logger.error(str(error))
+                else:
+                    self._check_deferred_function(item)
+
+    def _check_deferred_function(self, item):
+        (
+            statement,
+            source_path,
+            current_class,
+            symbol,
+            enclosing_scope,
+            enclosing_level,
+            enclosing_region,
+        ) = item
+
+        saved_path = self.source_path
+        saved_class = self.current_class
+        saved_scope = self.scope.current_scope
+        saved_level = self.scope.level
+        saved_region = self.scope.current_region
+
+        self.source_path = source_path
+        self.current_class = current_class
+        self.scope.current_scope = enclosing_scope
+        self.scope.level = enclosing_level
+        self.scope.current_region = enclosing_region
+
+        from Parser.AST import TaskStatement
+        region_prefix = "task" if isinstance(statement, TaskStatement) else "func"
+        self.scope.push(region_id=f"{region_prefix}_{statement.name}")
+
+        if self.current_class:
+            self.scope.define(
+                Symbol(
+                    "self",
+                    self.current_class,
+                    None,
+                    False,
+                    SymbolKind.VARIABLE,
+                    statement.scope_level,
+                )
+            )
+
+        for parameter in statement.parameters:
+            parameter_type = getattr(parameter, "declared_type", None)
+            if parameter_type is None:
+                parameter_type = self.new_typevariable()
+            self.scope.define(
+                Symbol(
+                    parameter.name,
+                    parameter_type,
+                    getattr(parameter, "value", None),
+                    True,
+                    SymbolKind.PARAMETER,
+                    self.scope.get_current_level(),
+                )
+            )
+
+        result_type = self.check_block_statement(statement.body)
+        self.scope.pop()
+
+        symbol.resolved_type = result_type
+        if hasattr(symbol, "type") and symbol.type is not None:
+            try:
+                new_func_type = type(symbol.type)(
+                    symbol.type.name,
+                    symbol.type.parameters,
+                    result_type,
+                )
+                symbol.type = new_func_type
+                statement.resolved_type = new_func_type
+            except Exception:
+                statement.resolved_type = result_type
+
+        self.source_path = saved_path
+        self.current_class = saved_class
+        self.scope.current_scope = saved_scope
+        self.scope.level = saved_level
+        self.scope.current_region = saved_region
 
     ## Check Statements
 
@@ -464,6 +614,9 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
             expression.resolved_type = TypeNothing()
             return expression.resolved_type
 
+        elif isinstance(expression, DefaultLiteral):
+            return self._check_default_literal(expression)
+
         elif isinstance(expression, VoidLiteral):
             expression.resolved_type = TypeVoid()
             return expression.resolved_type
@@ -538,6 +691,8 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
 
         # Type variables bidirectional binding
         if isinstance(a, TypeVariable):
+            if a is b:
+                return a
             if a.bound is not None:
                 return self.unify(a.bound, b, attachment)
 
@@ -548,12 +703,12 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
             return b
 
         if isinstance(b, TypeVariable):
+            if a is b:
+                return b
             return self.unify(b, a, attachment)
 
         # Handle Default literal zero-value materialization
         if isinstance(a, TypeDefault) and b is not None and not isinstance(b, (TypeDefault, TypeVariant)):
-            a.zero_value_target = b
-            
             # Find the DefaultLiteral node via attachment
             node_to_materialize = None
             if attachment is not None:
@@ -582,12 +737,21 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
                     node_to_materialize.value = 0.0
                 elif isinstance(b, TypeRune):
                     node_to_materialize.node_type = "RuneLiteral"
-                    node_to_materialize.value = '`\0`'
+                    node_to_materialize.value = ""
                 elif isinstance(b, TypeString):
                     node_to_materialize.node_type = "StringLiteral"
-                    node_to_materialize.value = '``'
+                    node_to_materialize.value = ""
+                elif isinstance(b, TypeList):
+                    node_to_materialize.node_type = "ListLiteral"
+                    node_to_materialize.elements = []
+                elif isinstance(b, TypeMap):
+                    node_to_materialize.node_type = "MapLiteral"
+                    node_to_materialize.elements = []
                 
-                node_to_materialize.__class__ = self._get_literal_class_for_type(node_to_materialize.node_type)
+                cls = self._get_literal_class_for_type(node_to_materialize.node_type)
+                if cls is not None:
+                    node_to_materialize.__class__ = cls
+                node_to_materialize.resolved_type = b
             return b
 
         if isinstance(b, TypeDefault) and a is not None and not isinstance(a, (TypeDefault, TypeVariant)):

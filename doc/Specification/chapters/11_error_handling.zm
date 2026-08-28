@@ -1,0 +1,25 @@
+// Chapter 11: Error Handling & Safety Boundaries
+
+Heading { text -> `11. Error Handling & Safety Boundaries`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang eliminates unhandled runtime panics with explicit check / or error boundaries and typed error propagation:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        function parse_config(filepath) {
+            check {
+                let data -> file.read(filepath)
+                let cfg  -> zd.parse(data)
+                <- Ok(cfg)
+            } or {
+                io.writeln("[ERROR] Failed to load configuration: " + filepath)
+                <- Err("CONFIG_LOAD_FAILED")
+            }
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

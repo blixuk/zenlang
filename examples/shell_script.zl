@@ -1,0 +1,93 @@
+/!
+  Bash-style scripting with Zen — a small "replace the shell script" demo.
+
+  Run:
+    python3 bootstrap/Zen.py examples/shell_script.zl
+    python3 bootstrap/Zen.py -g examples/shell_script.zl
+
+  Patterns:
+    process.shell(\`...\`)     — like command substitution / running a line of bash
+    process.pipeline(\`a|b\`)  — pipes stay in the shell
+    process.ok(\`...\`)        — like \`if cmd; then\`
+    process.require(\`...\`)   — like \`set -e\` for one command
+    process.result(\`...\`)    — stdout/stderr/code map (bash \`$?\`)
+!/
+
+import zen.sys.process as process
+import zen.sys.sys as sys
+import zen.io.io as io
+import zen.io.file as file
+import zen.text.string as Str
+
+function main() {
+    io.write(`=== Zen shell scripting demo ===\n`)
+    io.write(`cwd: ` + sys.get_cwd() + `\n`)
+    io.write(`pid: ` + Str.to_string(process.get_id()) + `\n\n`)
+
+    // Recursive file listing (stdlib walk) — first few under lib/zen/sys
+    io.write(`-- file.list_files(lib/zen/sys) --\n`)
+    let mods -> file.list_files(`lib/zen/sys`)
+    let mi -> 0
+    do while mi < mods.length and mi < 8 {
+        io.write(`  ` + mods[mi] + `\n`)
+        mi -> mi + 1
+    }
+    io.write(`  (` + Str.to_string(mods.length) + ` files total)\n\n`)
+
+    // One-shot shell (globs, pipes, redirects available)
+    let listing -> process.shell(`ls -la | head -5`)
+    io.write(`-- ls | head --\n`)
+    io.write(listing)
+    io.write(`\n`)
+
+    // Exit-status aware (bash: if make -q; then)
+    when process.ok(`test -d lib/zen`) {
+        io.write(`ok: lib/zen is a directory\n`)
+    } or {
+        io.write(`missing lib/zen\n`)
+        <- 1
+    }
+
+    // Fail-fast (bash: set -e)
+    let uname -> Str.trim(process.require(`uname -s`))
+    io.write(`uname: ` + uname + `\n`)
+
+    // Full result map
+    let r -> process.result(`echo hi; echo err 1>&2; true`)
+    io.write(`result.code=` + Str.to_string(r.code) + `\n`)
+    io.write(`result.stdout=` + Str.trim(r.stdout) + `\n`)
+
+    // Pipeline sugar (shell string)
+    let count -> Str.trim(process.pipeline(`printf 'a\nb\nc\n' | wc -l`))
+    io.write(`line count via pipe: ` + count + `\n`)
+
+    // Fluent argv pipeline (quoted stages → sh). Prefer named Pipeline for native.
+    let pipe -> process.Pipeline(`printf`, [`a\nb\nc\n`])
+    pipe.pipe(`wc`, [`-l`])
+    let count2 -> Str.trim(pipe.run())
+    io.write(`fluent pipeline count: ` + count2 + `\n`)
+
+    // Child-only directory (parent cwd unchanged)
+    let here -> Str.trim(process.shell(`pwd`))
+    let there -> Str.trim(process.shell_in(`/tmp`, `pwd`))
+    io.write(`pwd here=` + here + ` / shell_in=/tmp → ` + there + `\n`)
+
+    // Per-command env (bash: FOO=bar cmd) — does not pollute parent
+    let env -> {`ZEN_DEMO` -> `from_zen`}
+    let demo -> Str.trim(process.shell_env(env, `printenv ZEN_DEMO`))
+    io.write(`shell_env ZEN_DEMO=` + demo + `\n`)
+
+    // Stream lines without buffering the whole command (like while read)
+    io.write(`-- each_line --\n`)
+    process.each_line(`printf 'alpha\nbeta\n'`, function(line) {
+        io.write(`  * ` + line + `\n`)
+    })
+
+    // Real OS pipes (no shell) for argv stages
+    let realp -> process.Pipeline(`printf`, [`1\n2\n3\n`])
+    realp.pipe(`wc`, [`-l`])
+    io.write(`real pipe line count: ` + Str.trim(realp.run()) + `\n`)
+
+    io.write(`=== done ===\n`)
+    <- 0
+}

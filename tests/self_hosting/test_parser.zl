@@ -1,0 +1,344 @@
+/!
+ Stage 2: selfhost Parser dual-path smoke.
+ Avoid nested backticks inside source fixtures.
+ !/
+
+import compiler.Parser as Parser
+import compiler.AST as AST
+import zen.test as test
+import zen.text.string as Str
+
+function count_kind(stmts, kind) {
+    let n -> 0
+    do for s in stmts {
+        when AST.ast_kind(s) == kind {
+            n -> n + 1
+        }
+    }
+    <- n
+}
+
+function test_functions_and_lets() {
+    let src -> `
+function add(a, b) {
+    let s -> a + b
+    <- s
+}
+
+function main() {
+    let x -> add(1, 2)
+    <- x
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.ast_kind(prog), AST.K_PROGRAM, `program kind`)
+    pass -> pass and test.assert_equal(AST.prog_err(prog), Nothing, `no parse error`)
+    let stmts -> AST.prog_stmts(prog)
+    pass -> pass and test.assert_equal(count_kind(stmts, AST.K_FUNCTION), 2, `two functions`)
+    <- pass
+}
+
+function test_when_chain() {
+    let src -> `
+function f(x) {
+    when x == 1 {
+        <- 10
+    } or when x == 2 {
+        <- 20
+    } or {
+        <- 0
+    }
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `when parse ok`)
+    let fn -> AST.prog_stmts(prog)[0]
+    pass -> pass and test.assert_equal(AST.ast_kind(fn), AST.K_FUNCTION, `fn`)
+    let body_stmts -> AST.block_stmts(AST.fn_body(fn))
+    pass -> pass and test.assert_equal(AST.ast_kind(body_stmts[0]), AST.K_WHEN, `when stmt`)
+    let cases -> AST.when_cases(body_stmts[0])
+    pass -> pass and test.assert_equal(cases.length, 3, `three cases`)
+    <- pass
+}
+
+function test_do_while() {
+    let src -> `
+function f() {
+    let i -> 0
+    do while i < 3 {
+        i -> i + 1
+    }
+    <- i
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `do while ok`)
+    let fn -> AST.prog_stmts(prog)[0]
+    let body -> AST.block_stmts(AST.fn_body(fn))
+    pass -> pass and test.assert_equal(body.length, 3, `body stmts`)
+    pass -> pass and test.assert_equal(AST.ast_kind(body[1]), AST.K_DO_WHILE, `do while kind`)
+    <- pass
+}
+
+function test_structure() {
+    let src -> `
+structure Point {
+    x: Integer
+    y: Integer
+}
+
+function main() {
+    let p -> Point { x -> 1, y -> 2 }
+    <- p.x
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `struct parse ok`)
+    let stmts -> AST.prog_stmts(prog)
+    pass -> pass and test.assert_equal(AST.ast_kind(stmts[0]), AST.K_STRUCTURE, `structure`)
+    pass -> pass and test.assert_equal(AST.struct_name(stmts[0]), `Point`, `name`)
+    pass -> pass and test.assert_equal(AST.struct_members(stmts[0]).length, 2, `two members`)
+    <- pass
+}
+
+function test_class() {
+    let src -> `
+class Counter {
+    let n
+    function init(v) {
+        self.n -> v
+    }
+    function inc() {
+        <- self.n + 1
+    }
+}
+function main() {
+    let c -> Counter(0)
+    <- c.inc()
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `class parse ok`)
+    let stmts -> AST.prog_stmts(prog)
+    pass -> pass and test.assert_equal(AST.ast_kind(stmts[0]), AST.K_CLASS, `class kind`)
+    pass -> pass and test.assert_equal(AST.class_name(stmts[0]), `Counter`, `class name`)
+    pass -> pass and test.assert_equal(AST.class_members(stmts[0]).length, 1, `one field`)
+    pass -> pass and test.assert_equal(AST.class_methods(stmts[0]).length, 2, `init+inc`)
+    pass -> pass and test.assert_equal(AST.fn_name(AST.class_methods(stmts[0])[0]), `init`, `init method`)
+    <- pass
+}
+
+function test_with_statement() {
+    let src -> `
+function main() {
+    with f() as x {
+        <- x
+    }
+    <- 0
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `with parse`)
+    let body -> AST.block_stmts(AST.fn_body(AST.prog_stmts(prog)[0]))
+    pass -> pass and test.assert_equal(AST.ast_kind(body[0]), AST.K_WITH, `with kind`)
+    pass -> pass and test.assert_equal(AST.with_alias(body[0]), `x`, `alias`)
+    <- pass
+}
+
+function test_enumerator_and_lambda() {
+    let src -> `
+enumerator Color {
+    Red
+    Green
+}
+function main() {
+    let f -> function(x) {
+        <- x + 1
+    }
+    let c -> Color.Red
+    when c is Color.Red {
+        <- f(1)
+    }
+    <- 0
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `parse ok`)
+    let stmts -> AST.prog_stmts(prog)
+    pass -> pass and test.assert_equal(AST.ast_kind(stmts[0]), AST.K_ENUMERATOR, `enum`)
+    pass -> pass and test.assert_equal(AST.enum_members(stmts[0]).length, 2, `two members`)
+    let body -> AST.block_stmts(AST.fn_body(stmts[1]))
+    pass -> pass and test.assert_equal(AST.ast_kind(AST.let_val(body[0])), AST.K_FUNC_EXPR, `lambda`)
+    <- pass
+}
+
+function test_class_extends() {
+    let src -> `
+class Animal {
+    let name
+    function speak() {
+        <- 1
+    }
+}
+class Dog extends Animal {
+    function speak() {
+        <- 2
+    }
+}
+function main() {
+    <- 0
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `extends parse`)
+    let stmts -> AST.prog_stmts(prog)
+    pass -> pass and test.assert_equal(AST.ast_kind(stmts[0]), AST.K_CLASS, `animal`)
+    pass -> pass and test.assert_equal(AST.ast_kind(stmts[1]), AST.K_CLASS, `dog`)
+    pass -> pass and test.assert_equal(AST.class_name(stmts[1]), `Dog`, `dog name`)
+    pass -> pass and test.assert_equal(AST.class_base(stmts[1]), `Animal`, `base Animal`)
+    <- pass
+}
+
+function test_assert_and_call() {
+    // no nested backticks in fixture
+    let src -> `
+function main() {
+    ! 1 + 2 == 3
+    print_ok()
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `assert parse ok`)
+    let body -> AST.block_stmts(AST.fn_body(AST.prog_stmts(prog)[0]))
+    pass -> pass and test.assert_equal(AST.ast_kind(body[0]), AST.K_ASSERT, `assert`)
+    pass -> pass and test.assert_equal(AST.ast_kind(body[1]), AST.K_EXPR_STMT, `call stmt`)
+    <- pass
+}
+
+function test_core_01_shape() {
+    let src -> `
+function test_literals() {
+    ! True
+    ! not False
+    ! 100 == 100
+}
+
+function main() {
+    test_literals()
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `01 shape ok`)
+    pass -> pass and test.assert_equal(count_kind(AST.prog_stmts(prog), AST.K_FUNCTION), 2, `two fns`)
+    <- pass
+}
+
+/!
+ Stage 7.x parser fixes: exact is_kind, map lit, Nothing/and, soft-keyword names,
+ string value "-" not unary minus.
+ !/
+function test_map_literal_and_logic() {
+    let src -> `
+function main() {
+    let m -> { ok -> true, n -> 1 }
+    when m != Nothing and n != 0 {
+        <- 0
+    }
+    <- 1
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `map+and parse`)
+    <- pass
+}
+
+function test_nothing_and_string_dash() {
+    let src -> `
+function main() {
+    let a -> Nothing
+    let d -> -
+    when a != Nothing and d != -
+    {
+        <- 1
+    }
+    <- 0
+}
+`
+    // dash strings via concatenation to avoid fixture backtick hell
+    // (sources use backtick-dash-backtick in real files; here use empty + ops)
+    src -> `
+function main() {
+    let a -> Nothing
+    when a != Nothing and true {
+        <- 1
+    }
+    let x -> Str.starts_with(s, prefix)
+    <- 0
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `Nothing+and`)
+    <- pass
+}
+
+function test_soft_keyword_param_scope() {
+    let src -> `
+function checker_reset(scope) {
+    <- scope
+}
+function main() {
+    <- checker_reset(1)
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `scope param`)
+    let fn -> AST.prog_stmts(prog)[0]
+    pass -> pass and test.assert_equal(AST.fn_params(fn).length, 1, `one param`)
+    pass -> pass and test.assert_equal(AST.param_name(AST.fn_params(fn)[0]), `scope`, `name scope`)
+    <- pass
+}
+
+function test_export_and_from_import() {
+    let src -> `
+from compiler.Token import TokenType
+export function get_args() {
+    <- 1
+}
+function main() {
+    <- get_args()
+}
+`
+    let prog -> Parser.parse_source(src)
+    let pass -> test.assert_equal(AST.prog_err(prog), Nothing, `from+export`)
+    pass -> pass and test.assert_equal(AST.ast_kind(AST.prog_stmts(prog)[0]), AST.K_IMPORT, `from as import`)
+    pass -> pass and test.assert_equal(AST.ast_kind(AST.prog_stmts(prog)[1]), AST.K_FUNCTION, `export fn`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Parser.functions_lets`, `fn` -> test_functions_and_lets},
+        {`name` -> `Parser.when_chain`, `fn` -> test_when_chain},
+        {`name` -> `Parser.do_while`, `fn` -> test_do_while},
+        {`name` -> `Parser.structure`, `fn` -> test_structure},
+        {`name` -> `Parser.class`, `fn` -> test_class},
+        {`name` -> `Parser.class_extends`, `fn` -> test_class_extends},
+        {`name` -> `Parser.enum_lambda`, `fn` -> test_enumerator_and_lambda},
+        {`name` -> `Parser.with_stmt`, `fn` -> test_with_statement},
+        {`name` -> `Parser.assert_call`, `fn` -> test_assert_and_call},
+        {`name` -> `Parser.core_01_shape`, `fn` -> test_core_01_shape},
+        {`name` -> `Parser.map_and`, `fn` -> test_map_literal_and_logic},
+        {`name` -> `Parser.nothing_and`, `fn` -> test_nothing_and_string_dash},
+        {`name` -> `Parser.scope_param`, `fn` -> test_soft_keyword_param_scope},
+        {`name` -> `Parser.export_from`, `fn` -> test_export_and_from_import}
+    ]
+    <- test.run_suite(`Selfhost Stage2 Parser`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

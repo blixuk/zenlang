@@ -6,6 +6,7 @@ from Parser.AST import (
     BreakStatement,
     ContinueStatement,
     ReturnStatement,
+    BlockStatement,
     WhenStatement,
     CaseBranch,
     IteratorLiteral,
@@ -66,7 +67,71 @@ class ControlFlowParserMixin:
         conditional_blocks: list = []
         or_block: ASTNode | None = None
 
-        if self.token_handler.check_type(TokenType.LEFT_BRACE):
+        is_guard = self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return")
+        if is_guard:
+            # Directional Guard Return: when condition <- expr
+            expr = self.expression_handler.expression()
+            ret_stmt = ReturnStatement(
+                expr.line,
+                expr.column,
+                self.scope_manager.get_current_scope_level(),
+                expr,
+                None,
+            )
+            when_block = BlockStatement(
+                expr.line,
+                expr.column,
+                self.scope_manager.get_current_scope_level(),
+                "when",
+                [ret_stmt],
+            )
+            while self.token_handler.match_type(TokenType.OR):
+                if not self.token_handler.check_type(TokenType.LEFT_BRACE) and not self.token_handler.check_type(TokenType.RETURN) and not self.token_handler.check_type_value(TokenType.KEYWORD, "return"):
+                    self.token_handler.match_type_value(TokenType.KEYWORD, "when")
+                    conditional_condition: ASTNode = self.expression_handler.expression(allow_instantiation=False)
+                    if self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+                        cond_expr = self.expression_handler.expression()
+                        cond_ret = ReturnStatement(
+                            cond_expr.line,
+                            cond_expr.column,
+                            self.scope_manager.get_current_scope_level(),
+                            cond_expr,
+                            None,
+                        )
+                        conditional_block = BlockStatement(
+                            cond_expr.line,
+                            cond_expr.column,
+                            self.scope_manager.get_current_scope_level(),
+                            "conditional",
+                            [cond_ret],
+                        )
+                    else:
+                        conditional_block = self.block_statement("conditional")
+                    conditional_blocks.append(
+                        {"condition": conditional_condition, "block": conditional_block}
+                    )
+                elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+                    or_expr = self.expression_handler.expression()
+                    or_ret = ReturnStatement(
+                        or_expr.line,
+                        or_expr.column,
+                        self.scope_manager.get_current_scope_level(),
+                        or_expr,
+                        None,
+                    )
+                    or_block = BlockStatement(
+                        or_expr.line,
+                        or_expr.column,
+                        self.scope_manager.get_current_scope_level(),
+                        "or",
+                        [or_ret],
+                    )
+                    break
+                else:
+                    or_block = self.block_statement("or")
+                    break
+
+        elif self.token_handler.check_type(TokenType.LEFT_BRACE):
             # Peak inside to see if it's a structural match (starts with 'is')
             next_t = self.token_handler.tokens[self.token_handler.current_token + 1]
             if next_t.type == TokenType.KEYWORD and next_t.value == "is":
@@ -91,13 +156,47 @@ class ControlFlowParserMixin:
             else:
                 when_block = self.block_statement("when")
                 while self.token_handler.match_type(TokenType.OR):
-                    if not self.token_handler.check_type(TokenType.LEFT_BRACE):
+                    if not self.token_handler.check_type(TokenType.LEFT_BRACE) and not self.token_handler.check_type(TokenType.RETURN) and not self.token_handler.check_type_value(TokenType.KEYWORD, "return"):
                         self.token_handler.match_type_value(TokenType.KEYWORD, "when")
                         conditional_condition: ASTNode = self.expression_handler.expression(allow_instantiation=False)
-                        conditional_block: ASTNode = self.block_statement("conditional")
+                        if self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+                            cond_expr = self.expression_handler.expression()
+                            cond_ret = ReturnStatement(
+                                cond_expr.line,
+                                cond_expr.column,
+                                self.scope_manager.get_current_scope_level(),
+                                cond_expr,
+                                None,
+                            )
+                            conditional_block = BlockStatement(
+                                cond_expr.line,
+                                cond_expr.column,
+                                self.scope_manager.get_current_scope_level(),
+                                "conditional",
+                                [cond_ret],
+                            )
+                        else:
+                            conditional_block = self.block_statement("conditional")
                         conditional_blocks.append(
                             {"condition": conditional_condition, "block": conditional_block}
                         )
+                    elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+                        or_expr = self.expression_handler.expression()
+                        or_ret = ReturnStatement(
+                            or_expr.line,
+                            or_expr.column,
+                            self.scope_manager.get_current_scope_level(),
+                            or_expr,
+                            None,
+                        )
+                        or_block = BlockStatement(
+                            or_expr.line,
+                            or_expr.column,
+                            self.scope_manager.get_current_scope_level(),
+                            "or",
+                            [or_ret],
+                        )
+                        break
                     else:
                         or_block = self.block_statement("or")
                         break

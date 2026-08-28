@@ -1,0 +1,105 @@
+import zen.test as test
+import zen.zendata as zd
+import zen.text.string as Str
+
+function test_primitives_and_sentinels() {
+    let raw -> `
+    // Configuration test
+    {
+        name -> "ZenApp",
+        version -> 1.5,
+        count -> 42,
+        active -> True,
+        disabled -> False,
+        missing -> Nothing,
+        zero -> Default,
+        hex_val -> 0xff,
+        bin_val -> 0b1010
+    }
+    `
+    let data -> zd.parse(raw)
+    let pass -> test.assert_equal(data.name, `ZenApp`, `string parsed`)
+    set pass -> pass and test.assert_equal(data.count, 42, `int parsed`)
+    set pass -> pass and test.assert_equal(data.active, True, `True parsed`)
+    set pass -> pass and test.assert_equal(data.disabled, False, `False parsed`)
+    set pass -> pass and test.assert_equal(data.missing, Nothing, `Nothing parsed`)
+    set pass -> pass and test.assert_equal(data.hex_val, 255, `hex parsed`)
+    set pass -> pass and test.assert_equal(data.bin_val, 10, `bin parsed`)
+    <- pass
+}
+
+function test_lists_and_flow_maps() {
+    let raw -> `
+    /!
+       Block comment test
+    !/
+    {
+        \`items\` -> [
+            \`alpha\`,
+            \`beta\`,
+            \`gamma\`,
+        ],
+        \`nested\` -> {
+            \`inner_k\` -> \`inner_v\`,
+        }
+    }
+    `
+    let data -> zd.parse(raw)
+    let items -> data[`items`]
+    let pass -> test.assert_equal(items.length, 3, `list length is 3`)
+    set pass -> pass and test.assert_equal(items[1], `beta`, `list item 1 is beta`)
+    set pass -> pass and test.assert_equal(data[`nested`][`inner_k`], `inner_v`, `nested map value is inner_v`)
+    <- pass
+}
+
+function test_tagged_structs() {
+    let raw -> `
+    Color {
+        r -> 56,
+        g -> 189,
+        b -> 248,
+        a -> 255
+    }
+    `
+    let data -> zd.parse(raw)
+    let pass -> test.assert_equal(data[`__type__`], `Color`, `struct type is Color`)
+    set pass -> pass and test.assert_equal(data.r, 56, `Color r is 56`)
+    set pass -> pass and test.assert_equal(data.g, 189, `Color g is 189`)
+    <- pass
+}
+
+function test_stringify_roundtrip() {
+    let original -> {
+        `title` -> `Zenlang`,
+        `ports` -> [80, 443],
+        `enabled` -> True,
+        `extra` -> Nothing
+    }
+    let serialized -> zd.stringify(original, 0)
+    let parsed_back -> zd.parse(serialized)
+    
+    let pass -> test.assert_equal(parsed_back.title, `Zenlang`, `roundtrip title`)
+    set pass -> pass and test.assert_equal(parsed_back.ports.length, 2, `roundtrip ports length`)
+    set pass -> pass and test.assert_equal(parsed_back.enabled, True, `roundtrip enabled`)
+    set pass -> pass and test.assert_equal(parsed_back.extra, Nothing, `roundtrip extra Nothing`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `ZenData.primitives_and_sentinels`, `fn` -> test_primitives_and_sentinels},
+        {`name` -> `ZenData.lists_and_flow_maps`, `fn` -> test_lists_and_flow_maps},
+        {`name` -> `ZenData.tagged_structs`, `fn` -> test_tagged_structs},
+        {`name` -> `ZenData.stringify_roundtrip`, `fn` -> test_stringify_roundtrip}
+    ]
+
+    <- test.run_suite(`Zen Data Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

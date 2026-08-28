@@ -1,0 +1,43 @@
+import zen.io.path as path
+import zen.test as test
+
+function test_join() {
+    let pass -> test.assert_equal(path.join(`foo`, `bar.txt`), `foo/bar.txt`, `join should insert a slash between components`)
+    pass -> pass and test.assert_equal(path.join(`foo/`, `bar.txt`), `foo/bar.txt`, `join should avoid duplicate separators`)
+    pass -> pass and test.assert_equal(path.join(`/tmp`, `logs`), `/tmp/logs`, `join should preserve absolute roots`)
+    <- pass
+}
+
+function test_basename_dirname() {
+    let pass -> test.assert_equal(path.basename(`/tmp/file.txt`), `file.txt`, `basename should return the final path component`)
+    pass -> pass and test.assert_equal(path.basename(`/tmp/project/`), `project`, `basename should ignore a trailing slash`)
+    pass -> pass and test.assert_equal(path.dirname(`/tmp/file.txt`), `/tmp`, `dirname should return the parent directory`)
+    pass -> pass and test.assert_equal(path.dirname(`file.txt`), `.`, `dirname should return '.' for a bare filename`)
+    <- pass
+}
+
+function test_extname_absolute() {
+    let pass -> test.assert_equal(path.extname(`archive.tar.gz`), `.gz`, `extname should return the final extension`)
+    pass -> pass and test.assert_equal(path.extname(`README`), ``, `extname should be empty when no extension exists`)
+    pass -> pass and test.assert_true(path.is_absolute(`/var/tmp`), `absolute paths should be recognized`)
+    pass -> pass and test.assert_false(path.is_absolute(`relative/path`), `relative paths should not be recognized as absolute`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Path.join`, `fn` -> test_join},
+        {`name` -> `Path.basename_dirname`, `fn` -> test_basename_dirname},
+        {`name` -> `Path.extname_absolute`, `fn` -> test_extname_absolute}
+    ]
+
+    <- test.run_suite(`Path Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

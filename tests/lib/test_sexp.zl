@@ -1,0 +1,33 @@
+import zen.data.sexp as sexp
+import zen.test as test
+
+function test_sexp_parsing() {
+    let data -> `(server (port 8080) (root "/var/www"))`
+    let result -> sexp.parse(data)
+    
+    // result is [server, [port, 8080], [root, /var/www]]
+    let pass -> test.assert_equal(result.length, 3, `root list should have 3 items`)
+    pass -> pass and test.assert_equal(result[0], `server`, `first item should be server`)
+    
+    let port_list -> result[1]
+    pass -> pass and test.assert_equal(port_list[0], `port`, `port list first item should be port`)
+    pass -> pass and test.assert_equal(port_list[1], `8080`, `port list second item should be 8080`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `SExp.parsing`, `fn` -> test_sexp_parsing}
+    ]
+
+    <- test.run_suite(`Data S-Expressions Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

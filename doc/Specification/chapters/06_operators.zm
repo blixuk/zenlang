@@ -1,0 +1,21 @@
+// Chapter 6: Operators & Expressions
+
+Heading { text -> `6. Operators & Expressions`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang features a comprehensive suite of operators with well-defined precedence levels:`
+},
+
+Table {
+    headers -> [`Category`, `Operators`, `Description`],
+    rows -> [
+        [`Flow`, `-> , <-`, `Assignment flow into target, return flow out of scope`],
+        [`Arithmetic`, `+ , - , * , / , %`, `Standard numeric arithmetic and string concatenation`],
+        [`Comparison`, `== , != , < , <= , > , >=`, `Value equality and relational ordering`],
+        [`Logical`, `and , or , not`, `Short-circuiting boolean operations`],
+        [`Range`, `.. , ..=`, `Half-open [a, b) and closed [a, b] ranges`],
+        [`Extended`, `++ , --`, `In-place increment, decrement, and collection append/prepend`]
+    ]
+},
+
+HorizontalRule { symbol -> `*` }

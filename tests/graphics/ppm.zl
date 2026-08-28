@@ -1,0 +1,10 @@
+import zen.graphics.ppm as ppm
+
+let img -> ppm.PPM(10, 10)    // Creates an 800x600 black image
+
+// Paint some pixels
+img.set_pixel(1, 1, 255, 0, 0)      // Red dot
+img.fill(0, 128, 255)                  // Fill with solid blue
+
+// Save to disk
+img.save(`tests/graphics/test.ppm`)

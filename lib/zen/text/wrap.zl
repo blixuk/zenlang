@@ -1,0 +1,179 @@
+/!
+    Text formatting, word wrapping, indentation, and truncation.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+
+/!
+    Wraps a single paragraph of text into a list of lines no longer than width.
+    Preserves words where possible.
+    @param text Input string.
+    @param width Maximum line width in characters (default 80).
+    @return List of wrapped line strings.
+!/
+function wrap(text, width) {
+    when text == Nothing or text == `` {
+        <- []
+    }
+    when width <= 0 {
+        width -> 80
+    }
+
+    let words -> Str.split(Str.trim(text), ` `)
+    let lines -> []
+    let current_line -> ``
+    let i -> 0
+    let len -> words.length
+
+    do while i < len {
+        let w -> words[i]
+        when Str.length(w) > 0 {
+            when Str.length(current_line) == 0 {
+                current_line -> w
+            } or {
+                let candidate_len -> Str.length(current_line) + 1 + Str.length(w)
+                when candidate_len <= width {
+                    current_line -> current_line + ` ` + w
+                } or {
+                    lines.append(current_line)
+                    current_line -> w
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    when Str.length(current_line) > 0 {
+        lines.append(current_line)
+    }
+
+    <- lines
+}
+
+/!
+    Wraps text and joins the resulting lines with newline characters.
+    @param text Input string.
+    @param width Maximum line width.
+    @return Formatted multi-line string.
+!/
+function fill(text, width) {
+    let lines -> wrap(text, width)
+    <- Str.join(lines, `\n`)
+}
+
+/!
+    Indents each line in the text by prepending a prefix string.
+    @param text Input multi-line string.
+    @param prefix String to prepend to each non-empty line (e.g. "    " or "\t").
+    @return Indented string.
+!/
+function indent(text, prefix) {
+    when text == Nothing { <- `` }
+    when prefix == Nothing { prefix -> `    ` }
+
+    let lines -> Str.split(text, `\n`)
+    let result -> []
+    let i -> 0
+    let len -> lines.length
+
+    do while i < len {
+        let line -> lines[i]
+        when Str.length(Str.trim(line)) > 0 {
+            result.append(prefix + line)
+        } or {
+            result.append(line)
+        }
+        i -> i + 1
+    }
+
+    <- Str.join(result, `\n`)
+}
+
+function _count_leading_spaces(line) {
+    let count -> 0
+    let len -> Str.length(line)
+    let i -> 0
+    let done -> false
+    do while i < len and not done {
+        let c -> Str.at(line, i)
+        when c == ` ` {
+            count -> count + 1
+        } or when c == `\t` {
+            count -> count + 4
+        } or {
+            done -> true
+        }
+        i -> i + 1
+    }
+    <- count
+}
+
+/!
+    Removes common leading whitespace from every line in text.
+    Useful for cleaning up multiline string literals.
+    @param text Input multiline string.
+    @return Dedented string.
+!/
+function dedent(text) {
+    when text == Nothing or text == `` { <- `` }
+
+    let lines -> Str.split(text, `\n`)
+    let min_indent -> 999999
+    let i -> 0
+    let len -> lines.length
+
+    do while i < len {
+        let line -> lines[i]
+        when Str.length(Str.trim(line)) > 0 {
+            let lead -> _count_leading_spaces(line)
+            when lead < min_indent {
+                min_indent -> lead
+            }
+        }
+        i -> i + 1
+    }
+
+    when min_indent == 999999 or min_indent == 0 {
+        <- text
+    }
+
+    let result -> []
+    i -> 0
+    do while i < len {
+        let line -> lines[i]
+        when Str.length(line) >= min_indent {
+            let stripped -> Str.substring(line, min_indent, Str.length(line))
+            result.append(stripped)
+        } or {
+            result.append(``)
+        }
+        i -> i + 1
+    }
+
+    <- Str.join(result, `\n`)
+}
+
+/!
+    Truncates a string to fit within a given width, appending a placeholder if shortened.
+    @param text The text to shorten.
+    @param width The target maximum length.
+    @param placeholder Suffix to indicate truncation (default "...").
+    @return Shortened string.
+!/
+function shorten(text, width, placeholder) {
+    when text == Nothing { <- `` }
+    when placeholder == Nothing { placeholder -> `...` }
+    let text_len -> Str.length(text)
+    when text_len <= width {
+        <- text
+    }
+
+    let p_len -> Str.length(placeholder)
+    when width <= p_len {
+        <- Str.substring(placeholder, 0, width)
+    }
+
+    let cut_len -> width - p_len
+    <- Str.substring(text, 0, cut_len) + placeholder
+}

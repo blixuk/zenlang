@@ -41,10 +41,19 @@ temp_test.txt
 .DS_Store
 Thumbs.db
 
-# Editor tooling
-editors/**/node_modules/
+# Editor tooling / Node
+node_modules/
+**/node_modules/
 
 # Nested local git used only for Zed grammar rev checkout
-editors/tree-sitter-zen/.git/
 editors/tree-sitter-zen/*.so
 editors/tree-sitter-zen/*.wasm
+
+# Editor packages
+*.vsix
+
+# Agent workspace metadata
+.agent/
+.agents/
+.grok/
+.codex

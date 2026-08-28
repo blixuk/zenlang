@@ -1,0 +1,50 @@
+/!
+  Low-level Socket module for Zenlang.
+!/
+
+/!
+  Creates a new socket.
+  @param family Address family (e.g., 'AF_INET', 'AF_INET6').
+  @param type Socket type (e.g., 'SOCK_STREAM', 'SOCK_DGRAM').
+  @return A socket instance.
+!/
+export function create(family, type) {
+    <- __builtin_net.socket(family, type)
+}
+
+/!
+  Connects a socket to a remote address.
+  @param sock The socket instance.
+  @param host The hostname or IP address.
+  @param port The port number.
+!/
+export function connect(sock, host, port) {
+    sock.connect(host, port)
+}
+
+/!
+  Sends data over a socket.
+  @param sock The socket instance.
+  @param data The data to send (string or bytes).
+!/
+export function send(sock, data) {
+    sock.send(data)
+}
+
+/!
+  Receives data from a socket.
+  @param sock The socket instance.
+  @param bufsize The maximum number of bytes to receive.
+  @return The received data as a string.
+!/
+export function recv(sock, bufsize) {
+    <- sock.recv(bufsize)
+}
+
+/!
+  Closes a socket.
+  @param sock The socket instance.
+!/
+export function close(sock) {
+    sock.close()
+}

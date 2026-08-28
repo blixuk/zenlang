@@ -1,0 +1,37 @@
+/!
+  05 — Lists and maps
+
+  Run:
+    ./bin/zen examples/getting_started/05_collections.zl
+
+  Learn: list literals, .length, indexing, map records, field update.
+!/
+
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let nums -> [10, 20, 30]
+    io.writeln(`list length = ` + Str.to_string(nums.length))
+    io.writeln(`nums[1] = ` + Str.to_string(nums[1]))
+
+    let person -> {
+        `name` -> `Ada`,
+        `year` -> 1815
+    }
+    io.writeln(`name = ` + person[`name`])
+    person[`year`] -> 1816
+    io.writeln(`year updated = ` + Str.to_string(person[`year`]))
+
+    // Index loop (dual-path friendly)
+    let n -> nums.length
+    let i -> 0
+    let acc -> 0
+    do while i < n {
+        acc -> acc + nums[i]
+        i -> i + 1
+    }
+    io.writeln(`sum via index loop = ` + Str.to_string(acc))
+
+    <- 0
+}

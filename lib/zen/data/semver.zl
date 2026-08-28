@@ -1,0 +1,261 @@
+/!
+    Semantic Versioning 2.0.0 Module.
+    Provides parsing, comparison, range satisfaction, and version bumping.
+!/
+
+import zen.text.string as Str
+
+/!
+    Parses an integer from a string, returning 0 on failure.
+!/
+function parse_int(s) {
+    when s == Nothing or Str.length(s) == 0 { <- 0 }
+    let val -> 0
+    let idx -> 0
+    let len -> Str.length(s)
+    do while idx < len {
+        let ch -> Str.at(s, idx)
+        when ch >= `0` and ch <= `9` {
+            let digit -> 0
+            when ch == `1` { digit -> 1 }
+            or when ch == `2` { digit -> 2 }
+            or when ch == `3` { digit -> 3 }
+            or when ch == `4` { digit -> 4 }
+            or when ch == `5` { digit -> 5 }
+            or when ch == `6` { digit -> 6 }
+            or when ch == `7` { digit -> 7 }
+            or when ch == `8` { digit -> 8 }
+            or when ch == `9` { digit -> 9 }
+            val -> val * 10 + digit
+        }
+        idx -> 0 + idx + 1
+    }
+    <- val
+}
+
+/!
+    Formats a SemVer object to a canonical string.
+!/
+function to_string(v) {
+    when v == Nothing { <- `` }
+    let out -> Str.to_string(v[`major`]) + `.` + Str.to_string(v[`minor`]) + `.` + Str.to_string(v[`patch`])
+    when Str.length(v[`prerelease`]) > 0 {
+        out -> out + `-` + v[`prerelease`]
+    }
+    when Str.length(v[`build`]) > 0 {
+        out -> out + `+` + v[`build`]
+    }
+    <- out
+}
+
+/!
+    Parses a SemVer 2.0.0 string into a canonical SemVer map object.
+    @param v_str The version string, e.g. "1.2.3-beta.1+build.10".
+    @return Map with `major`, `minor`, `patch`, `prerelease`, `build`, `raw`.
+!/
+function parse(v_str) {
+    when v_str == Nothing { <- Nothing }
+    let s -> Str.trim(Str.to_string(v_str))
+    when Str.starts_with(s, `v`) or Str.starts_with(s, `V`) {
+        s -> Str.substring(s, 1, Str.length(s))
+    }
+
+    let build -> ``
+    let plus_idx -> Str.index_of(s, `+`)
+    when plus_idx != -1 {
+        build -> Str.substring(s, plus_idx + 1, Str.length(s))
+        s -> Str.substring(s, 0, plus_idx)
+    }
+
+    let prerelease -> ``
+    let dash_idx -> Str.index_of(s, `-`)
+    when dash_idx != -1 {
+        prerelease -> Str.substring(s, dash_idx + 1, Str.length(s))
+        s -> Str.substring(s, 0, dash_idx)
+    }
+
+    let parts -> Str.split(s, `.`)
+    let major -> 0
+    let minor -> 0
+    let patch -> 0
+
+    when parts.length > 0 { major -> parse_int(parts[0]) }
+    when parts.length > 1 { minor -> parse_int(parts[1]) }
+    when parts.length > 2 { patch -> parse_int(parts[2]) }
+
+    <- {
+        `major` -> major,
+        `minor` -> minor,
+        `patch` -> patch,
+        `prerelease` -> prerelease,
+        `build` -> build,
+        `raw` -> Str.to_string(v_str)
+    }
+}
+
+/!
+    Compares two SemVer versions (strings or version maps).
+    @param v1 SemVer map or version string.
+    @param v2 SemVer map or version string.
+    @return 1 if v1 > v2, -1 if v1 < v2, 0 if equal.
+!/
+function compare(v1, v2) {
+    let a -> parse(v1)
+    let b -> parse(v2)
+
+    when a == Nothing and b == Nothing { <- 0 }
+    when a == Nothing { <- -1 }
+    when b == Nothing { <- 1 }
+
+    when a[`major`] > b[`major`] { <- 1 }
+    when a[`major`] < b[`major`] { <- -1 }
+
+    when a[`minor`] > b[`minor`] { <- 1 }
+    when a[`minor`] < b[`minor`] { <- -1 }
+
+    when a[`patch`] > b[`patch`] { <- 1 }
+    when a[`patch`] < b[`patch`] { <- -1 }
+
+    // Prerelease comparison
+    let a_pre -> a[`prerelease`]
+    let b_pre -> b[`prerelease`]
+    let a_has_pre -> Str.length(a_pre) > 0
+    let b_has_pre -> Str.length(b_pre) > 0
+
+    // Normal version has higher precedence than prerelease
+    when not a_has_pre and b_has_pre { <- 1 }
+    when a_has_pre and not b_has_pre { <- -1 }
+    when not a_has_pre and not b_has_pre { <- 0 }
+
+    // Both have prereleases: lexical comparison
+    when a_pre > b_pre { <- 1 }
+    when a_pre < b_pre { <- -1 }
+
+    <- 0
+}
+
+function eq(v1, v2) { <- compare(v1, v2) == 0 }
+function ne(v1, v2) { <- compare(v1, v2) != 0 }
+function gt(v1, v2) { <- compare(v1, v2) > 0 }
+function gte(v1, v2) { <- compare(v1, v2) >= 0 }
+function lt(v1, v2) { <- compare(v1, v2) < 0 }
+function lte(v1, v2) { <- compare(v1, v2) <= 0 }
+
+/! Bumps the major version number. !/
+function bump_major(v) {
+    let maj -> 0 + v[`major`] + 1
+    <- {
+        `major` -> maj,
+        `minor` -> 0,
+        `patch` -> 0,
+        `prerelease` -> ``,
+        `build` -> ``,
+        `raw` -> Str.to_string(maj) + `.0.0`
+    }
+}
+
+/! Bumps the minor version number. !/
+function bump_minor(v) {
+    let maj -> 0 + v[`major`]
+    let min -> 0 + v[`minor`] + 1
+    <- {
+        `major` -> maj,
+        `minor` -> min,
+        `patch` -> 0,
+        `prerelease` -> ``,
+        `build` -> ``,
+        `raw` -> Str.to_string(maj) + `.` + Str.to_string(min) + `.0`
+    }
+}
+
+/! Bumps the patch version number. !/
+function bump_patch(v) {
+    let maj -> 0 + v[`major`]
+    let min -> 0 + v[`minor`]
+    let pat -> 0 + v[`patch`] + 1
+    <- {
+        `major` -> maj,
+        `minor` -> min,
+        `patch` -> pat,
+        `prerelease` -> ``,
+        `build` -> ``,
+        `raw` -> Str.to_string(maj) + `.` + Str.to_string(min) + `.` + Str.to_string(pat)
+    }
+}
+
+/!
+    Checks if a single comparator clause is satisfied.
+    Clauses: "^1.2.3", "~1.2.3", ">=1.0.0", "<=2.0.0", ">1.0.0", "<2.0.0", "=1.0.0", "1.0.0", "*".
+!/
+function satisfies_clause(ver, clause) {
+    let c -> Str.trim(clause)
+    when Str.length(c) == 0 or c == `*` or c == `x` or c == `X` { <- true }
+
+    when Str.starts_with(c, `^`) {
+        let base -> parse(Str.substring(c, 1, Str.length(c)))
+        when lt(ver, base) { <- false }
+        when base[`major`] > 0 {
+            let next_major -> bump_major(base)
+            <- lt(ver, next_major)
+        } or when base[`minor`] > 0 {
+            let next_minor -> bump_minor(base)
+            <- lt(ver, next_minor)
+        } or {
+            let next_patch -> bump_patch(base)
+            <- lt(ver, next_patch)
+        }
+    } or when Str.starts_with(c, `~`) {
+        let base -> parse(Str.substring(c, 1, Str.length(c)))
+        when lt(ver, base) { <- false }
+        let next_minor -> bump_minor(base)
+        <- lt(ver, next_minor)
+    } or when Str.starts_with(c, `>=`) {
+        let base -> parse(Str.substring(c, 2, Str.length(c)))
+        <- gte(ver, base)
+    } or when Str.starts_with(c, `<=`) {
+        let base -> parse(Str.substring(c, 2, Str.length(c)))
+        <- lte(ver, base)
+    } or when Str.starts_with(c, `>`) {
+        let base -> parse(Str.substring(c, 1, Str.length(c)))
+        <- gt(ver, base)
+    } or when Str.starts_with(c, `<`) {
+        let base -> parse(Str.substring(c, 1, Str.length(c)))
+        <- lt(ver, base)
+    } or when Str.starts_with(c, `=`) {
+        let base -> parse(Str.substring(c, 1, Str.length(c)))
+        <- eq(ver, base)
+    } or {
+        let base -> parse(c)
+        <- eq(ver, base)
+    }
+}
+
+/!
+    Evaluates whether a version satisfies a range expression.
+    Supports space-separated AND clauses, e.g. ">=1.0.0 <2.0.0", "^1.2.0".
+    @param v SemVer object or version string.
+    @param range_str Range specification.
+    @return True if satisfies all clauses in range, False otherwise.
+!/
+function satisfies(v, range_str) {
+    let ver -> parse(v)
+    when ver == Nothing { <- false }
+    let r -> Str.trim(range_str)
+    when Str.length(r) == 0 or r == `*` { <- true }
+
+    // Space-separated clauses (all must match)
+    let clauses -> Str.split(r, ` `)
+    let idx -> 0
+    let c_len -> clauses.length
+    do while idx < c_len {
+        let clause -> Str.trim(clauses[idx])
+        when Str.length(clause) > 0 {
+            when not satisfies_clause(ver, clause) {
+                <- false
+            }
+        }
+        idx -> 0 + idx + 1
+    }
+
+    <- true
+}

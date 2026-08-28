@@ -1,0 +1,52 @@
+import zen.geometry.point as point
+import zen.geometry.vector2 as vector2
+import zen.math.math as math
+
+/!
+ Class representing a 2D line segment.
+ !/
+class Line {
+    let start: Point
+    let end: Point
+
+    /!
+     Initializes a new Line.
+     @param start The starting point.
+     @param end The ending point.
+     !/
+    function init(start, end) {
+        self.start -> start
+        self.end -> end
+    }
+
+    /!
+     Calculates the length of this line segment.
+     !/
+    function length() {
+        <- self.start.distance(self.end)
+    }
+
+    /!
+     Calculates the unit direction vector of this line segment.
+     (Expanded without fluent chains so native `-g` keeps class method types.)
+     !/
+    function direction() : Vector2 {
+        let dx -> self.end.x - self.start.x
+        let dy -> self.end.y - self.start.y
+        let len -> math.sqrt(dx * dx + dy * dy)
+        when len == 0 {
+            <- vector2.Vector2(0, 0)
+        }
+        <- vector2.Vector2(dx / len, dy / len)
+    }
+
+    /!
+     Returns the midpoint of this line segment.
+     !/
+    function midpoint() : Point {
+        <- point.Point(
+            (self.start.x + self.end.x) / 2,
+            (self.start.y + self.end.y) / 2
+        )
+    }
+}

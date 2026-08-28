@@ -1,0 +1,71 @@
+// Chapter 7: Control Flow & Directional Guards
+
+Heading { text -> `Control Flow & Directional Guards`, size -> 1 },
+
+Paragraph {
+    text -> `Control flow in Zenlang is unified around structured branching and iteration constructs designed for readability.`
+},
+
+Heading { text -> `Branching with when / or`, size -> 2 },
+
+Paragraph {
+    text -> `Conditional branching replaces traditional if/else chains with the cleaner when / or construct:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        when status_code == 200 {
+            io.writeln("Request succeeded")
+        } or when status_code == 404 {
+            io.writeln("Resource not found")
+        } or {
+            io.writeln("Unexpected status code")
+        }
+    ```
+},
+
+Heading { text -> `Single-Line Guard Returns`, size -> 2 },
+
+Paragraph {
+    text -> `To eliminate deep nesting and simplify error handling, Zenlang allows single-line guard exits with when condition <- return_value:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        function validate_age(age) {
+            when age < 0 <- Error("Age cannot be negative")
+            when age > 150 <- Error("Age exceeds biological limits")
+            
+            // Main logic executes only when all guards pass
+            <- Ok(age)
+        }
+    ```
+},
+
+Heading { text -> `Iteration Loops`, size -> 2 },
+
+Paragraph {
+    text -> `Zenlang provides three distinct loop structures: do while, do until, and collection iteration with do for item in collection:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        // 1. While Loop
+        let i -> 0
+        do while i < 5 {
+            io.writeln("Index: " + Str.to_string(i))
+            set i -> i + 1
+        }
+        
+        // 2. Collection Iteration
+        let fruits -> ["Apple", "Banana", "Cherry"]
+        do for fruit in fruits {
+            io.writeln("Fruit: " + fruit)
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

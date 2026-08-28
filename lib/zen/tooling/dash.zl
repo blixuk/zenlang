@@ -1,0 +1,429 @@
+/!
+  Interactive TUI Dashboard (zen dash).
+  Unified terminal dashboard for active development with live file explorer,
+  streaming build outputs, reactive test suite badge status, and hotkeys.
+!/
+
+import zen.tooling.project as project
+import zen.tooling.builder as builder
+import zen.tooling.tester as tester
+import zen.tooling.todo as todo
+import zen.tooling.docgen as docgen
+import zen.tooling.graph as graph
+import zen.tooling.watcher as watcher
+import zen.ui.canvas as canvas
+import zen.ui.layout as layout
+import zen.sys.term as term
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.text.string as Str
+import zen.time.time as time
+
+/!
+  Scans project files for file tree pane.
+!/
+function _scan_project_files(root) {
+    let list -> []
+    let zb -> path.join(root, `.zbuild`)
+    when file.exists(zb) {
+        list.append({ `path` -> `.zbuild`, `type` -> `manifest`, `label` -> `📄 .zbuild` })
+    }
+    let zl -> path.join(root, `zen.lock`)
+    when file.exists(zl) {
+        list.append({ `path` -> `zen.lock`, `type` -> `lock`, `label` -> `🔒 zen.lock` })
+    }
+
+    let src_dir -> path.join(root, `src`)
+    when file.exists(src_dir) {
+        let src_files -> file.find_files(src_dir, `.zl`)
+        do for f in src_files {
+            let rel -> f.replace(root + `/`, ``)
+            list.append({ `path` -> rel, `type` -> `src`, `label` -> `⚡ ` + rel })
+        }
+    }
+
+    let tests_dir -> path.join(root, `tests`)
+    when file.exists(tests_dir) {
+        let test_files -> file.find_files(tests_dir, `.zl`)
+        do for f in test_files {
+            let rel -> f.replace(root + `/`, ``)
+            list.append({ `path` -> rel, `type` -> `test`, `label` -> `🧪 ` + rel })
+        }
+    }
+
+    let docs_dir -> path.join(root, `docs`)
+    when file.exists(docs_dir) {
+        let doc_files -> file.find_files(docs_dir, `.md`)
+        do for f in doc_files {
+            let rel -> f.replace(root + `/`, ``)
+            list.append({ `path` -> rel, `type` -> `doc`, `label` -> `📚 ` + rel })
+        }
+    }
+
+    <- list
+}
+
+/!
+  Initializes the dashboard state map.
+!/
+export function init_dashboard_state(proj) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let files -> _scan_project_files(root)
+
+    <- {
+        `proj` -> proj,
+        `root` -> root,
+        `name` -> manifest_map[`name`],
+        `version` -> manifest_map[`version`],
+        `type` -> manifest_map[`type`],
+        `status` -> `IDLE`,
+        `status_color` -> `cyan`,
+        `files` -> files,
+        `selected_file_index` -> 0,
+        `build_ok` -> true,
+        `build_time_ms` -> 0,
+        `build_logs` -> [
+            `[DASH] Zenlang Dashboard initialized.`,
+            `[DASH] Press 'r' to build/run, 't' to test, 'd' for docs, 'q' to quit.`
+        ],
+        `test_ok` -> true,
+        `test_passed` -> 0,
+        `test_failed` -> 0,
+        `test_duration_ms` -> 0,
+        `test_details` -> [],
+        `todo_count` -> 0,
+        `fixme_count` -> 0,
+        `last_snapshot` -> watcher.snapshot_project(root),
+        `last_event_msg` -> `Ready`,
+        `tick` -> 0
+    }
+}
+
+/!
+  Executes an in-dashboard build and updates logs.
+!/
+export function dash_run_build(state, opts) {
+    state[`status`] -> `BUILDING`
+    state[`status_color`] -> `yellow`
+    state[`last_event_msg`] -> `Building ` + state[`name`] + `...`
+
+    let b -> builder.build_project(state[`proj`], opts)
+    when b[`ok`] == true {
+        state[`build_ok`] -> true
+        state[`build_time_ms`] -> b[`elapsed_ms`]
+        state[`status`] -> `READY`
+        state[`status_color`] -> `green`
+        state[`last_event_msg`] -> `Build succeeded in ` + Str.to_string(b[`elapsed_ms`]) + `ms`
+        let logs -> state[`build_logs`]
+        logs.append(`[BUILD] Binary compiled -> ` + Str.to_string(b[`exe`]) + ` (` + Str.to_string(b[`elapsed_ms`]) + `ms)`)
+        when logs.length > 50 { logs.remove_at(0) }
+    } or {
+        state[`build_ok`] -> false
+        state[`status`] -> `ERROR`
+        state[`status_color`] -> `red`
+        state[`last_event_msg`] -> `Build failed: ` + Str.to_string(b[`error`])
+        let logs -> state[`build_logs`]
+        logs.append(`[BUILD ERROR] ` + Str.to_string(b[`error`]))
+        when logs.length > 50 { logs.remove_at(0) }
+    }
+}
+
+/!
+  Executes in-dashboard test runner and updates test badge.
+!/
+export function dash_run_tests(state) {
+    state[`status`] -> `TESTING`
+    state[`status_color`] -> `yellow`
+
+    let t -> tester.run_tests(state[`proj`], Nothing)
+    state[`test_ok`] -> (t[`failed`] == 0)
+    state[`test_passed`] -> t[`passed`]
+    state[`test_failed`] -> t[`failed`]
+    state[`test_duration_ms`] -> t[`elapsed_ms`]
+    state[`test_details`] -> t[`results`]
+
+    when t[`failed`] == 0 {
+        state[`status`] -> `WATCHING`
+        state[`status_color`] -> `green`
+        state[`last_event_msg`] -> `Tests passed (` + Str.to_string(t[`passed`]) + `/` + Str.to_string(t[`passed`]) + `) in ` + Str.to_string(t[`elapsed_ms`]) + `ms`
+    } or {
+        state[`status`] -> `TEST_FAIL`
+        state[`status_color`] -> `red`
+        state[`last_event_msg`] -> `Tests failed: ` + Str.to_string(t[`failed`]) + ` failed of ` + Str.to_string(t[`total`])
+    }
+
+    // Refresh todos
+    let td_items -> todo.scan_project(state[`proj`], Nothing)
+    let todos -> 0
+    let fixmes -> 0
+    do for item in td_items {
+        when item[`tag`] == `TODO` { todos -> todos + 1 }
+        when item[`tag`] == `FIXME` { fixmes -> fixmes + 1 }
+    }
+    state[`todo_count`] -> todos
+    state[`fixme_count`] -> fixmes
+}
+
+/!
+  Draws a bordered container box on the canvas.
+!/
+function _draw_panel(c, x, y, w, h, title, border_color) {
+    when w <= 2 or h <= 2 { <- Nothing }
+    let x2 -> x + w - 1
+    let y2 -> y + h - 1
+
+    // Top border
+    canvas.set_cell(c, x, y, `┌`, border_color, `black`)
+    let i -> x + 1
+    do while i < x2 {
+        canvas.set_cell(c, i, y, `─`, border_color, `black`)
+        i -> i + 1
+    }
+    canvas.set_cell(c, x2, y, `┐`, border_color, `black`)
+
+    // Side borders
+    let j -> y + 1
+    do while j < y2 {
+        canvas.set_cell(c, x, j, `│`, border_color, `black`)
+        canvas.set_cell(c, x2, j, `│`, border_color, `black`)
+        j -> j + 1
+    }
+
+    // Bottom border
+    canvas.set_cell(c, x, y2, `└`, border_color, `black`)
+    i -> x + 1
+    do while i < x2 {
+        canvas.set_cell(c, i, y2, `─`, border_color, `black`)
+        i -> i + 1
+    }
+    canvas.set_cell(c, x2, y2, `┘`, border_color, `black`)
+
+    // Title
+    when title != `` {
+        let t_str -> ` ` + title + ` `
+        canvas.draw_text(c, x + 2, y, t_str, `white`, `black`)
+    }
+}
+
+/!
+  Renders the complete multi-pane dashboard on canvas.
+!/
+export function render_dashboard(c, state) {
+    let w -> c[`width`]
+    let h -> c[`height`]
+
+    canvas.clear(c, ` `, `white`, `black`)
+
+    // 1. Header Bar
+    let header_h -> 3
+    _draw_panel(c, 0, 0, w, header_h, ``, `blue`)
+    let title -> ` 📦 ZENLANG DASHBOARD — ` + state[`name`] + ` v` + state[`version`] + ` (` + state[`type`] + `)`
+    canvas.draw_text(c, 2, 1, title, `white`, `black`)
+
+    let badge -> ` ● ` + state[`status`] + ` `
+    let badge_x -> w - Str.length(badge) - 3
+    when badge_x > Str.length(title) + 4 {
+        canvas.draw_text(c, badge_x, 1, badge, `black`, state[`status_color`])
+    }
+
+    // 2. Main Layout Split: Left (File Explorer) vs Right (Build & Tests)
+    let left_w -> 26
+    when w < 70 { left_w -> 20 }
+    let right_w -> w - left_w
+    let body_y -> 3
+    let body_h -> h - 5
+    when body_h < 6 { body_h -> 6 }
+
+    // Left Pane: File Explorer
+    _draw_panel(c, 0, body_y, left_w, body_h, `Project Explorer`, `cyan`)
+    let files -> state[`files`]
+    let max_files -> body_h - 2
+    let f_idx -> 0
+    do while f_idx < files.length and f_idx < max_files {
+        let item -> files[f_idx]
+        let label -> item[`label`]
+        when Str.length(label) > left_w - 4 {
+            label -> Str.substring(label, 0, left_w - 7) + `...`
+        }
+        let row_y -> body_y + 1 + f_idx
+        when f_idx == state[`selected_file_index`] {
+            canvas.draw_text(c, 2, row_y, `>` + label, `black`, `cyan`)
+        } or {
+            canvas.draw_text(c, 2, row_y, ` ` + label, `white`, `black`)
+        }
+        f_idx -> f_idx + 1
+    }
+
+    // Right Split: Top (Build Stream) & Bottom (Test Runner)
+    let top_h -> body_h / 2
+    let btm_h -> body_h - top_h
+    let btm_y -> body_y + top_h
+
+    // Right Top: Build Stream
+    _draw_panel(c, left_w, body_y, right_w, top_h, `Build & Process Stream`, `green`)
+    let b_status_badge -> `[BUILD: OK]`
+    let b_color -> `green`
+    when not state[`build_ok`] {
+        b_status_badge -> `[BUILD: FAIL]`
+        b_color -> `red`
+    }
+    canvas.draw_text(c, left_w + 2, body_y + 1, b_status_badge + ` (` + Str.to_string(state[`build_time_ms`]) + ` ms)`, b_color, `black`)
+
+    let logs -> state[`build_logs`]
+    let max_logs -> top_h - 3
+    let start_log -> 0
+    when logs.length > max_logs {
+        start_log -> logs.length - max_logs
+    }
+    let l_i -> start_log
+    let log_row -> body_y + 2
+    do while l_i < logs.length and log_row < body_y + top_h - 1 {
+        let l_text -> logs[l_i]
+        when Str.length(l_text) > right_w - 4 {
+            l_text -> Str.substring(l_text, 0, right_w - 7) + `...`
+        }
+        canvas.draw_text(c, left_w + 2, log_row, l_text, `white`, `black`)
+        log_row -> log_row + 1
+        l_i -> l_i + 1
+    }
+
+    // Right Bottom: Test Runner & Quality Badge
+    _draw_panel(c, left_w, btm_y, right_w, btm_h, `Test Suite & Quality Status`, `magenta`)
+    let t_badge -> `● TESTS PASSING (` + Str.to_string(state[`test_passed`]) + ` passed)`
+    let t_color -> `green`
+    when not state[`test_ok`] or state[`test_failed`] > 0 {
+        t_badge -> `✖ TESTS FAILING (` + Str.to_string(state[`test_failed`]) + ` failed of ` + Str.to_string(state[`test_passed`] + state[`test_failed`]) + `)`
+        t_color -> `red`
+    }
+    canvas.draw_text(c, left_w + 2, btm_y + 1, t_badge + ` (` + Str.to_string(state[`test_duration_ms`]) + `ms)`, t_color, `black`)
+
+    // TODO / FIXME counts
+    let todo_str -> `Annotations: ` + Str.to_string(state[`todo_count`]) + ` TODOs, ` + Str.to_string(state[`fixme_count`]) + ` FIXMEs`
+    canvas.draw_text(c, left_w + 2, btm_y + 2, todo_str, `yellow`, `black`)
+
+    // Test details list
+    let t_details -> state[`test_details`]
+    let max_t_rows -> btm_h - 4
+    let t_i -> 0
+    let t_row -> btm_y + 3
+    do while t_i < t_details.length and t_i < max_t_rows {
+        let td -> t_details[t_i]
+        let t_name -> td[`file`]
+        let t_stat -> td[`status`]
+        let td_str -> `• ` + t_name + `: ` + t_stat
+        when Str.length(td_str) > right_w - 4 {
+            td_str -> Str.substring(td_str, 0, right_w - 7) + `...`
+        }
+        let td_fg -> `green`
+        when t_stat != `PASS` { td_fg -> `red` }
+        canvas.draw_text(c, left_w + 2, t_row, td_str, td_fg, `black`)
+        t_row -> t_row + 1
+        t_i -> t_i + 1
+    }
+
+    // 3. Footer Status Bar
+    let footer_y -> h - 2
+    let shortcuts -> ` [r] Rebuild/Run  [t] Test  [d] Docs  [g] Graph  [c] Clean  [q] Quit`
+    canvas.draw_text(c, 1, footer_y, shortcuts, `black`, `white`)
+
+    let event_msg -> ` ` + state[`last_event_msg`] + ` `
+    let ev_x -> w - Str.length(event_msg) - 2
+    when ev_x > Str.length(shortcuts) + 2 {
+        canvas.draw_text(c, ev_x, footer_y, event_msg, `yellow`, `black`)
+    }
+}
+
+/!
+  Runs the interactive TUI Dashboard main loop.
+  @param proj Project map.
+  @param opts Compiler / runner options.
+!/
+export function run_dashboard(proj, opts) {
+    let state -> init_dashboard_state(proj)
+
+    // Initial build & tests
+    dash_run_build(state, opts)
+    dash_run_tests(state)
+
+    // Terminal setup
+    term.alt_screen_enter()
+    term.raw_enter()
+    term.hide_cursor()
+
+    let running -> true
+    let poll_accum -> 0
+
+    do while running {
+        let size -> term.get_size()
+        let sw -> size[`width`]
+        let sh -> size[`height`]
+        when sw < 40 { sw -> 80 }
+        when sh < 15 { sh -> 24 }
+
+        let c -> canvas.create(sw, sh)
+        render_dashboard(c, state)
+        canvas.render(c)
+
+        // Poll for key input (100ms timeout)
+        let ev -> term.poll_key(100)
+        when ev != Nothing and ev[`kind`] != `none` {
+            let ch -> ev[`ch`]
+            let key_name -> ev[`name`]
+
+            when ch == `q` or ch == `Q` or key_name == `escape` {
+                running -> false
+            } or when ch == `r` or ch == `R` {
+                dash_run_build(state, opts)
+            } or when ch == `t` or ch == `T` {
+                dash_run_tests(state)
+            } or when ch == `d` or ch == `D` {
+                state[`last_event_msg`] -> `Generating docs...`
+                let res -> docgen.generate_docs(proj, `html`, Nothing)
+                state[`last_event_msg`] -> `Docs updated: ` + res[`html`]
+            } or when ch == `g` or ch == `G` {
+                state[`last_event_msg`] -> `Generating graph...`
+                let gr -> graph.generate_html_graph(proj, Nothing)
+                state[`last_event_msg`] -> `Graph generated: ` + gr[`html`]
+            } or when ch == `c` or ch == `C` {
+                builder.clean_project(proj)
+                state[`last_event_msg`] -> `Cleaned build directory`
+            } or when key_name == `up` or ch == `k` {
+                when state[`selected_file_index`] > 0 {
+                    state[`selected_file_index`] -> state[`selected_file_index`] - 1
+                }
+            } or when key_name == `down` or ch == `j` {
+                when state[`selected_file_index`] < state[`files`].length - 1 {
+                    state[`selected_file_index`] -> state[`selected_file_index`] + 1
+                }
+            }
+        }
+
+        // Periodic project file watcher check (~800ms)
+        poll_accum -> poll_accum + 100
+        when poll_accum >= 800 {
+            poll_accum -> 0
+            let next_snap -> watcher.snapshot_project(state[`root`])
+            let changes -> watcher.diff_snapshots(state[`last_snapshot`], next_snap)
+            when changes.length > 0 {
+                state[`last_snapshot`] -> next_snap
+                state[`files`] -> _scan_project_files(state[`root`])
+                state[`last_event_msg`] -> `Change in ` + changes[0] + ` -> rebuilding...`
+                dash_run_build(state, opts)
+                dash_run_tests(state)
+            }
+        }
+
+        state[`tick`] -> state[`tick`] + 1
+    }
+
+    // Terminal cleanup
+    term.show_cursor()
+    term.raw_exit()
+    term.alt_screen_exit()
+    io.writeln(`[DASH] Zenlang Dashboard exited.`)
+    <- { `ok` -> true }
+}

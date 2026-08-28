@@ -1,0 +1,179 @@
+/!
+  High-level Asynchronous workflow combinators and utility routines.
+  Provides parallel, series, retry, polling, and delay helpers.
+!/
+
+import zen.time.time as time
+import zen.reflect.reflect as reflect
+import zen.async.future as future
+
+// Re-export Future & Promise primitives
+export function create_promise(executor) {
+    <- future.create_promise(executor)
+}
+export function promise_resolve(promise, value) {
+    <- future.promise_resolve(promise, value)
+}
+export function promise_reject(promise, error) {
+    <- future.promise_reject(promise, error)
+}
+export function promise_then(promise, on_fulfilled, on_rejected) {
+    <- future.promise_then(promise, on_fulfilled, on_rejected)
+}
+export function promise_catch(promise, on_rejected) {
+    <- future.promise_catch(promise, on_rejected)
+}
+export function is_settled(promise) {
+    <- future.is_settled(promise)
+}
+export function is_fulfilled(promise) {
+    <- future.is_fulfilled(promise)
+}
+export function is_rejected(promise) {
+    <- future.is_rejected(promise)
+}
+export function create_deferred() {
+    <- future.create_deferred()
+}
+export function deferred_resolve(def, val) {
+    <- future.deferred_resolve(def, val)
+}
+export function deferred_reject(def, err) {
+    <- future.deferred_reject(def, err)
+}
+
+/!
+  Executes a list of asynchronous operations in parallel, collecting results.
+  @param fn_list List of zero-argument functions.
+  @return List of results.
+!/
+export function parallel(fn_list) {
+    when fn_list == Nothing { <- [] }
+    let results -> []
+    do for fn in fn_list {
+        when fn != Nothing {
+            results.append(fn())
+        } or {
+            results.append(Nothing)
+        }
+    }
+    <- results
+}
+
+/!
+  Executes a list of asynchronous operations strictly in series (sequential order).
+  @param fn_list List of zero-argument functions.
+  @return List of results.
+!/
+export function series(fn_list) {
+    when fn_list == Nothing { <- [] }
+    let results -> []
+    do for fn in fn_list {
+        when fn != Nothing {
+            let res -> fn()
+            results.append(res)
+        }
+    }
+    <- results
+}
+
+/!
+  Retries an operation until success or until max_attempts is exhausted.
+  @param fn Function to execute.
+  @param max_attempts Maximum attempts (default 3).
+  @param delay_ms Delay between attempts in milliseconds (default 100ms).
+  @return Result of the first successful execution or last error.
+!/
+export function retry(fn, max_attempts, delay_ms) {
+    let attempts -> max_attempts
+    when attempts == Nothing or attempts < 1 { attempts -> 3 }
+    let d -> delay_ms
+    when d == Nothing or d < 0 { d -> 100 }
+
+    let count -> 0
+    let last_res -> Nothing
+
+    do while count < attempts {
+        count -> count + 1
+        last_res -> fn()
+
+        // If returned a map with ok == true, success
+        when reflect.is_map(last_res) {
+            when last_res.has(`ok`) and last_res[`ok`] == true {
+                <- last_res
+            } or when not last_res.has(`ok`) {
+                <- last_res
+            }
+        } or when last_res != Nothing {
+            // Direct non-error value is considered success
+            <- last_res
+        }
+
+        // Delay before retry if more attempts remain
+        when count < attempts and d > 0 {
+            let start -> time.now()
+            let target_sec -> d / 1000.0
+            do while (time.now() - start) < target_sec {
+                // Spin delay
+            }
+        }
+    }
+
+    <- last_res
+}
+
+/!
+  Repeatedly evaluates a predicate function until it returns true or timeout expires.
+  @param predicate_fn Function returning boolean.
+  @param interval_ms Check interval in milliseconds.
+  @param timeout_ms Maximum wait time in milliseconds.
+  @return Map { ok: bool, elapsed_ms: Float }
+!/
+export function poll(predicate_fn, interval_ms, timeout_ms) {
+    when predicate_fn == Nothing {
+        <- { `ok` -> false, `elapsed_ms` -> 0, `error` -> `Null predicate function` }
+    }
+    let interval -> interval_ms
+    when interval == Nothing or interval <= 0 { interval -> 50 }
+    let max_wait -> timeout_ms
+    when max_wait == Nothing or max_wait <= 0 { max_wait -> 5000 }
+
+    let start_t -> time.now()
+    let max_sec -> max_wait / 1000.0
+    let int_sec -> interval / 1000.0
+
+    do while (time.now() - start_t) < max_sec {
+        when predicate_fn() == true {
+            let elapsed -> (time.now() - start_t) * 1000.0
+            <- { `ok` -> true, `elapsed_ms` -> elapsed }
+        }
+
+        // Wait interval
+        let step_start -> time.now()
+        do while (time.now() - step_start) < int_sec {
+            // Spin step
+        }
+    }
+
+    let total_elapsed -> (time.now() - start_t) * 1000.0
+    <- { `ok` -> false, `elapsed_ms` -> total_elapsed, `error` -> `Polling timed out` }
+}
+
+/!
+  Executes a callback after a given delay in milliseconds.
+!/
+export function delay(delay_ms, callback) {
+    let d -> delay_ms
+    when d == Nothing or d < 0 { d -> 0 }
+    when d > 0 {
+        let start -> time.now()
+        let target_sec -> d / 1000.0
+        do while (time.now() - start) < target_sec {
+            // Delay spin
+        }
+    }
+    when callback != Nothing {
+        <- callback()
+    }
+    <- Nothing
+}

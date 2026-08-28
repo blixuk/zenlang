@@ -1,0 +1,18 @@
+function test_literals() {
+    ! True
+    ! not False
+    ! 100 == 100
+    ! 3.14 == 3.14
+    ! `Zen` == `Zen`
+}
+
+function test_nothing() {
+    let x -> Nothing
+    ! x == Nothing
+}
+
+function main() {
+    test_literals()
+    test_nothing()
+    io.write(`01_primitives passed!\n`)
+}

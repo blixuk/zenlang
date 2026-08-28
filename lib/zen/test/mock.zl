@@ -1,0 +1,72 @@
+/!
+    Testing Mocks, Spies, and Stubs Module.
+    Supports function call tracking, arguments recording, and stubbed returns.
+!/
+
+/!
+    Creates a callable spy / mock object.
+    @param default_return Value to return when called (if no target fn).
+!/
+function create(default_return) {
+    let mock_obj -> {
+        `call_count` -> 0,
+        `calls` -> [],
+        `return_value` -> default_return
+    }
+    <- mock_obj
+}
+
+/!
+    Records a call on the mock and returns the configured return value.
+!/
+function record_call(mock_obj, args) {
+    when (mock_obj == Nothing) { <- Nothing }
+    mock_obj[`call_count`] -> mock_obj[`call_count`] + 1
+    mock_obj[`calls`].append(args)
+    <- mock_obj[`return_value`]
+}
+
+/!
+    Sets the return value for subsequent calls to the mock.
+!/
+function returns(mock_obj, val) {
+    when (mock_obj != Nothing) {
+        mock_obj[`return_value`] -> val
+    }
+}
+
+/!
+    Checks if mock was called at least once.
+!/
+function was_called(mock_obj) {
+    when (mock_obj == Nothing) { <- False }
+    <- (mock_obj[`call_count`] > 0)
+}
+
+/!
+    Checks if mock was called exactly N times.
+!/
+function called_times(mock_obj, expected_count) {
+    when (mock_obj == Nothing) { <- False }
+    <- (mock_obj[`call_count`] == expected_count)
+}
+
+/!
+    Checks if the mock was called with the specified argument list on its last call.
+!/
+function last_called_with(mock_obj, expected_args) {
+    when (mock_obj == Nothing or mock_obj[`call_count`] == 0) { <- False }
+    let last_idx -> mock_obj[`calls`].length - 1
+    let actual -> mock_obj[`calls`][last_idx]
+    when (actual.length != expected_args.length) { <- False }
+
+    let i -> 0
+    let count -> actual.length
+    do while i < count {
+        when (actual[i] != expected_args[i]) {
+            <- False
+        }
+        i -> i + 1
+    }
+    <- True
+}

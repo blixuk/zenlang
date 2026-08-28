@@ -1,0 +1,96 @@
+/!
+  `is reflectable` + zen.reflect fields/methods.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_reflectable.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_reflectable.zl
+!/
+
+use zen.reflect as reflect
+use zen.test as test
+use zen.text.string as Str
+
+structure Point is reflectable {
+    x: Integer
+    y: Integer
+}
+
+structure Plain {
+    a: Integer
+}
+
+class Counter is reflectable {
+    let n: Integer
+
+    function init() {
+        self.n -> 0
+    }
+
+    function bump() {
+        self.n -> self.n + 1
+    }
+
+    function value() {
+        <- self.n
+    }
+}
+
+function test_structure_fields() {
+    let p -> Point { x -> 3, y -> 4 }
+    let fs -> reflect.fields(p)
+    let pass -> test.assert_equal(reflect.is_reflectable(p), true, `point reflectable`)
+    pass -> pass and test.assert_equal(fs.length, 2, `two fields`)
+    pass -> pass and test.assert_equal(reflect.has_field(p, `x`), true, `has x`)
+    pass -> pass and test.assert_equal(reflect.has_field(p, `y`), true, `has y`)
+    pass -> pass and test.assert_equal(reflect.field(p, `x`), 3, `field x`)
+    pass -> pass and test.assert_equal(reflect.methods(p).length, 0, `no methods on struct`)
+    // type_name should be Point when registered
+    pass -> pass and test.assert_equal(reflect.type_name(p), `Point`, `type Point`)
+    <- pass
+}
+
+function test_plain_structure_not_registered() {
+    let p -> Plain { a -> 1 }
+    // Still a map with kind under -g; fields fall back to keys if not reflectable
+    let pass -> test.assert_equal(reflect.has_field(p, `a`), true, `plain has a`)
+    <- pass
+}
+
+function test_class_methods() {
+    let c -> Counter()
+    c.bump()
+    c.bump()
+    let ms -> reflect.methods(c)
+    let pass -> test.assert_equal(reflect.is_reflectable(c), true, `class instance reflectable`)
+    // methods include init, bump, value (order free)
+    let has_bump -> reflect.has_method(c, `bump`)
+    let has_value -> reflect.has_method(c, `value`)
+    pass -> pass and test.assert_equal(has_bump, true, `has bump`)
+    pass -> pass and test.assert_equal(has_value, true, `has value`)
+    pass -> pass and test.assert_equal(c.value(), 2, `value after bump`)
+    pass -> pass and test.assert_equal(ms.length >= 2, true, `method count`)
+    <- pass
+}
+
+function test_set_field_map() {
+    let m -> { `k` -> 1 }
+    m -> reflect.set_field(m, `k`, 9)
+    <- test.assert_equal(reflect.field(m, `k`), 9, `set map field`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Reflectable.struct_fields`, `fn` -> test_structure_fields},
+        {`name` -> `Reflectable.plain`, `fn` -> test_plain_structure_not_registered},
+        {`name` -> `Reflectable.class_methods`, `fn` -> test_class_methods},
+        {`name` -> `Reflectable.set_field_map`, `fn` -> test_set_field_map}
+    ]
+    <- test.run_suite(`is reflectable`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

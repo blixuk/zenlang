@@ -1,0 +1,63 @@
+/!
+  Map-based plugins + reflect.call.
+
+  Run:
+    python3 bootstrap/Zen.py examples/plugins_demo.zl hello
+    python3 bootstrap/Zen.py examples/plugins_demo.zl hello Ada
+    python3 bootstrap/Zen.py examples/plugins_demo.zl add 2 3
+    python3 bootstrap/Zen.py -g examples/plugins_demo.zl hello
+!/
+
+use zen.io
+use zen.sys.sys as sys
+use zen.text.string as Str
+use zen.plugins as P
+
+function cmd_hello(who) {
+    when who == nothing or who == `` {
+        who -> `world`
+    }
+    io.writeln(`hello, ` + Str.to_string(who))
+    <- 0
+}
+
+function cmd_add(a, b) {
+    when a == nothing or b == nothing {
+        io.writeln(`usage: add <a> <b>`)
+        <- 1
+    }
+    io.writeln(`add ` + Str.to_string(a) + ` + ` + Str.to_string(b) + ` (dispatch ok)`)
+    <- 0
+}
+
+function cmd_help() {
+    io.writeln(`commands: hello [name], add <a> <b>, help`)
+    <- 0
+}
+
+function main() {
+    let cmds -> P.create()
+    cmds -> P.add(cmds, `hello`, cmd_hello)
+    cmds -> P.add(cmds, `add`, cmd_add)
+    cmds -> P.add(cmds, `help`, cmd_help)
+
+    let argv -> sys.get_args()
+    // argv[0] = script path; argv[1] = command
+    when argv.length < 2 {
+        <- P.dispatch(cmds, `help`, [])
+    }
+    let cmd -> Str.to_string(argv[1])
+    let rest -> []
+    let i -> 2
+    let n -> argv.length
+    do while i < n {
+        rest.append(argv[i])
+        i -> i + 1
+    }
+    when not P.has(cmds, cmd) {
+        io.writeln(`unknown command: ` + cmd)
+        <- P.dispatch(cmds, `help`, [])
+    }
+    // rest is the argument list for the handler
+    <- P.dispatch(cmds, cmd, rest)
+}

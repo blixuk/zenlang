@@ -1,0 +1,77 @@
+import zen.text.wrap as wrap
+import zen.text.template as template
+import zen.text.diff as diff
+import zen.test as test
+
+function test_wrap_fill_dedent() {
+    let raw -> `The quick brown fox jumps over the lazy dog and runs away.`
+    let lines -> wrap.wrap(raw, 20)
+    let pass -> test.assert_true(lines.length >= 3, `wrap lines count`)
+    let filled -> wrap.fill(raw, 20)
+    pass -> pass and test.assert_true(filled.length >= raw.length, `fill length`)
+
+    let indented -> wrap.indent(`line1\nline2`, `  `)
+    pass -> pass and test.assert_equal(indented, `  line1\n  line2`, `indent test`)
+
+    let code -> `
+        function hello() {
+            return 42
+        }
+    `
+    let dedented -> wrap.dedent(code)
+    pass -> pass and test.assert_true(wrap.shorten(`Hello World`, 8, `...`) == `Hello...`, `shorten test`)
+
+    <- pass
+}
+
+function test_template() {
+    let tpl -> `Hello, {{ name }}! You have {{ count }} notifications.`
+    let ctx -> {
+        `name` -> `Alice`,
+        `count` -> 5
+    }
+    let res -> template.render(tpl, ctx)
+    let pass -> test.assert_equal(res, `Hello, Alice! You have 5 notifications.`, `template simple`)
+
+    let cond_tpl -> `Status: {{#if active}}Active{{/if}}{{#unless active}}Inactive{{/unless}}`
+    let res_active -> template.render(cond_tpl, {`active` -> true})
+    let res_inactive -> template.render(cond_tpl, {`active` -> false})
+    pass -> pass and test.assert_equal(res_active, `Status: Active`, `template if`)
+    pass -> pass and test.assert_equal(res_inactive, `Status: Inactive`, `template unless`)
+
+    let each_tpl -> `Items: {{#each fruits}}{{this}}, {{/each}}`
+    let res_each -> template.render(each_tpl, {`fruits` -> [`apple`, `banana`]})
+    pass -> pass and test.assert_equal(res_each, `Items: apple, banana, `, `template each`)
+
+    <- pass
+}
+
+function test_diff() {
+    let text_a -> `apple\nbanana\ncherry`
+    let text_b -> `apple\nblueberry\ncherry`
+    let edits -> diff.diff_lines(text_a, text_b)
+    let pass -> test.assert_true(edits.length >= 3, `diff edits count`)
+
+    let u_diff -> diff.unified_diff(text_a, text_b, `old.txt`, `new.txt`)
+    pass -> pass and test.assert_true(u_diff.length > 0, `unified diff generated`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Text.wrap_fill_dedent`, `fn` -> test_wrap_fill_dedent},
+        {`name` -> `Text.template_engine`, `fn` -> test_template},
+        {`name` -> `Text.diff_lines_unified`, `fn` -> test_diff}
+    ]
+
+    <- test.run_suite(`Text Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

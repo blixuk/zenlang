@@ -1,0 +1,145 @@
+import zen.test as test
+import zen.text.text as text
+
+function test_word_helpers() {
+    let loud -> text.Word { text -> `ZEN` }
+    let quiet -> text.Word { text -> `calm` }
+    let capitalized -> text.Word.capitalize(quiet)
+
+    let pass -> test.assert_true(text.Word.is_uppercase(loud), `is_uppercase should detect all-caps words`)
+    pass -> pass and test.assert_false(text.Word.is_uppercase(quiet), `is_uppercase should reject lowercase words`)
+    pass -> pass and test.assert_equal(capitalized.text, `Calm`, `capitalize should uppercase the first character`)
+    <- pass
+}
+
+function test_sentence_and_paragraph_helpers() {
+    let sentence -> text.Sentence { text -> `zen likes tests` }
+    let words -> text.Sentence.to_words(sentence)
+    let wrapped -> text.Paragraph.wrap(text.Paragraph { text -> `zen makes testing pleasant` }, 12)
+
+    let pass -> test.assert_equal(text.Sentence.count_words(sentence), 3, `count_words should count the sentence words`)
+    pass -> pass and test.assert_equal(words[1].text, `likes`, `to_words should preserve ordering`)
+    pass -> pass and test.assert_equal(wrapped.text, `zen makes\ntesting\npleasant`, `wrap should insert line breaks at the target width`)
+    <- pass
+}
+
+function test_chapter_helpers() {
+    let p1 -> text.Paragraph { text -> `first paragraph body` }
+    let p2 -> text.Paragraph { text -> `second paragraph body` }
+    let ch -> text.Chapter.from_paragraphs(`Intro`, [p1])
+    let ch2 -> text.Chapter.append_paragraph(ch, p2)
+
+    let pass -> test.assert_equal(text.Chapter.count_paragraphs(ch), 1, `chapter starts with one paragraph`)
+    pass -> pass and test.assert_equal(text.Chapter.count_paragraphs(ch2), 2, `append_paragraph grows the chapter`)
+    pass -> pass and test.assert_equal(ch2.title, `Intro`, `chapter keeps its title`)
+    pass -> pass and test.assert_equal(
+        text.Chapter.to_text(ch2),
+        `Intro\n\nfirst paragraph body\n\nsecond paragraph body`,
+        `to_text joins title and paragraphs`
+    )
+
+    let long_p -> text.Paragraph { text -> `zen makes testing pleasant` }
+    let ch_wrap -> text.Chapter.wrap_all(text.Chapter.from_paragraphs(`W`, [long_p]), 12)
+    pass -> pass and test.assert_equal(
+        ch_wrap.paragraphs[0].text,
+        `zen makes\ntesting\npleasant`,
+        `wrap_all wraps each paragraph`
+    )
+    <- pass
+}
+
+function test_book_helpers() {
+    let p1 -> text.Paragraph { text -> `alpha` }
+    let p2 -> text.Paragraph { text -> `beta` }
+    let ch1 -> text.Chapter.from_paragraphs(`One`, [p1])
+    let ch2 -> text.Chapter.from_paragraphs(`Two`, [p2])
+    let book -> text.Book.from_chapters(`My Book`, [ch1])
+    let book2 -> text.Book.append_chapter(book, ch2)
+
+    let pass -> test.assert_equal(text.Book.count_chapters(book), 1, `book starts with one chapter`)
+    pass -> pass and test.assert_equal(text.Book.count_chapters(book2), 2, `append_chapter grows the book`)
+    pass -> pass and test.assert_equal(text.Book.count_paragraphs(book2), 2, `count_paragraphs sums chapters`)
+    pass -> pass and test.assert_equal(book2.title, `My Book`, `book keeps its title`)
+    pass -> pass and test.assert_equal(
+        text.Book.to_text(book2),
+        `My Book\n\n---\n\nOne\n\nalpha\n\n---\n\nTwo\n\nbeta`,
+        `to_text joins book title and chapters`
+    )
+    <- pass
+}
+
+/!
+ Full ladder: Word → Sentence → Paragraph → Chapter → Book in one pipeline.
+ !/
+function test_full_hierarchy() {
+    // Word
+    let w1 -> text.Word.capitalize(text.Word { text -> `zen` })
+    let w2 -> text.Word { text -> `builds` }
+    let w3 -> text.Word { text -> `books` }
+    let pass -> test.assert_equal(w1.text, `Zen`, `ladder: capitalize word`)
+
+    // Sentence from words
+    let sentence -> text.Sentence { text -> w1.text + ` ` + w2.text + ` ` + w3.text }
+    pass -> pass and test.assert_equal(sentence.text, `Zen builds books`, `ladder: sentence from words`)
+    pass -> pass and test.assert_equal(text.Sentence.count_words(sentence), 3, `ladder: three words`)
+    let words -> text.Sentence.to_words(sentence)
+    pass -> pass and test.assert_equal(words[0].text, `Zen`, `ladder: round-trip first word`)
+
+    // Paragraph from sentences
+    let s2 -> text.Sentence { text -> `Layers stay explicit` }
+    let para -> text.Paragraph { text -> sentence.text + ` ` + s2.text }
+    pass -> pass and test.assert_equal(
+        para.text,
+        `Zen builds books Layers stay explicit`,
+        `ladder: paragraph joins sentences`
+    )
+    let wrapped -> text.Paragraph.wrap(para, 18)
+    pass -> pass and test.assert_true(wrapped.text.length > 0, `ladder: wrap produces text`)
+
+    // Chapter from paragraphs
+    let p2 -> text.Paragraph { text -> `Chapters hold paragraphs.` }
+    let ch -> text.Chapter.from_paragraphs(`Intro`, [para])
+    let ch2 -> text.Chapter.append_paragraph(ch, p2)
+    pass -> pass and test.assert_equal(text.Chapter.count_paragraphs(ch2), 2, `ladder: two paragraphs in chapter`)
+    pass -> pass and test.assert_equal(ch2.title, `Intro`, `ladder: chapter title`)
+
+    // Book from chapters
+    let ch_end -> text.Chapter.from_paragraphs(`Outro`, [
+        text.Paragraph { text -> `Books hold chapters.` }
+    ])
+    let book -> text.Book.from_chapters(`The Ladder`, [ch2])
+    let book2 -> text.Book.append_chapter(book, ch_end)
+    pass -> pass and test.assert_equal(text.Book.count_chapters(book2), 2, `ladder: two chapters`)
+    pass -> pass and test.assert_equal(text.Book.count_paragraphs(book2), 3, `ladder: three paragraphs total`)
+    pass -> pass and test.assert_equal(book2.title, `The Ladder`, `ladder: book title`)
+
+    let full -> text.Book.to_text(book2)
+    pass -> pass and test.assert_true(full.length > 20, `ladder: full book text is non-empty`)
+    // Spot-check structure of to_text: title, chapter titles, bodies
+    pass -> pass and test.assert_equal(
+        full,
+        `The Ladder\n\n---\n\nIntro\n\nZen builds books Layers stay explicit\n\nChapters hold paragraphs.\n\n---\n\nOutro\n\nBooks hold chapters.`,
+        `ladder: book to_text end-to-end`
+    )
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Text.word_helpers`, `fn` -> test_word_helpers},
+        {`name` -> `Text.sentence_and_paragraph_helpers`, `fn` -> test_sentence_and_paragraph_helpers},
+        {`name` -> `Text.chapter_helpers`, `fn` -> test_chapter_helpers},
+        {`name` -> `Text.book_helpers`, `fn` -> test_book_helpers},
+        {`name` -> `Text.full_hierarchy`, `fn` -> test_full_hierarchy}
+    ]
+
+    <- test.run_suite(`Text Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

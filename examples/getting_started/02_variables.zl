@@ -1,0 +1,30 @@
+/!
+  02 — Variables and binding
+
+  Run:
+    ./bin/zen examples/getting_started/02_variables.zl
+
+  Learn: let (mutable), set (constant), -> rebind, nothing.
+!/
+
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let count -> 10
+    set PI : Decimal -> 3.14
+    let name -> `Zen`
+
+    io.writeln(`count starts at ` + Str.to_string(count))
+    count -> count + 5
+    io.writeln(`after rebind: ` + Str.to_string(count))
+    io.writeln(`PI (set) = ` + Str.to_string(PI))
+    io.writeln(`name = ` + name)
+
+    let maybe -> nothing
+    when maybe == nothing {
+        io.writeln(`maybe is nothing (explicit empty)`)
+    }
+
+    <- 0
+}

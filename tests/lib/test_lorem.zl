@@ -1,0 +1,92 @@
+import zen.test as test
+import zen.text.lorem as lorem
+import zen.text.string as Str
+import zen.math.random as random
+
+function test_word() {
+    let w -> lorem.word()
+    let pass -> test.assert_true(w != Nothing and w.length > 0, `word should not be empty`)
+    <- pass
+}
+
+function test_words_and_list() {
+    let list -> lorem.words_list(5)
+    let pass -> test.assert_equal(list.length, 5, `words_list(5) should return 5 elements`)
+    
+    let words_str -> lorem.words(4)
+    let parts -> Str.split(words_str, ` `)
+    pass -> pass and test.assert_equal(parts.length, 4, `words(4) should have 4 space-separated words`)
+    <- pass
+}
+
+function test_sentence() {
+    let s -> lorem.sentence(5, 8)
+    let pass -> test.assert_true(Str.ends_with(s, `.`), `sentence should end with a period`)
+    
+    // First letter should be capitalized
+    let first_char -> s.substring(0, 1)
+    pass -> pass and test.assert_equal(first_char, Str.to_upper(first_char), `first character should be uppercase`)
+    <- pass
+}
+
+function test_sentences_and_paragraph() {
+    let p -> lorem.paragraph(2, 4)
+    let pass -> test.assert_true(p.length > 10, `paragraph should produce non-empty text`)
+    
+    let multi_p -> lorem.paragraphs(3)
+    let p_list -> Str.split(multi_p, `\n\n`)
+    pass -> pass and test.assert_equal(p_list.length, 3, `paragraphs(3) should have 3 double-newline separated blocks`)
+    <- pass
+}
+
+function test_title_and_slug() {
+    let t -> lorem.title(3, 5)
+    let pass -> test.assert_true(t.length > 0, `title should not be empty`)
+    
+    let sl -> lorem.slug(3)
+    let parts -> Str.split(sl, `-`)
+    pass -> pass and test.assert_equal(parts.length, 3, `slug(3) should have 3 hyphen-separated parts`)
+    <- pass
+}
+
+function test_standard() {
+    let std -> lorem.standard()
+    let pass -> test.assert_true(Str.starts_with(std, `Lorem ipsum dolor sit amet`), `standard should start with classical passage`)
+    <- pass
+}
+
+function test_deterministic_seed() {
+    let g1 -> random.seed(12345)
+    let g2 -> random.seed(12345)
+    
+    let w1 -> lorem.rng_word(g1)
+    let w2 -> lorem.rng_word(g2)
+    let pass -> test.assert_equal(w1, w2, `seeded RNG should produce identical words`)
+    
+    let s1 -> lorem.rng_sentence(g1, 6, 6)
+    let s2 -> lorem.rng_sentence(g2, 6, 6)
+    pass -> pass and test.assert_equal(s1, s2, `seeded RNG should produce identical sentences`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Lorem.word`, `fn` -> test_word},
+        {`name` -> `Lorem.words_and_list`, `fn` -> test_words_and_list},
+        {`name` -> `Lorem.sentence`, `fn` -> test_sentence},
+        {`name` -> `Lorem.sentences_and_paragraph`, `fn` -> test_sentences_and_paragraph},
+        {`name` -> `Lorem.title_and_slug`, `fn` -> test_title_and_slug},
+        {`name` -> `Lorem.standard`, `fn` -> test_standard},
+        {`name` -> `Lorem.deterministic_seed`, `fn` -> test_deterministic_seed}
+    ]
+
+    <- test.run_suite(`Lorem Ipsum Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

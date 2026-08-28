@@ -1,0 +1,61 @@
+import zen.test as test
+
+function test_int_exclusive() {
+    let r -> 0..5
+    let pass -> test.assert_equal(r.length, 5, `0..5 has five elements`)
+    pass -> pass and test.assert_equal(r[0], 0, `starts at 0`)
+    pass -> pass and test.assert_equal(r[4], 4, `ends at 4 exclusive`)
+    pass -> pass and test.assert_equal(2..2, [], `empty when start == end exclusive`)
+    <- pass
+}
+
+function test_int_inclusive() {
+    let r -> 0..=5
+    let pass -> test.assert_equal(r.length, 6, `0..=5 has six elements`)
+    pass -> pass and test.assert_equal(r[0], 0, `inclusive starts at 0`)
+    pass -> pass and test.assert_equal(r[5], 5, `inclusive ends at 5`)
+    pass -> pass and test.assert_equal(3..=3, [3], `single element when start == end inclusive`)
+    <- pass
+}
+
+function test_descending() {
+    let r -> 5..2
+    let pass -> test.assert_equal(r, [5, 4, 3], `5..2 descends exclusive`)
+    pass -> pass and test.assert_equal(5..=2, [5, 4, 3, 2], `5..=2 descends inclusive`)
+    <- pass
+}
+
+function test_char_ranges() {
+    let letters -> `a`..`d`
+    let pass -> test.assert_equal(letters, [`a`, `b`, `c`], `a..d exclusive`)
+    pass -> pass and test.assert_equal(`a`..=`c`, [`a`, `b`, `c`], `a..=c inclusive`)
+    pass -> pass and test.assert_equal(`c`..`a`, [`c`, `b`], `descending chars exclusive`)
+    <- pass
+}
+
+function test_for_loop() {
+    let sum -> 0
+    do for i in 1..=4 {
+        sum -> sum + i
+    }
+    <- test.assert_equal(sum, 10, `for over 1..=4 sums to 10`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Range.int_exclusive`, `fn` -> test_int_exclusive},
+        {`name` -> `Range.int_inclusive`, `fn` -> test_int_inclusive},
+        {`name` -> `Range.descending`, `fn` -> test_descending},
+        {`name` -> `Range.char_ranges`, `fn` -> test_char_ranges},
+        {`name` -> `Range.for_loop`, `fn` -> test_for_loop}
+    ]
+    <- test.run_suite(`Range Syntax`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

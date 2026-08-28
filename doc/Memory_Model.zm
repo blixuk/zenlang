@@ -1,0 +1,50 @@
+Entry {
+    `title` -> `Zenlang Memory & Security Model`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-27`,
+    `version` -> `1.0.0`,
+    `archetype` -> `specification`,
+    `theme` -> `antiquarian`
+}
+
+Document {
+    Heading { `text` -> `Zenlang Memory & Security Model`, `size` -> 1 },
+    Paragraph {
+        `text` -> `Zenlang eliminates traditional garbage collection pauses and unpredictable latency spikes by combining automatic reference management, chunk-chained bump arenas, and snapshot-by-value concurrency.`
+    },
+    
+    Heading { `text` -> `1. Three-Tier Memory Architecture`, `size` -> 2 },
+    Table {
+        `headers` -> [`Tier`, `Mechanism`, `Lifecycle & Reclaim`],
+        `rows` -> [
+            [`Automatic Reference`, `Deterministic scope cleanup`, `Deallocated immediately upon scope exit`],
+            [`Scoped Bump Arenas`, `with memory.create_arena()`, `Instantaneous O(1) bulk free on block exit`],
+            [`String Interning`, `Global hash table (1-32 bytes)`, `Immutable shared pointers with O(1) equality`]
+        ]
+    },
+    
+    Heading { `text` -> `2. Scoped Arena Example`, `size` -> 2 },
+    CodeBlock {
+        `language` -> `zen`,
+        `code` -> `import zen.memory as memory
+
+function process_batch(items) {
+    with memory.create_arena(32 * 1024 * 1024) as arena {
+        do for item in items {
+            let res -> compute(item)
+            save(res)
+        }
+    }
+}`
+    },
+    
+    Heading { `text` -> `3. Security & Safety Guarantees`, `size` -> 2 },
+    Table {
+        `headers` -> [`Guarantee`, `Implementation`, `Security Benefit`],
+        `rows` -> [
+            [`No Implicit Coercion`, `Strict typing & sentinel checks`, `Prevents injection flaws and boundary confusion`],
+            [`Bounds Checked`, `Runtime checked indexing`, `Eliminates buffer over-reads and out-of-bounds memory access`],
+            [`Data Race Free`, `Snapshot-by-value closures`, `Thread-safe task concurrency without mutex deadlocks`]
+        ]
+    }
+}

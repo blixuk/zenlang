@@ -1,0 +1,96 @@
+/!
+  zen.ui.widget map widgets dual-path.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_ui_widget.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_ui_widget.zl
+!/
+
+use zen.ui.widget as widget
+use zen.ui.canvas as canvas
+use zen.ui.layout as layout
+use zen.test as test
+
+function test_label_and_panel() {
+    let c -> canvas.create(20, 8)
+    canvas.clear(c, ` `, `white`, `black`)
+    let b -> {`x` -> 1, `y` -> 1, `w` -> 18, `h` -> 5}
+    widget.draw(c, b, widget.panel(`Title`))
+    widget.draw(c, {`x` -> 3, `y` -> 3, `w` -> 10, `h` -> 1}, widget.label(`Hello`))
+
+    // title drawn at x+2 as " Title " → 'T' at x+3
+    let pass -> test.assert_equal(canvas.get_cell(c, 1, 1), `+`, `panel corner`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 4, 1), `T`, `title T`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 3, 3), `H`, `label H`)
+    <- pass
+}
+
+function test_progress() {
+    let c -> canvas.create(12, 3)
+    canvas.clear(c, ` `, `white`, `black`)
+    let b -> {`x` -> 1, `y` -> 1, `w` -> 10, `h` -> 1}
+    widget.draw(c, b, widget.progress(5, 10))
+    // half filled with =
+    let pass -> test.assert_equal(canvas.get_cell(c, 1, 1), `=`, `filled start`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 5, 1), `=`, `filled mid`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 6, 1), `-`, `track`)
+    <- pass
+}
+
+function test_list_select() {
+    let items -> [`alpha`, `beta`, `gamma`, `delta`]
+    let lv -> widget.list_view(items, 0)
+    lv -> widget.list_move(lv, 1)
+    let pass -> test.assert_equal(lv[`selected`], 1, `moved to 1`)
+
+    let c -> canvas.create(16, 4)
+    canvas.clear(c, ` `, `white`, `black`)
+    let b -> {`x` -> 0, `y` -> 0, `w` -> 16, `h` -> 3}
+    widget.draw(c, b, lv)
+    // selected line starts with >
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 1), `>`, `sel marker`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 2, 1), `b`, `beta`)
+    <- pass
+}
+
+function test_status_and_layout() {
+    let c -> canvas.create(20, 6)
+    canvas.clear(c, ` `, `white`, `black`)
+
+    let root -> layout.vbox()
+    let head -> layout.box(20, 1)
+    let body -> layout.set_expand(layout.box(0, 0), true)
+    let foot -> layout.box(20, 1)
+    layout.add(root, head)
+    layout.add(root, body)
+    layout.add(root, foot)
+    layout.layout(root, 0, 0, 20, 6)
+
+    widget.draw(c, head, widget.status(`APP`, `ok`))
+    widget.draw(c, body, widget.panel(`Body`))
+    widget.draw(c, foot, widget.progress(2, 4))
+
+    let pass -> test.assert_equal(canvas.get_cell(c, 0, 0), `A`, `status left`)
+    // right-aligned "ok"
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 18, 0), `o`, `status right o`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 1), `+`, `panel in body`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 0, 5), `=`, `footer progress`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Widget.label_panel`, `fn` -> test_label_and_panel},
+        {`name` -> `Widget.progress`, `fn` -> test_progress},
+        {`name` -> `Widget.list`, `fn` -> test_list_select},
+        {`name` -> `Widget.status_layout`, `fn` -> test_status_and_layout}
+    ]
+    <- test.run_suite(`UI.Widget Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

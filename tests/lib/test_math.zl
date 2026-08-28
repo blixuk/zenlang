@@ -1,0 +1,46 @@
+import zen.test as test
+import zen.math.math as math
+
+function test_abs() {
+    let pass -> test.assert_equal(math.abs(-5), 5, `abs(-5) should be 5`)
+    pass -> pass and test.assert_equal(math.abs(10), 10, `abs(10) should be 10`)
+    pass -> pass and test.assert_equal(math.abs(0), 0, `abs(0) should be 0`)
+    <- pass
+}
+
+function test_min_max() {
+    let pass -> test.assert_equal(math.min(10, 20), 10, `min(10, 20) should be 10`)
+    pass -> pass and test.assert_equal(math.max(10, 20), 20, `max(10, 20) should be 20`)
+    pass -> pass and test.assert_equal(math.min(-5, -2), -5, `min(-5, -2) should be -5`)
+    pass -> pass and test.assert_equal(math.max(-5, -2), -2, `max(-5, -2) should be -2`)
+    <- pass
+}
+
+function test_pow() {
+    <- test.assert_equal(math.pow(2, 3), 8, `2^3 should be 8`)
+}
+
+function test_floor_ceil() {
+    let pass -> test.assert_equal(math.floor(3.7), 3, `floor(3.7) should be 3`)
+    pass -> pass and test.assert_equal(math.ceil(3.2), 4, `ceil(3.2) should be 4`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Math.abs`, `fn` -> test_abs},
+        {`name` -> `Math.min_max`, `fn` -> test_min_max},
+        {`name` -> `Math.pow`, `fn` -> test_pow},
+        {`name` -> `Math.floor_ceil`, `fn` -> test_floor_ceil}
+    ]
+
+    <- test.run_suite(`Math Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

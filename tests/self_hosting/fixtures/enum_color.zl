@@ -1,0 +1,24 @@
+/!
+ Enumerator MVP: Color.Red compare.
+ Exit 0 iff Color.Green selected path works and Red equals Red.
+ !/
+
+enumerator Color {
+    Red
+    Green
+    Blue
+}
+
+function main() {
+    let c -> Color.Red
+    when c == Color.Blue {
+        <- 1
+    }
+    when c is Color.Red {
+        when Color.Green == Color.Green {
+            <- 0
+        }
+        <- 2
+    }
+    <- 3
+}

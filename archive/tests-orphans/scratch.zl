@@ -1,0 +1,11 @@
+import zen.io.io as io
+
+function main() {
+    let a -> 12
+    let b -> 5
+    let c -> a & b
+    let d -> a | b
+    io.debug(c)
+    io.debug(d)
+    <- 0
+}

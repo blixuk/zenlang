@@ -1,0 +1,197 @@
+/!
+  Dual-path terminal UI layout (map nodes).
+
+  Preferred under interpret and `-g`.
+
+  Node shape:
+    { kind, x, y, w, h, expand, children, fixed_w, fixed_h }
+
+  kind: `box` | `vbox` | `hbox`
+  expand: true → fill remaining space in parent box
+  fixed_w / fixed_h: preferred size when expand is false
+
+  Example:
+    let root -> layout.vbox()
+    let head -> layout.box(80, 1)
+    let body -> layout.set_expand(layout.box(0, 0), true)
+    layout.add(root, head)
+    layout.add(root, body)
+    layout.layout(root, 0, 0, 80, 24)
+ !/
+
+/!
+  Create a leaf box with preferred size.
+!/
+function box(w, h) {
+    <- {
+        `kind` -> `box`,
+        `x` -> 0, `y` -> 0,
+        `w` -> w, `h` -> h,
+        `fixed_w` -> w, `fixed_h` -> h,
+        `expand` -> false,
+        `children` -> []
+    }
+}
+
+/!
+  Vertical box: children stacked top → bottom.
+!/
+function vbox() {
+    <- {
+        `kind` -> `vbox`,
+        `x` -> 0, `y` -> 0,
+        `w` -> 0, `h` -> 0,
+        `fixed_w` -> 0, `fixed_h` -> 0,
+        `expand` -> true,
+        `children` -> []
+    }
+}
+
+/!
+  Horizontal box: children left → right.
+!/
+function hbox() {
+    <- {
+        `kind` -> `hbox`,
+        `x` -> 0, `y` -> 0,
+        `w` -> 0, `h` -> 0,
+        `fixed_w` -> 0, `fixed_h` -> 0,
+        `expand` -> true,
+        `children` -> []
+    }
+}
+
+/!
+  Append child to container; returns container for chaining.
+  (Do not name the first parameter `parent` — that token is reserved.)
+!/
+function add(container, child) {
+    container[`children`].append(child)
+    <- container
+}
+
+/!
+  Mark node as expanding (fills leftover space in container).
+!/
+function set_expand(node, flag) {
+    node[`expand`] -> flag
+    <- node
+}
+
+/!
+  Set preferred fixed size (used when expand is false).
+!/
+function set_size(node, w, h) {
+    node[`fixed_w`] -> w
+    node[`fixed_h`] -> h
+    node[`w`] -> w
+    node[`h`] -> h
+    <- node
+}
+
+/!
+  Place `node` into absolute bounds and recursively layout children.
+!/
+function layout(node, x, y, w, h) {
+    node[`x`] -> x
+    node[`y`] -> y
+    node[`w`] -> w
+    node[`h`] -> h
+
+    let kind -> node[`kind`]
+    when kind == `vbox` {
+        let kids -> node[`children`]
+        let n -> kids.length
+        let expanding -> 0
+        let fixed -> 0
+        let i -> 0
+        do while i < n {
+            let ch -> kids[i]
+            when ch[`expand`] {
+                expanding -> expanding + 1
+            } or {
+                fixed -> fixed + ch[`fixed_h`]
+            }
+            i -> i + 1
+        }
+
+        let rem -> node[`h`] - fixed
+        when rem < 0 { rem -> 0 }
+        let share -> 0
+        when expanding > 0 {
+            share -> rem / expanding
+        }
+
+        let cy -> node[`y`]
+        i -> 0
+        do while i < n {
+            let ch -> kids[i]
+            let ch_h -> ch[`fixed_h`]
+            when ch[`expand`] {
+                ch_h -> share
+            }
+            let ch_w -> node[`w`]
+            when ch[`expand`] == false and ch[`fixed_w`] > 0 {
+                ch_w -> ch[`fixed_w`]
+                when ch_w > node[`w`] {
+                    ch_w -> node[`w`]
+                }
+            }
+            layout(ch, node[`x`], cy, ch_w, ch_h)
+            cy -> cy + ch_h
+            i -> i + 1
+        }
+    } or when kind == `hbox` {
+        let kids -> node[`children`]
+        let n -> kids.length
+        let expanding -> 0
+        let fixed -> 0
+        let i -> 0
+        do while i < n {
+            let ch -> kids[i]
+            when ch[`expand`] {
+                expanding -> expanding + 1
+            } or {
+                fixed -> fixed + ch[`fixed_w`]
+            }
+            i -> i + 1
+        }
+
+        let rem -> node[`w`] - fixed
+        when rem < 0 { rem -> 0 }
+        let share -> 0
+        when expanding > 0 {
+            share -> rem / expanding
+        }
+
+        let cx -> node[`x`]
+        i -> 0
+        do while i < n {
+            let ch -> kids[i]
+            let ch_w -> ch[`fixed_w`]
+            when ch[`expand`] {
+                ch_w -> share
+            }
+            let ch_h -> node[`h`]
+            when ch[`expand`] == false and ch[`fixed_h`] > 0 {
+                ch_h -> ch[`fixed_h`]
+                when ch_h > node[`h`] {
+                    ch_h -> node[`h`]
+                }
+            }
+            layout(ch, cx, node[`y`], ch_w, ch_h)
+            cx -> cx + ch_w
+            i -> i + 1
+        }
+    } or {
+        let kids -> node[`children`]
+        let i -> 0
+        do while i < kids.length {
+            layout(kids[i], x, y, w, h)
+            i -> i + 1
+        }
+    }
+    <- node
+}
+
+

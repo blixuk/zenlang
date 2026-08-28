@@ -1,0 +1,60 @@
+import zen.geometry.vector3 as vector3_mod
+import zen.math.math as math
+
+/!
+ Class representing a 3D vector.
+ !/
+class Vector3 {
+    let x: Decimal
+    let y: Decimal
+    let z: Decimal
+
+    /!
+     Initializes a new Vector3.
+     @param x The x-component.
+     @param y The y-component.
+     @param z The z-component.
+     !/
+    function init(x, y, z) {
+        self.x -> x
+        self.y -> y
+        self.z -> z
+    }
+
+    /!
+     Adds another vector to this vector.
+     !/
+    function add(other: Vector3) : Vector3 {
+        <- vector3_mod.Vector3(self.x + other.x, self.y + other.y, self.z + other.z)
+    }
+
+    /!
+     Subtracts another vector from this vector.
+     !/
+    function sub(other: Vector3) : Vector3 {
+        <- vector3_mod.Vector3(self.x - other.x, self.y - other.y, self.z - other.z)
+    }
+
+    /!
+     Scales this vector by a scalar value.
+     !/
+    function scale(s) : Vector3 {
+        <- vector3_mod.Vector3(self.x * s, self.y * s, self.z * s)
+    }
+
+    /!
+     Calculates the length (magnitude) of this vector.
+     !/
+    function length() {
+        <- math.sqrt(self.x * self.x + self.y * self.y + self.z * self.z)
+    }
+
+    /!
+     Normalizes this vector to a length of 1.
+     !/
+    function normalize() : Vector3 {
+        let len -> self.length()
+        when len == 0 { <- self }
+        <- self.scale(1 / len)
+    }
+}

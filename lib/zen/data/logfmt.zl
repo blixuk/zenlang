@@ -1,0 +1,55 @@
+/!
+ Logfmt parser and generator.
+ Dual-path: uses regex find_all with POSIX-friendly patterns.
+ !/
+
+import zen.text.string as Str
+import zen.text.regex as re
+
+/!
+ Unquote a value if wrapped in double quotes.
+ !/
+function _unquote(v) {
+    when v.length >= 2 and Str.starts_with(v, `"`) and Str.ends_with(v, `"`) {
+        let inner -> v.substring(1, v.length - 1)
+        <- Str.replace(inner, `\\"`, `"`)
+    }
+    <- v
+}
+
+/!
+ Parses a logfmt line into a map.
+ Supports key=value and key="quoted value".
+ !/
+function parse(line) {
+    let res -> {}
+    // POSIX ERE: no (?:...); two capture groups.
+    let pairs -> re.find_all(`([A-Za-z0-9_./-]+)=("[^"]*"|[^ ]*)`, line)
+    do for pair in pairs {
+        when pair.length >= 2 {
+            let key -> pair[0]
+            let val -> _unquote(pair[1])
+            res[key] -> val
+        }
+    }
+    <- res
+}
+
+/!
+ Converts a map to a logfmt string.
+ !/
+function stringify(data) {
+    let res -> ``
+    let keys -> data.keys()
+    let sep -> ``
+    do for key in keys {
+        let val -> data[key]
+        let val_str -> Str.to_string(val)
+        when Str.contains(val_str, ` `) or Str.contains(val_str, `"`) or val_str == `` {
+            val_str -> `"` + Str.replace(val_str, `"`, `\\"`) + `"`
+        }
+        res -> res + sep + key + `=` + val_str
+        sep -> ` `
+    }
+    <- res
+}

@@ -1,0 +1,565 @@
+/!
+ Stage 5: Codegen dual-path smoke.
+ Asserts emitted C shape (ZenValue runtime), not full gcc link.
+ !/
+
+import compiler.Codegen as Codegen
+import compiler.Parser as Parser
+import zen.test as test
+import zen.text.string as Str
+
+function test_add_main_shape() {
+    let src -> `
+function add(a, b) {
+    <- a + b
+}
+
+function main() {
+    <- add(1, 2)
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `bootstrap_runtime.h`), true, `includes runtime`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue z_add`), true, `add fn`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue zen_main`), true, `zen_main`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_add`), true, `uses ZenValue_add`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_integer(1`), true, `int lit 1`)
+    pass -> pass and test.assert_equal(Str.contains(c, `int main`), true, `host main`)
+    pass -> pass and test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
+    <- pass
+}
+
+function test_let_and_return() {
+    let src -> `
+function main() {
+    let x -> 10
+    let y -> 20
+    <- x + y
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `z_x`), true, `let x`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_y`), true, `let y`)
+    pass -> pass and test.assert_equal(Str.contains(c, `__ret_val`), true, `ret val`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer`), true, `int ctor`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_add`), true, `add x+y`)
+    <- pass
+}
+
+function test_when_emits_if() {
+    let src -> `
+function main() {
+    let x -> 1
+    when x == 1 {
+        <- 10
+    } or {
+        <- 0
+    }
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `if ((`), true, `if`)
+    pass -> pass and test.assert_equal(Str.contains(c, `else`), true, `else`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_equal`), true, `equal`)
+    <- pass
+}
+
+function test_compare_ops() {
+    let src -> `
+function main() {
+    <- 3 < 5
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_less_than`), true, `lt`)
+    <- pass
+}
+
+function test_proto_and_body() {
+    let src -> `
+function f() {
+    <- 1
+}
+function main() {
+    <- f()
+}
+`
+    let c -> Codegen.transpile_source(src)
+    // prototype appears before body
+    let pi -> Str.index_of(c, `ZenValue z_f(void);`)
+    let bi -> Str.index_of(c, `ZenValue z_f(void) {`)
+    let pass -> test.assert_equal(pi >= 0, true, `proto`)
+    pass -> pass and test.assert_equal(bi >= 0, true, `body`)
+    pass -> pass and test.assert_equal(pi < bi, true, `proto before body`)
+    <- pass
+}
+
+function test_list_literal() {
+    let src -> `
+function main() {
+    let xs -> [1, 2, 3]
+    <- xs
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
+    // Under -g int_to_str / arity formatting can vary; require factory + elements
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenList_make_from_arguments`), true, `list factory`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer(1`), true, `el 1`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer(2`), true, `el 2`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer(3`), true, `el 3`)
+    <- pass
+}
+
+function test_for_in_list() {
+    let src -> `
+function main() {
+    let xs -> [1, 2, 3]
+    let s -> 0
+    do for i in xs {
+        s -> s + i
+    }
+    <- s
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
+    pass -> pass and test.assert_equal(Str.contains(c, `for (long long`), true, `C for loop`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenList_get_value_at_index`), true, `list index`)
+    pass -> pass and test.assert_equal(Str.contains(c, `as.list->count`), true, `list count`)
+    <- pass
+}
+
+function test_for_in_range() {
+    let src -> `
+function main() {
+    let s -> 0
+    do for i in 0..3 {
+        s -> s + i
+    }
+    <- s
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
+    pass -> pass and test.assert_equal(Str.contains(c, `for (;`), true, `range for`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer`), true, `range ints`)
+    <- pass
+}
+
+function test_index_get() {
+    let src -> `
+function main() {
+    let xs -> [10, 20]
+    <- xs[1]
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_get_at`), true, `get_at`)
+    <- pass
+}
+
+/!
+ Module-level let → file-scope ZenValue + zen_module_init assignment.
+ !/
+function test_module_globals() {
+    let q -> "`"
+    let src -> `let K_LIT -> ` + q + `LiteralExpression` + q + `
+let N -> 42
+
+function main() {
+    <- N
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue z_K_LIT;`), true, `global decl`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue z_N;`), true, `global N`)
+    pass -> pass and test.assert_equal(Str.contains(c, `zen_module_init`), true, `init fn`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_K_LIT = ZenValue_make_string`), true, `init string`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_N = ZenValue_make_integer(42`), true, `init int`)
+    pass -> pass and test.assert_equal(Str.contains(c, `zen_module_init();`), true, `main calls init`)
+    <- pass
+}
+
+/!
+ AST.K_* field get lowers to bare global (multi-file merge style).
+ TokenType.X → "TokenType.X" string.
+ !/
+function test_enum_and_kind_access() {
+    let q -> "`"
+    let src -> `let K_LIT -> ` + q + `LiteralExpression` + q + `
+
+function main() {
+    let a -> AST.K_LIT
+    let b -> TokenType.AND
+    <- a
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `z_K_LIT`), true, `kind global`)
+    // AST.K_LIT should not require z_AST
+    pass -> pass and test.assert_equal(Str.contains(c, `z_AST`), false, `no AST alias`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_integer(68`), true, `TokenType.AND int id`)
+    <- pass
+}
+
+/!
+ Digit-class strings and messages with '.' must not become integer/decimal lits.
+ Build source without nested backticks in this test file.
+ !/
+function test_string_vs_number_lits() {
+    let q -> "`"
+    let src -> `function main() {
+    let digits -> ` + q + `0123456789` + q + `
+    let msg -> ` + q + `Expected '{'.` + q + `
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_make_string("0123456789")`), true, `digit class string`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_integer(0123456789`), false, `not octal int`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_string("Expected`), true, `msg string`)
+    pass -> pass and test.assert_equal(Str.contains(c, `make_decimal(Expected`), false, `not bogus decimal`)
+    <- pass
+}
+
+/!
+ Bare `io.write` (no import) must emit ZenIO_* — not z_IO_write, which
+ does not exist unless Driver merged zen.io.io. Core tests/01–06 use this.
+ !/
+function test_io_write_builtin() {
+    let q -> "`"
+    let src -> `function main() {
+    io.write(` + q + `ok` + q + `)
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenIO_write`), true, `io.write builtin`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_IO_write`), false, `not namespaced IO_write`)
+    <- pass
+}
+
+/!
+ Single-digit backtick strings must stay strings. looks_int("0") is true;
+ if Codegen ignores token_kind STRING, `_is_digit` (`c >= `0``) in the
+ self-built lexer becomes an integer compare and the host loop emits empty C.
+ !/
+function test_string_digit_char_lits() {
+    let q -> "`"
+    let src -> `function main() {
+    let z -> ` + q + `0` + q + `
+    let n -> ` + q + `9` + q + `
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_make_string("0")`), true, `string 0`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_string("9")`), true, `string 9`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_integer(0LL)`), true, `int 0 still`)
+    <- pass
+}
+
+/!
+ Map index assign B[`k`] -> v must emit ZenValue_set_at (not noop).
+ Load-bearing for GraphBuilder B and Codegen CG under self-rebuild.
+ !/
+function test_index_assign() {
+    let q -> "`"
+    let src -> `let B -> { graph -> Nothing }
+function f(g) {
+    B[` + q + `graph` + q + `] -> g
+    <- B
+}
+function main() {
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_set_at`), true, `set_at`)
+    pass -> pass and test.assert_equal(Str.contains(c, `(void)(ZEN_NOTHING_VAL)`), false, `no void Nothing`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_B`), true, `module map`)
+    <- pass
+}
+
+/!
+ Class MVP: map-backed instance, Type_method free fns, Class_new ctor.
+ !/
+function test_class_methods() {
+    let src -> `
+class Counter {
+    let n
+    function init(v) {
+        self.n -> v
+    }
+    function inc() {
+        self.n -> self.n + 1
+        <- self.n
+    }
+}
+function main() {
+    let c -> Counter(0)
+    <- c.inc()
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse err`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_new`), true, `ctor`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_init`), true, `init method`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_inc`), true, `inc method`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenMap_make_from_arguments`), true, `map instance`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_self`), true, `self param`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenMap_set_value_at_key`), true, `field set`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_get_field`), true, `field get`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_new(`), true, `ctor call site`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_inc(`), true, `method call site`)
+    <- pass
+}
+
+function test_with_emit() {
+    let src -> `
+function main() {
+    with f() as region {
+        <- region
+    }
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse err`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `z_region`), true, `alias bind`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenMemory_push_arena`), true, `push`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenMemory_pop_arena`), true, `pop`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZEN_ARENA`), true, `type check`)
+    pass -> pass and test.assert_equal(Str.contains(c, `__with_pushed`), true, `flag`)
+    <- pass
+}
+
+function test_enum_and_closure() {
+    let src -> `
+enumerator Color {
+    Red
+    Green
+}
+function main() {
+    let n -> 10
+    let add_n -> function(x) {
+        <- x + n
+    }
+    let c -> Color.Red
+    when c is Color.Red {
+        <- add_n(5)
+    }
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `z_Color_Red`), true, `enum global`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_variant`), true, `variant init`)
+    pass -> pass and test.assert_equal(Str.contains(c, `__lambda_`), true, `lambda`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_from_closure`), true, `closure`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_apply`), true, `apply call`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_equal`), true, `is → equal`)
+    <- pass
+}
+
+function test_class_inherit() {
+    let src -> `
+class Animal {
+    let name
+    function init(n) {
+        self.name -> n
+    }
+    function speak() {
+        <- 1
+    }
+}
+class Dog extends Animal {
+    function speak() {
+        <- 2
+    }
+    function both() {
+        <- parent.speak()
+    }
+}
+function main() {
+    let d -> Dog(0)
+    <- d.speak()
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `z_Dog_new`), true, `Dog_new`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Animal_init`), true, `base init`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Dog_speak`), true, `override`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Animal_speak`), true, `base speak`)
+    pass -> pass and test.assert_equal(Str.contains(c, `__base`), true, `base tag`)
+    pass -> pass and test.assert_equal(Str.contains(c, `Animal_speak`), true, `parent call site`)
+    <- pass
+}
+
+/!
+ Multi-unit: unit without host main, custom init, shared protos, multi host.
+ !/
+function test_transpile_unit_no_host() {
+    let src -> `
+function helper() {
+    <- 3
+}
+function main() {
+    <- helper()
+}
+`
+    let prog -> Parser.parse_source(src)
+    let c_unit -> Codegen.transpile_unit(prog, false, `zen_mod_init_u0`)
+    let pass -> test.assert_equal(Str.contains(c_unit, `zen_mod_init_u0`), true, `custom init`)
+    pass -> pass and test.assert_equal(Str.contains(c_unit, `int main`), false, `no host main in unit`)
+    pass -> pass and test.assert_equal(Str.contains(c_unit, `ZenValue zen_main`), true, `zen_main fn`)
+    pass -> pass and test.assert_equal(Str.contains(c_unit, `z_helper`), true, `helper`)
+    let protos -> Codegen.proto_block_for_program(prog)
+    pass -> pass and test.assert_equal(Str.contains(protos, `z_helper`), true, `proto helper`)
+    pass -> pass and test.assert_equal(Str.contains(protos, `zen_main`), true, `proto main`)
+    let c_ex -> Codegen.transpile_unit_ex(prog, false, `zen_mod_init_u0`, protos)
+    pass -> pass and test.assert_equal(Str.contains(c_ex, `Cross-unit`), true, `shared protos header`)
+    let host -> Codegen.emit_multi_host_main([`zen_mod_init_a`, `zen_mod_init_b`])
+    pass -> pass and test.assert_equal(Str.contains(host, `zen_mod_init_a()`), true, `host calls a`)
+    pass -> pass and test.assert_equal(Str.contains(host, `zen_mod_init_b()`), true, `host calls b`)
+    pass -> pass and test.assert_equal(Str.contains(host, `int main`), true, `host main`)
+    let c_full -> Codegen.transpile_source(src)
+    pass -> pass and test.assert_equal(Str.contains(c_full, `int main`), true, `single has host`)
+    pass -> pass and test.assert_equal(Str.contains(c_full, `zen_module_init`), true, `Default init`)
+    <- pass
+}
+
+function test_pattern_bind_shape() {
+    let src -> `
+function main() {
+    let xs -> [10, 20, 30]
+    when xs is [a, b, c] {
+        <- a + b + c
+    }
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_get_length`), true, `len guard`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_get_at`), true, `bind get`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_a`), true, `bind a`)
+    <- pass
+}
+
+function test_enum_payload_shape() {
+    let src -> `
+enumerator Box {
+    Empty
+    Hold
+}
+function main() {
+    let o -> Box.Hold(7)
+    when o is Box.Hold(n) {
+        <- n
+    }
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_make_variant`), true, `payload ctor`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_is_variant`), true, `is variant`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_get_variant_data`), true, `extract`)
+    <- pass
+}
+
+function test_class_dispatch_shape() {
+    let src -> `
+class Dog {
+    function speak() { <- 1 }
+}
+class Cat {
+    function speak() { <- 2 }
+}
+function main() {
+    let d -> Dog()
+    <- d.speak()
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `__type`), true, `type tag`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Dog_speak`), true, `Dog speak`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Cat_speak`), true, `Cat speak`)
+    <- pass
+}
+
+function test_nested_closure_shape() {
+    let src -> `
+function main() {
+    let make -> function(n) {
+        <- function(x) {
+            <- x + n
+        }
+    }
+    <- make(5)(3)
+}
+`
+    let c -> Codegen.transpile_source(src)
+    when Str.starts_with(c, `/* parse error`) {
+        <- test.assert_equal(True, False, `parse error`)
+    }
+    let pass -> test.assert_equal(Str.contains(c, `__lambda_`), true, `lambda`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_from_closure`), true, `closure`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Codegen.add_main_shape`, `fn` -> test_add_main_shape},
+        {`name` -> `Codegen.let_return`, `fn` -> test_let_and_return},
+        {`name` -> `Codegen.when_if`, `fn` -> test_when_emits_if},
+        {`name` -> `Codegen.compare`, `fn` -> test_compare_ops},
+        {`name` -> `Codegen.proto_body`, `fn` -> test_proto_and_body},
+        {`name` -> `Codegen.list_literal`, `fn` -> test_list_literal},
+        {`name` -> `Codegen.for_in_list`, `fn` -> test_for_in_list},
+        {`name` -> `Codegen.for_in_range`, `fn` -> test_for_in_range},
+        {`name` -> `Codegen.index_get`, `fn` -> test_index_get},
+        {`name` -> `Codegen.module_globals`, `fn` -> test_module_globals},
+        {`name` -> `Codegen.enum_kind`, `fn` -> test_enum_and_kind_access},
+        {`name` -> `Codegen.string_lits`, `fn` -> test_string_vs_number_lits},
+        {`name` -> `Codegen.string_digit_chars`, `fn` -> test_string_digit_char_lits},
+        {`name` -> `Codegen.io_write_builtin`, `fn` -> test_io_write_builtin},
+        {`name` -> `Codegen.index_assign`, `fn` -> test_index_assign},
+        {`name` -> `Codegen.class_methods`, `fn` -> test_class_methods},
+        {`name` -> `Codegen.class_inherit`, `fn` -> test_class_inherit},
+        {`name` -> `Codegen.enum_closure`, `fn` -> test_enum_and_closure},
+        {`name` -> `Codegen.with_emit`, `fn` -> test_with_emit},
+        {`name` -> `Codegen.multi_unit_host`, `fn` -> test_transpile_unit_no_host},
+        {`name` -> `Codegen.pattern_bind`, `fn` -> test_pattern_bind_shape},
+        {`name` -> `Codegen.enum_payload`, `fn` -> test_enum_payload_shape},
+        {`name` -> `Codegen.class_dispatch`, `fn` -> test_class_dispatch_shape},
+        {`name` -> `Codegen.nested_closure`, `fn` -> test_nested_closure_shape}
+    ]
+    <- test.run_suite(`Selfhost Stage5 Codegen`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

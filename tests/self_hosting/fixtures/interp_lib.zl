@@ -1,0 +1,14 @@
+/!
+ Phase A1: imported library for interpret_file graph loading.
+ Free functions + one module-level let. No main (deps must not run entry).
+ !/
+
+let LIB_N -> 3
+
+function add(a, b) {
+    <- a + b
+}
+
+function lib_val() {
+    <- LIB_N
+}

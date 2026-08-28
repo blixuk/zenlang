@@ -1,0 +1,49 @@
+import zen.io.io as io
+
+/!
+ Stack utility (LIFO).
+ Uses a list as the underlying container.
+ !/
+class Stack {
+    let items : List
+
+    /!
+     Initializes a new empty stack.
+     !/
+    function init() {
+        self.items -> []
+    }
+
+    /!
+     Pushes a value onto the stack.
+     @param v The value.
+     !/
+    function push(v) {
+        self.items.append(v)
+    }
+
+    /!
+     Pops the top value from the stack.
+     @return The popped value.
+     !/
+    function pop() {
+        when self.items.length == 0 { raise `StackUnderflow` }
+        <- self.items.pop()
+    }
+
+    /!
+     Returns the top value without removing it.
+     @return The top value.
+     !/
+    function peek() {
+        when self.items.length == 0 { raise `StackUnderflow` }
+        <- self.items.at(self.items.length - 1)
+    }
+
+    /!
+     Returns the number of items in the stack.
+     !/
+    function size() {
+        <- self.items.length
+    }
+}

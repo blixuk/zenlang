@@ -1,0 +1,466 @@
+/!
+  Dependency Graph Engine for Zenlang projects.
+  Extracts direct and transitive dependency hierarchies from .zbuild manifests
+  and zen.lock, rendering colored terminal trees and interactive HTML/SVG node graphs.
+!/
+
+import zen.tooling.manifest as manifest
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.text.string as Str
+
+/!
+  Helper: Recursively discovers dependencies for a package node.
+!/
+function _build_subtree(root_path, pkg_name, spec, locked_pkgs, visited) {
+    when visited.has(pkg_name) {
+        <- {
+            `name` -> pkg_name,
+            `version` -> `circular`,
+            `spec` -> spec,
+            `commit` -> ``,
+            `is_root` -> false,
+            `is_local` -> Str.starts_with(spec, `path:`),
+            `is_circular` -> true,
+            `dependencies` -> []
+        }
+    }
+    visited[pkg_name] -> true
+
+    let commit_sha -> `unlocked`
+    when locked_pkgs.has(pkg_name) and locked_pkgs[pkg_name].has(`commit`) {
+        commit_sha -> locked_pkgs[pkg_name][`commit`]
+    }
+
+    let is_local -> Str.starts_with(spec, `path:`)
+    let ver -> `0.1.0`
+    let sub_deps -> []
+
+    // Look for .zbuild in deps/<pkg_name> or local path
+    let sub_manifest_path -> path.join(root_path, `deps/` + pkg_name + `/.zbuild`)
+    when is_local {
+        let rel -> Str.substring(spec, 5, Str.length(spec))
+        sub_manifest_path -> path.join(root_path, rel + `/.zbuild`)
+    }
+
+    when file.exists(sub_manifest_path) {
+        let sub_content -> file.read(sub_manifest_path)
+        let sub_m -> manifest.parse_manifest(sub_content)
+        when sub_m != Nothing {
+            when sub_m.has(`version`) and sub_m[`version`] != Nothing {
+                ver -> sub_m[`version`]
+            }
+            when sub_m.has(`dependencies`) and sub_m[`dependencies`] != Nothing {
+                let s_deps -> sub_m[`dependencies`]
+                do for sub_name in s_deps.keys() {
+                    let sub_spec -> Str.to_string(s_deps[sub_name])
+                    let child_node -> _build_subtree(root_path, sub_name, sub_spec, locked_pkgs, visited)
+                    sub_deps.append(child_node)
+                }
+            }
+        }
+    }
+
+    <- {
+        `name` -> pkg_name,
+        `version` -> ver,
+        `spec` -> spec,
+        `commit` -> commit_sha,
+        `is_root` -> false,
+        `is_local` -> is_local,
+        `is_circular` -> false,
+        `dependencies` -> sub_deps
+    }
+}
+
+/!
+  Builds a full dependency tree representation for a project.
+  @param proj Project map.
+  @return Root node map with child dependencies recursively populated.
+!/
+export function build_dependency_tree(proj) {
+    let root_path -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let lock -> proj[`lock`]
+    let locked_pkgs -> {}
+    when lock != Nothing and lock.has(`packages`) {
+        locked_pkgs -> lock[`packages`]
+    }
+
+    let deps -> manifest_map[`dependencies`]
+    when deps == Nothing { deps -> {} }
+
+    let children -> []
+    let visited -> {}
+    visited[manifest_map[`name`]] -> true
+
+    do for dep_name in deps.keys() {
+        let spec -> Str.to_string(deps[dep_name])
+        let child_node -> _build_subtree(root_path, dep_name, spec, locked_pkgs, visited)
+        children.append(child_node)
+    }
+
+    <- {
+        `name` -> manifest_map[`name`],
+        `version` -> manifest_map[`version`],
+        `description` -> manifest_map[`description`],
+        `root` -> root_path,
+        `is_root` -> true,
+        `is_local` -> false,
+        `is_circular` -> false,
+        `spec` -> `root`,
+        `commit` -> `HEAD`,
+        `dependencies` -> children
+    }
+}
+
+/!
+  Recursive helper to print tree lines.
+!/
+function _print_tree_node(node, prefix, is_last, counts) {
+    let name -> node[`name`]
+    let ver -> node[`version`]
+    let spec -> node[`spec`]
+    let commit -> node[`commit`]
+    when Str.length(commit) > 8 {
+        commit -> Str.substring(commit, 0, 8)
+    }
+
+    let branch -> `├── `
+    when is_last { branch -> `└── ` }
+
+    let icon -> `🔗 `
+    when node[`is_local`] { icon -> `📁 ` }
+    when node[`is_circular`] { icon -> `🔄 ` }
+
+    let line -> prefix + branch + icon + name + ` v` + ver
+    when spec != `` and spec != `root` {
+        line -> line + ` [` + spec + `]`
+    }
+    when commit != `` and commit != `unlocked` and commit != `local` and commit != `HEAD` {
+        line -> line + ` (` + commit + `)`
+    } or when node[`is_local`] {
+        line -> line + ` (local path)`
+    }
+
+    io.writeln(line)
+
+    counts[`total`] -> counts[`total`] + 1
+
+    let kids -> node[`dependencies`]
+    let n -> kids.length
+    let next_prefix -> prefix + `│   `
+    when is_last { next_prefix -> prefix + `    ` }
+
+    let i -> 0
+    do while i < n {
+        let child_last -> (i == n - 1)
+        _print_tree_node(kids[i], next_prefix, child_last, counts)
+        i -> i + 1
+    }
+}
+
+/!
+  Renders colored dependency tree to the terminal.
+  @param proj Project map.
+!/
+export function render_terminal_tree(proj) {
+    let tree -> build_dependency_tree(proj)
+    let manifest_map -> proj[`manifest`]
+
+    io.writeln(`==============================================`)
+    io.writeln(`  Dependency Graph: ` + tree[`name`])
+    io.writeln(`==============================================`)
+    io.writeln(`📦 ` + tree[`name`] + ` v` + tree[`version`] + ` (` + tree[`root`] + `)`)
+
+    let direct_kids -> tree[`dependencies`]
+    let counts -> { `total` -> 0 }
+
+    when direct_kids.length == 0 {
+        io.writeln(`    (no external dependencies declared in .zbuild)`)
+    } or {
+        let n -> direct_kids.length
+        let i -> 0
+        do while i < n {
+            let is_last -> (i == n - 1)
+            _print_tree_node(direct_kids[i], ``, is_last, counts)
+            i -> i + 1
+        }
+    }
+
+    io.writeln(`----------------------------------------------`)
+    let direct_count -> direct_kids.length
+    let trans_count -> counts[`total`] - direct_count
+    when trans_count < 0 { trans_count -> 0 }
+
+    io.writeln(`Total Dependencies: ` + Str.to_string(counts[`total`]) + ` (` + Str.to_string(direct_count) + ` direct, ` + Str.to_string(trans_count) + ` transitive)`)
+    let lock_status -> `synced`
+    when proj[`lock`] == Nothing { lock_status -> `missing (run 'zen pkg install')` }
+    io.writeln(`Lockfile Status:    ` + lock_status)
+    io.writeln(`==============================================`)
+
+    <- {
+        `ok` -> true,
+        `total` -> counts[`total`],
+        `direct` -> direct_count,
+        `transitive` -> trans_count
+    }
+}
+
+/!
+  Flatten tree nodes into node and link lists for HTML/SVG visualization.
+!/
+function _flatten_for_graph(node, nodes_list, links_list, visited_ids, depth) {
+    let node_id -> node[`name`]
+    when not visited_ids.has(node_id) {
+        visited_ids[node_id] -> true
+        nodes_list.append({
+            `id` -> node_id,
+            `name` -> node[`name`],
+            `version` -> node[`version`],
+            `spec` -> node[`spec`],
+            `commit` -> node[`commit`],
+            `is_root` -> node[`is_root`],
+            `is_local` -> node[`is_local`],
+            `depth` -> depth
+        })
+    }
+
+    let kids -> node[`dependencies`]
+    do for child in kids {
+        links_list.append({
+            `source` -> node_id,
+            `target` -> child[`name`]
+        })
+        _flatten_for_graph(child, nodes_list, links_list, visited_ids, depth + 1)
+    }
+}
+
+/!
+  Generates an interactive, searchable dark-mode HTML dependency graph.
+  @param proj Project map.
+  @param out_file Optional output path (default: docs/html/graph.html).
+!/
+export function generate_html_graph(proj, out_file) {
+    let tree -> build_dependency_tree(proj)
+    let root_path -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+
+    let default_out -> path.join(root_path, `docs/html/graph.html`)
+    when out_file != Nothing and out_file != `` {
+        default_out -> out_file
+    }
+
+    let html_dir -> path.dir_name(default_out)
+    file.make_dirs(html_dir)
+
+    let nodes_list -> []
+    let links_list -> []
+    let visited_ids -> {}
+    _flatten_for_graph(tree, nodes_list, links_list, visited_ids, 0)
+
+    let proj_name -> tree[`name`]
+    let proj_ver -> tree[`version`]
+
+    let html_content -> `<!DOCTYPE html>\n<html lang="en">\n<head>\n`
+    html_content -> html_content + `<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width, initial-scale=1.0">\n`
+    html_content -> html_content + `<title>` + proj_name + ` — Dependency Architecture Graph</title>\n`
+    html_content -> html_content + `<style>\n`
+    html_content -> html_content + `* { box-sizing: border-box; margin: 0; padding: 0; }\n`
+    html_content -> html_content + `body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b0f19; color: #e2e8f0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }\n`
+    html_content -> html_content + `header { background: #111827; border-bottom: 1px solid #1f2937; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }\n`
+    html_content -> html_content + `.title-badge { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 700; color: #f9fafb; }\n`
+    html_content -> html_content + `.ver-pill { background: #3b82f6; color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 9999px; font-weight: 600; }\n`
+    html_content -> html_content + `.controls { display: flex; gap: 12px; align-items: center; }\n`
+    html_content -> `.search-input { background: #1f2937; border: 1px solid #374151; color: #f9fafb; padding: 8px 14px; border-radius: 6px; font-size: 13px; width: 220px; outline: none; }\n`
+    html_content -> html_content + `.search-input:focus { border-color: #3b82f6; }\n`
+    html_content -> html_content + `.stat-tag { background: #1e293b; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 12px; color: #94a3b8; }\n`
+    html_content -> html_content + `.stat-tag strong { color: #38bdf8; }\n`
+    html_content -> html_content + `.main-layout { display: flex; flex: 1; position: relative; overflow: hidden; }\n`
+    html_content -> html_content + `#canvas-container { flex: 1; height: 100%; position: relative; cursor: grab; }\n`
+    html_content -> html_content + `#canvas-container:active { cursor: grabbing; }\n`
+    html_content -> html_content + `svg { width: 100%; height: 100%; display: block; }\n`
+    html_content -> html_content + `.sidebar { width: 340px; background: #111827; border-left: 1px solid #1f2937; padding: 24px; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }\n`
+    html_content -> html_content + `.card { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 16px; }\n`
+    html_content -> html_content + `.card h3 { font-size: 16px; color: #f9fafb; margin-bottom: 8px; }\n`
+    html_content -> html_content + `.prop-row { display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-bottom: 1px solid #2d3748; }\n`
+    html_content -> html_content + `.prop-label { color: #94a3b8; }\n`
+    html_content -> html_content + `.prop-val { color: #38bdf8; font-family: monospace; font-weight: 500; }\n`
+    html_content -> html_content + `.legend { display: flex; gap: 16px; font-size: 12px; color: #94a3b8; margin-top: 12px; }\n`
+    html_content -> html_content + `.legend-item { display: flex; align-items: center; gap: 6px; }\n`
+    html_content -> html_content + `.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }\n`
+    html_content -> html_content + `</style>\n</head>\n<body>\n`
+    html_content -> html_content + `<header>\n`
+    html_content -> html_content + `  <div class="title-badge">\n`
+    html_content -> html_content + `    <span>📦 ` + proj_name + `</span>\n`
+    html_content -> html_content + `    <span class="ver-pill">v` + proj_ver + `</span>\n`
+    html_content -> html_content + `    <span style="font-size:14px;color:#94a3b8;font-weight:normal;">Dependency Graph</span>\n`
+    html_content -> html_content + `  </div>\n`
+    html_content -> html_content + `  <div class="controls">\n`
+    html_content -> html_content + `    <div class="stat-tag">Nodes: <strong>` + Str.to_string(nodes_list.length) + `</strong></div>\n`
+    html_content -> html_content + `    <div class="stat-tag">Links: <strong>` + Str.to_string(links_list.length) + `</strong></div>\n`
+    html_content -> html_content + `    <input type="text" id="search" class="search-input" placeholder="Filter packages..." onkeyup="filterGraph()">\n`
+    html_content -> html_content + `  </div>\n`
+    html_content -> html_content + `</header>\n`
+    html_content -> html_content + `<div class="main-layout">\n`
+    html_content -> html_content + `  <div id="canvas-container">\n`
+    html_content -> html_content + `    <svg id="graph-svg"></svg>\n`
+    html_content -> html_content + `  </div>\n`
+    html_content -> html_content + `  <div class="sidebar">\n`
+    html_content -> html_content + `    <h3>Package Inspector</h3>\n`
+    html_content -> html_content + `    <div class="card" id="details-card">\n`
+    html_content -> html_content + `      <p style="color:#94a3b8;font-size:13px;">Click or hover over any node in the graph to inspect its version, source specification, and dependencies.</p>\n`
+    html_content -> html_content + `    </div>\n`
+    html_content -> html_content + `    <div class="card">\n`
+    html_content -> html_content + `      <h4 style="font-size:14px;color:#e2e8f0;margin-bottom:10px;">Graph Legend</h4>\n`
+    html_content -> html_content + `      <div class="legend" style="flex-direction:column;gap:8px;">\n`
+    html_content -> html_content + `        <div class="legend-item"><span class="dot" style="background:#8b5cf6;"></span> Root Project</div>\n`
+    html_content -> html_content + `        <div class="legend-item"><span class="dot" style="background:#3b82f6;"></span> Git Package</div>\n`
+    html_content -> html_content + `        <div class="legend-item"><span class="dot" style="background:#f59e0b;"></span> Local Path Package</div>\n`
+    html_content -> html_content + `        <div class="legend-item"><span class="dot" style="background:#10b981;"></span> Transitive Package</div>\n`
+    html_content -> html_content + `      </div>\n`
+    html_content -> html_content + `    </div>\n`
+    html_content -> html_content + `  </div>\n`
+    html_content -> html_content + `</div>\n`
+
+    // Embed graph data into JavaScript
+    html_content -> html_content + `<script>\n`
+    html_content -> html_content + `const rawNodes = [\n`
+    do for n in nodes_list {
+        html_content -> html_content + `  { id: "` + n[`id`] + `", name: "` + n[`name`] + `", version: "` + n[`version`] + `", spec: "` + n[`spec`] + `", commit: "` + n[`commit`] + `", is_root: ` + Str.to_string(n[`is_root`]) + `, is_local: ` + Str.to_string(n[`is_local`]) + `, depth: ` + Str.to_string(n[`depth`]) + ` },\n`
+    }
+    html_content -> html_content + `];\n`
+    html_content -> html_content + `const rawLinks = [\n`
+    do for l in links_list {
+        html_content -> html_content + `  { source: "` + l[`source`] + `", target: "` + l[`target`] + `" },\n`
+    }
+    html_content -> html_content + `];\n`
+
+    // Layout and SVG rendering engine in JavaScript
+    html_content -> html_content + `
+const svg = document.getElementById('graph-svg');
+let width = window.innerWidth - 340;
+let height = window.innerHeight - 60;
+svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+
+// Position nodes hierarchically
+const levelMap = {};
+rawNodes.forEach(n => {
+  if (!levelMap[n.depth]) levelMap[n.depth] = [];
+  levelMap[n.depth].push(n);
+});
+
+const depthLevels = Object.keys(levelMap).length;
+const colWidth = width / (depthLevels + 1);
+
+rawNodes.forEach(n => {
+  const colIndex = n.depth + 1;
+  const rowList = levelMap[n.depth];
+  const rowIndex = rowList.indexOf(n) + 1;
+  const rowHeight = height / (rowList.length + 1);
+  n.x = colWidth * colIndex;
+  n.y = rowHeight * rowIndex;
+  n.radius = n.is_root ? 24 : 18;
+});
+
+function drawGraph(filterText = '') {
+  svg.innerHTML = '';
+  
+  // Defs for arrows and gradients
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.innerHTML = '<marker id="arrow" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/></marker>';
+  svg.appendChild(defs);
+
+  // Draw links
+  rawLinks.forEach(link => {
+    const s = rawNodes.find(n => n.id === link.source);
+    const t = rawNodes.find(n => n.id === link.target);
+    if (!s || !t) return;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const dx = t.x - s.x;
+    const dy = t.y - s.y;
+    const cx1 = s.x + dx / 2;
+    const cy1 = s.y;
+    const cx2 = s.x + dx / 2;
+    const cy2 = t.y;
+    path.setAttribute('d', 'M ' + s.x + ' ' + s.y + ' C ' + cx1 + ' ' + cy1 + ', ' + cx2 + ' ' + cy2 + ', ' + t.x + ' ' + t.y);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#334155');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('marker-end', 'url(#arrow)');
+    svg.appendChild(path);
+  });
+
+  // Draw nodes
+  rawNodes.forEach(n => {
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.style.cursor = 'pointer';
+    g.onclick = () => showDetails(n);
+
+    const matches = !filterText || n.name.toLowerCase().includes(filterText);
+    const opacity = matches ? '1.0' : '0.25';
+
+    // Circle
+    const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', n.x);
+    circle.setAttribute('cy', n.y);
+    circle.setAttribute('r', n.radius);
+    
+    let color = '#3b82f6';
+    if (n.is_root) color = '#8b5cf6';
+    else if (n.is_local) color = '#f59e0b';
+    else if (n.depth > 1) color = '#10b981';
+
+    circle.setAttribute('fill', color);
+    circle.setAttribute('stroke', '#ffffff');
+    circle.setAttribute('stroke-width', '2');
+    circle.setAttribute('opacity', opacity);
+    g.appendChild(circle);
+
+    // Label
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', n.x);
+    text.setAttribute('y', n.y + n.radius + 14);
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('fill', '#f1f5f9');
+    text.setAttribute('font-size', '12px');
+    text.setAttribute('font-weight', '600');
+    text.setAttribute('opacity', opacity);
+    text.textContent = n.name + (n.version ? ' v' + n.version : '');
+    g.appendChild(text);
+
+    svg.appendChild(g);
+  });
+}
+
+function showDetails(node) {
+  const card = document.getElementById('details-card');
+  card.innerHTML = '<h3>' + node.name + '</h3>' +
+    '<div class="prop-row"><span class="prop-label">Version</span><span class="prop-val">v' + node.version + '</span></div>' +
+    '<div class="prop-row"><span class="prop-label">Source</span><span class="prop-val">' + node.spec + '</span></div>' +
+    '<div class="prop-row"><span class="prop-label">Commit</span><span class="prop-val">' + (node.commit || 'unlocked') + '</span></div>' +
+    '<div class="prop-row"><span class="prop-label">Type</span><span class="prop-val">' + (node.is_root ? 'Root Project' : (node.is_local ? 'Local Path' : 'Remote Git')) + '</span></div>' +
+    '<div class="prop-row"><span class="prop-label">Hierarchy Level</span><span class="prop-val">Depth ' + node.depth + '</span></div>';
+}
+
+function filterGraph() {
+  const q = document.getElementById('search').value.toLowerCase();
+  drawGraph(q);
+}
+
+drawGraph();
+if (rawNodes.length > 0) showDetails(rawNodes[0]);
+</script>\n</body>\n</html>\n`
+
+    file.write(default_out, html_content)
+    io.writeln(`[GRAPH] Generated interactive HTML dependency graph: ` + default_out)
+
+    <- {
+        `ok` -> true,
+        `html` -> default_out,
+        `nodes` -> nodes_list.length,
+        `links` -> links_list.length
+    }
+}

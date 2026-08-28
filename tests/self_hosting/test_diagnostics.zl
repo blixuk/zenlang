@@ -1,0 +1,67 @@
+/!
+  Test suite for compiler/Diagnostics.zl
+  Verifies source-mapped line extraction, caret computation, and diagnostic framing.
+!/
+
+import compiler.Diagnostics as Diag
+import zen.test as test
+import zen.text.string as Str
+
+function test_get_source_line() {
+    let src -> `let a -> 10\nlet b -> "hello"\nlet c -> a + b`
+    let l1 -> Diag.get_source_line(src, 1)
+    let l2 -> Diag.get_source_line(src, 2)
+    let l3 -> Diag.get_source_line(src, 3)
+    let l4 -> Diag.get_source_line(src, 4)
+    
+    let pass -> test.assert_equal(l1, `let a -> 10`, `line 1`)
+    pass -> pass and test.assert_equal(l2, `let b -> "hello"`, `line 2`)
+    pass -> pass and test.assert_equal(l3, `let c -> a + b`, `line 3`)
+    pass -> pass and test.assert_equal(l4, ``, `line 4 empty`)
+    <- pass
+}
+
+function test_make_carets() {
+    let c1 -> Diag.make_carets(1, 1)
+    let c2 -> Diag.make_carets(5, 3)
+    let c3 -> Diag.make_carets(10, 6)
+    
+    let pass -> test.assert_equal(c1, `^`, `single caret at col 1`)
+    pass -> pass and test.assert_equal(c2, `    ^^^`, `3 carets at col 5`)
+    pass -> pass and test.assert_equal(c3, `         ^^^^^^`, `6 carets at col 10`)
+    <- pass
+}
+
+function test_format_error() {
+    let src -> `function main() {\n    let total -> count + "items"\n    <- total\n}`
+    let out -> Diag.format_error(src, `src/main.zl`, `Type mismatch: expected Integer, found String`, 2, 26, 7)
+    
+    let pass -> test.assert_equal(Str.contains(out, `error: Type mismatch: expected Integer, found String`), true, `header message`)
+    pass -> pass and test.assert_equal(Str.contains(out, `--> src/main.zl:2:26`), true, `location pointer`)
+    pass -> pass and test.assert_equal(Str.contains(out, `2 |     let total -> count + "items"`), true, `source line frame`)
+    pass -> pass and test.assert_equal(Str.contains(out, `^^^^^^^`), true, `caret span underline`)
+    <- pass
+}
+
+function test_format_diagnostic_with_note() {
+    let src -> `function compute() {\n    let x -> 42\n}`
+    let out -> Diag.format_diagnostic(src, `compute.zl`, `warning`, `unused variable 'x'`, 2, 9, 1, `prefix with underscore to ignore`)
+    
+    let pass -> test.assert_equal(Str.contains(out, `warning: unused variable 'x'`), true, `warning header`)
+    pass -> pass and test.assert_equal(Str.contains(out, `= note: prefix with underscore to ignore`), true, `attached note`)
+    <- pass
+}
+
+function main() {
+    let all_pass -> true
+    all_pass -> all_pass and test_get_source_line()
+    all_pass -> all_pass and test_make_carets()
+    all_pass -> all_pass and test_format_error()
+    all_pass -> all_pass and test_format_diagnostic_with_note()
+    
+    when all_pass == true {
+        io.writeln(`All diagnostics tests passed.`)
+        <- 0
+    }
+    <- 1
+}

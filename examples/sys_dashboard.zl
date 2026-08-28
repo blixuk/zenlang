@@ -1,0 +1,64 @@
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.ui.term as term
+import zen.ui.widgets as ui
+import zen.time as time
+import zen.sys.process as proc
+import zen.text.string as str
+
+function dashboard() {
+    let s -> term.size()
+    let c -> canvas.create(s.width, s.height)
+    
+    let main_panel -> ui.Panel(geom.UIRect(2, 1, s.width - 4, s.height - 2))
+    main_panel.bg -> `black`
+    
+    let title -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 1, `ZENOS SYSTEM MONITOR`)
+    title.fg -> `cyan`
+    main_panel.add(title)
+    
+    let time_label -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 3, `Time: `)
+    main_panel.add(time_label)
+    
+    let cpu_label -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 5, `CPU Load:`)
+    main_panel.add(cpu_label)
+    
+    let cpu_bar -> ui.ProgressBar(main_panel.rect.x + 2, main_panel.rect.y + 6, 40, 100)
+    cpu_bar.fg -> `green`
+    main_panel.add(cpu_bar)
+    
+    let mem_label -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 8, `Memory Usage:`)
+    main_panel.add(mem_label)
+    
+    let mem_bar -> ui.ProgressBar(main_panel.rect.x + 2, main_panel.rect.y + 9, 40, 100)
+    mem_bar.fg -> `yellow`
+    main_panel.add(mem_bar)
+    
+    let footer -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + main_panel.rect.height - 2, `Press Ctrl+C to exit`)
+    footer.fg -> `bright_black`
+    main_panel.add(footer)
+    
+    do for i in 0..1000 {
+        canvas.clear(c, ` `, `white`, `black`)
+        
+        // Update Time
+        let now -> time.now().to_string()
+        time_label.text -> `Time: ` + now
+        
+        // Mock CPU Load (fluctuating)
+        let load -> 20.0 + 30.0 * (i % 10).to_decimal() / 10.0
+        cpu_bar.value -> load
+        
+        // Mock Memory (slowly increasing)
+        mem_bar.value -> 45.0 + (i % 100).to_decimal() * 0.2
+        
+        main_panel.draw(c)
+        canvas.render(c)
+        
+        time.sleep(0.5)
+    }
+}
+
+function main() {
+    term.alt_screen(dashboard)
+}

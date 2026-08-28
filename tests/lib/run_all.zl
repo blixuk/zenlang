@@ -1,0 +1,167 @@
+import zen.io.io as io
+import tests.lib.test_cli as cli
+import tests.lib.test_collections as coll
+import tests.lib.test_core as core
+import tests.lib.test_csv as csv
+import tests.lib.test_error as error
+import tests.lib.test_file as file
+import tests.lib.test_geometry as geometry
+import tests.lib.test_io as io_lib
+import tests.lib.test_json as json
+import tests.lib.test_list as list
+import tests.lib.test_log as log
+import tests.lib.test_math as math
+import tests.lib.test_memory as memory
+import tests.lib.test_path as path
+import tests.lib.test_ppm as ppm
+import tests.lib.test_bmp as bmp
+import tests.lib.test_columns as columns
+import tests.lib.test_sexp as sexp
+import tests.lib.test_database as database
+import tests.lib.test_markdown as markdown
+import tests.lib.test_regex as regex
+import tests.lib.test_xml as xml
+import tests.lib.test_data_extra as data_extra
+import tests.lib.test_crypto_extra as crypto_extra
+import tests.lib.test_net_extra as net_extra
+import tests.lib.test_text_extra as text_extra
+import tests.lib.test_html as html_lib
+import tests.lib.test_serialize as serialize
+import tests.lib.test_logfmt as logfmt
+import tests.lib.test_bytes as bytes
+import tests.lib.test_awk as awk
+import tests.lib.test_ecs as ecs
+import tests.lib.test_fsm as fsm
+import tests.lib.test_process as process
+import tests.lib.test_random as random
+import tests.lib.test_range as range
+import tests.lib.test_string as string
+import tests.lib.test_sys as sys
+import tests.lib.test_term as term
+import tests.lib.test_test as test_lib
+import tests.lib.test_text as text
+import tests.lib.test_time as time
+import tests.lib.test_canvas as canvas
+import tests.lib.test_zenmark as zenmark
+import tests.lib.test_zendata as zendata_test
+import tests.lib.test_zencode as zencode_test
+import tests.lib.test_lorem as lorem_test
+import tests.lib.test_color as color_test
+import tests.lib.test_pdf as pdf_test
+
+function main() {
+    io.writeln(`====================================`)
+    io.writeln(`      ZEN LIBRARY TEST SUITE        `)
+    io.writeln(`====================================`)
+    io.writeln(``)
+
+    check {
+        cli.run_tests()
+        io.writeln(``)
+        coll.run_tests()
+        io.writeln(``)
+        core.run_tests()
+        io.writeln(``)
+        csv.run_tests()
+        io.writeln(``)
+        error.run_tests()
+        io.writeln(``)
+        file.run_tests()
+        io.writeln(``)
+        geometry.run_tests()
+        io.writeln(``)
+        io_lib.run_tests()
+        io.writeln(``)
+        json.run_tests()
+        io.writeln(``)
+        list.run_tests()
+        io.writeln(``)
+        log.run_tests()
+        io.writeln(``)
+        math.run_tests()
+        io.writeln(``)
+        memory.run_tests()
+        io.writeln(``)
+        path.run_tests()
+        io.writeln(``)
+        ppm.run_tests()
+        io.writeln(``)
+        bmp.run_tests()
+        io.writeln(``)
+        columns.run_tests()
+        io.writeln(``)
+        sexp.run_tests()
+        io.writeln(``)
+        database.run_tests()
+        io.writeln(``)
+        markdown.run_tests()
+        io.writeln(``)
+        regex.run_tests()
+        io.writeln(``)
+        xml.run_tests()
+        io.writeln(``)
+        data_extra.run_tests()
+        io.writeln(``)
+        crypto_extra.run_tests()
+        io.writeln(``)
+        net_extra.run_tests()
+        io.writeln(``)
+        text_extra.run_tests()
+        io.writeln(``)
+        html_lib.run_tests()
+        io.writeln(``)
+        serialize.run_tests()
+        io.writeln(``)
+        logfmt.run_tests()
+        io.writeln(``)
+        bytes.run_tests()
+        io.writeln(``)
+        awk.run_tests()
+        io.writeln(``)
+        ecs.run_tests()
+        io.writeln(``)
+        fsm.run_tests()
+        io.writeln(``)
+        process.run_tests()
+        io.writeln(``)
+        random.run_tests()
+        io.writeln(``)
+        range.run_tests()
+        io.writeln(``)
+        string.run_tests()
+        io.writeln(``)
+        sys.run_tests()
+        io.writeln(``)
+        term.run_tests()
+        io.writeln(``)
+        test_lib.run_tests()
+        io.writeln(``)
+        text.run_tests()
+        io.writeln(``)
+        time.run_tests()
+        io.writeln(``)
+        canvas.run_tests()
+        io.writeln(``)
+        zenmark.run_tests()
+        io.writeln(``)
+        zendata_test.run_tests()
+        io.writeln(``)
+        zencode_test.run_tests()
+        io.writeln(``)
+        lorem_test.run_tests()
+        io.writeln(``)
+        color_test.run_tests()
+        io.writeln(``)
+        pdf_test.run_tests()
+        io.writeln(``)
+        
+        io.writeln(`====================================`)
+        io.writeln(`   ALL LIBRARY TESTS PASSED         `)
+        io.writeln(`====================================`)
+    } or {
+        io.writeln(``)
+        io.writeln(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`)
+        io.writeln(`       TEST SUITE FAILED!           `)
+        io.writeln(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`)
+    }
+}

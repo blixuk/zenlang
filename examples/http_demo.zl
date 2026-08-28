@@ -1,0 +1,31 @@
+import zen.net.http as http
+import zen.data.json as json
+import zen.io.io as io
+
+/!
+ HTTP Client Example.
+ Fetches public info from GitHub API.
+ !/
+function main() {
+    io.writeln(`Fetching Zenlang-like data from GitHub...`)
+    
+    // We use a real API endpoint
+    let url -> `https://api.github.com/repos/python/cpython`
+    let headers -> {
+        `User-Agent` -> `Zenlang-Client/1.0`
+    }
+    
+    let response -> http.request(url, `GET`, nothing, headers)
+    
+    when response.status == 200 {
+        let repo -> json.parse(response.body)
+        io.writeln(`--- Repository Info ---`)
+        io.writeln(`Name: ` + repo.name)
+        io.writeln(`Stars: ` + repo.stargazers_count.to_string())
+        io.writeln(`Description: ` + repo.description)
+        io.writeln(`-----------------------`)
+    } or {
+        io.writeln(`Error: HTTP ` + response.status.to_string())
+        io.writeln(`Body: ` + response.body)
+    }
+}

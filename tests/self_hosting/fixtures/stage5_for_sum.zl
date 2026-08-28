@@ -1,0 +1,16 @@
+/!
+ Stage 5.x fixture: list + for-in + sum. Selfhost Codegen should emit
+ linkable C; exit 0 iff sum([1,2,3,4]) == 10.
+ !/
+
+function main() {
+    let xs -> [1, 2, 3, 4]
+    let s -> 0
+    do for i in xs {
+        s -> s + i
+    }
+    when s == 10 {
+        <- 0
+    }
+    <- 1
+}

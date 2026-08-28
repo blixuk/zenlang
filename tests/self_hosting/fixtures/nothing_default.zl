@@ -1,0 +1,46 @@
+/!
+ Phase L: Nothing (absent) vs Default (type zero-state).
+ Exit 0 iff Default materializes and Nothing is distinct from zeros.
+ !/
+
+function main() {
+    let x -> Nothing
+    when x != Nothing {
+        <- 1
+    }
+
+    let i : Integer -> Default
+    when i != 0 {
+        <- 2
+    }
+    when i != Default {
+        <- 3
+    }
+
+    let b : Boolean -> Default
+    when b != False {
+        <- 4
+    }
+    when b != Default {
+        <- 5
+    }
+
+    let s : String -> Default
+    when s != `` {
+        <- 6
+    }
+
+    let xs : List -> Default
+    when xs.length != 0 {
+        <- 7
+    }
+
+    when 0 == Nothing {
+        <- 8
+    }
+    when `` == Nothing {
+        <- 9
+    }
+
+    <- 0
+}

@@ -1,0 +1,27 @@
+/!
+  ZenMark bridge entry — re-exports all functions from zen.text.zenmark.zenmark.
+!/
+
+use zen.text.zenmark.zenmark as zm_core
+
+function parse(text) { <- zm_core.parse(text) }
+function parse_spans(text) { <- zm_core.parse_spans(text) }
+function render_spans_term(spans) { <- zm_core.render_spans_term(spans) }
+function render_spans_html(spans) { <- zm_core.render_spans_html(spans) }
+
+function Entry(opts) { <- zm_core.Entry(opts) }
+function Heading(opts) { <- zm_core.Heading(opts) }
+function Paragraph(opts) { <- zm_core.Paragraph(opts) }
+function CodeBlock(opts) { <- zm_core.CodeBlock(opts) }
+function Table(opts) { <- zm_core.Table(opts) }
+function HorizontalRule(opts) { <- zm_core.HorizontalRule(opts) }
+function Include(opts) { <- zm_core.Include(opts) }
+function TableOfContents(opts) { <- zm_core.TableOfContents(opts) }
+function Callout(opts) { <- zm_core.Callout(opts) }
+function Diagram(opts) { <- zm_core.Diagram(opts) }
+function Link(opts) { <- zm_core.Link(opts) }
+function Document(elements, entry) { <- zm_core.Document(elements, entry) }
+
+function render_term(doc) { <- zm_core.render_term(doc) }
+function render_html(doc) { <- zm_core.render_html(doc) }
+function render_pdf(doc, output_path) { <- zm_core.render_pdf(doc, output_path) }

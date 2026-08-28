@@ -1,0 +1,57 @@
+import zen.text.string as str
+
+/!
+ Markdown Processing Module.
+ Provides basic Markdown to HTML conversion.
+ !/
+
+/!
+ Converts Markdown text to HTML.
+ @param text The Markdown string.
+ @return The HTML string.
+ !/
+function to_html(text) {
+    let lines -> str.split(text, `\n`)
+    let html -> ``
+    let in_list -> False
+    
+    do for line in lines {
+        let processed -> line
+        
+        // Headers
+        when processed.starts_with(`### `) {
+            processed -> `<h3>` + processed.substring(4) + `</h3>`
+        } or when processed.starts_with(`## `) {
+            processed -> `<h2>` + processed.substring(3) + `</h2>`
+        } or when processed.starts_with(`# `) {
+            processed -> `<h1>` + processed.substring(2) + `</h1>`
+        }
+        
+        // Unordered List
+        when processed.starts_with(`- `) or processed.starts_with(`* `) {
+            when in_list = False {
+                html -> html + `<ul>\n`
+                in_list -> True
+            }
+            processed -> `<li>` + processed.substring(2) + `</li>`
+        } or {
+            when in_list {
+                html -> html + `</ul>\n`
+                in_list -> False
+            }
+        }
+        
+        // Blockquote
+        when processed.starts_with(`> `) {
+            processed -> `<blockquote>` + processed.substring(2) + `</blockquote>`
+        }
+        
+        html -> html + processed + `\n`
+    }
+    
+    when in_list {
+        html -> html + `</ul>\n`
+    }
+    
+    <- html
+}

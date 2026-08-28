@@ -1,0 +1,35 @@
+import zen.ui.spinner as spinner
+import zen.test.test as test
+import zen.text.string as Str
+import zen.io.io as IO
+
+function test_spinner_frames() {
+    let s -> spinner.Spinner(`Loading data...`, `dots`)
+    let f1 -> s.next_frame()
+    let f2 -> s.next_frame()
+    test.assert_true(f1 != ``, `first frame non-empty`)
+    test.assert_true(f2 != ``, `second frame non-empty`)
+    test.assert_true(f1 != f2, `frame advances`)
+    <- true
+}
+
+function test_spinner_styles() {
+    let s_line -> spinner.Spinner(`Running...`, `line`)
+    let f1 -> s_line.next_frame()
+    let f2 -> s_line.next_frame()
+    let f3 -> s_line.next_frame()
+    let f4 -> s_line.next_frame()
+    test.assert_equal(f1, `-`, `line frame 1`)
+    test.assert_equal(f2, `\\`, `line frame 2`)
+    test.assert_equal(f3, `|`, `line frame 3`)
+    test.assert_equal(f4, `/`, `line frame 4`)
+    <- true
+}
+
+function main() {
+    IO.info(`--- Running Suite: UI Spinner ---`)
+    test.run_unit(`test_spinner_frames`, test_spinner_frames)
+    test.run_unit(`test_spinner_styles`, test_spinner_styles)
+    IO.info(`--- UI Spinner: 2/2 passed ---`)
+    <- 0
+}

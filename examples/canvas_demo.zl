@@ -1,0 +1,39 @@
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.ui.term as term
+import zen.time as time
+import zen.text.string as string
+
+function demo() {
+    let s -> term.size()
+    let w -> s.width
+    let h -> s.height
+    
+    // Create canvas
+    let c -> canvas.create(w, h)
+    
+    do for i in 0..20 {
+        canvas.clear(c, ` `, `white`, `black`)
+        
+        // Draw a border
+        canvas.draw_rect(c, 1, 1, w - 2, h - 2, `.`, `bright_black`, `black`)
+        
+        // Draw a moving box
+        let bx -> i * 2 + 5
+        let by -> i + 2
+        when bx + 15 < w and by + 7 < h {
+            canvas.draw_rect(c, bx, by, 15, 7, `#`, `green`, `black`)
+            canvas.draw_text(c, bx + 2, by + 3, `Zenlang UI`, `bright_white`, `black`)
+        }
+        
+        // Draw some info
+        canvas.draw_text(c, 2, h - 1, `Frame: ` + string.to_string(i) + ` | Size: ` + string.to_string(w) + `x` + string.to_string(h), `cyan`, `black`)
+        
+        canvas.render(c)
+        time.sleep(0.05)
+    }
+}
+
+function main() {
+    term.alt_screen(demo)
+}

@@ -15,7 +15,7 @@ import Checker.TypeChecker
 zen_trace(f"TypeChecker loaded from: {Checker.TypeChecker.__file__}")
 from Interpreter.Interpreter import Interpreter, ReturnException
 from Lexer.Lexer import Lexer
-from Logging.Dumper import ast_to_json
+from Logging.Diagnostic import SourceCache
 from Module.DependencyGraph import DependencyGraph
 from Module.Resolver import Resolver
 from Parser.AST import ASTNode, ImportStatement, FromImportStatement
@@ -24,8 +24,9 @@ from REPL.REPL import REPL
 
 class ZenCompiler:
     
-    def __init__(self, debug: bool = False):
+    def __init__(self, debug: bool = False, recover: bool = False):
         self.debug: bool = debug
+        self.recover: bool = recover
         self.source_path: Optional[str] = None
         self.output_path: Optional[str] = None
         self.source: Optional[str] = None
@@ -49,6 +50,7 @@ class ZenCompiler:
         try:
             with open(path, "r") as file:
                 self.source = file.read()
+            SourceCache.set_source(path, self.source)
         except FileNotFoundError:
             print(f"Error: File '{path}' not found.")
             sys.exit(1)
@@ -78,6 +80,7 @@ class ZenCompiler:
         try:
             with open(path, "r") as file:
                 source = file.read()
+            SourceCache.set_source(path, source)
         except FileNotFoundError:
             print(f"Error: File '{path}' not found.")
             sys.exit(1)
@@ -193,7 +196,7 @@ class ZenCompiler:
             VariableUndefinedError,
         )
 
-        typechecker = TypeChecker(self.ast, self.source_path, debug=self.debug)
+        typechecker = TypeChecker(self.ast, self.source_path, debug=self.debug, recover=self.recover)
         try:
             if self.debug:
                 print("DEBUG: Calling typechecker.check_program()", file=sys.stderr, flush=True)
@@ -335,6 +338,7 @@ def main():
     parser.add_argument("-g", "--generate", action="store_true", help="Generate and compile C code")
     parser.add_argument("--test", action="store_true", help="Run tests in the source file")
     parser.add_argument("--check", action="store_true", help="Parse and type-check the source code without executing")
+    parser.add_argument("--recover", action="store_true", help="Continue type-checking after errors to surface all diagnostics")
     parser.add_argument("--build", action="store_true", help="Build the project using .zbuild")
     parser.add_argument("--source-map", dest="source_map", action="store_true", help="Enable C source mapping (#line directives)")
     parser.add_argument("--no-source-map", dest="source_map", action="store_false", help="Disable C source mapping")
@@ -359,7 +363,7 @@ def main():
         return
 
     debug = args.debug or args.verbose
-    compiler = ZenCompiler(debug=debug)
+    compiler = ZenCompiler(debug=debug, recover=args.recover)
     compiler.output_path = args.output
     # Pipeline
     if not args.build:

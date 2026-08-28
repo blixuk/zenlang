@@ -1,0 +1,49 @@
+import zen.text.string as str
+
+/!
+ Simple TOML Parser Module.
+ !/
+
+/!
+ Parses a simple TOML string (key = "value" pairs).
+ @param text The TOML string.
+ @return A map of keys to values.
+ !/
+function parse(text) {
+    let result -> {}
+    let lines -> str.split(text, `\n`)
+    do for line in lines {
+        let trimmed -> str.trim(line)
+        when trimmed.length > 0 and not trimmed.starts_with(`#`) {
+            let parts -> str.split(trimmed, `=`)
+            when parts.length >= 2 {
+                let key -> str.trim(parts[0])
+                let val -> str.trim(parts[1])
+                
+                // Remove quotes if present
+                when val.starts_with(`"`) and val.ends_with(`"`) {
+                    val -> val.substring(1, val.length - 1)
+                } or when val.starts_with(`'`) and val.ends_with(`'`) {
+                    val -> val.substring(1, val.length - 1)
+                }
+                
+                result[key] -> val
+            }
+        }
+    }
+    <- result
+}
+
+/!
+ Converts a Map to a simple TOML string.
+ @param data The map to convert.
+ @return The TOML string.
+ !/
+function stringify(data) {
+    let toml -> ``
+    let keys -> data.keys()
+    do for k in keys {
+        toml -> toml + k + ` = "` + str.to_string(data[k]) + `"\n`
+    }
+    <- toml
+}

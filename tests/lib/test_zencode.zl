@@ -1,0 +1,80 @@
+import zen.test as test
+import zen.zencode as zc
+import zen.text.string as Str
+
+function test_tokenizer() {
+    let src -> `function add(a, b) { <- a + b }`
+    let tokens -> zc.tokenize(src)
+    
+    let pass -> test.assert_true(tokens.length > 5, `token count > 5`)
+    pass -> pass and test.assert_equal(tokens[0][`type`], `KEYWORD`, `first token is KEYWORD`)
+    pass -> pass and test.assert_equal(tokens[0][`value`], `function`, `first token is 'function'`)
+    <- pass
+}
+
+function test_formatter() {
+    let unformatted -> `
+function calc(x) {
+when x > 10 {
+<- x * 2
+}
+<- x
+}
+`
+    let formatted -> zc.format(unformatted)
+    let pass -> test.assert_true(Str.contains(formatted, `    when x > 10 {`), `contains 1st level indent`)
+    pass -> pass and test.assert_true(Str.contains(formatted, `        <- x * 2`), `contains 2nd level indent`)
+    <- pass
+}
+
+function test_highlighter() {
+    let src -> `let name -> "Zenlang"`
+    
+    // HTML highlighting
+    let html_out -> zc.highlight(src, `html`)
+    let pass -> test.assert_true(Str.contains(html_out, `<span class="zen-kw">let</span>`), `html contains kw span`)
+    pass -> pass and test.assert_true(Str.contains(html_out, `<span class="zen-str">"Zenlang"</span>`), `html contains str span`)
+    
+    // Terminal highlighting
+    let term_out -> zc.highlight(src, `term`)
+    pass -> pass and test.assert_true(Str.length(term_out) > Str.length(src), `term contains ANSI escape sequences`)
+    <- pass
+}
+
+function test_stats() {
+    let src -> `
+    use zen.io
+    
+    function foo() {
+        let x -> 10
+        <- x
+    }
+    
+    function bar() {
+        <- 20
+    }
+    `
+    let metrics -> zc.stats(src)
+    let pass -> test.assert_equal(metrics[`functions`], 2, `stats counted 2 functions`)
+    pass -> pass and test.assert_true(metrics[`total_tokens`] > 10, `stats counted tokens`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `ZenCode.tokenizer`, `fn` -> test_tokenizer},
+        {`name` -> `ZenCode.formatter`, `fn` -> test_formatter},
+        {`name` -> `ZenCode.highlighter`, `fn` -> test_highlighter},
+        {`name` -> `ZenCode.stats`, `fn` -> test_stats}
+    ]
+
+    <- test.run_suite(`Zen Code Tooling Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

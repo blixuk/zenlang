@@ -1,0 +1,616 @@
+/!
+  Language Server Protocol (LSP) — Server Engine.
+  Implements full document sync, real-time diagnostics, completions, hover,
+  and document symbols for Zenlang in pure Zenlang.
+!/
+
+import selfhost.lsp.Protocol as Protocol
+import compiler.Parser as Parser
+import compiler.TypeChecker as TypeChecker
+import compiler.AST as AST
+import zen.data.json as json
+import zen.io.io as io
+import zen.text.string as Str
+
+// In-memory open document buffers: uri -> source text
+let docs_map -> {}
+// Cached parsed ASTs: uri -> Program AST
+let progs_map -> {}
+let DOCS -> docs_map
+let DOC_PROGS -> progs_map
+
+export function set_document(uri, text) {
+    docs_map[uri] -> text
+    when text != Nothing {
+        progs_map[uri] -> Parser.parse_source(text)
+    }
+}
+
+function map_has(m, k) {
+    let local_m -> m
+    <- local_m.has(k)
+}
+
+function map_get(m, k) {
+    let local_m -> m
+    when local_m.has(k) {
+        <- local_m[k]
+    }
+    <- Nothing
+}
+
+// Server running flag
+let RUNNING -> true
+
+/!
+  Extracts word at line and character in text.
+!/
+function extract_word_at(text, target_line, target_col) {
+    when text == Nothing {
+        <- ``
+    }
+    let lines -> Str.split(text, `\n`)
+    when target_line >= lines.length or target_line < 0 {
+        <- ``
+    }
+    let line_str -> lines[target_line]
+    when target_col >= line_str.length or target_col < 0 {
+        <- ``
+    }
+    // Search left
+    let start_idx -> target_col + 0
+    do while start_idx > 0 {
+        let prev_c -> line_str.at(start_idx - 1)
+        when is_ident_char(prev_c) {
+            start_idx -> start_idx - 1
+        } or {
+            break
+        }
+    }
+    // Search right
+    let end_idx -> target_col + 0
+    do while end_idx < line_str.length {
+        let next_c -> line_str.at(end_idx)
+        when is_ident_char(next_c) {
+            end_idx -> end_idx + 1
+        } or {
+            break
+        }
+    }
+    when start_idx >= end_idx {
+        <- ``
+    }
+    <- line_str.substring(start_idx, end_idx)
+}
+
+function is_ident_char(c) {
+    when (c >= `a` and c <= `z`) or (c >= `A` and c <= `Z`) or (c >= `0` and c <= `9`) or c == `_` {
+        <- true
+    }
+    <- false
+}
+
+/!
+  Runs parser and typechecker on in-memory document text and publishes diagnostics.
+!/
+export function publish_diagnostics(uri, text) {
+    when text == Nothing {
+        progs_map[uri] -> Nothing
+        Protocol.send_notification(`textDocument/publishDiagnostics`, {
+            `uri` -> uri,
+            `diagnostics` -> []
+        })
+        <- Nothing
+    }
+    let prog -> Parser.parse_source(text)
+    progs_map[uri] -> prog
+    let diags -> []
+    when prog[`error`] != Nothing {
+        let err_str -> Str.to_string(prog[`error`])
+        let line_num -> prog[`line`]
+        when line_num == Nothing {
+            line_num -> 1
+        }
+        let col_num -> prog[`column`]
+        when col_num == Nothing {
+            col_num -> 1
+        }
+        let start_l -> line_num - 1
+        when start_l < 0 {
+            start_l -> 0
+        }
+        let start_c -> col_num - 1
+        when start_c < 0 {
+            start_c -> 0
+        }
+        diags.append({
+            `range` -> {
+                `start` -> { `line` -> start_l, `character` -> start_c },
+                `end` -> { `line` -> start_l, `character` -> start_c + 5 }
+            },
+            `severity` -> 1, // Error
+            `source` -> `zenlang`,
+            `message` -> err_str
+        })
+    } or {
+        let check_res -> TypeChecker.check_program(prog)
+        when check_res != Nothing and not check_res[`ok`] {
+            let err_list -> check_res[`errors`]
+            when err_list != Nothing {
+                do for err_msg in err_list {
+                    diags.append({
+                        `range` -> {
+                            `start` -> { `line` -> 0, `character` -> 0 },
+                            `end` -> { `line` -> 0, `character` -> 10 }
+                        },
+                        `severity` -> 1, // Error
+                        `source` -> `zenlang`,
+                        `message` -> Str.to_string(err_msg)
+                    })
+                }
+            }
+        }
+    }
+    Protocol.send_notification(`textDocument/publishDiagnostics`, {
+        `uri` -> uri,
+        `diagnostics` -> diags
+    })
+}
+
+/!
+  Builds completion items based on document context.
+!/
+export function build_completions(uri, line, col) {
+    let items -> []
+    let keywords -> [
+        `let`, `set`, `function`, `class`, `structure`, `enumerator`,
+        `import`, `use`, `from`, `as`, `export`, `when`, `or`, `and`, `not`,
+        `do`, `while`, `until`, `for`, `in`, `return`, `break`, `continue`,
+        `check`, `raise`, `assert`, `defer`, `task`, `is`, `type`, `object`,
+        `scope`, `extends`, `extend`, `True`, `False`, `Nothing`, `Default`,
+        `self`, `parent`, `auto`
+    ]
+    let types -> [
+        `Integer`, `Decimal`, `String`, `Boolean`, `List`, `Map`, `Dictionary`,
+        `Tuple`, `Vector`, `Set`, `Void`, `Variant`, `Error`, `Task`, `Function`,
+        `Structure`, `Class`, `Enumerator`, `Option`, `Result`, `Auto`, `Rune`
+    ]
+    let modules -> [
+        `zen.io.io`, `zen.io.file`, `zen.io.path`,
+        `zen.text.string`, `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`,
+        `zen.test`, `zen.collections.list`, `zen.collections.map`, `zen.data.json`, `zen.math.math`,
+        `zen.crypto.hash`, `zen.net.http`
+    ]
+
+    do for kw in keywords {
+        items.append({
+            `label` -> kw,
+            `kind` -> 14, // Keyword
+            `detail` -> `keyword`
+        })
+    }
+    do for t in types {
+        items.append({
+            `label` -> t,
+            `kind` -> 7, // Class / Type
+            `detail` -> `type`
+        })
+    }
+    do for m in modules {
+        items.append({
+            `label` -> m,
+            `kind` -> 9, // Module
+            `detail` -> `stdlib module path`
+        })
+    }
+
+    // Snippets / Operators
+    items.append({
+        `label` -> `->`,
+        `kind` -> 24, // Operator
+        `detail` -> `bind / assign (data flow in)`
+    })
+    items.append({
+        `label` -> `<-`,
+        `kind` -> 24, // Operator
+        `detail` -> `return (data flow out)`
+    })
+    items.append({
+        `label` -> `:>`,
+        `kind` -> 24, // Operator
+        `detail` -> `infer and lock type`
+    })
+
+    // Extract identifiers from current document
+    let prog -> map_get(progs_map, uri)
+    let doc_text -> map_get(docs_map, uri)
+    when prog == Nothing and doc_text != Nothing {
+        prog -> Parser.parse_source(doc_text)
+        progs_map[uri] -> prog
+    }
+    when prog != Nothing and prog[`statements`] != Nothing {
+        do for stmt in prog[`statements`] {
+            when stmt[`kind`] == `FunctionStatement` {
+                items.append({
+                    `label` -> Str.to_string(stmt[`name`]),
+                    `kind` -> 3, // Function
+                    `detail` -> `function in this file`
+                })
+            }
+            when stmt[`kind`] == `ClassStatement` {
+                items.append({
+                    `label` -> Str.to_string(stmt[`name`]),
+                    `kind` -> 7, // Class
+                    `detail` -> `class in this file`
+                })
+            }
+            when stmt[`kind`] == `StructureStatement` {
+                items.append({
+                    `label` -> Str.to_string(stmt[`name`]),
+                    `kind` -> 22, // Struct
+                    `detail` -> `structure in this file`
+                })
+            }
+            when stmt[`kind`] == `LetStatement` {
+                items.append({
+                    `label` -> Str.to_string(stmt[`name`]),
+                    `kind` -> 6, // Variable
+                    `detail` -> `variable in this file`
+                })
+            }
+        }
+    }
+    <- items
+}
+
+/!
+  Builds hover documentation for word under cursor.
+!/
+export function build_hover(uri, line, col) {
+    let text -> map_get(docs_map, uri)
+    when text == Nothing {
+        <- Nothing
+    }
+    let word -> extract_word_at(text, line, col)
+    when word == `` {
+        <- Nothing
+    }
+
+    let hovers -> {
+        `->` -> `**Bind / assign** — data flows into a name, member, or index.\n\n\`let x -> 1\``,
+        `<-` -> `**Return** — data flows out of a function or task.\n\n\`<- value\``,
+        `:>` -> `**Infer-and-lock** type on binding.\n\n\`let x :> 42\``,
+        `..` -> `**Half-open range** \`a..b\` → sequence from a inclusive to b exclusive.`,
+        `..=` -> `**Closed range** \`a..=b\` → sequence including both ends.`,
+        `when` -> `**Branching / Pattern Matching** — conditional execution and destructuring.\n\n\`when cond { ... } or { ... }\``,
+        `check` -> `**Check Statement** — multi-case pattern matching with optional guard conditions and fallbacks.\n\n\`check expr { case pat [when guard] { ... } } or { ... }\``,
+        `task` -> `**Task** — lightweight unified asynchronous concurrency unit.\n\n\`task { ... }\``,
+        `is` -> `**Pattern Match / Type Inspection** — inspects shape, destructures fields, and binds variables.\n\n\`when x is [first, ...rest] { ... }\``,
+        `Nothing` -> `**Nothing** — canonical literal representing the absence of a value.`,
+        `Default` -> `**Default** — canonical literal materializing the type's natural zero/empty state (\`0\`, \`[]\`, \`""\`, \`False\`).`,
+        `True` -> `**Boolean True** literal.`,
+        `False` -> `**Boolean False** literal.`,
+        `let` -> `**Mutable variable** binding introducer.\n\n\`let count -> 0\``,
+        `set` -> `**Immutable constant** binding introducer.\n\n\`set PI -> 3.14159\``,
+        `function` -> `**Function declaration** or anonymous lambda introducer.\n\n\`function add(a, b) { <- a + b }\``,
+        `class` -> `**Class declaration** — blueprint for state and methods with inheritance.\n\n\`class Animal extends Organism { ... }\``,
+        `structure` -> `**Structure declaration** — named record shape with typed fields.\n\n\`structure Point { x, y }\``,
+        `enumerator` -> `**Enumerator declaration** — algebraic data type variants.\n\n\`enumerator Status { Active, Inactive, Pending(Reason) }\``,
+        `defer` -> `**Defer Statement** — executes block when exiting current scope.`,
+        `scope` -> `**Scope Block** — creates an isolated named lexical scope.`
+    }
+
+    when map_has(hovers, word) and hovers[word] != Nothing {
+        <- {
+            `contents` -> {
+                `kind` -> `markdown`,
+                `value` -> hovers[word]
+            }
+        }
+    }
+
+    // Check if word is a function, struct, or class in the file
+    let prog -> map_get(progs_map, uri)
+    when prog == Nothing and text != Nothing {
+        prog -> Parser.parse_source(text)
+        progs_map[uri] -> prog
+    }
+    when prog != Nothing and prog[`statements`] != Nothing {
+        do for stmt in prog[`statements`] {
+            when stmt[`name`] == word {
+                let kind -> stmt[`kind`]
+                let detail -> `\`\`\`zen\n` + Str.to_string(kind) + ` ` + word + `\n\`\`\``
+                <- {
+                    `contents` -> {
+                        `kind` -> `markdown`,
+                        `value` -> detail
+                    }
+                }
+            }
+        }
+    }
+
+    <- Nothing
+}
+
+/!
+  Builds document outline symbols.
+!/
+export function build_document_symbols(uri) {
+    let prog -> map_get(progs_map, uri)
+    let doc_text -> map_get(docs_map, uri)
+    when prog == Nothing and doc_text != Nothing {
+        prog -> Parser.parse_source(doc_text)
+        progs_map[uri] -> prog
+    }
+    when prog == Nothing or prog[`statements`] == Nothing {
+        <- []
+    }
+    let symbols -> []
+    do for stmt in prog[`statements`] {
+        let name -> stmt[`name`]
+        when name != Nothing {
+            let skind -> 13 // Variable default
+            let detail -> ``
+            when stmt[`kind`] == `FunctionStatement` {
+                skind -> 12 // Function
+                detail -> `function`
+            }
+            when stmt[`kind`] == `ClassStatement` {
+                skind -> 5 // Class
+                detail -> `class`
+            }
+            when stmt[`kind`] == `StructureStatement` {
+                skind -> 23 // Struct
+                detail -> `structure`
+            }
+            when stmt[`kind`] == `EnumeratorStatement` {
+                skind -> 10 // Enum
+                detail -> `enumerator`
+            }
+            when stmt[`kind`] == `LetStatement` {
+                skind -> 13 // Variable
+                detail -> `let`
+            }
+            let l -> stmt[`line`]
+            when l == Nothing {
+                l -> 1
+            }
+            let start_l -> l - 1
+            when start_l < 0 {
+                start_l -> 0
+            }
+            symbols.append({
+                `name` -> Str.to_string(name),
+                `kind` -> skind,
+                `detail` -> detail,
+                `range` -> {
+                    `start` -> { `line` -> start_l, `character` -> 0 },
+                    `end` -> { `line` -> start_l, `character` -> 20 }
+                },
+                `selectionRange` -> {
+                    `start` -> { `line` -> start_l, `character` -> 0 },
+                    `end` -> { `line` -> start_l, `character` -> Str.to_string(name).length }
+                }
+            })
+        }
+    }
+    <- symbols
+}
+
+/!
+  Finds definition location for word at cursor.
+!/
+export function find_definition(uri, line, col) {
+    let text -> map_get(docs_map, uri)
+    when text == Nothing {
+        <- Nothing
+    }
+    let word -> extract_word_at(text, line, col)
+    when word == `` {
+        <- Nothing
+    }
+    let prog -> map_get(progs_map, uri)
+    when prog == Nothing and text != Nothing {
+        prog -> Parser.parse_source(text)
+        progs_map[uri] -> prog
+    }
+    when prog != Nothing and prog[`statements`] != Nothing {
+        do for stmt in prog[`statements`] {
+            when stmt[`name`] == word {
+                let l -> stmt[`line`]
+                when l == Nothing {
+                    l -> 1
+                }
+                let start_l -> l - 1
+                when start_l < 0 {
+                    start_l -> 0
+                }
+                <- {
+                    `uri` -> uri,
+                    `range` -> {
+                        `start` -> { `line` -> start_l, `character` -> 0 },
+                        `end` -> { `line` -> start_l, `character` -> Str.to_string(word).length }
+                    }
+                }
+            }
+        }
+    }
+    <- Nothing
+}
+
+/!
+  Dispatches incoming JSON-RPC message.
+!/
+export function handle_message(msg) {
+    when msg == Nothing {
+        <- false
+    }
+    let method -> msg[`method`]
+    let id -> msg[`id`]
+
+    when method == `initialize` {
+        let caps -> {
+            `capabilities` -> {
+                `textDocumentSync` -> 1, // Full sync
+                `completionProvider` -> {
+                    `resolveProvider` -> false,
+                    `triggerCharacters` -> [`.`, `->`, `:>`]
+                },
+                `hoverProvider` -> true,
+                `definitionProvider` -> true,
+                `documentSymbolProvider` -> true
+            },
+            `serverInfo` -> {
+                `name` -> `zenlsp`,
+                `version` -> `0.1.0`
+            }
+        }
+        Protocol.send_response(id, caps)
+        <- true
+    }
+
+    when method == `initialized` {
+        <- true
+    }
+
+    when method == `shutdown` {
+        Protocol.send_response(id, Nothing)
+        <- true
+    }
+
+    when method == `exit` {
+        RUNNING -> false
+        <- false
+    }
+
+    when method == `textDocument/didOpen` {
+        let params -> msg[`params`]
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            when td != Nothing {
+                let uri -> td[`uri`]
+                let text -> td[`text`]
+                docs_map[uri] -> text
+                publish_diagnostics(uri, text)
+            }
+        }
+        <- true
+    }
+
+    when method == `textDocument/didChange` {
+        let params -> msg[`params`]
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            let changes -> params[`contentChanges`]
+            when td != Nothing and changes != Nothing and changes.length > 0 {
+                let uri -> td[`uri`]
+                let latest -> changes[changes.length - 1][`text`]
+                docs_map[uri] -> latest
+                publish_diagnostics(uri, latest)
+            }
+        }
+        <- true
+    }
+
+    when method == `textDocument/didSave` {
+        let params -> msg[`params`]
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            when td != Nothing {
+                let uri -> td[`uri`]
+                let text -> map_get(docs_map, uri)
+                publish_diagnostics(uri, text)
+            }
+        }
+        <- true
+    }
+
+    when method == `textDocument/didClose` {
+        let params -> msg[`params`]
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            when td != Nothing {
+                let uri -> td[`uri`]
+                docs_map[uri] -> Nothing
+                progs_map[uri] -> Nothing
+            }
+        }
+        <- true
+    }
+
+    when method == `textDocument/completion` {
+        let params -> msg[`params`]
+        let items -> []
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            let pos -> params[`position`]
+            when td != Nothing and pos != Nothing {
+                items -> build_completions(td[`uri`], pos[`line`], pos[`character`])
+            }
+        }
+        Protocol.send_response(id, items)
+        <- true
+    }
+
+    when method == `textDocument/hover` {
+        let params -> msg[`params`]
+        let hover_res -> Nothing
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            let pos -> params[`position`]
+            when td != Nothing and pos != Nothing {
+                hover_res -> build_hover(td[`uri`], pos[`line`], pos[`character`])
+            }
+        }
+        Protocol.send_response(id, hover_res)
+        <- true
+    }
+
+    when method == `textDocument/definition` {
+        let params -> msg[`params`]
+        let def_res -> Nothing
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            let pos -> params[`position`]
+            when td != Nothing and pos != Nothing {
+                def_res -> find_definition(td[`uri`], pos[`line`], pos[`character`])
+            }
+        }
+        Protocol.send_response(id, def_res)
+        <- true
+    }
+
+    when method == `textDocument/documentSymbol` {
+        let params -> msg[`params`]
+        let symbols -> []
+        when params != Nothing {
+            let td -> params[`textDocument`]
+            when td != Nothing {
+                symbols -> build_document_symbols(td[`uri`])
+            }
+        }
+        Protocol.send_response(id, symbols)
+        <- true
+    }
+
+    // Default error for unknown methods with request ID
+    when id != Nothing {
+        Protocol.send_error(id, -32601, `Method not found: ` + Str.to_string(method))
+    }
+    <- true
+}
+
+/!
+  Main loop for running the LSP server over standard I/O.
+!/
+export function run_lsp_loop() {
+    RUNNING -> true
+    do while RUNNING {
+        let msg -> Protocol.read_rpc_message()
+        when msg == Nothing {
+            break
+        }
+        handle_message(msg)
+    }
+}

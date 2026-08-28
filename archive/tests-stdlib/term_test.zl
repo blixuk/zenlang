@@ -1,0 +1,10 @@
+from zen.io import write
+import zen.sys.term as t
+
+
+t.term.info(`Standard library terminal module loaded.`)
+t.term.warn(`This is a warning message.`)
+t.term.error(`This is an error message.`)
+
+
+write(t.term.color(t.term.CYAN, `Bold Cyan Text`))

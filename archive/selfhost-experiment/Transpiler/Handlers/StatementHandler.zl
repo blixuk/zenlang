@@ -1,0 +1,111 @@
+import `lib/zen/io` as IO
+from `selfhost/AST` import ASTKind, ASTNode
+from `selfhost/Transpiler/Handlers/ExpressionHandler` import TranspilerExpressionHandler
+
+class TranspilerStatementHandler {
+    let generator : Variant // Reference to CodeGenerator
+    let expr_handler : TranspilerExpressionHandler
+
+    function init(generator: Variant, expr_handler: TranspilerExpressionHandler) {
+        self.generator -> generator
+        self.expr_handler -> expr_handler
+    }
+
+    function generate_statement(node: Variant) : String {
+        when node = Nothing {
+             <- ``
+        }
+
+        // Use string compare on kind for robustness during early selfhost
+        let k : Variant -> node.kind
+        when k = ASTKind.FUNCTION_STATEMENT or (k != Nothing and k = `FUNCTION_STATEMENT`) {
+            <- self.generate_function(node)
+        }
+        when k = ASTKind.LET_STATEMENT or (k != Nothing and k = `LET_STATEMENT`) {
+            <- self.generate_let(node)
+        }
+        when k = ASTKind.EXPRESSION_STATEMENT or (k != Nothing and k = `EXPRESSION_STATEMENT`) {
+            <- self.generate_expression_statement(node)
+        }
+        when k = ASTKind.RETURN_STATEMENT or (k != Nothing and k = `RETURN_STATEMENT`) {
+            <- self.generate_return(node)
+        }
+        when k = ASTKind.IMPORT_STATEMENT or (k != Nothing and k = `IMPORT_STATEMENT`) {
+            <- self.generate_import(node)
+        }
+
+        // Fallback debug
+        IO.write(`[DEBUG Transpiler stmt kind] ` + k + `\n`)
+        <- `/* stmt ` + k + ` */\n`
+    }
+
+    function generate_function(node: FunctionStatement) : String {
+        let name : String -> node.name.value
+        let sig : String -> `ZenValue ` + name + `(`
+        
+        let i : Integer -> 0
+        while i < node.parameters.length {
+            let p : Variant -> node.parameters[i]
+            let pname : String -> ``
+            when p.name != Nothing {
+                pname -> p.name.value
+            } or {
+                pname -> p.value
+            }
+            sig -> sig + `ZenValue ` + pname
+            i -> i + 1
+            when i < node.parameters.length {
+                sig -> sig + `, `
+            }
+        }
+        
+        sig -> sig + `) `
+        
+        let block_code : String -> self.generate_block(node.body)
+        <- sig + block_code
+    }
+    
+    function generate_class(node: Variant) : String { <- `/* class */` }
+    function generate_let(node: Variant) : String {
+        let name : String -> node.name.value
+        let init : String -> self.expr_handler.generate_expression(node.initializer)
+        // For the selfhost runtime style we mostly box everything
+        <- `ZenValue ` + name + ` = ` + init + `;\n`
+    }
+    
+    function generate_expression_statement(node: Variant) : String {
+        let expr : String -> self.expr_handler.generate_expression(node.expression)
+        <- expr + `;\n`
+    }
+    
+    function generate_return(node: Variant) : String {
+        let val : String -> ``
+        when node.value != Nothing {
+            val -> self.expr_handler.generate_expression(node.value)
+        }
+        <- `return ` + val + `;\n`
+    }
+    
+    function generate_block(node: BlockStatement) : String {
+        let code : String -> `{\n`
+        let i : Integer -> 0
+        while i < node.statements.length {
+            let stmt : Variant -> node.statements[i]
+            code -> code + self.generate_statement(stmt)
+            i -> i + 1
+        }
+        code -> code + `}\n`
+        <- code
+    }
+    
+    function generate_when(node: Variant) : String { <- `/* when */` }
+    function generate_while(node: Variant) : String { <- `/* while */` }
+    
+    function generate_import(node: ImportStatement) : String {
+        // e.g., import zen.ui.canvas
+        let path : String -> node.path
+        // Add to includes? For now, we just output a comment.
+        // A real compiler would resolve the C header.
+        <- `/* import ` + path + ` */\n`
+    }
+}

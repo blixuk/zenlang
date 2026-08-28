@@ -1,0 +1,422 @@
+import zen.test.test as test
+import zen.concurrency.channel as channel
+import zen.concurrency.task as tasks
+import zen.concurrency.sync as sync
+import zen.concurrency.fiber as fiber
+import zen.async.future as future
+import zen.async.async as async_lib
+
+function test_channels_basic() {
+    let ch -> channel.create_channel(3)
+    test.assert_equal(channel.capacity(ch), 3, `channel capacity is 3`)
+    test.assert_true(channel.is_empty(ch), `channel initially empty`)
+    test.assert_false(channel.is_full(ch), `channel not full initially`)
+
+    let s1 -> channel.send(ch, `msg_1`)
+    test.assert_true(s1[`ok`], `send msg_1 succeeded`)
+    test.assert_equal(channel.length(ch), 1, `channel length is 1`)
+
+    channel.send(ch, `msg_2`)
+    channel.send(ch, `msg_3`)
+    test.assert_true(channel.is_full(ch), `channel is full with 3 items`)
+
+    // Non-blocking try_send fails when full
+    let s4 -> channel.try_send(ch, `msg_4`)
+    test.assert_false(s4[`ok`], `try_send failed on full channel`)
+
+    // Receive FIFO
+    let r1 -> channel.receive(ch)
+    test.assert_true(r1[`ok`], `receive r1 succeeded`)
+    test.assert_equal(r1[`value`], `msg_1`, `r1 received msg_1`)
+
+    let r2 -> channel.receive(ch)
+    test.assert_equal(r2[`value`], `msg_2`, `r2 received msg_2`)
+    test.assert_equal(channel.length(ch), 1, `channel length is 1`)
+
+    <- true
+}
+
+function test_channel_close_and_drain() {
+    let ch -> channel.create_channel(5)
+    channel.send(ch, 10)
+    channel.send(ch, 20)
+    channel.send(ch, 30)
+
+    test.assert_false(channel.is_closed(ch), `channel not closed yet`)
+    channel.close(ch)
+    test.assert_true(channel.is_closed(ch), `channel is now closed`)
+
+    // Cannot send after close
+    let s -> channel.send(ch, 40)
+    test.assert_false(s[`ok`], `cannot send to closed channel`)
+
+    // Can still drain buffered values
+    let items -> channel.drain(ch)
+    test.assert_equal(items.length, 3, `drained 3 items`)
+    test.assert_equal(items[0], 10, `item 0 is 10`)
+    test.assert_equal(items[1], 20, `item 1 is 20`)
+    test.assert_equal(items[2], 30, `item 2 is 30`)
+
+    // Subsequent receive reports closed
+    let r -> channel.receive(ch)
+    test.assert_false(r[`ok`], `receive from drained closed channel is not ok`)
+    test.assert_true(r[`closed`], `channel reports closed`)
+
+    <- true
+}
+
+function test_channel_select() {
+    let ch1 -> channel.create_channel(2)
+    let ch2 -> channel.create_channel(2)
+
+    // 1. Test select when ch2 has data
+    channel.send(ch2, `hello_from_ch2`)
+
+    let cases -> [
+        { `op` -> `recv`, `channel` -> ch1 },
+        { `op` -> `recv`, `channel` -> ch2 }
+    ]
+
+    let sel_res -> channel.select(cases)
+    test.assert_true(sel_res[`ok`], `select succeeded`)
+    test.assert_equal(sel_res[`index`], 1, `select chose index 1 (ch2)`)
+    test.assert_equal(sel_res[`value`], `hello_from_ch2`, `select received correct value`)
+
+    // 2. Test select with default fallback
+    let cases2 -> [
+        { `op` -> `recv`, `channel` -> ch1 },
+        { `op` -> `default` }
+    ]
+    let sel_res2 -> channel.select(cases2)
+    test.assert_true(sel_res2[`ok`], `select with default succeeded`)
+    test.assert_true(sel_res2[`default`], `select chose default branch`)
+    test.assert_equal(sel_res2[`index`], 1, `default branch index is 1`)
+
+    <- true
+}
+
+function test_tasks_spawn_and_await() {
+    let add_fn -> function(a, b) {
+        <- a + b
+    }
+
+    let t -> tasks.spawn_task(add_fn, [15, 25], `adder_task`)
+    test.assert_equal(t[`name`], `adder_task`, `task name matches`)
+    test.assert_true(tasks.task_is_done(t), `task is completed`)
+    test.assert_true(tasks.task_is_success(t), `task succeeded`)
+
+    let res -> tasks.wait_task(t)
+    test.assert_equal(res, 40, `task computation result is 40`)
+    test.assert_equal(tasks.task_result(t), 40, `task_result accessor matches`)
+
+    <- true
+}
+
+function test_tasks_all_and_race() {
+    let t1 -> tasks.spawn_task(function() { <- 100 }, [], `t1`)
+    let t2 -> tasks.spawn_task(function() { <- 200 }, [], `t2`)
+    let t3 -> tasks.spawn_task(function() { <- 300 }, [], `t3`)
+
+    let all_res -> tasks.task_all([t1, t2, t3])
+    test.assert_equal(all_res.length, 3, `task_all returned 3 results`)
+    test.assert_equal(all_res[0], 100, `res 0 is 100`)
+    test.assert_equal(all_res[1], 200, `res 1 is 200`)
+    test.assert_equal(all_res[2], 300, `res 2 is 300`)
+
+    let winner -> tasks.task_race([t1, t2, t3])
+    test.assert_equal(winner, 100, `task_race resolved with first task`)
+
+    <- true
+}
+
+function test_task_pool() {
+    let pool -> tasks.create_task_pool(2)
+    tasks.pool_submit(pool, function() { <- `job_1_done` }, [])
+    tasks.pool_submit(pool, function() { <- `job_2_done` }, [])
+    tasks.pool_submit(pool, function() { <- `job_3_done` }, [])
+
+    let results -> tasks.pool_run_all(pool)
+    test.assert_equal(results.length, 3, `pool executed all 3 jobs`)
+    test.assert_equal(results[0], `job_1_done`, `job 1 result matches`)
+    test.assert_equal(results[1], `job_2_done`, `job 2 result matches`)
+    test.assert_equal(results[2], `job_3_done`, `job 3 result matches`)
+
+    <- true
+}
+
+function test_sync_waitgroup() {
+    let wg -> sync.create_waitgroup(0)
+    test.assert_true(sync.wg_is_done(wg), `empty waitgroup is done`)
+
+    sync.wg_add(wg, 3)
+    test.assert_equal(sync.wg_count(wg), 3, `wg count is 3`)
+    test.assert_false(sync.wg_is_done(wg), `wg is not done with positive count`)
+
+    sync.wg_done(wg)
+    test.assert_equal(sync.wg_count(wg), 2, `wg count after done is 2`)
+
+    sync.wg_done(wg)
+    sync.wg_done(wg)
+    test.assert_equal(sync.wg_count(wg), 0, `wg count reached 0`)
+    test.assert_true(sync.wg_is_done(wg), `wg is now done`)
+    test.assert_true(sync.wg_wait(wg), `wg_wait returns true`)
+
+    <- true
+}
+
+function test_sync_mutex_and_atomic() {
+    // Mutex
+    let m -> sync.create_mutex()
+    test.assert_false(sync.mutex_is_locked(m), `mutex initially unlocked`)
+
+    let acq1 -> sync.mutex_acquire(m)
+    test.assert_true(acq1, `mutex acquired`)
+    test.assert_true(sync.mutex_is_locked(m), `mutex is locked`)
+
+    let acq2 -> sync.mutex_try_acquire(m)
+    test.assert_false(acq2, `second acquire fails while locked`)
+
+    sync.mutex_release(m)
+    test.assert_false(sync.mutex_is_locked(m), `mutex is unlocked after release`)
+
+    let with_res -> sync.with_lock(m, function() {
+        <- 42 * 2
+    })
+    test.assert_equal(with_res, 84, `with_lock executed function and returned 84`)
+    test.assert_false(sync.mutex_is_locked(m), `mutex unlocked after with_lock`)
+
+    // Atomic
+    let a -> sync.create_atomic(10)
+    test.assert_equal(sync.atomic_get(a), 10, `atomic initial value is 10`)
+
+    sync.atomic_add(a, 5)
+    test.assert_equal(sync.atomic_get(a), 15, `atomic value after add is 15`)
+
+    sync.atomic_sub(a, 3)
+    test.assert_equal(sync.atomic_get(a), 12, `atomic value after sub is 12`)
+
+    let cas_fail -> sync.atomic_compare_and_swap(a, 100, 999)
+    test.assert_false(cas_fail[`ok`], `CAS failed with wrong expected value`)
+    test.assert_equal(sync.atomic_get(a), 12, `atomic value unchanged after failed CAS`)
+
+    let cas_ok -> sync.atomic_compare_and_swap(a, 12, 50)
+    test.assert_true(cas_ok[`ok`], `CAS succeeded with matching expected value`)
+    test.assert_equal(sync.atomic_get(a), 50, `atomic value updated to 50 after CAS`)
+
+    <- true
+}
+
+function test_sync_barrier_and_semaphore() {
+    // Barrier
+    let b -> sync.create_barrier(3)
+    let a1 -> sync.barrier_arrive(b)
+    test.assert_true(a1[`ok`], `arrival 1 ok`)
+    test.assert_false(a1[`is_last`], `arrival 1 not last`)
+
+    let a2 -> sync.barrier_arrive(b)
+    test.assert_false(a2[`is_last`], `arrival 2 not last`)
+
+    let a3 -> sync.barrier_arrive(b)
+    test.assert_true(a3[`is_last`], `arrival 3 is last (trips barrier)`)
+    test.assert_equal(a3[`generation`], 1, `barrier entered generation 1`)
+
+    // Semaphore
+    let sem -> sync.create_semaphore(2)
+    test.assert_equal(sync.sem_available(sem), 2, `semaphore initially 2 permits`)
+
+    sync.sem_acquire(sem)
+    sync.sem_acquire(sem)
+    test.assert_equal(sync.sem_available(sem), 0, `0 permits remaining`)
+
+    let no_permit -> sync.sem_acquire(sem)
+    test.assert_false(no_permit, `acquire failed when exhausted`)
+
+    sync.sem_release(sem)
+    test.assert_equal(sync.sem_available(sem), 1, `1 permit restored after release`)
+
+    <- true
+}
+
+function test_sync_once() {
+    let once -> sync.create_once()
+    let box -> { `count` -> 0 }
+
+    let run_fn -> function() {
+        box[`count`] -> box[`count`] + 1
+        <- 100 * box[`count`]
+    }
+
+    let r1 -> sync.do_once(once, run_fn)
+    test.assert_equal(r1, 100, `first do_once returned 100`)
+    test.assert_equal(box[`count`], 1, `exec_count is 1`)
+
+    let r2 -> sync.do_once(once, run_fn)
+    test.assert_equal(r2, 100, `second do_once returned memoized 100`)
+    test.assert_equal(box[`count`], 1, `exec_count remains 1 (did not re-run)`)
+
+    <- true
+}
+
+function test_fiber_coroutines() {
+    // Coroutine counting generator
+    let count_coroutine -> function(ctx, input_val) {
+        when not ctx.has(`counter`) {
+            ctx[`counter`] -> 0
+        }
+        ctx[`counter`] -> ctx[`counter`] + 1
+        when ctx[`counter`] < 3 {
+            <- fiber.fiber_yield(ctx[`counter`])
+        }
+        <- fiber.fiber_done(ctx[`counter`])
+    }
+
+    let f -> fiber.create_fiber(count_coroutine, `counter_fiber`)
+    test.assert_equal(f[`name`], `counter_fiber`, `fiber name matches`)
+    test.assert_false(fiber.fiber_is_dead(f), `fiber not dead initially`)
+
+    let s1 -> fiber.resume(f, Nothing)
+    test.assert_false(s1[`done`], `step 1 is yield`)
+    test.assert_equal(s1[`value`], 1, `step 1 yielded 1`)
+    test.assert_true(fiber.fiber_is_suspended(f), `fiber suspended after yield`)
+
+    let s2 -> fiber.resume(f, Nothing)
+    test.assert_false(s2[`done`], `step 2 is yield`)
+    test.assert_equal(s2[`value`], 2, `step 2 yielded 2`)
+
+    let s3 -> fiber.resume(f, Nothing)
+    test.assert_true(s3[`done`], `step 3 is done`)
+    test.assert_equal(s3[`value`], 3, `step 3 returned final value 3`)
+    test.assert_true(fiber.fiber_is_dead(f), `fiber is dead after return`)
+
+    // Scheduler test
+    let sched -> fiber.create_scheduler()
+    fiber.sched_spawn(sched, count_coroutine, `f1`)
+    fiber.sched_spawn(sched, count_coroutine, `f2`)
+    test.assert_equal(fiber.sched_active_count(sched), 2, `scheduler has 2 active fibers`)
+
+    let run_res -> fiber.sched_run_all(sched, 100)
+    test.assert_true(run_res[`ok`], `scheduler ran all fibers to completion`)
+    test.assert_equal(run_res[`completed_count`], 2, `2 fibers completed`)
+    test.assert_equal(fiber.sched_active_count(sched), 0, `scheduler queue empty`)
+
+    <- true
+}
+
+function test_async_promises_and_deferred() {
+    let box -> {
+        `captured_val` -> Nothing,
+        `captured_err` -> Nothing,
+        `def_val` -> Nothing
+    }
+
+    // 1. Fulfilled promise
+    let p1 -> future.create_promise(function(p) {
+        future.promise_resolve(p, `resolved_payload`)
+    })
+    future.promise_then(p1, function(val) {
+        box[`captured_val`] -> val
+    }, Nothing)
+
+    test.assert_true(future.is_settled(p1), `p1 is settled`)
+    test.assert_true(future.is_fulfilled(p1), `p1 is fulfilled`)
+    test.assert_equal(box[`captured_val`], `resolved_payload`, `then callback received payload`)
+
+    // 2. Rejected promise
+    let p2 -> future.create_promise(function(p) {
+        future.promise_reject(p, `rejected_reason`)
+    })
+    future.promise_catch(p2, function(err) {
+        box[`captured_err`] -> err
+    })
+    test.assert_true(future.is_rejected(p2), `p2 is rejected`)
+    test.assert_equal(box[`captured_err`], `rejected_reason`, `catch callback received error`)
+
+    // 3. Deferred
+    let def -> future.create_deferred()
+    test.assert_false(future.is_settled(def[`promise`]), `deferred promise initially pending`)
+    future.promise_then(def[`promise`], function(v) { box[`def_val`] -> v }, Nothing)
+
+    future.deferred_resolve(def, 999)
+    test.assert_true(future.is_fulfilled(def[`promise`]), `deferred promise fulfilled`)
+    test.assert_equal(box[`def_val`], 999, `deferred handler received 999`)
+
+    <- true
+}
+
+function test_async_combinators() {
+    // Parallel
+    let f1 -> function() { <- 10 }
+    let f2 -> function() { <- 20 }
+    let f3 -> function() { <- 30 }
+
+    let p_res -> async_lib.parallel([f1, f2, f3])
+    test.assert_equal(p_res.length, 3, `parallel returned 3 results`)
+    test.assert_equal(p_res[0], 10, `p_res 0 is 10`)
+    test.assert_equal(p_res[1], 20, `p_res 1 is 20`)
+    test.assert_equal(p_res[2], 30, `p_res 2 is 30`)
+
+    // Series
+    let seq -> []
+    let s1 -> function() {
+        seq.append(1)
+        <- 1
+    }
+    let s2 -> function() {
+        seq.append(2)
+        <- 2
+    }
+    let s_res -> async_lib.series([s1, s2])
+    test.assert_equal(seq.length, 2, `series executed in order`)
+    test.assert_equal(seq[0], 1, `first is 1`)
+    test.assert_equal(seq[1], 2, `second is 2`)
+
+    // Retry
+    let retry_box -> { `attempts` -> 0 }
+    let flaky_fn -> function() {
+        retry_box[`attempts`] -> retry_box[`attempts`] + 1
+        when retry_box[`attempts`] < 3 {
+            <- { `ok` -> false, `error` -> `Temporary network glitch` }
+        }
+        <- { `ok` -> true, `value` -> `success_on_attempt_3` }
+    }
+
+    let retry_res -> async_lib.retry(flaky_fn, 5, 10)
+    test.assert_true(retry_res[`ok`], `retry succeeded`)
+    test.assert_equal(retry_box[`attempts`], 3, `succeeded on attempt 3`)
+    test.assert_equal(retry_res[`value`], `success_on_attempt_3`, `retry payload matches`)
+
+    // Poll
+    let poll_box -> { `counter` -> 0 }
+    let pred -> function() {
+        poll_box[`counter`] -> poll_box[`counter`] + 1
+        <- (poll_box[`counter`] >= 3)
+    }
+
+    let poll_res -> async_lib.poll(pred, 10, 1000)
+    test.assert_true(poll_res[`ok`], `poll returned true`)
+    test.assert_true(poll_box[`counter`] >= 3, `predicate fired at least 3 times`)
+
+    <- true
+}
+
+function main() {
+    let suite -> [
+        { `name` -> `test_channels_basic`, `fn` -> test_channels_basic },
+        { `name` -> `test_channel_close_and_drain`, `fn` -> test_channel_close_and_drain },
+        { `name` -> `test_channel_select`, `fn` -> test_channel_select },
+        { `name` -> `test_tasks_spawn_and_await`, `fn` -> test_tasks_spawn_and_await },
+        { `name` -> `test_tasks_all_and_race`, `fn` -> test_tasks_all_and_race },
+        { `name` -> `test_task_pool`, `fn` -> test_task_pool },
+        { `name` -> `test_sync_waitgroup`, `fn` -> test_sync_waitgroup },
+        { `name` -> `test_sync_mutex_and_atomic`, `fn` -> test_sync_mutex_and_atomic },
+        { `name` -> `test_sync_barrier_and_semaphore`, `fn` -> test_sync_barrier_and_semaphore },
+        { `name` -> `test_sync_once`, `fn` -> test_sync_once },
+        { `name` -> `test_fiber_coroutines`, `fn` -> test_fiber_coroutines },
+        { `name` -> `test_async_promises_and_deferred`, `fn` -> test_async_promises_and_deferred },
+        { `name` -> `test_async_combinators`, `fn` -> test_async_combinators }
+    ]
+
+    let ok -> test.run_suite(`Zenlang Concurrency & Async Suite`, suite)
+    when ok { <- 0 }
+    <- 1
+}

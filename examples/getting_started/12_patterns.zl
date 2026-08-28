@@ -1,0 +1,73 @@
+/!
+  12 — Design patterns (result maps, rebind, index loops)
+
+  Run:
+    ./bin/zen examples/getting_started/12_patterns.zl
+
+  Learn: return { ok, value, error } maps; mutators that return + rebind;
+  index loops that stay dual-path friendly.
+!/
+
+import zen.io.io as io
+import zen.text.string as Str
+
+// --- Pattern: result map ---
+function parse_intish(s) {
+    when s == `42` {
+        <- { `ok` -> True, `value` -> 42, `error` -> `` }
+    }
+    <- { `ok` -> False, `value` -> 0, `error` -> `not 42` }
+}
+
+// --- Pattern: mutator returns updated value (rebind under -g) ---
+function map_put(m, key, val) {
+    m[key] -> val
+    <- m
+}
+
+// --- Pattern: pure step in a pipeline ---
+function double_all(xs) {
+    let n -> xs.length
+    let out -> []
+    let i -> 0
+    do while i < n {
+        out.append(xs[i] * 2)
+        i -> i + 1
+    }
+    <- out
+}
+
+function main() {
+    // Result map
+    let r -> parse_intish(`42`)
+    when r[`ok`] == True {
+        io.writeln(`parsed value = ` + Str.to_string(r[`value`]))
+    } or {
+        io.writeln(`error: ` + r[`error`])
+    }
+
+    let bad -> parse_intish(`nope`)
+    when bad[`ok`] != True {
+        io.writeln(`expected fail: ` + bad[`error`])
+    }
+
+    // Rebind after mutator
+    let m -> { `a` -> 1 }
+    m -> map_put(m, `b`, 2)
+    io.writeln(`map b = ` + Str.to_string(m[`b`]))
+
+    // Index loop + pure transform
+    let xs -> [1, 2, 3]
+    let ys -> double_all(xs)
+    io.writeln(`doubled[2] = ` + Str.to_string(ys[2]))
+
+    // Early-style branch (CLI tools use <- 1 the same way)
+    let path_ok -> True
+    when not path_ok {
+        io.writeln(`would exit 1 here`)
+        <- 1
+    }
+
+    io.writeln(`patterns ok`)
+    <- 0
+}

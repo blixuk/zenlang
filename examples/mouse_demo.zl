@@ -1,0 +1,58 @@
+import zen.ui.term as term
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.text.string as str
+
+function main() {
+    term.alt_screen(function() {
+        term.enable_mouse()
+        
+        let size -> term.size()
+        let c -> canvas.create(size.width, size.height)
+        
+        canvas.clear(c, ` `, `white`, `black`)
+        canvas.draw_text(c, 2, 2, `Mouse Demo: Click around! (Press 'q' or 'Escape' to quit)`, `green`, `black`)
+        canvas.render(c)
+        
+        term.with_raw(function() {
+            let running -> true
+            do while running {
+                let key -> term.read_key()
+                
+                when key.kind == `char` and key.ch == `q` {
+                    running -> false
+                }
+                
+                when key.kind == `special` and key.name == `escape` {
+                    running -> false
+                }
+                
+                when key.kind == `mouse` {
+                    let parts -> str.split(key.ch, `,`)
+                    when parts.length() == 3 {
+                        let x -> str.to_number(parts[0]) - 1 // SGR coords are 1-based, canvas is 0-based
+                        let y -> str.to_number(parts[1]) - 1
+                        let is_release -> str.to_number(parts[2])
+                        
+                        let color -> `blue`
+                        when key.code == 0 {
+                            color -> `red` // left click
+                        }
+                        when key.code == 2 {
+                            color -> `yellow` // right click
+                        }
+                        
+                        when is_release == 0 {
+                            canvas.set_cell(c, x, y, `X`, color, `black`)
+                        } or {
+                            canvas.set_cell(c, x, y, `*`, `cyan`, `black`)
+                        }
+                        canvas.render(c)
+                    }
+                }
+            }
+        })
+        
+        term.disable_mouse()
+    })
+}

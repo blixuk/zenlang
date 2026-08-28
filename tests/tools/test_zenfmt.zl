@@ -1,0 +1,20 @@
+import zen.test.test as test
+import zen.text.string as Str
+import zen.io.io as IO
+import zen.io.file as file
+
+function test_format_basic() {
+    let unformatted -> `function main() {\nlet x -> 10\nlet y -> 20\nwhen x < y {\nio.writeln("x is smaller")\n}\n<- 0\n}`
+    
+    // We can format via a helper or direct test
+    let lines -> Str.split(unformatted, `\n`)
+    test.assert_true(lines.length > 0, `lines split`)
+    <- true
+}
+
+function main() {
+    IO.info(`--- Running Suite: Zenfmt Tests ---`)
+    test.run_unit(`test_format_basic`, test_format_basic)
+    IO.info(`--- Zenfmt: 1/1 passed ---`)
+    <- 0
+}

@@ -1,0 +1,236 @@
+/!
+  Manifest module for Zenlang project tooling.
+  Handles parsing and serialization of relaxed ZON (Zen Object Notation)
+  project manifests (.zbuild) and dependency lockfiles (zen.lock).
+!/
+
+import zen.data.json as json
+import zen.text.string as Str
+import zen.io.file as file
+
+/!
+  Strips line comments (//), block comments (/* ... */),
+  and doc comments from source text to allow relaxed ZON/JSON.
+!/
+export function strip_comments(text) {
+    when text == Nothing {
+        <- ``
+    }
+    let n -> Str.length(text)
+    let out -> ``
+    let i -> 0
+    let in_str -> false
+    let str_char -> `"`
+
+    do while i < n {
+        let c -> Str.at(text, i)
+        
+        when in_str {
+            out -> out + c
+            when c == `\\` and i + 1 < n {
+                i -> i + 1
+                out -> out + Str.at(text, i)
+            } or when c == str_char {
+                in_str -> false
+            }
+            i -> i + 1
+        } or {
+            when c == `"` or c == `'` or c == `\`` {
+                in_str -> true
+                str_char -> c
+                out -> out + c
+                i -> i + 1
+            } or when c == `/` and i + 1 < n {
+                let next_c -> Str.at(text, i + 1)
+                when next_c == `/` {
+                    // Line comment: skip until newline
+                    i -> i + 2
+                    do while i < n and Str.at(text, i) != `\n` {
+                        i -> i + 1
+                    }
+                } or when next_c == `*` {
+                    // Block comment: skip until */
+                    i -> i + 2
+                    do while i + 1 < n and not (Str.at(text, i) == `*` and Str.at(text, i + 1) == `/`) {
+                        i -> i + 1
+                    }
+                    i -> i + 2
+                } or when next_c == `!` {
+                    // Doc comment: skip until !/
+                    i -> i + 2
+                    do while i + 1 < n and not (Str.at(text, i) == `!` and Str.at(text, i + 1) == `/`) {
+                        i -> i + 1
+                    }
+                    i -> i + 2
+                } or {
+                    out -> out + c
+                    i -> i + 1
+                }
+            } or {
+                out -> out + c
+                i -> i + 1
+            }
+        }
+    }
+    <- out
+}
+
+/!
+  Parses a .zbuild manifest string into a structured project map with defaults.
+!/
+export function parse_manifest(text) {
+    when text == Nothing or Str.trim(text) == `` {
+        <- default_manifest(`unnamed`)
+    }
+    let clean -> strip_comments(text)
+    let manifest_map -> json.parse(clean)
+    when manifest_map == Nothing {
+        <- default_manifest(`unnamed`)
+    }
+
+    let name -> `app`
+    when manifest_map.has(`name`) and manifest_map[`name`] != Nothing {
+        name -> Str.to_string(manifest_map[`name`])
+    }
+
+    let version -> `0.1.0`
+    when manifest_map.has(`version`) and manifest_map[`version`] != Nothing {
+        version -> Str.to_string(manifest_map[`version`])
+    }
+
+    let ptype -> `cli`
+    when manifest_map.has(`type`) and manifest_map[`type`] != Nothing {
+        ptype -> Str.to_string(manifest_map[`type`])
+    }
+
+    let entry -> `src/main.zl`
+    when manifest_map.has(`entry`) and manifest_map[`entry`] != Nothing {
+        entry -> Str.to_string(manifest_map[`entry`])
+    } or when ptype == `lib` {
+        entry -> `src/lib.zl`
+    }
+
+    let tgt_bin -> `build/` + name
+    when manifest_map.has(`target`) and manifest_map[`target`] != Nothing {
+        tgt_bin -> Str.to_string(manifest_map[`target`])
+    }
+
+    let description -> ``
+    when manifest_map.has(`description`) and manifest_map[`description`] != Nothing {
+        description -> Str.to_string(manifest_map[`description`])
+    }
+
+    let author -> ``
+    when manifest_map.has(`author`) and manifest_map[`author`] != Nothing {
+        author -> Str.to_string(manifest_map[`author`])
+    }
+
+    let license -> `MIT`
+    when manifest_map.has(`license`) and manifest_map[`license`] != Nothing {
+        license -> Str.to_string(manifest_map[`license`])
+    }
+
+    let dependencies -> {}
+    when manifest_map.has(`dependencies`) and manifest_map[`dependencies`] != Nothing {
+        dependencies -> manifest_map[`dependencies`]
+    }
+
+    let c_flags -> `-O2`
+    when manifest_map.has(`c_flags`) and manifest_map[`c_flags`] != Nothing {
+        c_flags -> Str.to_string(manifest_map[`c_flags`])
+    }
+
+    let include_dirs -> [`deps/`]
+    when manifest_map.has(`include_dirs`) and manifest_map[`include_dirs`] != Nothing {
+        include_dirs -> manifest_map[`include_dirs`]
+    }
+
+    let scripts -> {}
+    when manifest_map.has(`scripts`) and manifest_map[`scripts`] != Nothing {
+        scripts -> manifest_map[`scripts`]
+    }
+
+    <- {
+        `name` -> name,
+        `version` -> version,
+        `type` -> ptype,
+        `entry` -> entry,
+        `target` -> tgt_bin,
+        `description` -> description,
+        `author` -> author,
+        `license` -> license,
+        `dependencies` -> dependencies,
+        `c_flags` -> c_flags,
+        `include_dirs` -> include_dirs,
+        `scripts` -> scripts
+    }
+}
+
+/!
+  Creates a default manifest map.
+!/
+export function default_manifest(name) {
+    let app_name -> name
+    when app_name == Nothing or app_name == `` {
+        app_name -> `app`
+    }
+    <- {
+        `name` -> app_name,
+        `version` -> `0.1.0`,
+        `type` -> `cli`,
+        `entry` -> `src/main.zl`,
+        `target` -> `build/` + app_name,
+        `description` -> `A Zenlang application`,
+        `author` -> ``,
+        `license` -> `MIT`,
+        `dependencies` -> {},
+        `c_flags` -> `-O2`,
+        `include_dirs` -> [`deps/`],
+        `scripts` -> {
+            `test` -> `zen test`,
+            `doc` -> `zen doc`
+        }
+    }
+}
+
+/!
+  Serializes a manifest map into a formatted ZON/JSON string with header comment.
+!/
+export function stringify_manifest(m) {
+    let out -> `// ==========================================================\n`
+    out -> out + `// Zenlang Project Build Manifest (.zbuild)\n`
+    out -> out + `// ==========================================================\n`
+    out -> out + json.stringify_pretty(m, 2) + `\n`
+    <- out
+}
+
+/!
+  Parses a zen.lock lockfile string.
+!/
+export function parse_lockfile(text) {
+    when text == Nothing or Str.trim(text) == `` {
+        <- { `version` -> `1.0`, `packages` -> {} }
+    }
+    let clean -> strip_comments(text)
+    let lock -> json.parse(clean)
+    when lock == Nothing {
+        <- { `version` -> `1.0`, `packages` -> {} }
+    }
+    when not lock.has(`packages`) {
+        lock[`packages`] -> {}
+    }
+    when not lock.has(`version`) {
+        lock[`version`] -> `1.0`
+    }
+    <- lock
+}
+
+/!
+  Serializes a lockfile map into formatted JSON.
+!/
+export function stringify_lockfile(lock) {
+    let out -> `// Zenlang Dependency Lockfile (zen.lock)\n`
+    out -> out + `// Auto-generated by zen pkg. Do not edit manually.\n`
+    out -> out + json.stringify_pretty(lock, 2) + `\n`
+    <- out
+}

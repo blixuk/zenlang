@@ -1,0 +1,141 @@
+import zen.io.file as file
+
+/!
+ Bitmap (BMP) Graphics Module.
+ Implements uncompressed 24-bit BMP image creation.
+ !/
+class BMP {
+    let width: Integer
+    let height: Integer
+    let pixels: List // List of [r, g, b]
+
+    /!
+     Initializes a new BMP image.
+     @param w The width in pixels.
+     @param h The height in pixels.
+     !/
+    function init(w, h) {
+        self.width -> w
+        self.height -> h
+        self.pixels -> []
+        
+        let total -> w * h
+        let i -> 0
+        do while i < total {
+            self.pixels.append({`r` -> 0, `g` -> 0, `b` -> 0})
+            i -> i + 1
+        }
+    }
+
+    /!
+     Sets a pixel at the given coordinates.
+     @param x The x coordinate.
+     @param y The y coordinate.
+     @param r Red value (0-255).
+     @param g Green value (0-255).
+     @param b Blue value (0-255).
+     !/
+    function set_pixel(x, y, r, g, b) {
+        when x >= 0 and x < self.width and y >= 0 and y < self.height {
+            let index -> y * self.width + x
+            // Clamp values
+            when r < 0 { r -> 0 }
+            when r > 255 { r -> 255 }
+            when g < 0 { g -> 0 }
+            when g > 255 { g -> 255 }
+            when b < 0 { b -> 0 }
+            when b > 255 { b -> 255 }
+            
+            self.pixels[index] -> {`r` -> r, `g` -> g, `b` -> b}
+        }
+    }
+
+    /!
+     Fills the entire image with a single color.
+     @param r Red value (0-255).
+     @param g Green value (0-255).
+     @param b Blue value (0-255).
+     !/
+    function fill(r, g, b) {
+        let i -> 0
+        let total -> self.width * self.height
+        do while i < total {
+            self.pixels[i] -> {`r` -> r, `g` -> g, `b` -> b}
+            i -> i + 1
+        }
+    }
+
+    /!
+     Writes a 32-bit integer as 4 little-endian bytes to a list.
+     !/
+    function _write_u32(bytes, val) {
+        bytes.append(val && 255)
+        bytes.append((val >> 8) && 255)
+        bytes.append((val >> 16) && 255)
+        bytes.append((val >> 24) && 255)
+    }
+
+    /!
+     Writes a 16-bit integer as 2 little-endian bytes to a list.
+     !/
+    function _write_u16(bytes, val) {
+        bytes.append(val && 255)
+        bytes.append((val >> 8) && 255)
+    }
+
+    /!
+     Writes the BMP image to a file.
+     @param path The path to write to.
+     !/
+    function save(path) {
+        let bytes -> []
+        let row_size -> (self.width * 3 + 3) && (!!3)
+        let image_size -> row_size * self.height
+        let file_size -> 54 + image_size
+
+        // BMP Header (14 bytes)
+        bytes.append(66) // 'B'
+        bytes.append(77) // 'M'
+        self._write_u32(bytes, file_size)
+        self._write_u16(bytes, 0) // Reserved 1
+        self._write_u16(bytes, 0) // Reserved 2
+        self._write_u32(bytes, 54) // Offset to pixel data
+
+        // DIB Header (BITMAPINFOHEADER - 40 bytes)
+        self._write_u32(bytes, 40) // Size of this header
+        self._write_u32(bytes, self.width)
+        self._write_u32(bytes, 0 - self.height) // Negative height for top-down
+        self._write_u16(bytes, 1) // Color planes
+        self._write_u16(bytes, 24) // Bits per pixel
+        self._write_u32(bytes, 0) // Compression (none)
+        self._write_u32(bytes, image_size) // Image size
+        self._write_u32(bytes, 2835) // Horizontal res (72 DPI)
+        self._write_u32(bytes, 2835) // Vertical res (72 DPI)
+        self._write_u32(bytes, 0) // Colors in palette
+        self._write_u32(bytes, 0) // Important colors
+
+        // Pixel Data
+        let padding -> row_size - (self.width * 3)
+        let y -> 0
+        do while y < self.height {
+            let x -> 0
+            do while x < self.width {
+                let p -> self.pixels[y * self.width + x]
+                // BMP stores pixels in BGR order
+                bytes.append(p[`b`])
+                bytes.append(p[`g`])
+                bytes.append(p[`r`])
+                x -> x + 1
+            }
+            
+            let p -> 0
+            do while p < padding {
+                bytes.append(0)
+                p -> p + 1
+            }
+            y -> y + 1
+        }
+
+        file.write_bytes(path, bytes)
+    }
+}

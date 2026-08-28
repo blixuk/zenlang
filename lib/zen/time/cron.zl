@@ -1,0 +1,163 @@
+/!
+    Cron Schedule Parsing and Matching Module.
+    Supports standard 5-field cron syntax: minute, hour, day of month, month, day of week.
+!/
+
+import zen.text.string as Str
+
+function _parse_int(s) {
+    when (s == Nothing or Str.length(s) == 0) { <- 0 }
+    let val -> 0
+    let idx -> 0
+    let len -> Str.length(s)
+    do while idx < len {
+        let ch -> Str.at(s, idx)
+        when (ch >= `0` and ch <= `9`) {
+            let digit -> 0
+            when (ch == `1`) { digit -> 1 }
+            or when (ch == `2`) { digit -> 2 }
+            or when (ch == `3`) { digit -> 3 }
+            or when (ch == `4`) { digit -> 4 }
+            or when (ch == `5`) { digit -> 5 }
+            or when (ch == `6`) { digit -> 6 }
+            or when (ch == `7`) { digit -> 7 }
+            or when (ch == `8`) { digit -> 8 }
+            or when (ch == `9`) { digit -> 9 }
+            val -> val * 10 + digit
+        }
+        idx -> idx + 1
+    }
+    <- val
+}
+
+/!
+    Checks if a single sub-expression matches value.
+!/
+function single_field_matches(s, v, min_bound, max_bound) {
+    when (s == `*`) { <- True }
+
+    // Step: */N
+    when (Str.starts_with(s, `*/`)) {
+        let step_str -> Str.substring(s, 2, Str.length(s))
+        let step -> _parse_int(step_str)
+        when (step <= 0) { <- False }
+        <- ((v % step) == 0)
+    }
+
+    // Range: A-B
+    when (Str.contains(s, `-`)) {
+        let parts -> Str.split(s, `-`)
+        when (parts.length == 2) {
+            let low -> _parse_int(parts[0])
+            let high -> _parse_int(parts[1])
+            <- (v >= low and v <= high)
+        }
+    }
+
+    // Exact value
+    let target_val -> _parse_int(s)
+    <- (v == target_val)
+}
+
+function check_list_match(parts, v, min_bound, max_bound) {
+    let i -> 0
+    let count -> parts.length
+    do while i < count {
+        let p -> Str.trim(parts[i])
+        let ok -> single_field_matches(p, v, min_bound, max_bound)
+        when (ok) {
+            <- True
+        }
+        i -> i + 1
+    }
+    <- False
+}
+
+/!
+    Checks if a field value matches a cron field expression (e.g. "*", "*/15", "1,2,5", "1-5", "10").
+!/
+function field_matches(expr, val, min_bound, max_bound) {
+    when (expr == Nothing) { <- False }
+    let s -> Str.trim(Str.to_string(expr))
+    let v -> 0 + val
+
+    // List: A,B,C
+    when (Str.contains(s, `,`)) {
+        let parts -> Str.split(s, `,`)
+        <- check_list_match(parts, v, min_bound, max_bound)
+    }
+
+    <- single_field_matches(s, v, min_bound, max_bound)
+}
+
+/!
+    Parses a 5-field cron expression string into a structured map.
+!/
+function parse(cron_expr) {
+    when (cron_expr == Nothing) { <- Nothing }
+    let s -> Str.trim(Str.to_string(cron_expr))
+    let parts -> Str.split(s, ` `)
+
+    // Filter empty whitespace tokens
+    let fields -> []
+    let i -> 0
+    let count -> parts.length
+    do while i < count {
+        let p -> Str.trim(parts[i])
+        when (Str.length(p) > 0) {
+            fields.append(p)
+        }
+        i -> i + 1
+    }
+
+    when (fields.length != 5) {
+        <- Nothing
+    }
+
+    <- {
+        `minute` -> fields[0],
+        `hour` -> fields[1],
+        `day` -> fields[2],
+        `month` -> fields[3],
+        `weekday` -> fields[4],
+        `raw` -> s
+    }
+}
+
+/!
+    Tests if a cron expression matches given date/time components.
+    @param cron_expr String or parsed cron map.
+    @param minute (0-59)
+    @param hour (0-23)
+    @param day (1-31)
+    @param month (1-12)
+    @param weekday (0-6, 0=Sunday)
+!/
+function matches(cron_expr, minute, hour, day, month, weekday) {
+    when (cron_expr == Nothing) { <- False }
+
+    let s -> Str.trim(Str.to_string(cron_expr))
+    let parts -> Str.split(s, ` `)
+    let fields -> []
+    let i -> 0
+    let count -> parts.length
+    do while i < count {
+        let p -> Str.trim(parts[i])
+        when (Str.length(p) > 0) {
+            fields.append(p)
+        }
+        i -> i + 1
+    }
+
+    when (fields.length != 5) {
+        <- False
+    }
+
+    let m_ok -> field_matches(fields[0], minute, 0, 59)
+    let h_ok -> field_matches(fields[1], hour, 0, 23)
+    let d_ok -> field_matches(fields[2], day, 1, 31)
+    let mon_ok -> field_matches(fields[3], month, 1, 12)
+    let w_ok -> field_matches(fields[4], weekday, 0, 6)
+
+    <- (m_ok and h_ok and d_ok and mon_ok and w_ok)
+}

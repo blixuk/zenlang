@@ -1,0 +1,378 @@
+/!
+  Zen Code (ZC) Module — Code formatting, syntax highlighting, tokenizing, and AST inspection.
+  Canonical path: `zen.tooling.zencode` (alias: `zen.zencode`).
+!/
+
+use zen.text.string as Str
+use zen.color as color
+
+// ==========================================
+// 1. Tokenizer
+// ==========================================
+
+function _is_alpha(c) {
+    when (c >= `a` and c <= `z`) or (c >= `A` and c <= `Z`) or c == `_` {
+        <- True
+    }
+    <- False
+}
+
+function _is_digit(c) {
+    when c >= `0` and c <= `9` {
+        <- True
+    }
+    <- False
+}
+
+function _is_alphanumeric(c) {
+    <- _is_alpha(c) or _is_digit(c)
+}
+
+function tokenize(src) {
+    let tokens -> []
+    when src == Nothing or src == `` {
+        <- tokens
+    }
+    
+    let i -> 0
+    let len -> Str.length(src)
+    let line -> 1
+    let col -> 1
+    
+    do while i < len {
+        let c -> Str.substring(src, i, i + 1)
+        let next_c -> when (i + 1 < len) { Str.substring(src, i + 1, i + 2) } or { `` }
+        
+        // Whitespace & newlines
+        when c == `\n` {
+            tokens.append({ `type` -> `NEWLINE`, `value` -> `\n`, `line` -> line, `col` -> col })
+            line -> line + 1
+            col -> 1
+            i -> i + 1
+        } or when c == ` ` or c == `\t` or c == `\r` {
+            let start_ws -> i
+            do while i < len {
+                let wsc -> Str.substring(src, i, i + 1)
+                when wsc == ` ` or wsc == `\t` or wsc == `\r` {
+                    i -> i + 1
+                    col -> col + 1
+                } or {
+                    break
+                }
+            }
+            tokens.append({ `type` -> `WHITESPACE`, `value` -> Str.substring(src, start_ws, i), `line` -> line, `col` -> col })
+        } or when c == `/` and next_c == `/` {
+            // Line comment
+            let start -> i
+            do while i < len and Str.substring(src, i, i + 1) != `\n` {
+                i -> i + 1
+                col -> col + 1
+            }
+            tokens.append({ `type` -> `COMMENT`, `value` -> Str.substring(src, start, i), `line` -> line, `col` -> col })
+        } or when c == `/` and next_c == `!` {
+            // Block doc comment /! ... !/
+            let start -> i
+            i -> i + 2
+            col -> col + 2
+            let closed -> False
+            do while i < len and not closed {
+                let sc -> Str.substring(src, i, i + 1)
+                let snc -> when (i + 1 < len) { Str.substring(src, i + 1, i + 2) } or { `` }
+                when sc == `\n` {
+                    line -> line + 1
+                    col -> 1
+                } or {
+                    col -> col + 1
+                }
+                when sc == `!` and snc == `/` {
+                    i -> i + 2
+                    col -> col + 2
+                    closed -> True
+                } or {
+                    i -> i + 1
+                }
+            }
+            tokens.append({ `type` -> `DOC_COMMENT`, `value` -> Str.substring(src, start, i), `line` -> line, `col` -> col })
+        } or when c == `\`` {
+            // Backtick string
+            let start -> i
+            i -> i + 1
+            col -> col + 1
+            let closed -> False
+            do while i < len and not closed {
+                let sc -> Str.substring(src, i, i + 1)
+                when sc == `\n` {
+                    line -> line + 1
+                    col -> 1
+                } or {
+                    col -> col + 1
+                }
+                when sc == `\`` {
+                    i -> i + 1
+                    col -> col + 1
+                    closed -> True
+                } or {
+                    i -> i + 1
+                }
+            }
+            tokens.append({ `type` -> `STRING`, `value` -> Str.substring(src, start, i), `line` -> line, `col` -> col })
+        } or when c == `"` {
+            // Double quote string
+            let start -> i
+            i -> i + 1
+            col -> col + 1
+            let closed -> False
+            do while i < len and not closed {
+                let sc -> Str.substring(src, i, i + 1)
+                when sc == `\\` and i + 1 < len {
+                    i -> i + 2
+                    col -> col + 2
+                } or when sc == `"` {
+                    i -> i + 1
+                    col -> col + 1
+                    closed -> True
+                } or {
+                    i -> i + 1
+                    col -> col + 1
+                }
+            }
+            tokens.append({ `type` -> `STRING`, `value` -> Str.substring(src, start, i), `line` -> line, `col` -> col })
+        } or when _is_digit(c) or (c == `0` and (next_c == `x` or next_c == `b`)) {
+            // Numbers
+            let start -> i
+            do while i < len {
+                let nc -> Str.substring(src, i, i + 1)
+                when _is_alphanumeric(nc) or nc == `.` {
+                    i -> i + 1
+                    col -> col + 1
+                } or {
+                    break
+                }
+            }
+            tokens.append({ `type` -> `NUMBER`, `value` -> Str.substring(src, start, i), `line` -> line, `col` -> col })
+        } or when (c == `-` and next_c == `>`) or (c == `<` and next_c == `-`) or (c == `+` and next_c == `+`) or (c == `-` and next_c == `-`) or (c == `=` and next_c == `=`) or (c == `!` and next_c == `=`) or (c == `<` and next_c == `=`) or (c == `>` and next_c == `=`) or (c == `.` and next_c == `.`) {
+            // 2-character operators
+            let op_len -> 2
+            when c == `.` and next_c == `.` and (i + 2 < len) and Str.substring(src, i + 2, i + 3) == `=` {
+                op_len -> 3
+            }
+            let op_str -> Str.substring(src, i, i + op_len)
+            tokens.append({ `type` -> `OPERATOR`, `value` -> op_str, `line` -> line, `col` -> col })
+            i -> i + op_len
+            col -> col + op_len
+        } or when c == `{` or c == `}` or c == `[` or c == `]` or c == `(` or c == `)` or c == `,` or c == `:` or c == `;` {
+            // Punctuation
+            tokens.append({ `type` -> `PUNCTUATION`, `value` -> c, `line` -> line, `col` -> col })
+            i -> i + 1
+            col -> col + 1
+        } or when c == `+` or c == `-` or c == `*` or c == `/` or c == `%` or c == `<` or c == `>` or c == `!` or c == `=` {
+            // 1-character operator
+            tokens.append({ `type` -> `OPERATOR`, `value` -> c, `line` -> line, `col` -> col })
+            i -> i + 1
+            col -> col + 1
+        } or when _is_alpha(c) {
+            // Identifiers or Keywords
+            let start -> i
+            do while i < len and _is_alphanumeric(Str.substring(src, i, i + 1)) {
+                i -> i + 1
+                col -> col + 1
+            }
+            let id_str -> Str.substring(src, start, i)
+            
+            // Check Keywords
+            let is_kw -> False
+            when id_str == `when` or id_str == `or` or id_str == `and` or id_str == `not` or id_str == `function` or id_str == `class` or id_str == `structure` or id_str == `enumerator` or id_str == `let` or id_str == `set` or id_str == `do` or id_str == `while` or id_str == `until` or id_str == `for` or id_str == `in` or id_str == `return` or id_str == `break` or id_str == `continue` or id_str == `import` or id_str == `use` or id_str == `from` or id_str == `export` or id_str == `check` or id_str == `raise` or id_str == `assert` or id_str == `defer` or id_str == `with` or id_str == `is` or id_str == `extends` {
+                is_kw -> True
+            }
+            
+            // Check Sentinels & Booleans
+            let is_sentinel -> False
+            when id_str == `Nothing` or id_str == `Default` or id_str == `True` or id_str == `False` or id_str == `nothing` or id_str == `default` {
+                is_sentinel -> True
+            }
+            
+            when is_kw {
+                tokens.append({ `type` -> `KEYWORD`, `value` -> id_str, `line` -> line, `col` -> col })
+            } or when is_sentinel {
+                tokens.append({ `type` -> `SENTINEL`, `value` -> id_str, `line` -> line, `col` -> col })
+            } or {
+                tokens.append({ `type` -> `IDENTIFIER`, `value` -> id_str, `line` -> line, `col` -> col })
+            }
+        } or {
+            // Other character
+            tokens.append({ `type` -> `CHAR`, `value` -> c, `line` -> line, `col` -> col })
+            i -> i + 1
+            col -> col + 1
+        }
+    }
+    
+    <- tokens
+}
+
+// ==========================================
+// 2. Syntax Highlighter
+// ==========================================
+
+/!
+  Highlights Zenlang source code for Terminal (ANSI) or Web (HTML).
+  @param src Source code text.
+  @param mode "term" (ANSI colors) or "html" (CSS span classes).
+  @return Highlighted string.
+!/
+function highlight(src, mode) {
+    when mode == Nothing { mode -> `term` }
+    let tokens -> tokenize(src)
+    let out -> ``
+    
+    let i -> 0
+    let len -> tokens.length
+    do while i < len {
+        let tok -> tokens[i]
+        let ttype -> tok[`type`]
+        let val -> tok[`value`]
+        
+        when mode == `term` {
+            when ttype == `KEYWORD` {
+                out -> out + color.bold(color.paint(val, color.hex(`#38bdf8`), Nothing))
+            } or when ttype == `SENTINEL` {
+                out -> out + color.bold(color.paint(val, color.hex(`#f472b6`), Nothing))
+            } or when ttype == `STRING` {
+                out -> out + color.paint(val, color.hex(`#4ade80`), Nothing)
+            } or when ttype == `NUMBER` {
+                out -> out + color.paint(val, color.hex(`#fbbf24`), Nothing)
+            } or when ttype == `COMMENT` or ttype == `DOC_COMMENT` {
+                out -> out + color.dim(color.paint(val, color.hex(`#64748b`), Nothing))
+            } or when ttype == `OPERATOR` {
+                out -> out + color.paint(val, color.hex(`#fb923c`), Nothing)
+            } or when ttype == `IDENTIFIER` {
+                out -> out + color.paint(val, color.hex(`#f8fafc`), Nothing)
+            } or {
+                out -> out + val
+            }
+        } or when mode == `html` {
+            when ttype == `KEYWORD` {
+                out -> out + `<span class="zen-kw">` + val + `</span>`
+            } or when ttype == `SENTINEL` {
+                out -> out + `<span class="zen-sentinel">` + val + `</span>`
+            } or when ttype == `STRING` {
+                out -> out + `<span class="zen-str">` + val + `</span>`
+            } or when ttype == `NUMBER` {
+                out -> out + `<span class="zen-num">` + val + `</span>`
+            } or when ttype == `COMMENT` or ttype == `DOC_COMMENT` {
+                out -> out + `<span class="zen-com">` + val + `</span>`
+            } or when ttype == `OPERATOR` {
+                out -> out + `<span class="zen-op">` + val + `</span>`
+            } or when ttype == `IDENTIFIER` {
+                out -> out + `<span class="zen-id">` + val + `</span>`
+            } or {
+                out -> out + val
+            }
+        } or {
+            out -> out + val
+        }
+        
+        i -> i + 1
+    }
+    
+    <- out
+}
+
+// ==========================================
+// 3. Code Formatter
+// ==========================================
+
+/!
+  Formats unformatted Zen code into standard 4-space indented layout.
+  @param src The raw Zen source.
+  @return Formatted clean source string.
+!/
+function format(src) {
+    when src == Nothing or Str.trim(src) == `` {
+        <- ``
+    }
+    
+    let raw_lines -> Str.split(src, `\n`)
+    let out_lines -> []
+    let indent_level -> 0
+    
+    let i -> 0
+    let len -> raw_lines.length
+    do while i < len {
+        let line -> Str.trim(raw_lines[i])
+        
+        // Blank line handling
+        when line == `` {
+            out_lines.append(``)
+            i -> i + 1
+            continue
+        }
+        
+        // Check for closing braces decreasing indent
+        when Str.starts_with(line, `}`) {
+            indent_level -> indent_level - 1
+            when indent_level < 0 { indent_level -> 0 }
+        }
+        
+        // Build indentation
+        let pad -> ``
+        let p -> 0
+        do while p < indent_level {
+            pad -> pad + `    `
+            p -> p + 1
+        }
+        
+        out_lines.append(pad + line)
+        
+        // Check for opening braces increasing indent
+        when Str.ends_with(line, `{`) {
+            indent_level -> indent_level + 1
+        }
+        
+        i -> i + 1
+    }
+    
+    <- Str.join(out_lines, `\n`)
+}
+
+// ==========================================
+// 4. Source Statistics & Metrics
+// ==========================================
+
+/!
+  Analyzes metrics of a Zenlang source file.
+!/
+function stats(src) {
+    let tokens -> tokenize(src)
+    let lines -> Str.split(src, `\n`)
+    
+    let kw_count -> 0
+    let str_count -> 0
+    let num_count -> 0
+    let fn_count -> 0
+    
+    let i -> 0
+    let len -> tokens.length
+    do while i < len {
+        let t -> tokens[i]
+        let ttype -> t[`type`]
+        let tval -> t[`value`]
+        when ttype == `KEYWORD` {
+            kw_count -> kw_count + 1
+            when tval == `function` { fn_count -> fn_count + 1 }
+        } or when ttype == `STRING` {
+            str_count -> str_count + 1
+        } or when ttype == `NUMBER` {
+            num_count -> num_count + 1
+        }
+        i -> i + 1
+    }
+    
+    <- {
+        `total_lines` -> lines.length,
+        `total_tokens` -> tokens.length,
+        `functions` -> fn_count,
+        `keywords` -> kw_count,
+        `strings` -> str_count,
+        `numbers` -> num_count
+    }
+}

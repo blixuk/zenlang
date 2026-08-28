@@ -1,0 +1,29 @@
+import zen.sys.signal as signal
+import zen.time.time as time
+import zen.sys.process as process
+import zen.text.string as string
+
+let handled -> false
+
+function on_int(signum) {
+    write_line("Caught SIGINT: " + string.to_string(signum))
+    handled -> true
+}
+
+signal.handle(signal.SIGINT, on_int)
+
+write_line("Sending SIGINT to self...")
+
+let my_pid -> process.get_id()
+process.run("kill", ["-INT", string.to_string(my_pid)])
+
+let start -> time.now()
+while (not handled) and (time.now() - start < 3) {
+    time.sleep(0.1)
+}
+
+when handled {
+    write_line("SUCCESS: Signal handler executed.")
+} or {
+    write_line("FAILURE: Did not receive SIGINT.")
+}

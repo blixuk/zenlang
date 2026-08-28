@@ -4,6 +4,39 @@ from Parser.AST import *
 from Transpiler.MIR import *
 from Checker.Type import SymbolKind, TypeStructure, TypeClass, TypeTaskHandle
 
+# Must match selfhost/compiler/Token.zl kind_id / enumerator order (0..114).
+TOKEN_TYPE_IDS = {
+    "KEYWORD": 0, "IDENTIFIER": 1, "LITERAL": 2, "OPERATOR": 3, "TYPE": 4,
+    "UNKNOWN": 5, "COMMENT": 6, "DOC_COMMENT": 7, "ERROR": 8,
+    "ERROR_UNTERMINATED_STRING": 9, "ERROR_UNTERMINATED_STRING_EOF": 10,
+    "ERROR_UNTERMINATED_CHARACTER": 11, "ERROR_UNTERMINATED_CHARACTER_EOF": 12,
+    "ERROR_INVALID_NUMBER": 13, "ERROR_INVALID_ASSIGNMENT": 14,
+    "ERROR_INVALID_ASSIGNMENT_OPERATOR": 15, "ERROR_UNEXPECTED_CHARACTER": 16,
+    "ERROR_UNEXPECTED_TOKEN": 17, "VOID": 18, "NOTHING": 19, "DEFAULT": 20,
+    "VARIANT": 21, "INTEGER": 22, "DECIMAL": 23, "STRING": 24, "RUNE": 25,
+    "BOOLEAN": 26, "FUNCTION": 27, "STRUCTURE": 28, "OBJECT": 29, "CLASS": 30,
+    "ENUMERATOR": 31, "RAISE": 32, "CHECK": 33, "ASSERT": 34, "DEFER": 35,
+    "CASE": 36, "WITH": 37, "TASK": 38, "AWAIT": 39, "LIST": 40, "TUPLE": 41,
+    "VECTOR": 42, "MAP": 43, "SET": 44, "ITERATOR": 45, "ITERABLE": 46,
+    "AUTO": 47, "LEFT_PAREN": 48, "RIGHT_PAREN": 49, "LEFT_BRACE": 50,
+    "RIGHT_BRACE": 51, "LEFT_BRACKET": 52, "RIGHT_BRACKET": 53, "COMMA": 54,
+    "DOT": 55, "SEMICOLON": 56, "TYPE_SET": 57, "TYPE_LET": 58,
+    "ASSIGNMENT": 59, "RETURN": 60, "ADDITION": 61, "SUBTRACTION": 62,
+    "MULTIPLICATION": 63, "DIVISION": 64, "MODULO": 65, "EXPONENTIATION": 66,
+    "QUOTIENT": 67, "AND": 68, "OR": 69, "NOT": 70, "XOR": 71, "NOR": 72,
+    "NAND": 73, "XNOR": 74, "BITWISE_AND": 75, "BITWISE_OR": 76,
+    "BITWISE_NOT": 77, "BITWISE_XOR": 78, "BITWISE_NOR": 79, "BITWISE_NAND": 80,
+    "BITWISE_XNOR": 81, "BITWISE_MOD": 82, "BITWISE_LEFT_SHIFT": 83,
+    "BITWISE_RIGHT_SHIFT": 84, "AND_EQUAL": 85, "OR_EQUAL": 86, "XOR_EQUAL": 87,
+    "MOD_EQUAL": 88, "LEFT_SHIFT_EQUAL": 89, "RIGHT_SHIFT_EQUAL": 90,
+    "INCREMENT": 91, "DECREMENT": 92, "EQUAL": 93, "NOT_EQUAL": 94,
+    "GREATER_THAN": 95, "LESS_THAN": 96, "GREATER_THAN_OR_EQUAL": 97,
+    "LESS_THAN_OR_EQUAL": 98, "RANGE": 99, "RANGE_INCLUSIVE": 100,
+    "ELLIPSIS": 101, "SCOPE": 102, "EXPORT": 103, "IS": 104, "EXTENDS": 105,
+    "PARENT": 106, "SELF": 107, "IMPORT": 108, "FROM": 109, "AS": 110,
+    "CHECK_SYMBOL": 111, "RAISE_SYMBOL": 112, "ASSERT_SYMBOL": 113, "EOF": 114,
+}
+
 class ExpressionHandler:
     def _visit_expression(self, node: ASTNode, target_region: Optional[str] = None) -> str:
         if isinstance(node, CheckExpression):
@@ -302,6 +335,30 @@ class ExpressionHandler:
             tmp = self._alloc_temp(self.new_label("tmp_none"), node, region=current_reg)
             self._emit(Nullify(target=tmp), node)
             return tmp
+        elif isinstance(node, DefaultLiteral):
+            from Checker.Type import (
+                TypeInteger,
+                TypeBoolean,
+                TypeDecimal,
+                TypeRune,
+                TypeString,
+                TypeDefault,
+            )
+            rt = getattr(node, "resolved_type", None)
+            target = getattr(rt, "zero_value_target", None) if rt is not None else None
+            t = target if target is not None else rt
+            tmp = self._alloc_temp(self.new_label("tmp_default"), node, region=current_reg)
+            if isinstance(t, TypeInteger):
+                self._emit(Load(target=tmp, source="0", type="int"), node)
+            elif isinstance(t, TypeBoolean):
+                self._emit(Load(target=tmp, source="false", type="bool"), node)
+            elif isinstance(t, TypeDecimal):
+                self._emit(Load(target=tmp, source="0.0", type="decimal"), node)
+            elif isinstance(t, (TypeString, TypeRune)):
+                self._emit(Load(target=tmp, source="``", type="string"), node)
+            else:
+                self._emit(Nullify(target=tmp), node)
+            return tmp
         elif isinstance(node, StructureExpression):
             return self._visit_structure_expression(node, target_region=target_region)
         elif isinstance(node, (ListLiteral, VectorLiteral, SetLiteral, TupleLiteral)):
@@ -354,7 +411,7 @@ class ExpressionHandler:
             tmp = self._alloc_temp(self.new_label("tmp_idx"), node, region=current_reg)
             self._emit(Call(target=tmp, callee="Value_get_index", args=[obj, index], region=current_reg), node)
             return tmp
-        elif isinstance(node, BlockExpression):
+        elif isinstance(node, (BlockExpression, BlockStatement)):
             sym = None
             for stmt in node.statements:
                 if isinstance(stmt, ExpressionStatement):

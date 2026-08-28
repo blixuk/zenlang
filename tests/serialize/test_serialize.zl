@@ -1,0 +1,24 @@
+import zen.data.serialize as ser
+import zen.io.io as IO
+
+class Player {
+    let name
+    let score
+    function init(n, s) { 
+        self.name -> n
+        self.score -> s
+    }
+}
+
+// 1. Register the type for deserialization
+ser.register_type(`Player`, Player)
+
+// 2. Save a complex object
+let p1 -> Player(`Alice`, 100)
+ser.save_to_file(`tests/serialize/player.json`, p1)
+
+// 3. Load it back as a Player instance
+let p2 -> ser.load_from_file(`tests/serialize/player.json`)
+IO.writeln(`kind: ` + p2.kind)
+IO.writeln(`name: ` + p2.name)
+IO.writeln(`score: ` + p2.score)

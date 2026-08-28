@@ -1,0 +1,138 @@
+/!
+  File watcher module for Zenlang project tooling.
+  Monitors project directories (src/, tests/, .zbuild) for modifications,
+  triggering automatic rebuilds and restarts for live development.
+!/
+
+import zen.tooling.project as project
+import zen.tooling.builder as builder
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.time.time as time
+import zen.text.string as Str
+
+/!
+  Takes a snapshot map of file paths to content length / hash for change detection.
+!/
+export function snapshot_project(root) {
+    let snap -> {}
+    let zbuild -> path.join(root, `.zbuild`)
+    when file.exists(zbuild) {
+        let content -> file.read(zbuild)
+        snap[`.zbuild`] -> Str.length(content)
+    }
+
+    let src_dir -> path.join(root, `src`)
+    when file.exists(src_dir) {
+        let files -> file.find_files(src_dir, `.zl`)
+        do for f in files {
+            let c -> file.read(f)
+            snap[f] -> Str.length(c)
+        }
+    }
+
+    let tests_dir -> path.join(root, `tests`)
+    when file.exists(tests_dir) {
+        let files -> file.find_files(tests_dir, `.zl`)
+        do for f in files {
+            let c -> file.read(f)
+            snap[f] -> Str.length(c)
+        }
+    }
+
+    <- snap
+}
+
+/!
+  Compares two snapshots, returning list of changed/added/deleted file paths.
+!/
+export function diff_snapshots(old_snap, new_snap) {
+    let changed -> []
+    let old_keys -> old_snap.keys()
+    let new_keys -> new_snap.keys()
+
+    do for k in new_keys {
+        when not old_snap.has(k) {
+            changed.append(k)
+        } or when old_snap[k] != new_snap[k] {
+            changed.append(k)
+        }
+    }
+
+    do for k in old_keys {
+        when not new_snap.has(k) {
+            changed.append(k)
+        }
+    }
+
+    <- changed
+}
+
+/!
+  Watches a project and executes a callback function whenever source files change.
+  @param proj Project map.
+  @param on_change Callback function(changed_files).
+  @param max_iterations Optional max poll iterations (for testing), or Nothing for infinite.
+!/
+export function watch_project(proj, on_change, max_iterations) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    io.writeln(`[WATCH] Watching '` + manifest_map[`name`] + `' for changes in ` + root + `...`)
+    io.writeln(`[WATCH] Press Ctrl+C to stop.`)
+
+    let current_snap -> snapshot_project(root)
+    let iters -> 0
+
+    do while true {
+        when max_iterations != Nothing and iters >= max_iterations {
+            break
+        }
+        time.sleep(1.0)
+        let next_snap -> snapshot_project(root)
+        let changes -> diff_snapshots(current_snap, next_snap)
+
+        when changes.length > 0 {
+            io.writeln(``)
+            io.writeln(`[WATCH] Change detected in: ` + Str.join(changes, `, `))
+            on_change(changes)
+            current_snap -> next_snap
+        }
+
+        iters -> iters + 1
+    }
+}
+
+/!
+  Watch mode runner: auto-rebuilds and restarts the application on change.
+!/
+export function watch_and_run(proj, args, opts) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+
+    // Initial build & run
+    io.writeln(`[WATCH] Performing initial project build...`)
+    let b -> builder.build_project(proj, opts)
+    when b[`ok`] == true {
+        io.writeln(`[WATCH] Build succeeded. Starting process...`)
+        builder.run_project(proj, args, opts)
+    } or {
+        io.error(`[WATCH] Initial build failed: ` + Str.to_string(b[`error`]))
+    }
+
+    // Watch loop callback
+    let on_change -> function(changes) {
+        io.writeln(`[WATCH] Rebuilding project...`)
+        let rb -> builder.build_project(proj, opts)
+        when rb[`ok`] == true {
+            io.writeln(`[WATCH] Rebuild succeeded (` + Str.to_string(rb[`elapsed_ms`]) + ` ms). Running...`)
+            builder.run_project(proj, args, opts)
+        } or {
+            io.error(`[WATCH] Rebuild failed: ` + Str.to_string(rb[`error`]))
+        }
+    }
+
+    watch_project(proj, on_change, Nothing)
+}

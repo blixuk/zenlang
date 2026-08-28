@@ -1,0 +1,242 @@
+/!
+  Test suite for Zenlang developer tooling and project management suite.
+!/
+
+import zen.test.test as test
+import zen.tooling.manifest as manifest
+import zen.tooling.templates as templates
+import zen.tooling.project as project
+import zen.tooling.builder as builder
+import zen.tooling.watcher as watcher
+import zen.tooling.tester as tester
+import zen.tooling.todo as todo
+import zen.tooling.pkg as pkg
+import zen.tooling.publish as publish
+import zen.tooling.docgen as docgen
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.text.string as Str
+
+function test_manifest_comments() {
+    let raw -> `// Header comment\n{\n  "name": "demo", // inline comment\n  /* block comment */\n  /! doc comment !/\n  "version": "1.0.0"\n}`
+    let clean -> manifest.strip_comments(raw)
+    test.assert_true(not Str.contains(clean, `Header comment`), `strips line comments`)
+    test.assert_true(not Str.contains(clean, `block comment`), `strips block comments`)
+    test.assert_true(not Str.contains(clean, `doc comment`), `strips doc comments`)
+
+    let m -> manifest.parse_manifest(raw)
+    test.assert_equal(m[`name`], `demo`, `parses name`)
+    test.assert_equal(m[`version`], `1.0.0`, `parses version`)
+    test.assert_equal(m[`type`], `cli`, `default type is cli`)
+    <- true
+}
+
+function test_lockfile_roundtrip() {
+    let sample -> {
+        `version` -> `1.0`,
+        `packages` -> {
+            `zen-http` -> {
+                `source` -> `git:https://github.com/zenlang/zen-http.git`,
+                `commit` -> `a1b2c3d4e5`
+            }
+        }
+    }
+    let text -> manifest.stringify_lockfile(sample)
+    test.assert_true(Str.contains(text, `zen.lock`), `contains lock header`)
+    let parsed -> manifest.parse_lockfile(text)
+    test.assert_equal(parsed[`version`], `1.0`, `lock version`)
+    test.assert_true(parsed[`packages`].has(`zen-http`), `has package`)
+    <- true
+}
+
+function test_templates() {
+    let cli_src -> templates.get_cli_template(`my_cli`, `Test CLI App`)
+    test.assert_true(Str.contains(cli_src, `cli.Parser`), `cli template has parser`)
+    test.assert_true(Str.contains(cli_src, `my_cli`), `cli template has name`)
+
+    let tui_src -> templates.get_tui_template(`my_tui`, `Test TUI App`)
+    test.assert_true(Str.contains(tui_src, `canvas.Canvas`), `tui template has canvas`)
+
+    let lib_src -> templates.get_lib_template(`my_lib`, `Test Lib`)
+    test.assert_true(Str.contains(lib_src, `class My_libEngine`), `lib template has class`)
+
+    let svc_src -> templates.get_service_template(`my_svc`, `Test Service`)
+    test.assert_true(Str.contains(svc_src, `server.Server`), `service template has server`)
+    <- true
+}
+
+function test_version_bump() {
+    test.assert_equal(publish.bump_version_string(`0.1.0`, `patch`), `0.1.1`, `patch bump`)
+    test.assert_equal(publish.bump_version_string(`0.1.5`, `minor`), `0.2.0`, `minor bump`)
+    test.assert_equal(publish.bump_version_string(`0.2.4`, `major`), `1.0.0`, `major bump`)
+    <- true
+}
+
+function test_todo_scanner() {
+    let tmp_file -> `/tmp/test_todo_sample.zl`
+    let sample -> `// TODO: Implement feature X\nlet a -> 10\n// FIXME: Fix edge case bug\nlet b -> 20\n// NOTE: Useful detail\n`
+    file.write(tmp_file, sample)
+
+    let items -> todo.scan_file(tmp_file, Nothing)
+    test.assert_equal(items.length, 3, `scanned 3 items`)
+    test.assert_equal(items[0][`tag`], `TODO`, `first is TODO`)
+    test.assert_equal(items[1][`tag`], `FIXME`, `second is FIXME`)
+    test.assert_equal(items[2][`tag`], `NOTE`, `third is NOTE`)
+
+    let fixmes -> todo.scan_file(tmp_file, `FIXME`)
+    test.assert_equal(fixmes.length, 1, `filtered 1 fixme`)
+    file.remove(tmp_file)
+    <- true
+}
+
+function test_project_scaffolding_and_build() {
+    let test_dir -> `/tmp/zen_tooling_test_project`
+    when file.exists(test_dir) {
+        file.remove_tree(test_dir)
+    }
+
+    let init_res -> project.init_project(test_dir, `test_proj`, `cli`, `Test Project Description`)
+    test.assert_true(init_res[`ok`], `project init succeeded`)
+    test.assert_true(file.exists(path.join(test_dir, `.zbuild`)), `.zbuild created`)
+    test.assert_true(file.exists(path.join(test_dir, `src/main.zl`)), `src/main.zl created`)
+    test.assert_true(file.exists(path.join(test_dir, `tests/test_main.zl`)), `tests/test_main.zl created`)
+
+    let proj -> project.load_project(test_dir)
+    test.assert_true(proj[`ok`], `loaded project successfully`)
+    test.assert_equal(proj[`manifest`][`name`], `test_proj`, `loaded correct name`)
+
+    // Add & list dependencies
+    pkg.add_dependency(proj, `local_helper`, `path:./src`)
+    let reloaded -> project.load_project(test_dir)
+    test.assert_true(reloaded[`manifest`][`dependencies`].has(`local_helper`), `dependency added`)
+
+    // Run tests
+    let test_res -> tester.test_project(reloaded, Nothing)
+    test.assert_true(test_res[`ok`], `tests passed`)
+    test.assert_true(test_res[`passed`] > 0, `passed count > 0`)
+
+    // Scan todos
+    let todo_res -> todo.print_todos(reloaded, Nothing)
+    test.assert_true(todo_res[`count`] >= 0, `todo scan executed`)
+
+    // Generate documentation
+    let doc_res -> docgen.generate_docs(reloaded, `html`, Nothing)
+    test.assert_true(doc_res[`ok`], `doc generation succeeded`)
+    test.assert_true(file.exists(path.join(test_dir, `docs/API.md`)), `API.md exists`)
+    test.assert_true(file.exists(path.join(test_dir, `docs/html/index.html`)), `HTML doc exists`)
+
+    // Build project
+    let build_res -> builder.build_project(reloaded, { `release` -> false, `debug` -> false, `dump` -> true })
+    when build_res[`ok`] != true {
+        io.error(`[BUILD FAILED] ` + Str.to_string(build_res[`error`]))
+    }
+    test.assert_true(build_res[`ok`], `project build succeeded`)
+    when build_res[`ok`] == true {
+        test.assert_true(file.exists(build_res[`exe`]), `executable exists`)
+    }
+
+    // Run binary
+    let run_res -> builder.run_project(reloaded, [`--version`], Nothing)
+    test.assert_true(run_res[`ok`], `run succeeded`)
+
+    // Clean project
+    let clean_res -> builder.clean_project(reloaded)
+    test.assert_true(clean_res[`ok`], `clean succeeded`)
+    test.assert_true(not file.exists(path.join(test_dir, `build`)), `build directory removed`)
+
+    file.remove_tree(test_dir)
+    <- true
+}
+
+function test_dependency_graph() {
+    import zen.tooling.graph as graph
+    let test_dir -> `/tmp/zen_tooling_graph_test`
+    when file.exists(test_dir) {
+        file.remove_tree(test_dir)
+    }
+
+    let p -> project.init_project(test_dir, `graph_proj`, `cli`, `Graph test project`)
+    test.assert_true(p[`ok`], `init_project succeeded`)
+
+    let proj -> project.load_project(test_dir)
+    pkg.add_dependency(proj, `helper`, `path:./src`)
+    let reloaded -> project.load_project(test_dir)
+
+    // 1. Build and verify tree
+    let tree -> graph.build_dependency_tree(reloaded)
+    test.assert_equal(tree[`name`], `graph_proj`, `tree root name matches`)
+    test.assert_equal(tree[`dependencies`].length, 1, `tree has 1 direct dependency`)
+    test.assert_equal(tree[`dependencies`][0][`name`], `helper`, `dependency name is helper`)
+
+    // 2. Terminal tree rendering
+    let term_res -> graph.render_terminal_tree(reloaded)
+    test.assert_true(term_res[`ok`], `terminal tree rendered successfully`)
+    test.assert_equal(term_res[`direct`], 1, `1 direct dependency counted`)
+
+    // 3. HTML graph generation
+    let html_res -> graph.generate_html_graph(reloaded, Nothing)
+    test.assert_true(html_res[`ok`], `HTML graph generation succeeded`)
+    let html_file -> path.join(test_dir, `docs/html/graph.html`)
+    test.assert_true(file.exists(html_file), `graph.html file exists`)
+    let html_src -> file.read(html_file)
+    test.assert_true(Str.contains(html_src, `graph_proj`), `graph.html contains project name`)
+    test.assert_true(Str.contains(html_src, `<svg id="graph-svg"`), `graph.html contains SVG element`)
+    test.assert_true(Str.contains(html_src, `rawNodes`), `graph.html contains embedded data`)
+
+    file.remove_tree(test_dir)
+    <- true
+}
+
+function test_dashboard_model() {
+    import zen.tooling.dash as dash
+    import zen.ui.canvas as canvas
+    let test_dir -> `/tmp/zen_tooling_dash_test`
+    when file.exists(test_dir) {
+        file.remove_tree(test_dir)
+    }
+
+    let p -> project.init_project(test_dir, `dash_proj`, `cli`, `Dash test project`)
+    test.assert_true(p[`ok`], `init_project succeeded`)
+
+    let proj -> project.load_project(test_dir)
+
+    // 1. Initialize state
+    let state -> dash.init_dashboard_state(proj)
+    test.assert_equal(state[`name`], `dash_proj`, `dashboard state name matches`)
+    test.assert_true(state[`files`].length > 0, `scanned project files`)
+
+    // 2. Build & Test passes in dashboard model
+    dash.dash_run_build(state, {})
+    test.assert_true(state[`build_ok`], `dash build succeeded`)
+
+    dash.dash_run_tests(state)
+    test.assert_true(state[`test_ok`], `dash tests executed`)
+    test.assert_equal(state[`test_passed`], 1, `1 test passed in starter template`)
+
+    // 3. Canvas rendering
+    let c -> canvas.create(80, 24)
+    dash.render_dashboard(c, state)
+    let header_row -> canvas.row_string(c, 1)
+    test.assert_true(Str.contains(header_row, `ZENLANG DASHBOARD`), `canvas contains dashboard header`)
+    test.assert_true(Str.contains(header_row, `dash_proj`), `canvas contains project title`)
+
+    file.remove_tree(test_dir)
+    <- true
+}
+
+function main() {
+    let suite -> [
+        { `name` -> `test_manifest_comments`, `fn` -> test_manifest_comments },
+        { `name` -> `test_lockfile_roundtrip`, `fn` -> test_lockfile_roundtrip },
+        { `name` -> `test_templates`, `fn` -> test_templates },
+        { `name` -> `test_version_bump`, `fn` -> test_version_bump },
+        { `name` -> `test_todo_scanner`, `fn` -> test_todo_scanner },
+        { `name` -> `test_project_scaffolding_and_build`, `fn` -> test_project_scaffolding_and_build },
+        { `name` -> `test_dependency_graph`, `fn` -> test_dependency_graph },
+        { `name` -> `test_dashboard_model`, `fn` -> test_dashboard_model }
+    ]
+    let ok -> test.run_suite(`Zenlang Developer Tooling Suite`, suite)
+    when ok { <- 0 }
+    <- 1
+}

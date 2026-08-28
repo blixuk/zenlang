@@ -1,0 +1,18 @@
+scope MathConstants {
+    set E -> 2.71
+}
+
+function test_scopes() {
+    let x -> 1
+    {
+        let x -> 2
+        ! x == 2
+    }
+    ! x == 1
+    ! MathConstants.E == 2.71
+}
+
+function main() {
+    test_scopes()
+    io.write(`03_scopes passed!\n`)
+}

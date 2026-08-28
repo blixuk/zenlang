@@ -1,0 +1,65 @@
+import zen.crypto.hex as hex
+import zen.crypto.uuid as uuid
+import zen.test as test
+import zen.text.string as str
+
+function test_hex_encode_decode() {
+    let raw -> `Hello Zen!`
+    let encoded -> hex.encode(raw)
+    let pass -> test.assert_equal(encoded, `48656c6c6f205a656e21`, `hex encode check`)
+
+    let decoded -> hex.decode(encoded)
+    pass -> pass and test.assert_equal(decoded, raw, `hex decode check`)
+
+    // With 0x prefix
+    let decoded_prefix -> hex.decode(`0x48656c6c6f205a656e21`)
+    pass -> pass and test.assert_equal(decoded_prefix, raw, `hex decode with 0x prefix check`)
+
+    <- pass
+}
+
+function test_hexdump() {
+    let raw -> `Hello World!\n`
+    let dump -> hex.hexdump(raw)
+    let pass -> test.assert_true(str.contains(dump, `00000000`), `hexdump should contain offset`)
+    pass -> pass and test.assert_true(str.contains(dump, `48 65 6c 6c 6f`), `hexdump should contain byte hexes`)
+    pass -> pass and test.assert_true(str.contains(dump, `|Hello World!.|`), `hexdump should contain ascii column`)
+    <- pass
+}
+
+function test_uuid_v4() {
+    let id1 -> uuid.v4()
+    let id2 -> uuid.v4()
+
+    let pass -> test.assert_equal(str.length(id1), 36, `UUID v4 length should be 36`)
+    pass -> pass and test.assert_true(uuid.validate(id1), `generated UUID v4 should be valid`)
+    pass -> pass and test.assert_true(uuid.validate(id2), `generated UUID v4 #2 should be valid`)
+    pass -> pass and test.assert_false(id1 == id2, `consecutive UUIDs should be unique`)
+
+    // Version 4 check: 13th char (index 14) is '4'
+    pass -> pass and test.assert_equal(str.at(id1, 14), `4`, `UUID version should be 4`)
+
+    // Invalidation check
+    pass -> pass and test.assert_false(uuid.validate(`not-a-uuid`), `invalid string should fail validate`)
+    pass -> pass and test.assert_false(uuid.validate(`12345678-1234-1234-1234-12345678901z`), `non-hex chars should fail`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Crypto.hex_encode_decode`, `fn` -> test_hex_encode_decode},
+        {`name` -> `Crypto.hexdump`, `fn` -> test_hexdump},
+        {`name` -> `Crypto.uuid_v4`, `fn` -> test_uuid_v4}
+    ]
+
+    <- test.run_suite(`Crypto Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

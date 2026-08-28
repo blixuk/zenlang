@@ -1,0 +1,41 @@
+import zen.memory as memory
+import zen.test as test
+
+function test_function_api() {
+    let arena -> memory.create_arena(1024)
+    memory.push_arena(arena)
+    memory.reset_arena(arena)
+    memory.pop_arena()
+    memory.free_arena(arena)
+    <- test.assert_true(true, `memory function API should be callable`)
+}
+
+function test_object_api() {
+    let arena -> memory.Arena(1024)
+    arena.push()
+    arena.reset()
+    arena.pop()
+    arena.free()
+
+    // Region() is a plain function alias of create_arena (not a class constructor).
+    let region -> memory.create_arena(256)
+    memory.free_arena(region)
+    <- test.assert_true(true, `memory object API should be callable`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Memory.function_api`, `fn` -> test_function_api},
+        {`name` -> `Memory.object_api`, `fn` -> test_object_api}
+    ]
+
+    <- test.run_suite(`Memory Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

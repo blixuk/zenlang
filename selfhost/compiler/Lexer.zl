@@ -1,0 +1,674 @@
+/!
+  Self-hosted Lexer — Stage 1 parity with bootstrap/Lexer.
+  High-performance index cursor model with ASCII fast-paths and zero rest-string allocations.
+  API: Lexer(src).tokenize() → list of token maps (Tok.token).
+!/
+
+from compiler.Token import TokenType
+import compiler.Token as Token
+import zen.text.string as Str
+
+let LEX_SRC -> 0
+let LEX_POS -> 1
+let LEX_LEN -> 2
+let LEX_LINE -> 3
+let LEX_COL -> 4
+let LEX_TOKENS -> 5
+
+let LEX -> [``, 0, 0, 1, 1, []]
+
+/!
+  Emit one token map.
+!/
+function _tok(kind, start, length, line, column, end_line, end_column) {
+    // TokenType.X as-is (int native / variant interpret). No kind_id here.
+    <- Token.token(kind, start, length, line, column, end_line, end_column)
+}
+
+/!
+ Push a token onto LEX.tokens and rebind. Local `tokens.append` is dropped
+ under native `-g` in nested when arms (UAM / no write-back).
+ !/
+function tok_push(kind, start, length, sl, sc, el, ec) {
+    let tokens -> LEX[LEX_TOKENS]
+    when tokens == Nothing {
+        tokens -> []
+    }
+    let grown -> tokens.append(_tok(kind, start, length, sl, sc, el, ec))
+    when grown != Nothing {
+        LEX[LEX_TOKENS] -> grown
+    } or {
+        LEX[LEX_TOKENS] -> tokens
+    }
+    <- true
+}
+
+function number_kind(is_dec) {
+    when is_dec == true {
+        <- TokenType.DECIMAL
+    }
+    <- TokenType.INTEGER
+}
+
+function _is_digit(c) {
+    when c == `` { <- false }
+    // Digit-class string (not `0`/`9` range): Codegen looks_int("0") is true,
+    // so backtick digits would become C integers in the self-built compiler.
+    <- Str.contains(`0123456789`, c)
+}
+
+function _is_alpha(c) {
+    when c == `` { <- false }
+    <- (c >= `a` and c <= `z`) or (c >= `A` and c <= `Z`) or c == `_`
+}
+
+function _is_alnum(c) {
+    when c == `` { <- false }
+    <- _is_alpha(c) or _is_digit(c)
+}
+
+function _ch_nl() {
+    let s -> `
+`
+    <- s
+}
+
+function _ch_tab() {
+    let s -> `X	Y`
+    <- Str.at(s, 1)
+}
+
+function _ch_cr() {
+    <- _ch_nl()
+}
+
+function _is_ws(c) {
+    <- c == ` ` or c == _ch_tab() or c == _ch_nl() or c == `\r`
+}
+
+/!
+ Zero-allocation keyword matcher operating directly on source buffer spans.
+ !/
+function match_keyword(src, s, len) {
+    when len == 1 {
+        let c0 -> Str.at(src, s)
+        when c0 == `V` or c0 == `L` or c0 == `S` or c0 == `T` or c0 == `M` { <- TokenType.TYPE }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 2 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        when c0 == `d` and c1 == `o` { <- TokenType.KEYWORD }
+        when c0 == `i` and c1 == `n` { <- TokenType.KEYWORD }
+        when c0 == `a` and c1 == `s` { <- TokenType.AS }
+        when c0 == `i` and c1 == `s` { <- TokenType.IS }
+        when c0 == `o` and c1 == `r` { <- TokenType.OR }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 3 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        when c0 == `a` and c1 == `n` and c2 == `d` { <- TokenType.AND }
+        when c0 == `n` and c1 == `o` and c2 == `t` { <- TokenType.NOT }
+        when c0 == `x` and c1 == `o` and c2 == `r` { <- TokenType.XOR }
+        when c0 == `n` and c1 == `o` and c2 == `r` { <- TokenType.NOR }
+        when c0 == `l` and c1 == `e` and c2 == `t` { <- TokenType.KEYWORD }
+        when c0 == `s` and c1 == `e` and c2 == `t` { <- TokenType.KEYWORD }
+        when c0 == `f` and c1 == `o` and c2 == `r` { <- TokenType.KEYWORD }
+        when c0 == `u` and c1 == `s` and c2 == `e` { <- TokenType.IMPORT }
+        when c0 == `M` and c1 == `a` and c2 == `p` { <- TokenType.MAP }
+        when c0 == `S` and c1 == `e` and c2 == `t` { <- TokenType.SET }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 4 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        when c0 == `w` and c1 == `h` and c2 == `e` and c3 == `n` { <- TokenType.KEYWORD }
+        when (c0 == `t` or c0 == `T`) and c1 == `r` and c2 == `u` and c3 == `e` { <- TokenType.BOOLEAN }
+        when c0 == `f` and c1 == `r` and c2 == `o` and c3 == `m` { <- TokenType.FROM }
+        when c0 == `a` and c1 == `u` and c2 == `t` and c3 == `o` { <- TokenType.AUTO }
+        when c0 == `t` and c1 == `a` and c2 == `s` and c3 == `k` { <- TokenType.TASK }
+        when c0 == `w` and c1 == `i` and c2 == `t` and c3 == `h` { <- TokenType.WITH }
+        when c0 == `c` and c1 == `a` and c2 == `s` and c3 == `e` { <- TokenType.CASE }
+        when c0 == `t` and c1 == `y` and c2 == `p` and c3 == `e` { <- TokenType.KEYWORD }
+        when c0 == `n` and c1 == `a` and c2 == `n` and c3 == `d` { <- TokenType.NAND }
+        when c0 == `x` and c1 == `n` and c2 == `o` and c3 == `r` { <- TokenType.XNOR }
+        when c0 == `V` and c1 == `o` and c2 == `i` and c3 == `d` { <- TokenType.VOID }
+        when c0 == `L` and c1 == `i` and c2 == `s` and c3 == `t` { <- TokenType.LIST }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 5 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        when (c0 == `f` or c0 == `F`) and c1 == `a` and c2 == `l` and c3 == `s` and c4 == `e` { <- TokenType.BOOLEAN }
+        when c0 == `w` and c1 == `h` and c2 == `i` and c3 == `l` and c4 == `e` { <- TokenType.KEYWORD }
+        when c0 == `u` and c1 == `n` and c2 == `t` and c3 == `i` and c4 == `l` { <- TokenType.KEYWORD }
+        when c0 == `b` and c1 == `r` and c2 == `e` and c3 == `a` and c4 == `k` { <- TokenType.KEYWORD }
+        when c0 == `r` and c1 == `a` and c2 == `i` and c3 == `s` and c4 == `e` { <- TokenType.RAISE }
+        when c0 == `c` and c1 == `h` and c2 == `e` and c3 == `c` and c4 == `k` { <- TokenType.CHECK }
+        when c0 == `d` and c1 == `e` and c2 == `f` and c3 == `e` and c4 == `r` { <- TokenType.DEFER }
+        when c0 == `a` and c1 == `w` and c2 == `a` and c3 == `i` and c4 == `t` { <- TokenType.AWAIT }
+        when c0 == `s` and c1 == `c` and c2 == `o` and c3 == `p` and c4 == `e` { <- TokenType.SCOPE }
+        when c0 == `o` and c1 == `w` and c2 == `n` and c3 == `e` and c4 == `d` { <- TokenType.KEYWORD }
+        when c0 == `c` and c1 == `l` and c2 == `a` and c3 == `s` and c4 == `s` { <- TokenType.KEYWORD }
+        when c0 == `T` and c1 == `u` and c2 == `p` and c3 == `l` and c4 == `e` { <- TokenType.TUPLE }
+        when c0 == `C` and c1 == `l` and c2 == `a` and c3 == `s` and c4 == `s` { <- TokenType.CLASS }
+        when c0 == `E` and c1 == `r` and c2 == `r` and c3 == `o` and c4 == `r` { <- TokenType.TYPE }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 6 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        let c5 -> Str.at(src, s + 5)
+        when c0 == `r` and c1 == `e` and c2 == `t` and c3 == `u` and c4 == `r` and c5 == `n` { <- TokenType.KEYWORD }
+        when c0 == `i` and c1 == `m` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.IMPORT }
+        when c0 == `e` and c1 == `x` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.EXPORT }
+        when c0 == `e` and c1 == `x` and c2 == `t` and c3 == `e` and c4 == `n` and c5 == `d` { <- TokenType.EXTENDS }
+        when c0 == `p` and c1 == `a` and c2 == `r` and c3 == `e` and c4 == `n` and c5 == `t` { <- TokenType.PARENT }
+        when c0 == `s` and c1 == `e` and c2 == `l` and c3 == `f` and len == 4 { <- TokenType.SELF }
+        when c0 == `s` and c1 == `o` and c2 == `u` and c3 == `r` and c4 == `c` and c5 == `e` { <- TokenType.KEYWORD }
+        when c0 == `t` and c1 == `a` and c2 == `r` and c3 == `g` and c4 == `e` and c5 == `t` { <- TokenType.KEYWORD }
+        when c0 == `S` and c1 == `t` and c2 == `r` and c3 == `i` and c4 == `n` and c5 == `g` { <- TokenType.STRING }
+        when c0 == `V` and c1 == `e` and c2 == `c` and c3 == `t` and c4 == `o` and c5 == `r` { <- TokenType.VECTOR }
+        when c0 == `O` and c1 == `p` and c2 == `t` and c3 == `i` and c4 == `o` and c5 == `n` { <- TokenType.TYPE }
+        when c0 == `R` and c1 == `e` and c2 == `s` and c3 == `u` and c4 == `l` and c5 == `t` { <- TokenType.TYPE }
+        when c0 == `o` and c1 == `b` and c2 == `j` and c3 == `e` and c4 == `c` and c5 == `t` { <- TokenType.KEYWORD }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 7 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        let c5 -> Str.at(src, s + 5)
+        let c6 -> Str.at(src, s + 6)
+        when (c0 == `n` or c0 == `N`) and c1 == `o` and c2 == `t` and c3 == `h` and c4 == `i` and c5 == `n` and c6 == `g` { <- TokenType.NOTHING }
+        when (c0 == `d` or c0 == `D`) and c1 == `e` and c2 == `f` and c3 == `a` and c4 == `u` and c5 == `l` and c6 == `t` { <- TokenType.DEFAULT }
+        when c0 == `e` and c1 == `x` and c2 == `t` and c3 == `e` and c4 == `n` and c5 == `d` and c6 == `s` { <- TokenType.EXTENDS }
+        when c0 == `I` and c1 == `n` and c2 == `t` and c3 == `e` and c4 == `g` and c5 == `e` and c6 == `r` { <- TokenType.INTEGER }
+        when c0 == `D` and c1 == `e` and c2 == `c` and c3 == `i` and c4 == `m` and c5 == `a` and c6 == `l` { <- TokenType.DECIMAL }
+        when c0 == `B` and c1 == `o` and c2 == `o` and c3 == `l` and c4 == `e` and c5 == `a` and c6 == `n` { <- TokenType.BOOLEAN }
+        when c0 == `V` and c1 == `a` and c2 == `r` and c3 == `i` and c4 == `a` and c5 == `n` and c6 == `t` { <- TokenType.VARIANT }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 8 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        let c5 -> Str.at(src, s + 5)
+        let c6 -> Str.at(src, s + 6)
+        let c7 -> Str.at(src, s + 7)
+        when c0 == `f` and c1 == `u` and c2 == `n` and c3 == `c` and c4 == `t` and c5 == `i` and c6 == `o` and c7 == `n` { <- TokenType.KEYWORD }
+        when c0 == `b` and c1 == `o` and c2 == `r` and c3 == `r` and c4 == `o` and c5 == `w` and c6 == `e` and c7 == `d` { <- TokenType.KEYWORD }
+        when c0 == `c` and c1 == `o` and c2 == `n` and c3 == `t` and c4 == `i` and c5 == `n` and c6 == `u` and c7 == `e` { <- TokenType.KEYWORD }
+        when c0 == `F` and c1 == `u` and c2 == `n` and c3 == `c` and c4 == `t` and c5 == `i` and c6 == `o` and c7 == `n` { <- TokenType.FUNCTION }
+        when c0 == `I` and c1 == `t` and c2 == `e` and c3 == `r` and c4 == `a` and c5 == `t` and c6 == `o` and c7 == `r` { <- TokenType.ITERATOR }
+        when c0 == `I` and c1 == `t` and c2 == `e` and c3 == `r` and c4 == `a` and c5 == `b` and c6 == `l` and c7 == `e` { <- TokenType.ITERABLE }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 9 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        let c5 -> Str.at(src, s + 5)
+        let c6 -> Str.at(src, s + 6)
+        let c7 -> Str.at(src, s + 7)
+        let c8 -> Str.at(src, s + 8)
+        when c0 == `s` and c1 == `t` and c2 == `r` and c3 == `u` and c4 == `c` and c5 == `t` and c6 == `u` and c7 == `r` and c8 == `e` { <- TokenType.KEYWORD }
+        when c0 == `S` and c1 == `t` and c2 == `r` and c3 == `u` and c4 == `c` and c5 == `t` and c6 == `u` and c7 == `r` and c8 == `e` { <- TokenType.STRUCTURE }
+        when c0 == `C` and c1 == `h` and c2 == `a` and c3 == `r` and c4 == `a` and c5 == `c` and c6 == `t` and c7 == `e` and c8 == `r` { <- TokenType.RUNE }
+        <- TokenType.IDENTIFIER
+    }
+    when len == 10 {
+        let c0 -> Str.at(src, s)
+        let c1 -> Str.at(src, s + 1)
+        let c2 -> Str.at(src, s + 2)
+        let c3 -> Str.at(src, s + 3)
+        let c4 -> Str.at(src, s + 4)
+        let c5 -> Str.at(src, s + 5)
+        let c6 -> Str.at(src, s + 6)
+        let c7 -> Str.at(src, s + 7)
+        let c8 -> Str.at(src, s + 8)
+        let c9 -> Str.at(src, s + 9)
+        when c0 == `e` and c1 == `n` and c2 == `u` and c3 == `m` and c4 == `e` and c5 == `r` and c6 == `a` and c7 == `t` and c8 == `o` and c9 == `r` { <- TokenType.KEYWORD }
+        when c0 == `E` and c1 == `n` and c2 == `u` and c3 == `m` and c4 == `e` and c5 == `r` and c6 == `a` and c7 == `t` and c8 == `o` and c9 == `r` { <- TokenType.ENUMERATOR }
+        <- TokenType.IDENTIFIER
+    }
+    <- TokenType.IDENTIFIER
+}
+
+function _peek() {
+    when LEX[LEX_POS] >= LEX[LEX_LEN] {
+        <- ``
+    }
+    <- Str.at(LEX[LEX_SRC], LEX[LEX_POS])
+}
+
+function _peek_at(offset) {
+    let p -> LEX[LEX_POS] + offset
+    when p >= LEX[LEX_LEN] or p < 0 {
+        <- ``
+    }
+    <- Str.at(LEX[LEX_SRC], p)
+}
+
+function _advance() {
+    when LEX[LEX_POS] >= LEX[LEX_LEN] {
+        <- ``
+    }
+    let ch -> Str.at(LEX[LEX_SRC], LEX[LEX_POS])
+    LEX[LEX_POS] -> LEX[LEX_POS] + 1
+    when ch == `\n` {
+        LEX[LEX_LINE] -> LEX[LEX_LINE] + 1
+        LEX[LEX_COL] -> 1
+    } or {
+        LEX[LEX_COL] -> LEX[LEX_COL] + 1
+    }
+    <- ch
+}
+
+function escape_piece(esc) {
+    when esc == `n` {
+        <- _ch_nl()
+    }
+    when esc == `r` {
+        <- _ch_cr()
+    }
+    when esc == `t` {
+        <- _ch_tab()
+    }
+    when esc == `\\` {
+        <- `\\`
+    }
+    when esc == `\`` {
+        <- `\``
+    }
+    when esc == `"` {
+        <- `"`
+    }
+    <- esc
+}
+
+/!
+  Free function entry: tokenize source text → list of tokens.
+!/
+function tokenize_source(src) {
+    LEX[LEX_TOKENS] -> []
+    when src == Nothing or src == `` {
+        tok_push(TokenType.EOF, 0, 0, 1, 1, 1, 1)
+        <- LEX[LEX_TOKENS]
+    }
+
+    LEX[LEX_SRC] -> src
+    LEX[LEX_POS] -> 0
+    LEX[LEX_LEN] -> Str.length(src)
+    LEX[LEX_LINE] -> 1
+    LEX[LEX_COL] -> 1
+
+    let done -> false
+
+    do while done == false {
+        // Skip whitespace
+        do while LEX[LEX_POS] < LEX[LEX_LEN] and _is_ws(_peek()) {
+            _advance()
+        }
+
+        when LEX[LEX_POS] >= LEX[LEX_LEN] {
+            tok_push(TokenType.EOF, LEX[LEX_POS], 0, LEX[LEX_LINE], LEX[LEX_COL], LEX[LEX_LINE], LEX[LEX_COL])
+            done -> true
+        } or {
+            let sl -> LEX[LEX_LINE]
+            let sc -> LEX[LEX_COL]
+            let start_p -> LEX[LEX_POS]
+            let ch -> _advance()
+
+            // 1. Single character delimiters
+            when ch == `(` { tok_push(TokenType.LEFT_PAREN, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `)` { tok_push(TokenType.RIGHT_PAREN, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `{` { tok_push(TokenType.LEFT_BRACE, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `}` { tok_push(TokenType.RIGHT_BRACE, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `[` { tok_push(TokenType.LEFT_BRACKET, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `]` { tok_push(TokenType.RIGHT_BRACKET, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `,` { tok_push(TokenType.COMMA, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `;` { tok_push(TokenType.SEMICOLON, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `?` { tok_push(TokenType.CHECK_SYMBOL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `~` { tok_push(TokenType.BITWISE_NOT, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+
+            // 2. Dot / range / ellipsis
+            or when ch == `.` {
+                when _peek() == `.` {
+                    _advance()
+                    when _peek() == `.` {
+                        _advance()
+                        tok_push(TokenType.ELLIPSIS, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or when _peek() == `=` {
+                        _advance()
+                        tok_push(TokenType.RANGE_INCLUSIVE, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        tok_push(TokenType.RANGE, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
+                } or {
+                    tok_push(TokenType.DOT, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 3. Minus / arrow / decrement
+            or when ch == `-` {
+                when _peek() == `>` {
+                    _advance()
+                    tok_push(TokenType.ASSIGNMENT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `-` {
+                    _advance()
+                    tok_push(TokenType.DECREMENT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.SUBTRACTION, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 4. Plus / increment
+            or when ch == `+` {
+                when _peek() == `+` {
+                    _advance()
+                    tok_push(TokenType.INCREMENT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.ADDITION, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 5. Star / exponentiation
+            or when ch == `*` {
+                when _peek() == `*` {
+                    _advance()
+                    tok_push(TokenType.EXPONENTIATION, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.MULTIPLICATION, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 6. Slash: //, /* */, /!, /
+            or when ch == `/` {
+                when _peek() == `/` {
+                    _advance()
+                    do while _peek() != `` and _peek() != `\n` {
+                        _advance()
+                    }
+                } or when _peek() == `*` {
+                    _advance()
+                    let closed -> false
+                    do while _peek() != `` and closed == false {
+                        when _peek() == `*` and _peek_at(1) == `/` {
+                            _advance()
+                            _advance()
+                            closed -> true
+                        } or {
+                            _advance()
+                        }
+                    }
+                } or when _peek() == `!` {
+                    _advance()
+                    let closed -> false
+                    do while _peek() != `` and closed == false {
+                        when _peek() == `!` and _peek_at(1) == `/` {
+                            _advance()
+                            _advance()
+                            closed -> true
+                            tok_push(TokenType.DOC_COMMENT, start_p, LEX[LEX_POS] - start_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                        } or {
+                            _advance()
+                        }
+                    }
+                } or {
+                    tok_push(TokenType.DIVISION, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 7. Equal / double equal
+            or when ch == `=` {
+                when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.EQUAL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 8. Exclamation / not equal / bitwise nor / nand / xnor / assert
+            or when ch == `!` {
+                when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.NOT_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `!` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_NOT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `|` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_NOR, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `&` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_NAND, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `^` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_XNOR, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.ASSERT_SYMBOL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 9. Less than / <= / return / << / <<=
+            or when ch == `<` {
+                when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.LESS_THAN_OR_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `-` {
+                    _advance()
+                    tok_push(TokenType.RETURN, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `<` {
+                    _advance()
+                    when _peek() == `=` {
+                        _advance()
+                        tok_push(TokenType.LEFT_SHIFT_EQUAL, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        tok_push(TokenType.BITWISE_LEFT_SHIFT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
+                } or {
+                    tok_push(TokenType.LESS_THAN, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 10. Greater than / >= / >> / >>=
+            or when ch == `>` {
+                when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.GREATER_THAN_OR_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `>` {
+                    _advance()
+                    when _peek() == `=` {
+                        _advance()
+                        tok_push(TokenType.RIGHT_SHIFT_EQUAL, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        tok_push(TokenType.BITWISE_RIGHT_SHIFT, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
+                } or {
+                    tok_push(TokenType.GREATER_THAN, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 11. Colon / type let
+            or when ch == `:` {
+                when _peek() == `>` {
+                    _advance()
+                    tok_push(TokenType.TYPE_LET, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.TYPE_SET, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 12. Percent / %= / %%
+            or when ch == `%` {
+                when _peek() == `%` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_MOD, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.MOD_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.MODULO, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 13. Caret / ^= / ^^
+            or when ch == `^` {
+                when _peek() == `^` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_XOR, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.XOR_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.RAISE_SYMBOL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 14. Ampersand / &= / &&
+            or when ch == `&` {
+                when _peek() == `&` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_AND, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.AND_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.BITWISE_AND, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 15. Pipe / |= / ||
+            or when ch == `|` {
+                when _peek() == `|` {
+                    _advance()
+                    tok_push(TokenType.BITWISE_OR, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `=` {
+                    _advance()
+                    tok_push(TokenType.OR_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.BITWISE_OR, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 16. Strings
+            or when ch == `\`` or ch == `"` {
+                let quote -> ch
+                let closed -> false
+                let is_err -> false
+                do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {
+                    let c -> _advance()
+                    when c == quote {
+                        closed -> true
+                    } or when c == `\\` {
+                        when LEX[LEX_POS] >= LEX[LEX_LEN] {
+                            is_err -> true
+                            closed -> true
+                        } or {
+                            _advance()
+                        }
+                    }
+                }
+                let len_p -> LEX[LEX_POS] - start_p
+                when closed and not is_err {
+                    tok_push(TokenType.STRING, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 17. Character / Rune 'c'
+            or when ch == `'` {
+                when LEX[LEX_POS] >= LEX[LEX_LEN] {
+                    tok_push(TokenType.ERROR_UNTERMINATED_CHARACTER_EOF, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    let val -> _advance()
+                    when val == `\\` and LEX[LEX_POS] < LEX[LEX_LEN] {
+                        _advance()
+                    }
+                    when _peek() == `'` {
+                        _advance()
+                        let len_p -> LEX[LEX_POS] - start_p
+                        tok_push(TokenType.RUNE, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        let len_p -> LEX[LEX_POS] - start_p
+                        tok_push(TokenType.ERROR_UNTERMINATED_CHARACTER, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
+                }
+            }
+
+            // 18. Digits / Numbers
+            or when _is_digit(ch) {
+                do while _is_digit(_peek()) {
+                    _advance()
+                }
+                let is_dec -> false
+                when _peek() == `.` and _peek_at(1) != `.` and _is_digit(_peek_at(1)) {
+                    is_dec -> true
+                    _advance() // consume '.'
+                    do while _is_digit(_peek()) {
+                        _advance()
+                    }
+                }
+                let len_p -> LEX[LEX_POS] - start_p
+                tok_push(number_kind(is_dec), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+            }
+
+            // 19. Alpha / Identifiers / Keywords
+            or when _is_alpha(ch) {
+                do while _is_alnum(_peek()) {
+                    _advance()
+                }
+                let len_p -> LEX[LEX_POS] - start_p
+                let k -> match_keyword(LEX[LEX_SRC], start_p, len_p)
+                tok_push(k, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+            }
+
+            // Fallback unexpected character
+            or {
+                tok_push(TokenType.ERROR_UNEXPECTED_CHARACTER, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+            }
+        }
+    }
+
+    <- LEX[LEX_TOKENS]
+}
+
+// Alias for module-level use
+function tokenize(src) {
+    <- tokenize_source(src)
+}
+
+/!
+  Class wrapper matching historical Lexer(src).tokenize() API.
+  Uses map state so field reads stay dual-path safe under -g.
+!/
+class Lexer {
+    let src
+
+    function init(src) {
+        self.src -> src
+    }
+
+    function tokenize() {
+        <- tokenize_source(self.src)
+    }
+}

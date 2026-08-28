@@ -1,0 +1,185 @@
+/!
+  zen.io.file dual-path: read/write, list_dir, walk, mkdir, copy, find.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_file.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_file.zl
+!/
+
+use zen.io.file as file
+use zen.io.path as path
+use zen.test as test
+
+let test_path -> `tests/lib/.tmp_file_module.txt`
+let class_path -> `tests/lib/.tmp_file_class.txt`
+let tree_root -> `tests/lib/.tmp_fs_tree`
+
+function cleanup() {
+    when file.exists(test_path) {
+        file.remove(test_path)
+    }
+    when file.exists(class_path) {
+        file.remove(class_path)
+    }
+    when file.exists(tree_root) {
+        file.remove_tree(tree_root)
+    }
+}
+
+function test_file_functions() {
+    cleanup()
+    file.write(test_path, `alpha`)
+    file.append(test_path, `\nbeta`)
+
+    let lines -> file.read_lines(test_path)
+    let pass -> test.assert_true(file.exists(test_path), `write should create the file`)
+    pass -> pass and test.assert_true(file.is_file(test_path), `is_file should recognize regular files`)
+    pass -> pass and test.assert_true(file.is_dir(`tests/lib`), `is_dir should recognize directories`)
+    pass -> pass and test.assert_true(file.exists(`tests/lib`), `exists should be true for directories`)
+    pass -> pass and test.assert_equal(file.read(test_path), `alpha\nbeta`, `read should return the full file contents`)
+    pass -> pass and test.assert_equal(lines[0], `alpha`, `read_lines should return the first line`)
+    pass -> pass and test.assert_equal(lines[1], `beta`, `read_lines should return the second line`)
+    cleanup()
+    <- pass
+}
+
+function test_file_class() {
+    cleanup()
+    let writer -> file.File(class_path, `w`)
+    writer.open()
+    writer.write(`class payload`)
+    writer.close()
+
+    let reader -> file.File(class_path, `r`)
+    reader.open()
+    let content -> reader.read()
+    reader.close()
+
+    let pass -> test.assert_equal(content, `class payload`, `File class should read what it wrote`)
+    cleanup()
+    <- pass
+}
+
+function test_list_files() {
+    // lib/zen/sys has nested .zl modules — list_files is iterative (native-safe)
+    let root -> `lib/zen/sys`
+    let files -> file.list_files(root)
+    let pass -> test.assert_true(files.length >= 3, `list_files should find several modules under lib/zen/sys`)
+
+    let has_term -> false
+    let i -> 0
+    do while i < files.length {
+        let p -> files[i]
+        when __builtin_string.contains(p, `term.zl`) {
+            has_term -> true
+        }
+        i -> i + 1
+    }
+    pass -> pass and test.assert_true(has_term, `list_files should include term.zl`)
+    <- pass
+}
+
+function test_walk_callback() {
+    // walk + captured list append must work under interpret and -g
+    let root -> `lib/zen/sys`
+    let seen -> []
+    file.walk(root, function(p, is_dir) {
+        when is_dir == false {
+            seen.append(p)
+        }
+    })
+    let pass -> test.assert_true(seen.length >= 3, `walk callback should collect files`)
+    let has_term -> false
+    let i -> 0
+    do while i < seen.length {
+        when __builtin_string.contains(seen[i], `term.zl`) {
+            has_term -> true
+        }
+        i -> i + 1
+    }
+    pass -> pass and test.assert_true(has_term, `walk should reach term.zl`)
+    <- pass
+}
+
+function test_list_dir_sorted() {
+    let names -> file.list_dir(`lib/zen/sys`)
+    let pass -> test.assert_true(names.length >= 3, `list_dir non-empty`)
+    // Sorted ascending
+    let i -> 1
+    do while i < names.length {
+        pass -> pass and test.assert_true(names[i - 1] <= names[i], `list_dir sorted`)
+        i -> i + 1
+    }
+    // Missing path → empty list (not error)
+    let missing -> file.list_dir(`tests/lib/.no_such_dir_ever`)
+    pass -> pass and test.assert_equal(missing.length, 0, `missing list_dir is empty`)
+    <- pass
+}
+
+function test_mkdir_copy_find() {
+    cleanup()
+    let nested -> path.join(tree_root, `sub/deep`)
+    let pass -> test.assert_true(file.mkdir_p(nested), `mkdir_p nested`)
+    pass -> pass and test.assert_true(file.is_dir(nested), `nested is dir`)
+    pass -> pass and test.assert_true(file.is_dir(tree_root), `root is dir`)
+
+    let f1 -> path.join(tree_root, `a.txt`)
+    let f2 -> path.join(nested, `b.zl`)
+    let f3 -> path.join(tree_root, `sub/c.zl`)
+    file.write(f1, `hello`)
+    file.write(f2, `fn`)
+    file.write(f3, `more`)
+
+    let copy_dst -> path.join(tree_root, `a_copy.txt`)
+    pass -> pass and test.assert_true(file.copy(f1, copy_dst), `copy ok`)
+    pass -> pass and test.assert_equal(file.read(copy_dst), `hello`, `copy contents`)
+
+    let dirs -> file.list_dirs(tree_root)
+    pass -> pass and test.assert_true(dirs.length >= 1, `list_dirs has sub`)
+
+    let tops -> file.list_file_names(tree_root)
+    pass -> pass and test.assert_true(tops.length >= 2, `top-level files`)
+
+    let zls -> file.find_files(tree_root, `.zl`)
+    pass -> pass and test.assert_equal(zls.length, 2, `find_files .zl count`)
+
+    // walk_depth 0: only immediate children of tree_root
+    let depth0 -> []
+    file.walk_depth(tree_root, 0, function(p, is_dir) {
+        depth0.append(p)
+    })
+    // Should include a.txt, a_copy.txt, sub — not deep files
+    let has_deep -> false
+    let i -> 0
+    do while i < depth0.length {
+        when __builtin_string.contains(depth0[i], `b.zl`) {
+            has_deep -> true
+        }
+        i -> i + 1
+    }
+    pass -> pass and test.assert_false(has_deep, `depth 0 excludes deep files`)
+    pass -> pass and test.assert_true(depth0.length >= 2, `depth 0 has entries`)
+
+    cleanup()
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `File.functions`, `fn` -> test_file_functions},
+        {`name` -> `File.class`, `fn` -> test_file_class},
+        {`name` -> `File.list_files`, `fn` -> test_list_files},
+        {`name` -> `File.walk_callback`, `fn` -> test_walk_callback},
+        {`name` -> `File.list_dir_sorted`, `fn` -> test_list_dir_sorted},
+        {`name` -> `File.mkdir_copy_find`, `fn` -> test_mkdir_copy_find}
+    ]
+
+    <- test.run_suite(`File Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

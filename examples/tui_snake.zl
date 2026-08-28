@@ -1,0 +1,285 @@
+/!
+  Terminal Snake — zen.ui.app + canvas + tick (performance-tuned).
+
+  Run:
+    python3 bootstrap/Zen.py examples/tui_snake.zl
+    python3 bootstrap/Zen.py -g examples/tui_snake.zl
+
+  Keys: wasd / arrows  ·  q quit  ·  r restart (after death)
+
+  Headless smoke:
+    ZEN_TUI_HEADLESS=1 python3 bootstrap/Zen.py -g examples/tui_snake.zl
+!/
+
+use zen.ui.app as app
+use zen.ui.canvas as canvas
+use zen.sys.process as process
+use zen.text.string as Str
+use zen.io as io
+
+function cell(x, y) {
+    <- { `x` -> x, `y` -> y }
+}
+
+function snake_init() {
+    let body -> [cell(5, 5), cell(4, 5), cell(3, 5)]
+    <- {
+        `quit` -> false,
+        `dirty` -> true,
+        `width` -> 40,
+        `height` -> 16,
+        `gw` -> 36,
+        `gh` -> 12,
+        `body` -> body,
+        `dir_x` -> 1,
+        `dir_y` -> 0,
+        `food` -> cell(12, 7),
+        `score` -> 0,
+        `alive` -> true,
+        `seed` -> 42,
+        `tick_n` -> 0
+    }
+}
+
+function rnd(model) {
+    let s -> (model[`seed`] * 1103515245 + 12345) % 2147483647
+    when s < 0 { s -> 0 - s }
+    model[`seed`] -> s
+    <- s
+}
+
+function place_food(model) {
+    let gw -> model[`gw`]
+    let gh -> model[`gh`]
+    let tries -> 0
+    do while tries < 50 {
+        let r -> rnd(model)
+        let fx -> r % gw
+        let r2 -> rnd(model)
+        let fy -> r2 % gh
+        let hit -> false
+        let body -> model[`body`]
+        let i -> 0
+        do while i < body.length {
+            when body[i][`x`] == fx and body[i][`y`] == fy {
+                hit -> true
+            }
+            i -> i + 1
+        }
+        when hit == false {
+            model[`food`] -> cell(fx, fy)
+            <- model
+        }
+        tries -> tries + 1
+    }
+    <- model
+}
+
+function occupies(body, x, y) {
+    let i -> 0
+    do while i < body.length {
+        when body[i][`x`] == x and body[i][`y`] == y {
+            <- true
+        }
+        i -> i + 1
+    }
+    <- false
+}
+
+function step_snake(model) {
+    when model[`alive`] == false { <- model }
+    let body -> model[`body`]
+    let head -> body[0]
+    let nx -> head[`x`] + model[`dir_x`]
+    let ny -> head[`y`] + model[`dir_y`]
+    let gw -> model[`gw`]
+    let gh -> model[`gh`]
+    when nx < 0 or ny < 0 or nx >= gw or ny >= gh {
+        model[`alive`] -> false
+        model[`dirty`] -> true
+        <- model
+    }
+    when occupies(body, nx, ny) {
+        model[`alive`] -> false
+        model[`dirty`] -> true
+        <- model
+    }
+    let nh -> cell(nx, ny)
+    let food -> model[`food`]
+    let grew -> false
+    when nx == food[`x`] and ny == food[`y`] {
+        grew -> true
+        model[`score`] -> model[`score`] + 1
+    }
+    let nb -> [nh]
+    let lim -> body.length
+    when grew == false {
+        lim -> body.length - 1
+    }
+    let i -> 0
+    do while i < lim {
+        nb.append(body[i])
+        i -> i + 1
+    }
+    model[`body`] -> nb
+    when grew {
+        model -> place_food(model)
+    }
+    model[`dirty`] -> true
+    <- model
+}
+
+function set_dir(model, dx, dy) {
+    when model[`dir_x`] + dx == 0 and model[`dir_y`] + dy == 0 {
+        <- model
+    }
+    model[`dir_x`] -> dx
+    model[`dir_y`] -> dy
+    // direction change alone doesn't need repaint until next move
+    <- model
+}
+
+function update(model, msg) {
+    when app.is_quit(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    when app.is_resize(msg) {
+        model[`width`] -> msg[`width`]
+        model[`height`] -> msg[`height`]
+        let gw -> msg[`width`] - 4
+        let gh -> msg[`height`] - 4
+        when gw < 10 { gw -> 10 }
+        when gh < 6 { gh -> 6 }
+        model[`gw`] -> gw
+        model[`gh`] -> gh
+        model[`dirty`] -> true
+        <- model
+    }
+    when app.is_default_quit_key(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    when app.key_char(msg, `r`) or app.key_char(msg, `R`) {
+        when model[`alive`] == false {
+            let m2 -> snake_init()
+            m2[`width`] -> model[`width`]
+            m2[`height`] -> model[`height`]
+            m2[`gw`] -> model[`gw`]
+            m2[`gh`] -> model[`gh`]
+            m2[`dirty`] -> true
+            <- m2
+        }
+        <- model
+    }
+    when app.key_char(msg, `w`) or app.key_name(msg, `up`) {
+        <- set_dir(model, 0, 0 - 1)
+    }
+    when app.key_char(msg, `s`) or app.key_name(msg, `down`) {
+        <- set_dir(model, 0, 1)
+    }
+    when app.key_char(msg, `a`) or app.key_name(msg, `left`) {
+        <- set_dir(model, 0 - 1, 0)
+    }
+    when app.key_char(msg, `d`) or app.key_name(msg, `right`) {
+        <- set_dir(model, 1, 0)
+    }
+    when app.is_tick(msg) {
+        // Move every tick (snappier); paint only when step_snake marks dirty
+        <- step_snake(model)
+    }
+    <- model
+}
+
+/!
+  Lean view: no layout tree rebuild, no full widget stack.
+  Fixed chrome rows + field fill — much cheaper per frame.
+!/
+function view(model) {
+    let tw -> model[`width`]
+    let th -> model[`height`]
+    when tw < 20 { tw -> 40 }
+    when th < 10 { th -> 16 }
+
+    let gw -> model[`gw`]
+    let gh -> model[`gh`]
+    // field origin (leave row 0 header, last row footer)
+    let ox -> 1
+    let oy -> 1
+    when ox + gw >= tw { gw -> tw - ox - 1 }
+    when oy + gh >= th - 1 { gh -> th - oy - 2 }
+    when gw < 4 { gw -> 4 }
+    when gh < 4 { gh -> 4 }
+
+    let c -> canvas.create(tw, th)
+    // header
+    canvas.fill_rect(c, 0, 0, tw, 1, ` `, `black`, `cyan`)
+    let title -> ` Snake score=` + Str.to_string(model[`score`])
+    when model[`alive`] == false {
+        title -> title + ` DEAD r=restart`
+    }
+    canvas.draw_text(c, 0, 0, title, `black`, `cyan`)
+    // footer
+    canvas.fill_rect(c, 0, th - 1, tw, 1, ` `, `black`, `white`)
+    canvas.draw_text(c, 0, th - 1, ` wasd/arrows  q quit `, `black`, `white`)
+    // field background
+    canvas.fill_rect(c, ox, oy, gw, gh, ` `, `white`, `black`)
+    canvas.draw_rect(c, ox - 1, oy - 1, gw + 2, gh + 2, `#`, `white`, `black`)
+
+    let f -> model[`food`]
+    when f[`x`] >= 0 and f[`x`] < gw and f[`y`] >= 0 and f[`y`] < gh {
+        canvas.set_cell(c, ox + f[`x`], oy + f[`y`], `*`, `red`, `black`)
+    }
+
+    let body -> model[`body`]
+    let i -> 0
+    do while i < body.length {
+        let p -> body[i]
+        when p[`x`] >= 0 and p[`x`] < gw and p[`y`] >= 0 and p[`y`] < gh {
+            let ch -> `o`
+            when i == 0 { ch -> `@` }
+            canvas.set_cell(c, ox + p[`x`], oy + p[`y`], ch, `green`, `black`)
+        }
+        i -> i + 1
+    }
+    <- c
+}
+
+function headless_smoke() {
+    let m -> snake_init()
+    let msgs -> [
+        app.msg_resize(40, 16),
+        app.msg_char(`d`),
+        app.msg_tick(0),
+        app.msg_tick(1),
+        app.msg_tick(2),
+        app.msg_tick(3),
+        app.msg_tick(4),
+        app.msg_tick(5),
+        app.msg_char(`q`)
+    ]
+    m -> app.run_msgs(m, msgs, update)
+    let c -> view(m)
+    io.writeln(`snake headless score=` + Str.to_string(m[`score`]) + ` alive=` + Str.to_string(m[`alive`]) + ` quit=` + Str.to_string(m[`quit`]))
+    io.writeln(`canvas ` + Str.to_string(c[`width`]) + `x` + Str.to_string(c[`height`]))
+    when m[`quit`] {
+        <- 0
+    }
+    <- 1
+}
+
+function main() {
+    let flag -> Str.trim(process.shell(`printenv ZEN_TUI_HEADLESS || true`))
+    when flag == `1` or flag == `true` {
+        <- headless_smoke()
+    }
+
+    // poll_ms paces both input wait and move rate (~12–15 moves/s feels good)
+    let final -> app.run(snake_init, update, view, {
+        `poll_ms` -> 70,
+        `tick` -> true,
+        `resize_every` -> 20
+    })
+    io.writeln(`final score=` + Str.to_string(final[`score`]))
+    <- 0
+}

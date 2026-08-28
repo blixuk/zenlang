@@ -1,0 +1,26 @@
+function fib(n: Integer): Integer {
+    when n <= 1 {
+        <- n
+    }
+    <- fib(n - 1) + fib(n - 2)
+}
+
+function compute() {
+    let total -> 0
+    let i -> 0
+    do while i < 10000 {
+        total -> total + (i % 10)
+        i -> i + 1
+    }
+    <- total
+}
+
+function main() {
+    let f -> fib(22)
+    let c -> compute()
+    let s -> `Zen` + `lang`
+    when f == 17711 and c == 45000 and s == `Zenlang` {
+        <- 0
+    }
+    <- 1
+}

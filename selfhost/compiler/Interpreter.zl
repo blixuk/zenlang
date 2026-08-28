@@ -1,0 +1,2767 @@
+/!
+ AST interpreter — endgame Phase A + D.
+ Walks Stage 2 map AST; dual-path free functions + map env.
+ interpret_file loads the Stage 3 import graph.
+ Phase D: classes/inheritance, closures (by-value capture), enums/`is`,
+ with + software arena stack, memory builtins.
+ Return uses module flags (not value tags) for dual-path safety.
+ !/
+
+import compiler.Parser as Parser
+import compiler.Module.GraphBuilder as GraphBuilder
+import compiler.Module.Resolver as Resolver
+import compiler.Token as Tok
+from compiler.Token import TokenType
+import compiler.AST as AST
+import zen.io.io as io
+import zen.io.path as Path
+import zen.text.string as Str
+import zen.time.time as Time
+import zen.sys.sys as Sys
+
+// Module state: error + return signal.
+let I -> {
+    `error` -> Nothing,
+    `returning` -> false,
+    `ret_val` -> Nothing
+}
+
+// Loaded module export maps, keyed by resolved path (Phase A1).
+let MODS -> {
+    `exports` -> {}
+}
+
+// Unique Default sentinel — compare with ==, never .has on primitives.
+let DEFAULT_SENTINEL -> { `kind` -> `DefaultSentinel` }
+
+// Class and enumerator registries (Phase D).
+let TYPES -> {
+    `classes` -> {},
+    `enums` -> {}
+}
+
+// Software arena stack (Phase D3) — depth only; matches with push/pop.
+let MEM -> {
+    `depth` -> 0
+}
+
+function set_error(msg) {
+    I[`error`] -> msg
+}
+
+function clear_error() {
+    I[`error`] -> Nothing
+    I[`returning`] -> false
+    I[`ret_val`] -> Nothing
+}
+
+function reset_types() {
+    TYPES[`classes`] -> {}
+    TYPES[`enums`] -> {}
+    MEM[`depth`] -> 0
+}
+
+function get_error() {
+    <- I[`error`]
+}
+
+function signal_return(val) {
+    I[`returning`] -> true
+    I[`ret_val`] -> val
+}
+
+function is_returning() {
+    when I[`returning`] == true {
+        <- true
+    }
+    <- false
+}
+
+function take_return() {
+    let v -> I[`ret_val`]
+    I[`returning`] -> false
+    I[`ret_val`] -> Nothing
+    <- v
+}
+
+function kind_str(node) {
+    when node == Nothing {
+        <- ``
+    }
+    <- Str.to_string(AST.ast_kind(node))
+}
+
+function is_kind(node, kind) {
+    when node == Nothing {
+        <- false
+    }
+    when AST.ast_kind(node) == kind {
+        <- true
+    }
+    <- false
+}
+
+// ---------- Environment (map-backed; outer not parent — reserved) ----------
+
+function env_create(outer) {
+    <- {
+        `outer` -> outer,
+        `values` -> {}
+    }
+}
+
+function env_define(env, name, value, mutable) {
+    let vals -> env[`values`]
+    vals[name] -> {
+        `value` -> value,
+        `mutable` -> mutable
+    }
+    env[`values`] -> vals
+    <- env
+}
+
+function env_lookup(env, name) {
+    when env == Nothing {
+        <- Nothing
+    }
+    let vals -> env[`values`]
+    when vals.has(name) {
+        let sym -> vals[name]
+        <- sym
+    }
+    <- env_lookup(env[`outer`], name)
+}
+
+function env_get(env, name) {
+    let sym -> env_lookup(env, name)
+    when sym == Nothing {
+        set_error(`Undefined variable '` + Str.to_string(name) + `'`)
+        <- Nothing
+    }
+    <- sym[`value`]
+}
+
+function env_assign(env, name, value) {
+    let sym -> env_lookup(env, name)
+    when sym == Nothing {
+        set_error(`Undefined variable '` + Str.to_string(name) + `' in assign`)
+        <- false
+    }
+    when sym[`mutable`] == false {
+        set_error(`Cannot assign to immutable '` + Str.to_string(name) + `'`)
+        <- false
+    }
+    <- env_assign_walk(env, name, value)
+}
+
+function env_assign_walk(env, name, value) {
+    when env == Nothing {
+        <- false
+    }
+    let vals -> env[`values`]
+    when vals.has(name) {
+        let cell -> vals[name]
+        cell[`value`] -> value
+        vals[name] -> cell
+        env[`values`] -> vals
+        <- true
+    }
+    <- env_assign_walk(env[`outer`], name, value)
+}
+
+function make_fn(name, params, body, closure) {
+    <- {
+        `kind` -> `fn`,
+        `name` -> name,
+        `params` -> params,
+        `body` -> body,
+        `closure` -> closure
+    }
+}
+
+function map_kind(v) {
+    when v == Nothing or is_primitive(v) {
+        <- ``
+    }
+    // Prefer member kind over has: lists crash on has under bootstrap.
+    // Bootstrap kind is the runtime type unless the map stores a kind field.
+    // Native -g kind is map-field lookup only (Nothing on lists).
+    let k -> v.kind
+    when k == Nothing or k == `` {
+        <- ``
+    }
+    when k == `List` or k == `String` or k == `Integer` or k == `Decimal` or k == `Boolean` or k == `Nothing` or k == `Function` or k == `Map` or k == `Set` or k == `Object` or k == `Tuple` {
+        <- ``
+    }
+    <- Str.to_string(k)
+}
+
+function is_class_val(v) {
+    when map_kind(v) == `class` {
+        <- true
+    }
+    <- false
+}
+
+function is_enum_val(v) {
+    when map_kind(v) == `enum` {
+        <- true
+    }
+    <- false
+}
+
+function is_variant_val(v) {
+    when map_kind(v) == `variant` {
+        <- true
+    }
+    <- false
+}
+
+function is_instance(v) {
+    when v == Nothing or is_primitive(v) {
+        <- false
+    }
+    when map_kind(v) != `` {
+        <- false
+    }
+    let rt -> v.kind
+    when rt == `List` or rt == `String` or rt == `Integer` or rt == `Decimal` or rt == `Boolean` or rt == `Function` or rt == `Set` {
+        <- false
+    }
+    when v.has(`__type`) {
+        <- true
+    }
+    <- false
+}
+
+function is_parent_ref(v) {
+    when map_kind(v) == `parent_ref` {
+        <- true
+    }
+    <- false
+}
+
+function is_bound_method(v) {
+    when map_kind(v) == `bound_method` {
+        <- true
+    }
+    <- false
+}
+
+function is_fn_val(v) {
+    when map_kind(v) == `fn` {
+        <- true
+    }
+    <- false
+}
+
+function is_arena_val(v) {
+    when map_kind(v) == `arena` {
+        <- true
+    }
+    <- false
+}
+
+function mem_push() {
+    MEM[`depth`] -> MEM[`depth`] + 1
+}
+
+function mem_pop() {
+    let d -> MEM[`depth`]
+    when d > 0 {
+        MEM[`depth`] -> d - 1
+    }
+}
+
+function eval_class_stmt(node, env) {
+    let name -> Str.to_string(AST.class_name(node))
+    let base_name -> AST.class_base(node)
+    let methods -> {}
+    let meths -> AST.class_methods(node)
+    when meths != Nothing {
+        methods -> class_bind_methods(meths, 0, env, {})
+    }
+    let fields -> class_field_names(AST.class_members(node), 0, [])
+    let cls -> {
+        `kind` -> `class`,
+        `name` -> name,
+        `base` -> base_name,
+        `methods` -> methods,
+        `fields` -> fields,
+        `members` -> AST.class_members(node)
+    }
+    TYPES[`classes`][name] -> cls
+    env -> env_define(env, name, cls, false)
+    <- env
+}
+
+function class_bind_methods(meths, i, env, methods) {
+    when meths == Nothing or i >= meths.length {
+        <- methods
+    }
+    let meth -> meths[i]
+    when is_kind(meth, AST.K_FUNCTION) {
+        let mname -> Str.to_string(AST.fn_name(meth))
+        let fn -> make_fn(mname, AST.fn_params(meth), AST.fn_body(meth), env)
+        methods[mname] -> fn
+    }
+    <- class_bind_methods(meths, i + 1, env, methods)
+}
+
+function class_field_names(members, i, acc) {
+    when members == Nothing or i >= members.length {
+        <- acc
+    }
+    let m -> members[i]
+    when is_kind(m, AST.K_LET) {
+        acc.append(Str.to_string(AST.let_name(m)))
+    }
+    <- class_field_names(members, i + 1, acc)
+}
+
+function class_by_name(name) {
+    let tab -> TYPES[`classes`]
+    when tab == Nothing {
+        <- Nothing
+    }
+    when tab.has(name) {
+        <- tab[name]
+    }
+    <- Nothing
+}
+
+function lookup_method(cls, name) {
+    when cls == Nothing {
+        <- Nothing
+    }
+    let methods -> cls[`methods`]
+    when methods != Nothing and methods.has(name) {
+        <- methods[name]
+    }
+    let base_name -> cls[`base`]
+    when base_name != Nothing and base_name != `` {
+        <- lookup_method(class_by_name(base_name), name)
+    }
+    <- Nothing
+}
+
+function bound_method_from_instance(obj, name) {
+    let cls -> obj[`__cls`]
+    when cls == Nothing {
+        cls -> class_by_name(obj[`__type`])
+    }
+    let fn -> lookup_method(cls, name)
+    when fn == Nothing {
+        <- Nothing
+    }
+    <- { `kind` -> `bound_method`, `fn` -> fn, `self` -> obj }
+}
+
+function bound_method_from_class(cname, name, self_obj) {
+    let fn -> lookup_method(class_by_name(cname), name)
+    when fn == Nothing {
+        <- Nothing
+    }
+    <- { `kind` -> `bound_method`, `fn` -> fn, `self` -> self_obj }
+}
+
+function class_new(cls, args) {
+    let inst -> {
+        `__type` -> cls[`name`],
+        `__cls` -> cls
+    }
+    when cls[`base`] != Nothing and cls[`base`] != `` {
+        inst[`__base`] -> cls[`base`]
+    }
+    inst -> fill_fields_chain(cls, inst)
+    let init_fn -> lookup_method(cls, `init`)
+    when init_fn != Nothing {
+        let _r -> call_method(init_fn, inst, args)
+        when get_error() != Nothing {
+            <- inst
+        }
+    }
+    <- inst
+}
+
+function fill_fields_chain(cls, inst) {
+    when cls == Nothing {
+        <- inst
+    }
+    let base_name -> cls[`base`]
+    when base_name != Nothing and base_name != `` {
+        inst -> fill_fields_chain(class_by_name(base_name), inst)
+    }
+    let fields -> cls[`fields`]
+    <- fill_fields(fields, 0, inst)
+}
+
+function fill_fields(fields, i, inst) {
+    when fields == Nothing {
+        <- inst
+    }
+    when i >= fields.length {
+        <- inst
+    }
+    let n -> fields[i]
+    when not inst.has(n) {
+        inst[n] -> Nothing
+    }
+    <- fill_fields(fields, i + 1, inst)
+}
+
+function call_method(fn, self_obj, args) {
+    let closure -> fn[`closure`]
+    let frame -> env_create(closure)
+    frame -> env_define(frame, `self`, self_obj, true)
+    when self_obj.has(`__base`) {
+        let pref -> {
+            `kind` -> `parent_ref`,
+            `self` -> self_obj,
+            `base` -> self_obj[`__base`]
+        }
+        frame -> env_define(frame, `parent`, pref, false)
+    }
+    let params -> fn[`params`]
+    when params != Nothing {
+        let i -> 0
+        let n -> params.length
+        let an -> args.length
+        do while i < n {
+            let p -> params[i]
+            let pval -> Nothing
+            when i < an {
+                pval -> args[i]
+            }
+            let pname -> Str.to_string(AST.param_name(p))
+            frame -> env_define(frame, pname, pval, true)
+            i -> i + 1
+        }
+    }
+    let body -> fn[`body`]
+    when body == Nothing {
+        <- Nothing
+    }
+    let result -> Nothing
+    when is_kind(body, AST.K_BLOCK) {
+        let stmts -> AST.block_stmts(body)
+        when stmts != Nothing {
+            result -> eval_block_stmts(stmts, 0, frame, Nothing)
+        }
+    } or {
+        result -> eval_stmt(body, frame)
+    }
+    when is_returning() {
+        <- take_return()
+    }
+    <- result
+}
+
+function eval_enum_stmt(node, env) {
+    let name -> Str.to_string(AST.enum_name(node))
+    let members -> {}
+    let ms -> AST.enum_members(node)
+    when ms != Nothing {
+        members -> enum_bind_members(ms, 0, name, {})
+    }
+    let e -> {
+        `kind` -> `enum`,
+        `name` -> name,
+        `members` -> members
+    }
+    TYPES[`enums`][name] -> e
+    env -> env_define(env, name, e, false)
+    <- env
+}
+
+function enum_bind_members(ms, i, ename, members) {
+    when ms == Nothing or i >= ms.length {
+        <- members
+    }
+    let m -> ms[i]
+    let mname -> Str.to_string(AST.enum_mem_name(m))
+    members[mname] -> {
+        `kind` -> `variant`,
+        `enum` -> ename,
+        `tag` -> mname,
+        `data` -> Nothing
+    }
+    <- enum_bind_members(ms, i + 1, ename, members)
+}
+
+function variant_construct(unit, args) {
+    <- {
+        `kind` -> `variant`,
+        `enum` -> unit[`enum`],
+        `tag` -> unit[`tag`],
+        `data` -> args
+    }
+}
+
+function match_enum_payload(pat, v, lookup_env, bind_env) {
+    when not is_variant_val(v) {
+        <- false
+    }
+    let callee -> AST.call_callee(pat)
+    let want -> eval_expr(callee, lookup_env)
+    when get_error() != Nothing {
+        <- false
+    }
+    when not is_variant_val(want) {
+        <- false
+    }
+    when v[`enum`] != want[`enum`] or v[`tag`] != want[`tag`] {
+        <- false
+    }
+    let arg_nodes -> AST.call_args(pat)
+    let data -> v[`data`]
+    when data == Nothing {
+        data -> []
+    }
+    <- match_enum_binds(arg_nodes, data, bind_env, 0)
+}
+
+function match_enum_binds(arg_nodes, data, bind_env, i) {
+    when arg_nodes == Nothing {
+        <- true
+    }
+    when i >= arg_nodes.length {
+        <- true
+    }
+    let a -> arg_nodes[i]
+    let got -> Nothing
+    when i < data.length {
+        got -> data[i]
+    }
+    when is_kind(a, AST.K_VARIABLE) {
+        bind_env -> env_define(bind_env, Str.to_string(AST.var_name(a)), got, true)
+        <- match_enum_binds(arg_nodes, data, bind_env, i + 1)
+    }
+    <- match_enum_binds(arg_nodes, data, bind_env, i + 1)
+}
+
+function eval_with_stmt(node, env) {
+    let res -> eval_expr(AST.with_expr(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let is_arena -> is_arena_val(res)
+    when is_arena == true {
+        mem_push()
+    }
+    let child -> env_create(env)
+    let alias -> AST.with_alias(node)
+    when alias != Nothing {
+        let aname -> Str.to_string(alias)
+        child -> env_define(child, aname, res, false)
+    }
+    let result -> Nothing
+    when AST.with_body(node) != Nothing {
+        result -> eval_stmt(AST.with_body(node), child)
+    }
+    when is_arena == true {
+        mem_pop()
+    }
+    <- result
+}
+
+function snapshot_fn_env(params, body, env) {
+    let excludes -> exclude_param_names(params, 0, {})
+    let names -> collect_free_names(body, excludes, [])
+    let snap -> env_create(Nothing)
+    snap -> bind_captures(names, 0, env, snap)
+    <- snap
+}
+
+function exclude_param_names(params, i, excludes) {
+    when params == Nothing {
+        <- excludes
+    }
+    when i >= params.length {
+        <- excludes
+    }
+    let p -> params[i]
+    excludes[Str.to_string(AST.param_name(p))] -> true
+    <- exclude_param_names(params, i + 1, excludes)
+}
+
+function acc_has(acc, nm) {
+    let i -> 0
+    let n -> acc.length
+    while i < n {
+        when acc[i] == nm {
+            <- true
+        }
+        i -> i + 1
+    }
+    <- false
+}
+
+function bind_captures(names, i, env, snap) {
+    when names == Nothing {
+        <- snap
+    }
+    when i >= names.length {
+        <- snap
+    }
+    let nm -> names[i]
+    let cell -> env_lookup(env, nm)
+    when cell != Nothing {
+        snap -> env_define(snap, nm, cell[`value`], false)
+    }
+    <- bind_captures(names, i + 1, env, snap)
+}
+
+function collect_free_names(node, excludes, acc) {
+    when node == Nothing {
+        <- acc
+    }
+    let k -> AST.ast_kind(node)
+    when k == AST.K_VARIABLE {
+        let nm -> Str.to_string(AST.var_name(node))
+        when not excludes.has(nm) {
+            when not acc_has(acc, nm) {
+                acc.append(nm)
+            }
+        }
+        <- acc
+    }
+    when k == AST.K_FUNCTION or k == AST.K_FUNC_EXPR {
+        let en2 -> exclude_param_names(AST.fn_params(node), 0, {})
+        en2[`__outer_excludes`] -> excludes
+        <- collect_free_names(AST.fn_body(node), en2, acc)
+    }
+    when k == AST.K_LET {
+        acc -> collect_free_names(AST.let_val(node), excludes, acc)
+        excludes[Str.to_string(AST.let_name(node))] -> true
+        <- acc
+    }
+    when k == AST.K_BLOCK {
+        <- collect_free_names_list(AST.block_stmts(node), excludes, acc)
+    }
+    when k == AST.K_CALL {
+        acc -> collect_free_names(AST.call_callee(node), excludes, acc)
+        <- collect_free_names_list(AST.call_args(node), excludes, acc)
+    }
+    when k == AST.K_BINARY or k == AST.K_LOGICAL {
+        acc -> collect_free_names(AST.bin_left(node), excludes, acc)
+        <- collect_free_names(AST.bin_right(node), excludes, acc)
+    }
+    when k == AST.K_UNARY or k == AST.K_GROUPING {
+        <- collect_free_names(AST.un_right(node), excludes, acc)
+    }
+    when k == AST.K_GET {
+        <- collect_free_names(AST.mem_obj(node), excludes, acc)
+    }
+    when k == AST.K_SET {
+        acc -> collect_free_names(AST.set_obj(node), excludes, acc)
+        <- collect_free_names(AST.set_val(node), excludes, acc)
+    }
+    when k == AST.K_INDEX {
+        acc -> collect_free_names(AST.idx_obj(node), excludes, acc)
+        <- collect_free_names(AST.idx_expr(node), excludes, acc)
+    }
+    when k == AST.K_INDEX_ASSIGN {
+        acc -> collect_free_names(AST.idx_assign_obj(node), excludes, acc)
+        acc -> collect_free_names(AST.idx_assign_expr(node), excludes, acc)
+        <- collect_free_names(AST.idx_assign_val(node), excludes, acc)
+    }
+    when k == AST.K_LIST {
+        <- collect_free_names_list(AST.list_elems(node), excludes, acc)
+    }
+    when k == AST.K_RETURN or k == AST.K_ASSIGN or k == AST.K_REASSIGN {
+        <- collect_free_names(AST.ret_val(node), excludes, acc)
+    }
+    when k == AST.K_EXPR_STMT or k == AST.K_ASSERT or k == AST.K_CHECK {
+        <- collect_free_names(AST.expr_stmt_expr(node), excludes, acc)
+    }
+    when k == AST.K_WHEN {
+        <- collect_free_names_list(AST.when_cases(node), excludes, acc)
+    }
+    when k == AST.K_CASE {
+        acc -> collect_free_names(AST.case_cond(node), excludes, acc)
+        <- collect_free_names(AST.case_body(node), excludes, acc)
+    }
+    when k == AST.K_WHILE or k == AST.K_DO_WHILE {
+        acc -> collect_free_names(AST.while_cond(node), excludes, acc)
+        <- collect_free_names(AST.while_body(node), excludes, acc)
+    }
+    when k == AST.K_FOR {
+        acc -> collect_free_names(AST.for_iter(node), excludes, acc)
+        let en2 -> {
+            `__outer_excludes` -> excludes
+        }
+        en2[Str.to_string(AST.for_var(node))] -> true
+        <- collect_free_names(AST.for_body(node), en2, acc)
+    }
+    when k == AST.K_IS {
+        acc -> collect_free_names(AST.is_expr_val(node), excludes, acc)
+        <- collect_free_names(AST.is_expr_pat(node), excludes, acc)
+    }
+    when k == AST.K_WITH {
+        acc -> collect_free_names(AST.with_expr(node), excludes, acc)
+        <- collect_free_names(AST.with_body(node), excludes, acc)
+    }
+    <- acc
+}
+
+function collect_free_names_list(lst, excludes, acc) {
+    when lst == Nothing {
+        <- acc
+    }
+    <- collect_free_names_at(lst, 0, excludes, acc)
+}
+
+function collect_free_names_at(lst, i, excludes, acc) {
+    when i >= lst.length {
+        <- acc
+    }
+    acc -> collect_free_names(lst[i], excludes, acc)
+    <- collect_free_names_at(lst, i + 1, excludes, acc)
+}
+
+function names_add(acc, nm) {
+    let i -> 0
+    let n -> acc.length
+    do while i < n {
+        when acc[i] == nm {
+            <- acc
+        }
+        i -> i + 1
+    }
+    <- list_push(acc, nm)
+}
+
+// ---------- Public API ----------
+
+/!
+ Interpret source text. Returns { ok, value, error }.
+ Calls main() when defined; otherwise returns last top-level result.
+ !/
+function interpret_source(src) {
+    clear_error()
+    reset_types()
+    let prog -> Parser.parse_source(src)
+    when prog == Nothing {
+        <- {
+            `ok` -> false,
+            `value` -> Nothing,
+            `error` -> `parse error`
+        }
+    }
+    <- interpret_program(prog)
+}
+
+function interpret_file(path) {
+    clear_error()
+    reset_types()
+    MODS[`exports`] -> {}
+    let want -> Sys.get_env(`ZEN_PROFILE`) == `1`
+    let t_all -> Time.monotonic()
+    let src -> __builtin_file.read(path)
+    when src == Nothing {
+        <- {
+            `ok` -> false,
+            `value` -> Nothing,
+            `error` -> `cannot read ` + Str.to_string(path)
+        }
+    }
+    when not GraphBuilder.source_may_import(src) {
+        let t_load -> Time.monotonic()
+        let r0 -> load_module_file(path, true)
+        when want == true {
+            io.writeln(`profile load ` + Str.to_string((Time.monotonic() - t_load) * 1000) + ` ms`)
+            io.writeln(`profile total ` + Str.to_string((Time.monotonic() - t_all) * 1000) + ` ms`)
+        }
+        <- r0
+    }
+    let t_graph -> Time.monotonic()
+    let order -> GraphBuilder.compilation_order(path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
+    when want == true {
+        io.writeln(`profile graph ` + Str.to_string((Time.monotonic() - t_graph) * 1000) + ` ms`)
+    }
+    when order == Nothing {
+        <- load_module_file(path, true)
+    }
+    let n -> order.length
+    when n == 0 {
+        <- load_module_file(path, true)
+    }
+    load_graph_deps(path, order, 0, n)
+    let t_load -> Time.monotonic()
+    let r1 -> load_module_file(path, true)
+    when want == true {
+        io.writeln(`profile load ` + Str.to_string((Time.monotonic() - t_load) * 1000) + ` ms`)
+        io.writeln(`profile total ` + Str.to_string((Time.monotonic() - t_all) * 1000) + ` ms`)
+    }
+    <- r1
+}
+
+function load_graph_deps(entry_path, order, i, n) {
+    when i >= n {
+        <- Nothing
+    }
+    let p -> order[i]
+    when not path_is_entry(p, entry_path) {
+        load_module_file(p, false)
+    }
+    <- load_graph_deps(entry_path, order, i + 1, n)
+}
+
+function interpret_program(prog) {
+    clear_error()
+    let global -> env_prelude()
+    <- eval_program_in(prog, global, true, Nothing)
+}
+
+function env_prelude() {
+    let global -> env_create(Nothing)
+    global -> env_define(global, `true`, true, false)
+    global -> env_define(global, `false`, false, false)
+    global -> env_define(global, `True`, true, false)
+    global -> env_define(global, `False`, false, false)
+    global -> env_define(global, `Nothing`, Nothing, false)
+    global -> env_define(global, `__builtin_string`, make_builtin_mod(`string`), false)
+    global -> env_define(global, `__builtin_file`, make_builtin_mod(`file`), false)
+    global -> env_define(global, `__builtin_io`, make_builtin_mod(`io`), false)
+    global -> env_define(global, `__builtin_output`, make_builtin_mod(`output`), false)
+    // Bootstrap injects bare `io` / `output` without an import (tests/01–06).
+    global -> env_define(global, `io`, make_builtin_mod(`io`), false)
+    global -> env_define(global, `IO`, make_builtin_mod(`io`), false)
+    global -> env_define(global, `output`, make_builtin_mod(`output`), false)
+    global -> env_define(global, `__builtin_memory`, make_builtin_mod(`memory`), false)
+    <- global
+}
+
+function make_builtin_mod(prefix) {
+    <- {
+        `kind` -> `builtin_mod`,
+        `prefix` -> prefix
+    }
+}
+
+function make_builtin(prefix, name) {
+    <- {
+        `kind` -> `builtin`,
+        `name` -> Str.to_string(prefix) + `.` + Str.to_string(name)
+    }
+}
+
+function is_builtin_mod(obj) {
+    when map_kind(obj) == `builtin_mod` {
+        <- true
+    }
+    <- false
+}
+
+function is_builtin_fn(obj) {
+    when map_kind(obj) == `builtin` {
+        <- true
+    }
+    <- false
+}
+
+function path_is_entry(path, entry_path) {
+    when path == entry_path {
+        <- true
+    }
+    let a -> Str.to_string(path)
+    let b -> Str.to_string(entry_path)
+    when a == `` or b == `` {
+        <- false
+    }
+    when Str.ends_with(a, b) or Str.ends_with(b, a) {
+        <- true
+    }
+    <- false
+}
+
+function pick_entry_result(is_entry, r, prev) {
+    when is_entry {
+        <- r
+    }
+    when prev == Nothing {
+        <- r
+    }
+    <- prev
+}
+
+/!
+ Load modules in compilation order. Deps first; entry `main` is the result.
+ !/
+function interpret_graph(entry_path, order, i, n, entry_result) {
+    when i >= n {
+        when entry_result == Nothing {
+            <- {`ok` -> true, `value` -> 0, `error` -> Nothing}
+        }
+        <- entry_result
+    }
+    when get_error() != Nothing {
+        <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
+    }
+    let path -> order[i]
+    let is_entry -> path_is_entry(path, entry_path)
+    let r -> load_module_file(path, is_entry)
+    when r[`ok`] != true {
+        <- r
+    }
+    let next_entry -> pick_entry_result(is_entry, r, entry_result)
+    <- interpret_graph(entry_path, order, i + 1, n, next_entry)
+}
+
+function load_module_file(path, is_entry) {
+    let prog -> GraphBuilder.parse_cached(path)
+    when prog == Nothing {
+        <- {
+            `ok` -> false,
+            `value` -> Nothing,
+            `error` -> `cannot read ` + Str.to_string(path)
+        }
+    }
+    let env -> env_prelude()
+    env -> bind_imports(AST.prog_stmts(prog), env, path)
+    when get_error() != Nothing {
+        <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
+    }
+    <- eval_program_in(prog, env, is_entry, path)
+}
+
+function eval_program_in(prog, env, call_main, path) {
+    let stmts -> AST.prog_stmts(prog)
+    when stmts == Nothing {
+        remember_exports(path, {})
+        when call_main != true {
+            <- {`ok` -> true, `value` -> Nothing, `error` -> Nothing}
+        }
+        <- call_entry_main(env, Nothing)
+    }
+    env -> declare_fns(stmts, 0, env)
+    let last -> run_toplevel(stmts, 0, env, Nothing)
+    when get_error() != Nothing {
+        <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
+    }
+    when is_returning() {
+        last -> take_return()
+    }
+    let exp -> collect_exports(stmts, env)
+    remember_exports(path, exp)
+    when call_main != true {
+        <- {`ok` -> true, `value` -> last, `error` -> Nothing}
+    }
+    <- call_entry_main(env, last)
+}
+
+function remember_exports(path, exports) {
+    when path == Nothing or path == `` {
+        <- exports
+    }
+    let em -> MODS[`exports`]
+    em[path] -> exports
+    MODS[`exports`] -> em
+    <- exports
+}
+
+function call_entry_main(env, last) {
+    let main_fn -> env_lookup(env, `main`)
+    when main_fn == Nothing {
+        <- {`ok` -> true, `value` -> last, `error` -> Nothing}
+    }
+    let fv -> main_fn[`value`]
+    when fv == Nothing {
+        <- {`ok` -> true, `value` -> last, `error` -> Nothing}
+    }
+    when fv[`kind`] != `fn` {
+        <- {`ok` -> true, `value` -> last, `error` -> Nothing}
+    }
+    let r -> call_fn(fv, [], env)
+    when get_error() != Nothing {
+        <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
+    }
+    <- {`ok` -> true, `value` -> r, `error` -> Nothing}
+}
+
+function call_named_fn(env, fn_name, last) {
+    let found_b -> env_lookup(env, fn_name)
+    when found_b == Nothing {
+        <- {`ok` -> false, `value` -> last, `error` -> `function not found: ` + Str.to_string(fn_name)}
+    }
+    let fv -> found_b[`value`]
+    when fv == Nothing {
+        <- {`ok` -> false, `value` -> last, `error` -> `function is empty: ` + Str.to_string(fn_name)}
+    }
+    when fv[`kind`] != `fn` {
+        <- {`ok` -> false, `value` -> last, `error` -> `not a function: ` + Str.to_string(fn_name)}
+    }
+    let r -> call_fn(fv, [], env)
+    when get_error() != Nothing {
+        <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
+    }
+    when is_returning() {
+        r -> take_return()
+    }
+    <- {`ok` -> true, `value` -> r, `error` -> Nothing}
+}
+
+function load_module_file_env(path) {
+    let prog -> GraphBuilder.parse_cached(path)
+    when prog == Nothing {
+        <- {
+            `ok` -> false,
+            `env` -> Nothing,
+            `program` -> Nothing,
+            `error` -> `cannot read ` + Str.to_string(path)
+        }
+    }
+    let env -> env_prelude()
+    let stmts -> AST.prog_stmts(prog)
+    env -> bind_imports(stmts, env, path)
+    when get_error() != Nothing {
+        <- {`ok` -> false, `env` -> Nothing, `program` -> Nothing, `error` -> get_error()}
+    }
+    when stmts != Nothing {
+        env -> declare_fns(stmts, 0, env)
+        run_toplevel(stmts, 0, env, Nothing)
+    }
+    when get_error() != Nothing {
+        <- {`ok` -> false, `env` -> Nothing, `program` -> Nothing, `error` -> get_error()}
+    }
+    let exports -> collect_exports(stmts, env)
+    remember_exports(path, exports)
+    <- {`ok` -> true, `env` -> env, `program` -> prog, `error` -> Nothing}
+}
+
+function interpret_file_env(path) {
+    clear_error()
+    reset_types()
+    MODS[`exports`] -> {}
+    let src0 -> __builtin_file.read(path)
+    when not GraphBuilder.source_may_import(src0) {
+        <- load_module_file_env(path)
+    }
+    let order -> GraphBuilder.compilation_order(path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
+    when order != Nothing and order.length > 0 {
+        load_graph_deps(path, order, 0, order.length)
+    }
+    <- load_module_file_env(path)
+}
+
+function bind_imports(stmts, env, file_path) {
+    when stmts == Nothing {
+        <- env
+    }
+    <- bind_imports_at(stmts, 0, env, file_path)
+}
+
+function bind_imports_at(stmts, i, env, file_path) {
+    when i >= stmts.length {
+        <- env
+    }
+    when get_error() != Nothing {
+        <- env
+    }
+    let s -> stmts[i]
+    let next -> maybe_bind_import(s, env, file_path)
+    <- bind_imports_at(stmts, i + 1, next, file_path)
+}
+
+function maybe_bind_import(s, env, file_path) {
+    when is_kind(s, AST.K_IMPORT) or is_kind(s, AST.K_FROM_IMPORT) {
+        <- bind_one_import(s, env, file_path)
+    }
+    <- env
+}
+
+function bind_one_import(node, env, file_path) {
+    let spec -> Str.to_string(AST.import_path(node))
+    let target_path -> Resolver.resolve(spec, file_path)
+    when target_path == Nothing or target_path == `` {
+        set_error(`Cannot resolve import '` + spec + `' from '` + Str.to_string(file_path) + `'`)
+        <- env
+    }
+    let alias -> import_alias_from_node(node, spec)
+    let exp -> lookup_or_load_exports(target_path)
+    when exp == Nothing {
+        exp -> {}
+    }
+    env -> env_define(env, Str.to_string(alias), exp, false)
+    <- env
+}
+
+function import_alias_from_node(node, spec) {
+    let alias -> AST.import_alias(node)
+    when alias != Nothing and alias != `` {
+        <- alias
+    }
+    <- last_segment(spec)
+}
+
+function last_segment(spec) {
+    let s -> Str.to_string(spec)
+    <- last_segment_from(s, 0, 0, Str.length(s))
+}
+
+function last_segment_from(s, i, start, n) {
+    when i >= n {
+        <- Str.substring(s, start, n)
+    }
+    let ch -> Str.at(s, i)
+    when ch == `.` or ch == `/` {
+        <- last_segment_from(s, i + 1, i + 1, n)
+    }
+    <- last_segment_from(s, i + 1, start, n)
+}
+
+function lookup_or_load_exports(resolved) {
+    let em -> MODS[`exports`]
+    when em.has(resolved) {
+        <- em[resolved]
+    }
+    // Dep should already be in compilation order; load on demand if missing.
+    let r -> load_module_file(resolved, false)
+    when r[`ok`] != true {
+        when get_error() == Nothing {
+            set_error(Str.to_string(r[`error`]))
+        }
+        <- Nothing
+    }
+    let em2 -> MODS[`exports`]
+    when em2.has(resolved) {
+        <- em2[resolved]
+    }
+    <- Nothing
+}
+
+function collect_exports(stmts, env) {
+    <- collect_exports_at(stmts, 0, env, {})
+}
+
+function collect_exports_at(stmts, i, env, out) {
+    when stmts == Nothing {
+        <- out
+    }
+    when i >= stmts.length {
+        <- out
+    }
+    let next -> export_stmt(stmts[i], env, out)
+    <- collect_exports_at(stmts, i + 1, env, next)
+}
+
+function export_stmt(s, env, out) {
+    when s == Nothing {
+        <- out
+    }
+    when is_kind(s, AST.K_FUNCTION) {
+        let name -> AST.fn_name(s)
+        <- export_name(name, env, out)
+    }
+    when is_kind(s, AST.K_LET) {
+        let name -> AST.let_name(s)
+        <- export_name(name, env, out)
+    }
+    when is_kind(s, AST.K_CLASS) or is_kind(s, AST.K_ENUMERATOR) or is_kind(s, AST.K_SCOPE) {
+        let name -> AST.class_name(s)
+        <- export_name(name, env, out)
+    }
+    <- out
+}
+
+function export_name(name, env, out) {
+    let sym -> env_lookup(env, name)
+    when sym == Nothing {
+        <- out
+    }
+    out[name] -> sym[`value`]
+    <- out
+}
+
+function declare_fns(stmts, i, env) {
+    when stmts == Nothing {
+        <- env
+    }
+    when i >= stmts.length {
+        <- env
+    }
+    let s -> stmts[i]
+    when is_kind(s, AST.K_FUNCTION) {
+        let name -> Str.to_string(AST.fn_name(s))
+        let fn -> make_fn(name, AST.fn_params(s), AST.fn_body(s), env)
+        env -> env_define(env, name, fn, false)
+    }
+    <- declare_fns(stmts, i + 1, env)
+}
+
+function eval_scope_stmt(node, env) {
+    let sc_name -> Str.to_string(AST.scope_name(node))
+    let child_env -> env_create(env)
+    let body -> AST.scope_body(node)
+    when body != Nothing {
+        let stmts -> AST.block_stmts(body)
+        child_env -> declare_fns(stmts, 0, child_env)
+        run_toplevel(stmts, 0, child_env, Nothing)
+    }
+    let sc_map -> {}
+    when body != Nothing {
+        sc_map -> collect_exports(AST.block_stmts(body), child_env)
+    }
+    env -> env_define(env, sc_name, sc_map, false)
+    <- env
+}
+
+function run_toplevel(stmts, i, env, last) {
+    when i >= stmts.length {
+        <- last
+    }
+    let s -> stmts[i]
+    when is_kind(s, AST.K_FUNCTION) {
+        <- run_toplevel(stmts, i + 1, env, last)
+    }
+    when is_kind(s, AST.K_CLASS) {
+        env -> eval_class_stmt(s, env)
+        <- run_toplevel(stmts, i + 1, env, last)
+    }
+    when is_kind(s, AST.K_ENUMERATOR) {
+        env -> eval_enum_stmt(s, env)
+        <- run_toplevel(stmts, i + 1, env, last)
+    }
+    when is_kind(s, AST.K_SCOPE) {
+        env -> eval_scope_stmt(s, env)
+        <- run_toplevel(stmts, i + 1, env, last)
+    }
+    let v -> eval_stmt(s, env)
+    when get_error() != Nothing {
+        <- v
+    }
+    when is_returning() {
+        <- v
+    }
+    <- run_toplevel(stmts, i + 1, env, v)
+}
+
+// ---------- Statements ----------
+
+function eval_stmt(node, env) {
+    when node == Nothing or is_returning() or get_error() != Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_BLOCK) {
+        <- eval_block(node, env)
+    }
+    when is_kind(node, AST.K_LET) {
+        let name -> Str.to_string(AST.let_name(node))
+        let val -> Nothing
+        when AST.let_val(node) != Nothing {
+            val -> eval_expr(AST.let_val(node), env)
+        }
+        val -> interp_materialize_default(val, AST.let_type(node))
+        let is_mut -> AST.let_mut(node)
+        when is_mut == Nothing {
+            is_mut -> true
+        }
+        env -> env_define(env, name, val, is_mut)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_RETURN) {
+        let val -> Nothing
+        when AST.ret_val(node) != Nothing {
+            val -> eval_expr(AST.ret_val(node), env)
+        }
+        signal_return(val)
+        <- val
+    }
+    when is_kind(node, AST.K_WHEN) {
+        <- eval_when(node, env)
+    }
+    when is_kind(node, AST.K_CHECK_STMT) {
+        <- eval_check_stmt(node, env)
+    }
+    when is_kind(node, AST.K_WHILE) or is_kind(node, AST.K_DO_WHILE) {
+        <- eval_while(node, env)
+    }
+    when is_kind(node, AST.K_FOR) {
+        <- eval_for(node, env)
+    }
+    when is_kind(node, AST.K_EXPR_STMT) {
+        let e -> AST.expr_stmt_expr(node)
+        when is_kind(e, AST.K_ASSIGN) or is_kind(e, AST.K_REASSIGN) {
+            let name -> Str.to_string(AST.assign_name(e))
+            let val -> eval_expr(AST.assign_val(e), env)
+            env_assign(env, name, val)
+            <- val
+        }
+        <- eval_expr(e, env)
+    }
+    when is_kind(node, AST.K_ASSERT) {
+        let v -> eval_expr(AST.assert_expr(node), env)
+        when v != true {
+            set_error(`Assertion failed`)
+        }
+        <- Nothing
+    }
+    when is_kind(node, AST.K_FUNCTION) {
+        let name -> Str.to_string(AST.fn_name(node))
+        let fn -> make_fn(name, AST.fn_params(node), AST.fn_body(node), env)
+        env -> env_define(env, name, fn, false)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_IMPORT) or is_kind(node, AST.K_FROM_IMPORT) {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_CLASS) {
+        <- eval_class_stmt(node, env)
+    }
+    when is_kind(node, AST.K_ENUMERATOR) {
+        <- eval_enum_stmt(node, env)
+    }
+    when is_kind(node, AST.K_STRUCTURE) {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_WITH) {
+        <- eval_with_stmt(node, env)
+    }
+    when is_kind(node, AST.K_SCOPE) {
+        <- eval_scope_stmt(node, env)
+    }
+    set_error(`Unknown statement kind ` + Str.to_string(AST.ast_kind(node)))
+    <- Nothing
+}
+
+function eval_block(node, env) {
+    let child_env -> env_create(env)
+    let stmts -> AST.block_stmts(node)
+    when stmts == Nothing {
+        <- Nothing
+    }
+    <- eval_block_stmts(stmts, 0, child_env, Nothing)
+}
+
+function eval_block_stmts(stmts, i, env, last) {
+    when i >= stmts.length {
+        <- last
+    }
+    when get_error() != Nothing or is_returning() {
+        <- last
+    }
+    let v -> eval_stmt(stmts[i], env)
+    when get_error() != Nothing or is_returning() {
+        <- v
+    }
+    <- eval_block_stmts(stmts, i + 1, env, v)
+}
+
+function eval_when(node, env) {
+    let cases -> AST.when_cases(node)
+    when cases == Nothing {
+        <- Nothing
+    }
+    <- eval_when_cases(cases, 0, env)
+}
+
+function eval_when_cases(cases, i, env) {
+    when i >= cases.length or is_returning() or get_error() != Nothing {
+        <- Nothing
+    }
+    let c -> cases[i]
+    let cond -> AST.case_cond(c)
+    when cond == Nothing {
+        when AST.case_body(c) != Nothing {
+            let res -> eval_stmt(AST.case_body(c), env)
+            <- res
+        }
+        <- Nothing
+    }
+    when is_kind(cond, AST.K_IS) {
+        let child -> env_create(env)
+        let is_ok -> try_match_is(cond, env, child)
+        when is_ok == true {
+            when AST.case_guard(c) != Nothing {
+                let gv -> eval_expr(AST.case_guard(c), child)
+                when gv != true {
+                    <- eval_when_cases(cases, i + 1, env)
+                }
+            }
+            when AST.case_body(c) != Nothing {
+                let res -> eval_stmt(AST.case_body(c), child)
+                <- res
+            }
+            <- Nothing
+        }
+        <- eval_when_cases(cases, i + 1, env)
+    }
+    let v -> eval_expr(cond, env)
+    when v == true {
+        when AST.case_guard(c) != Nothing {
+            let gv -> eval_expr(AST.case_guard(c), env)
+            when gv != true {
+                <- eval_when_cases(cases, i + 1, env)
+            }
+        }
+        when AST.case_body(c) != Nothing {
+            let body_res -> eval_stmt(AST.case_body(c), env)
+            <- body_res
+        }
+        <- Nothing
+    }
+    <- eval_when_cases(cases, i + 1, env)
+}
+
+function try_match_is(isnode, lookup_env, bind_env) {
+    let pat -> AST.is_expr_pat(isnode)
+    let v -> eval_expr(AST.is_expr_val(isnode), lookup_env)
+    when get_error() != Nothing or is_returning() {
+        <- false
+    }
+    <- match_pattern_value(pat, v, lookup_env, bind_env)
+}
+
+function match_pattern_value(pat, v, lookup_env, bind_env) {
+    when pat == Nothing {
+        <- true
+    }
+    when is_kind(pat, AST.K_VARIABLE) {
+        let name -> Str.to_string(AST.var_name(pat))
+        when name == `_` {
+            <- true
+        }
+        bind_env -> env_define(bind_env, name, v, true)
+        <- true
+    }
+    when is_kind(pat, AST.K_LITERAL) {
+        let p -> AST.lit_val(pat)
+        <- values_equal(v, p)
+    }
+    when is_kind(pat, AST.K_LIST) {
+        <- match_list_pattern(AST.list_elems(pat), v, lookup_env, bind_env)
+    }
+    when is_kind(pat, AST.K_MAP) {
+        <- match_map_pattern(pat, v, lookup_env, bind_env)
+    }
+    when is_kind(pat, AST.K_STRUCT_INIT) {
+        <- match_struct_pattern(pat, v, lookup_env, bind_env)
+    }
+    when is_kind(pat, AST.K_CALL) {
+        <- match_enum_payload(pat, v, lookup_env, bind_env)
+    }
+    let p -> eval_expr(pat, lookup_env)
+    when get_error() != Nothing or is_returning() {
+        <- false
+    }
+    <- values_equal(v, p)
+}
+
+function match_list_pattern(elems, v, lookup_env, bind_env) {
+    when elems == Nothing {
+        when v == Nothing {
+            <- true
+        }
+        when value_length(v) == 0 {
+            <- true
+        }
+        <- false
+    }
+    when v == Nothing {
+        <- false
+    }
+    let fixed_n -> value_length(elems)
+    let has_rest -> false
+    let last_idx -> fixed_n - 1
+    let last_el -> elems[last_idx]
+    when fixed_n > 0 and is_kind(last_el, AST.K_REST) {
+        has_rest -> true
+        fixed_n -> fixed_n - 1
+    }
+    let vl -> value_length(v)
+    when has_rest {
+        when vl < fixed_n {
+            <- false
+        }
+    } or {
+        when vl != fixed_n {
+            <- false
+        }
+    }
+    let ok -> match_list_binds(elems, v, lookup_env, bind_env, 0, fixed_n)
+    when not ok {
+        <- false
+    }
+    when has_rest {
+        let rest_pat -> elems[last_idx]
+        let rest_name -> Str.to_string(AST.rest_name(rest_pat))
+        when rest_name != Nothing and rest_name != `_` {
+            let rest_list -> slice_list(v, fixed_n, vl)
+            bind_env -> env_define(bind_env, rest_name, rest_list, true)
+        }
+    }
+    <- true
+}
+
+function slice_list(v, start_idx, end_idx) {
+    <- slice_list_rec(v, start_idx, end_idx, [])
+}
+
+function slice_list_rec(v, k, end_idx, acc) {
+    when k >= end_idx {
+        <- acc
+    }
+    acc.append(v[k])
+    <- slice_list_rec(v, k + 1, end_idx, acc)
+}
+
+function match_list_binds(elems, v, lookup_env, bind_env, i, n) {
+    when i >= n {
+        <- true
+    }
+    let p -> elems[i]
+    when is_kind(p, AST.K_REST) {
+        let rest_name -> Str.to_string(AST.rest_name(p))
+        let rest_vals -> slice_list(v, i, v.length)
+        bind_env -> env_define(bind_env, rest_name, rest_vals, true)
+        <- true
+    }
+    when is_kind(p, AST.K_VARIABLE) {
+        let name -> Str.to_string(AST.var_name(p))
+        bind_env -> env_define(bind_env, name, v[i], true)
+        <- match_list_binds(elems, v, lookup_env, bind_env, i + 1, n)
+    }
+    let expected -> eval_expr(p, lookup_env)
+    when v[i] != expected {
+        <- false
+    }
+    <- match_list_binds(elems, v, lookup_env, bind_env, i + 1, n)
+}
+
+function match_struct_pattern(pat, v, lookup_env, bind_env) {
+    when v == Nothing {
+        <- false
+    }
+    let fields -> AST.struct_init_fields(pat)
+    when fields == Nothing {
+        <- true
+    }
+    <- match_fields_binds(fields, v, lookup_env, bind_env, 0)
+}
+
+function match_map_pattern(pat, v, lookup_env, bind_env) {
+    when v == Nothing {
+        <- false
+    }
+    let fields -> map_pattern_fields(pat)
+    when fields == Nothing {
+        <- true
+    }
+    <- match_fields_binds(fields, v, lookup_env, bind_env, 0)
+}
+
+function map_pattern_fields(pat) {
+    when is_kind(pat, AST.K_MAP) {
+        <- AST.map_entries(pat)
+    }
+    <- AST.struct_init_fields(pat)
+}
+
+function match_fields_binds(fields, v, lookup_env, bind_env, i) {
+    when i >= fields.length {
+        <- true
+    }
+    let f -> fields[i]
+    let key -> Str.to_string(AST.struct_field_name(f))
+    let val_pat -> AST.struct_field_val(f)
+    when not v.has(key) {
+        <- false
+    }
+    let actual -> v[key]
+    when is_kind(val_pat, AST.K_VARIABLE) {
+        let name -> Str.to_string(AST.var_name(val_pat))
+        bind_env -> env_define(bind_env, name, actual, true)
+        <- match_fields_binds(fields, v, lookup_env, bind_env, i + 1)
+    }
+    let exp -> eval_expr(val_pat, lookup_env)
+    when actual != exp {
+        <- false
+    }
+    <- match_fields_binds(fields, v, lookup_env, bind_env, i + 1)
+}
+
+function eval_check_stmt(node, env) {
+    let subj_v -> eval_expr(AST.check_stmt_expr(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let cases -> AST.check_stmt_cases(node)
+    let matched -> false
+    when cases != Nothing {
+        matched -> eval_check_cases_rec(cases, 0, subj_v, env)
+    }
+    when matched == true {
+        <- Nothing
+    }
+    when AST.check_stmt_or_block(node) != Nothing {
+        let res -> eval_stmt(AST.check_stmt_or_block(node), env)
+        <- res
+    }
+    when AST.check_stmt_raise(node) != Nothing {
+        let rv -> eval_expr(AST.check_stmt_raise(node), env)
+        set_error(`Check failed: ` + Str.to_string(rv))
+        <- Nothing
+    }
+    set_error(`Check failed without handler`)
+    <- Nothing
+}
+
+function eval_check_cases_rec(cases, k, subj_v, env) {
+    when k >= cases.length or is_returning() or get_error() != Nothing {
+        <- false
+    }
+    let c -> cases[k]
+    let pat -> AST.case_cond(c)
+    let child -> env_create(env)
+    let is_ok -> match_pattern_value(pat, subj_v, env, child)
+    when is_ok == true {
+        when AST.case_guard(c) != Nothing {
+            let gv -> eval_expr(AST.case_guard(c), child)
+            when gv != true {
+                <- eval_check_cases_rec(cases, k + 1, subj_v, env)
+            }
+        }
+        when AST.case_body(c) != Nothing {
+            eval_stmt(AST.case_body(c), child)
+        }
+        <- true
+    }
+    <- eval_check_cases_rec(cases, k + 1, subj_v, env)
+}
+
+function eval_while(node, env) {
+    when is_returning() or get_error() != Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_DO_WHILE) {
+        let body -> AST.do_while_body(node)
+        let cond -> AST.do_while_cond(node)
+        let test_first -> AST.do_while_test_first(node)
+        when test_first == true {
+            let cv -> eval_expr(cond, env)
+            when get_error() != Nothing or cv != true {
+                <- Nothing
+            }
+        }
+        when body != Nothing {
+            eval_stmt(body, env)
+        }
+        when is_returning() or get_error() != Nothing {
+            <- Nothing
+        }
+        let cv2 -> eval_expr(cond, env)
+        when get_error() != Nothing or cv2 != true {
+            <- Nothing
+        }
+        <- eval_do_while_loop(body, cond, env)
+    }
+    let cond -> AST.while_cond(node)
+    let body -> AST.while_body(node)
+    when cond == Nothing {
+        <- Nothing
+    }
+    let cv -> eval_expr(cond, env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    when cv == true {
+        when body != Nothing {
+            eval_stmt(body, env)
+        }
+        when is_returning() or get_error() != Nothing {
+            <- Nothing
+        }
+        <- eval_while(node, env)
+    }
+    <- Nothing
+}
+
+function eval_do_while_loop(body, cond, env) {
+    when is_returning() or get_error() != Nothing {
+        <- Nothing
+    }
+    when body != Nothing {
+        eval_stmt(body, env)
+    }
+    when is_returning() or get_error() != Nothing {
+        <- Nothing
+    }
+    let cv -> eval_expr(cond, env)
+    when get_error() != Nothing or cv != true {
+        <- Nothing
+    }
+    <- eval_do_while_loop(body, cond, env)
+}
+
+function eval_for(node, env) {
+    let iter -> eval_expr(AST.for_iter(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    when iter == Nothing {
+        <- Nothing
+    }
+    let n -> iter.length
+    <- eval_for_index(node, env, iter, 0, n, Nothing)
+}
+
+function eval_for_index(node, env, iter, i, n, last) {
+    when i >= n {
+        <- last
+    }
+    when get_error() != Nothing or is_returning() {
+        <- last
+    }
+    let child -> env_create(env)
+    let var_name -> Str.to_string(AST.for_var(node))
+    child -> env_define(child, var_name, iter[i], true)
+    let v -> eval_for_body(node, child)
+    when get_error() != Nothing or is_returning() {
+        <- v
+    }
+    <- eval_for_index(node, env, iter, i + 1, n, v)
+}
+
+function eval_for_body(node, env) {
+    when AST.for_body(node) == Nothing {
+        <- Nothing
+    }
+    <- eval_stmt(AST.for_body(node), env)
+}
+
+function eval_for_index(node, env, iter, i, n, last) {
+    when i >= n {
+        <- last
+    }
+    when get_error() != Nothing or is_returning() {
+        <- last
+    }
+    let child -> env_create(env)
+    let var_name -> Str.to_string(AST.for_var(node))
+    child -> env_define(child, var_name, iter[i], true)
+    let v -> eval_for_body(node, child)
+    when get_error() != Nothing or is_returning() {
+        <- v
+    }
+    <- eval_for_index(node, env, iter, i + 1, n, v)
+}
+
+function eval_for_body(node, env) {
+    when AST.for_body(node) == Nothing {
+        <- Nothing
+    }
+    <- eval_stmt(AST.for_body(node), env)
+}
+
+// ---------- Expressions ----------
+
+function eval_expr(node, env) {
+    when node == Nothing or get_error() != Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_WHEN) {
+        <- eval_when(node, env)
+    }
+    when is_kind(node, AST.K_LITERAL) {
+        <- coerce_literal_node(node)
+    }
+    when is_kind(node, AST.K_VARIABLE) {
+        <- env_get(env, Str.to_string(AST.var_name(node)))
+    }
+    when is_kind(node, AST.K_GROUPING) {
+        <- eval_expr(AST.un_right(node), env)
+    }
+    when is_kind(node, AST.K_UNARY) {
+        let r -> eval_expr(AST.un_right(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        let op -> Str.to_string(AST.un_op(node))
+        when op == `-` {
+            <- 0 - r
+        }
+        when op == `not` {
+            when r == true {
+                <- false
+            }
+            <- true
+        }
+        set_error(`Unknown unary operator ` + op)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_BINARY) {
+        let l -> eval_expr(AST.bin_left(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        let r -> eval_expr(AST.bin_right(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        <- eval_binary(Str.to_string(AST.bin_op(node)), l, r)
+    }
+    when is_kind(node, AST.K_LOGICAL) {
+        let op -> Str.to_string(AST.bin_op(node))
+        let l -> eval_expr(AST.bin_left(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        when op == `and` {
+            when l != true {
+                <- false
+            }
+            <- eval_expr(AST.bin_right(node), env)
+        }
+        when op == `or` {
+            when l == true {
+                <- true
+            }
+            <- eval_expr(AST.bin_right(node), env)
+        }
+        set_error(`Unknown logical operator ` + op)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_CALL) {
+        <- eval_call(node, env)
+    }
+    when is_kind(node, AST.K_GET) {
+        let obj_node -> AST.mem_obj(node)
+        when is_kind(obj_node, AST.K_VARIABLE) {
+            let var_name -> Str.to_string(AST.var_name(obj_node))
+            when TYPES[`enums`].has(var_name) {
+                let vname -> Str.to_string(AST.mem_prop(node))
+                let e_desc -> TYPES[`enums`][var_name]
+                when e_desc[`members`].has(vname) {
+                    <- {
+                        `kind` -> `variant`,
+                        `enum` -> var_name,
+                        `tag` -> vname,
+                        `data` -> []
+                    }
+                }
+            }
+        }
+        let obj -> eval_expr(AST.mem_obj(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        let name -> Str.to_string(AST.mem_prop(node))
+        <- guest_get(obj, name)
+    }
+    when is_kind(node, AST.K_INDEX) {
+        let obj -> eval_expr(AST.idx_obj(node), env)
+        when get_error() != Nothing or obj == Nothing {
+            <- Nothing
+        }
+        let idx -> eval_expr(AST.idx_expr(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        <- obj[idx]
+    }
+    when is_kind(node, AST.K_ASSIGN) or is_kind(node, AST.K_REASSIGN) {
+        let val -> eval_expr(AST.assign_val(node), env)
+        when get_error() != Nothing {
+            <- Nothing
+        }
+        env_assign(env, Str.to_string(AST.assign_name(node)), val)
+        <- val
+    }
+    when is_kind(node, AST.K_INDEX_ASSIGN) {
+        <- eval_index_assign(node, env)
+    }
+    when is_kind(node, AST.K_SET) {
+        <- eval_set_expr(node, env)
+    }
+    when is_kind(node, AST.K_LIST) {
+        <- eval_list_literal(node, env)
+    }
+    when is_kind(node, AST.K_MAP) {
+        <- eval_map_literal(node, env)
+    }
+    when is_kind(node, AST.K_STRUCT_INIT) {
+        <- eval_struct_init(node, env)
+    }
+    when is_kind(node, AST.K_FUNC_EXPR) {
+        let snap -> snapshot_fn_env(AST.fn_params(node), AST.fn_body(node), env)
+        <- make_fn(`lambda`, AST.fn_params(node), AST.fn_body(node), snap)
+    }
+    when is_kind(node, AST.K_IS) {
+        let is_ok -> try_match_is(node, env, env)
+        <- is_ok
+    }
+    when is_kind(node, AST.K_CHECK) {
+        <- eval_expr(AST.check_expr_expr(node), env)
+    }
+    when is_kind(node, AST.K_BLOCK) {
+        <- eval_block(node, env)
+    }
+    when is_kind(node, AST.K_WHEN) {
+        <- eval_when(node, env)
+    }
+    set_error(`Unknown expression kind ` + Str.to_string(AST.ast_kind(node)))
+    <- Nothing
+}
+
+function eval_list_literal(node, env) {
+    <- eval_list_elems(AST.list_elems(node), 0, env, [])
+}
+
+function eval_list_elems(elems, i, env, out) {
+    when elems == Nothing {
+        <- out
+    }
+    when i >= elems.length {
+        <- out
+    }
+    when get_error() != Nothing or is_returning() {
+        <- out
+    }
+    let v -> eval_expr(elems[i], env)
+    let next -> list_push(out, v)
+    <- eval_list_elems(elems, i + 1, env, next)
+}
+
+function list_push(lst, v) {
+    lst.append(v)
+    <- lst
+}
+
+function eval_map_literal(node, env) {
+    <- eval_map_entries(AST.map_entries(node), 0, env, {})
+}
+
+function eval_struct_init(node, env) {
+    let out -> {}
+    let sname -> Str.to_string(AST.struct_init_name(node))
+    when sname != Nothing and sname != `` {
+        out[`__type`] -> sname
+    }
+    let fields -> AST.struct_init_fields(node)
+    <- eval_map_entries(fields, 0, env, out)
+}
+
+function map_entries_of(node) {
+    when is_kind(node, AST.K_MAP) {
+        <- AST.map_entries(node)
+    }
+    <- AST.struct_init_fields(node)
+}
+
+function eval_map_entries(entries, i, env, out) {
+    when entries == Nothing or i >= entries.length or get_error() != Nothing {
+        <- out
+    }
+    let e -> entries[i]
+    let key -> Str.to_string(AST.struct_field_name(e))
+    let val -> eval_expr(AST.struct_field_val(e), env)
+    when get_error() != Nothing {
+        <- out
+    }
+    out[key] -> val
+    <- eval_map_entries(entries, i + 1, env, out)
+}
+
+function eval_index_assign(node, env) {
+    let obj -> eval_expr(AST.idx_assign_obj(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let idx -> eval_expr(AST.idx_assign_expr(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let val -> eval_expr(AST.idx_assign_val(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let updated -> index_set(obj, idx, val)
+    write_back(AST.idx_assign_obj(node), updated, env)
+    <- val
+}
+
+function index_set(obj, idx, val) {
+    obj[idx] -> val
+    <- obj
+}
+
+function write_back(lhs, obj, env) {
+    when lhs == Nothing {
+        <- obj
+    }
+    when is_kind(lhs, AST.K_VARIABLE) {
+        env_assign(env, Str.to_string(AST.var_name(lhs)), obj)
+        <- obj
+    }
+    when is_kind(lhs, AST.K_GET) {
+        let parent_obj -> eval_expr(AST.mem_obj(lhs), env)
+        when parent_obj != Nothing {
+            parent_obj[Str.to_string(AST.mem_prop(lhs))] -> obj
+            write_back(AST.mem_obj(lhs), parent_obj, env)
+        }
+        <- obj
+    }
+    when is_kind(lhs, AST.K_INDEX) {
+        let parent_obj -> eval_expr(AST.idx_obj(lhs), env)
+        let idx -> eval_expr(AST.idx_expr(lhs), env)
+        when parent_obj != Nothing and idx != Nothing {
+            parent_obj[idx] -> obj
+            write_back(AST.idx_obj(lhs), parent_obj, env)
+        }
+        <- obj
+    }
+    <- obj
+}
+
+function eval_set_expr(node, env) {
+    let obj -> eval_expr(AST.set_obj(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let val -> eval_expr(AST.set_val(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let name -> Str.to_string(AST.set_name(node))
+    when obj != Nothing {
+        obj[name] -> val
+    }
+    write_back(AST.set_obj(node), obj, env)
+    <- val
+}
+
+function eval_arg_list(arg_nodes, i, env, args) {
+    when arg_nodes == Nothing {
+        <- args
+    }
+    when i >= arg_nodes.length {
+        <- args
+    }
+    when get_error() != Nothing or is_returning() {
+        <- args
+    }
+    let av -> eval_expr(arg_nodes[i], env)
+    let next -> list_push(args, av)
+    <- eval_arg_list(arg_nodes, i + 1, env, next)
+}
+
+function eval_call(node, env) {
+    let callee -> eval_expr(AST.call_callee(node), env)
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    let arg_nodes -> AST.call_args(node)
+    let args -> eval_arg_list(arg_nodes, 0, env, [])
+    when get_error() != Nothing {
+        <- Nothing
+    }
+    when is_class_val(callee) {
+        <- class_new(callee, args)
+    }
+    when is_enum_val(callee) or is_variant_val(callee) {
+        let v -> {
+            `kind` -> `variant`,
+            `enum` -> callee[`enum`],
+            `tag` -> callee[`tag`],
+            `data` -> args
+        }
+        <- v
+    }
+    when is_builtin_fn(callee) {
+        <- eval_builtin(callee[`name`], args)
+    }
+    when is_bound_method(callee) {
+        <- call_method(callee[`fn`], callee[`self`], args)
+    }
+    when is_fn_val(callee) {
+        <- call_fn(callee, args, env)
+    }
+    set_error(`Callee is not callable`)
+    <- Nothing
+}
+
+function is_primitive(v) {
+    when v == Nothing or v == true or v == false {
+        <- true
+    }
+    // Runtime kind — never Str.to_string(maps): env/fn graphs are cyclic
+    // and native to_string overflows. Bootstrap .kind and -g ZenValue_get_kind
+    // both return Integer/String/List/Map (or a stored kind field on maps).
+    let k -> v.kind
+    when k == `Integer` or k == `Decimal` or k == `Boolean` or k == `String` or k == `Nothing` or k == `Rune` {
+        <- true
+    }
+    <- false
+}
+
+function guest_get(obj, name) {
+    when name == `length` {
+        <- value_length(obj)
+    }
+    when is_builtin_mod(obj) {
+        <- make_builtin(obj[`prefix`], name)
+    }
+    when is_parent_ref(obj) {
+        <- bound_method_from_class(obj[`base`], name, obj[`self`])
+    }
+    when is_enum_val(obj) {
+        let mems -> obj[`members`]
+        when mems != Nothing and mems.has(name) {
+            <- mems[name]
+        }
+        <- Nothing
+    }
+    when is_instance(obj) {
+        when obj.has(name) {
+            <- obj[name]
+        }
+        <- bound_method_from_instance(obj, name)
+    }
+    when obj != Nothing {
+        when is_primitive(obj) {
+            <- Nothing
+        }
+        let rt -> obj.kind
+        when rt == `List` {
+            <- Nothing
+        }
+        when obj.has(name) {
+            <- obj[name]
+        }
+    }
+    <- Nothing
+}
+
+function nth_arg(args, i) {
+    when args == Nothing {
+        <- Nothing
+    }
+    when i >= args.length {
+        <- Nothing
+    }
+    <- args[i]
+}
+
+function eval_builtin(name, args) {
+    let a0 -> nth_arg(args, 0)
+    let a1 -> nth_arg(args, 1)
+    let a2 -> nth_arg(args, 2)
+    when name == `string.to_string` {
+        <- Str.to_string(a0)
+    }
+    when name == `string.length` {
+        <- Str.length(a0)
+    }
+    when name == `string.at` {
+        <- Str.at(a0, a1)
+    }
+    when name == `string.contains` {
+        <- Str.contains(a0, a1)
+    }
+    when name == `string.starts_with` {
+        <- Str.starts_with(a0, a1)
+    }
+    when name == `string.ends_with` {
+        <- Str.ends_with(a0, a1)
+    }
+    when name == `string.substring` {
+        <- Str.substring(a0, a1, a2)
+    }
+    when name == `string.trim` {
+        <- Str.trim(a0)
+    }
+    when name == `string.split` {
+        <- Str.split(a0, a1)
+    }
+    when name == `string.join` {
+        <- Str.join(a0, a1)
+    }
+    when name == `string.index_of` {
+        <- Str.index_of(a0, a1)
+    }
+    when name == `string.replace` {
+        <- Str.replace(a0, a1, a2)
+    }
+    when name == `file.read` {
+        <- __builtin_file.read(a0)
+    }
+    when name == `file.is_file` {
+        <- __builtin_file.is_file(a0)
+    }
+    when name == `io.write_line` or name == `io.writeln` or name == `output.write_line` or name == `output.writeln` {
+        io.writeln(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `io.write` or name == `output.write` {
+        io.write(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `output.info` {
+        io.info(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `output.warn` {
+        io.warn(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `output.error` {
+        io.error(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `output.debug` {
+        io.debug(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `output.write_raw` or name == `io.write_raw` {
+        io.write_raw(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `input.read_line` or name == `io.read_line` {
+        <- io.read_line()
+    }
+    when name == `input.read_exact` or name == `io.read_exact` {
+        <- io.read_exact(a0)
+    }
+    when name == `output.flush` or name == `io.flush` {
+        io.flush()
+        <- Nothing
+    }
+    when name == `memory.create_arena` {
+        <- { `kind` -> `arena`, `size` -> a0 }
+    }
+    when name == `memory.free_arena` or name == `memory.reset_arena` {
+        <- Nothing
+    }
+    when name == `memory.push_arena` {
+        mem_push()
+        <- Nothing
+    }
+    when name == `memory.pop_arena` {
+        mem_pop()
+        <- Nothing
+    }
+    when name == `memory.using_arena` {
+        when MEM[`depth`] > 0 {
+            <- true
+        }
+        <- false
+    }
+    when name == `memory.arena_depth` {
+        <- MEM[`depth`]
+    }
+    set_error(`unknown builtin ` + Str.to_string(name))
+    <- Nothing
+}
+
+function call_fn(fn, args, env) {
+    let closure -> fn[`closure`]
+    when closure == Nothing {
+        closure -> env
+    }
+    let frame -> env_create(closure)
+    let params -> fn[`params`]
+    when params != Nothing {
+        let i -> 0
+        let n -> params.length
+        let an -> args.length
+        do while i < n {
+            let p -> params[i]
+            let pname -> Str.to_string(AST.param_name(p))
+            let pval -> Nothing
+            when i < an {
+                pval -> args[i]
+            }
+            frame -> env_define(frame, pname, pval, true)
+            i -> i + 1
+        }
+    }
+    let body -> fn[`body`]
+    when body == Nothing {
+        <- Nothing
+    }
+    let result -> Nothing
+    when is_kind(body, AST.K_BLOCK) {
+        let stmts -> AST.block_stmts(body)
+        when stmts != Nothing {
+            result -> eval_block_stmts(stmts, 0, frame, Nothing)
+        }
+    } or {
+        result -> eval_stmt(body, frame)
+    }
+    // function boundary consumes return signal
+    when is_returning() {
+        <- take_return()
+    }
+    <- result
+}
+
+function eval_binary(op, l, r) {
+    when op == `+` {
+        <- l + r
+    }
+    when op == `-` {
+        <- l - r
+    }
+    when op == `*` {
+        <- l * r
+    }
+    when op == `/` {
+        <- l / r
+    }
+    when op == `%` {
+        <- l % r
+    }
+    when op == `==` or op == `=` {
+        <- values_equal(l, r)
+    }
+    when op == `!=` {
+        when values_equal(l, r) {
+            <- false
+        }
+        <- true
+    }
+    when op == `<` {
+        when l < r {
+            <- true
+        }
+        <- false
+    }
+    when op == `>` {
+        when l > r {
+            <- true
+        }
+        <- false
+    }
+    when op == `<=` {
+        when l <= r {
+            <- true
+        }
+        <- false
+    }
+    when op == `>=` {
+        when l >= r {
+            <- true
+        }
+        <- false
+    }
+    when op == `and` {
+        when is_truthy(l) and is_truthy(r) {
+            <- true
+        }
+        <- false
+    }
+    when op == `or` {
+        when is_truthy(l) or is_truthy(r) {
+            <- true
+        }
+        <- false
+    }
+    when op == `..` {
+        <- eval_range(l, r, false)
+    }
+    when op == `..=` {
+        <- eval_range(l, r, true)
+    }
+    <- Nothing
+}
+
+let ASCII_CHARS -> ` !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_` + "`" + `abcdefghijklmnopqrstuvwxyz{|}~`
+
+function char_to_codepoint(c) {
+    when c == Nothing {
+        <- 0
+    }
+    let s -> Str.to_string(c)
+    when s.length != 1 {
+        <- 0
+    }
+    let idx -> Str.index_of(ASCII_CHARS, s)
+    when idx >= 0 {
+        <- 32 + idx
+    }
+    when s == `\n` {
+        <- 10
+    }
+    when s == `\t` {
+        <- 9
+    }
+    <- 0
+}
+
+function codepoint_to_char(code) {
+    when code >= 32 and code < 32 + ASCII_CHARS.length {
+        <- Str.at(ASCII_CHARS, code - 32)
+    }
+    when code == 10 {
+        <- `\n`
+    }
+    when code == 9 {
+        <- `\t`
+    }
+    <- ``
+}
+
+function eval_range(start, end, inclusive) {
+    let out -> []
+    let as_char -> false
+    let s -> 0
+    let e -> 0
+    when (start.kind == `String` or start.kind == `Rune`) and (end.kind == `String` or end.kind == `Rune`) {
+        as_char -> true
+        s -> char_to_codepoint(start)
+        e -> char_to_codepoint(end)
+    } or {
+        s -> start
+        e -> end
+    }
+    when s <= e {
+        let stop -> when inclusive == true { e + 1 } or { e }
+        let cur -> s
+        do while cur < stop {
+            when as_char == true {
+                out.append(codepoint_to_char(cur))
+            } or {
+                out.append(cur)
+            }
+            cur -> cur + 1
+        }
+    } or {
+        let stop -> when inclusive == true { e - 1 } or { e }
+        let cur -> s
+        do while cur > stop {
+            when as_char == true {
+                out.append(codepoint_to_char(cur))
+            } or {
+                out.append(cur)
+            }
+            cur -> cur - 1
+        }
+    }
+    <- out
+}
+
+function values_equal(l, r) {
+    when is_variant_val(l) and is_variant_val(r) {
+        when l[`enum`] == r[`enum`] and l[`tag`] == r[`tag`] {
+            <- true
+        }
+        <- false
+    }
+    when is_default_sentinel(l) and is_default_sentinel(r) {
+        <- true
+    }
+    when is_default_sentinel(l) {
+        when r == zero_of_value(r) {
+            <- true
+        }
+        <- false
+    }
+    when is_default_sentinel(r) {
+        when l == zero_of_value(l) {
+            <- true
+        }
+        <- false
+    }
+    when l == Nothing and r == Nothing {
+        <- true
+    }
+    when l == Nothing or r == Nothing {
+        <- false
+    }
+    when l == r {
+        <- true
+    }
+    <- false
+}
+
+function lists_equal(l, r) {
+    when l.length != r.length {
+        <- false
+    }
+    let i -> 0
+    let n -> l.length
+    do while i < n {
+        when not values_equal(l[i], r[i]) {
+            <- false
+        }
+        i -> i + 1
+    }
+    <- true
+}
+
+function maps_equal(l, r) {
+    let lk -> l.keys()
+    let rk -> r.keys()
+    when lk.length != rk.length {
+        <- false
+    }
+    let i -> 0
+    let n -> lk.length
+    do while i < n {
+        let k -> lk[i]
+        when not r.has(k) {
+            <- false
+        }
+        when not values_equal(l[k], r[k]) {
+            <- false
+        }
+        i -> i + 1
+    }
+    <- true
+}
+
+function is_truthy(v) {
+    when v == Nothing {
+        <- false
+    }
+    when v == false {
+        <- false
+    }
+    when v == 0 {
+        <- false
+    }
+    when v == `` {
+        <- false
+    }
+    <- true
+}
+
+/!
+ Lexer/parser store INTEGER/DECIMAL token values as strings; coerce for arithmetic.
+ !/
+function coerce_literal_node(node) {
+    let value -> AST.lit_val(node)
+    let tk -> AST.lit_tok_kind(node)
+    when tk == TokenType.STRING or tk == TokenType.RUNE {
+        <- value
+    }
+    when tk == TokenType.DEFAULT {
+        <- default_sentinel()
+    }
+    when tk == TokenType.NOTHING {
+        <- Nothing
+    }
+    let tid -> Tok.kind_id(tk)
+    when tid == 24 or tid == 25 {
+        <- value
+    }
+    when tid == 20 {
+        <- default_sentinel()
+    }
+    when tid == 19 {
+        <- Nothing
+    }
+    <- coerce_literal(value)
+}
+
+function default_sentinel() {
+    <- DEFAULT_SENTINEL
+}
+
+function is_default_sentinel(val) {
+    when val == DEFAULT_SENTINEL {
+        <- true
+    }
+    <- false
+}
+
+function interp_materialize_default(val, type_ann) {
+    when not is_default_sentinel(val) {
+        <- val
+    }
+    <- zero_of_type(type_ann)
+}
+
+/!
+ Parser stores let types as TypeAnn maps (kind, name, qualifier).
+ Never stringify the whole map — that is not List or Integer.
+ !/
+function ann_type_name(ann) {
+    when ann == Nothing or ann == `` or ann == true or ann == false {
+        <- ``
+    }
+    when ann == `Integer` or ann == `Int` or ann == `int` or ann == `String` or ann == `Boolean` or ann == `Bool` or ann == `Void` or ann == `List` or ann == `Map` or ann == `Decimal` or ann == `Float` or ann == `Nothing` or ann == `Default` or ann == `Variant` or ann == `Rune` or ann == `Arena` or ann == `Region` {
+        <- Str.to_string(ann)
+    }
+    when is_primitive(ann) {
+        <- Str.to_string(ann)
+    }
+    when AST.is_type_ann(ann) {
+        <- Str.to_string(AST.type_ann_name(ann))
+    }
+    <- Str.to_string(ann)
+}
+
+function zero_of_type(type_ann) {
+    when type_ann == Nothing or type_ann == `` {
+        <- default_sentinel()
+    }
+    let n -> ann_type_name(type_ann)
+    when n == `Integer` or n == `Int` or n == `int` {
+        <- 0
+    }
+    when n == `Decimal` or n == `Float` {
+        <- 0.0
+    }
+    when n == `Boolean` or n == `Bool` {
+        <- false
+    }
+    when n == `String` or n == `Rune` {
+        <- ``
+    }
+    when n == `List` {
+        <- []
+    }
+    when n == `Map` {
+        <- {}
+    }
+    <- default_sentinel()
+}
+
+/!
+ Guest length. Bootstrap maps raise on a missing length key; lists work.
+ Default is a tagged map — never call length on it. Do not use has here:
+ lists are not maps and has also raises under bootstrap.
+ !/
+function value_length(obj) {
+    when obj == Nothing {
+        <- 0
+    }
+    when is_default_sentinel(obj) {
+        <- 0
+    }
+    when obj == true or obj == false {
+        <- 0
+    }
+    <- obj.length
+}
+
+function zero_of_value(v) {
+    when is_default_sentinel(v) {
+        <- v
+    }
+    when v == true or v == false {
+        <- false
+    }
+    when v == Nothing {
+        <- Nothing
+    }
+    let s -> Str.to_string(v)
+    when looks_int_str(s) {
+        <- 0
+    }
+    when looks_dec_str(s) {
+        <- 0.0
+    }
+    <- ``
+}
+
+function looks_dec_str(s) {
+    let n -> Str.length(s)
+    when n == 0 {
+        <- false
+    }
+    let dot -> Str.contains(s, `.`)
+    when not dot {
+        <- false
+    }
+    let digits -> `0123456789.`
+    <- all_in_chars(s, 0, n, digits)
+}
+
+function all_in_chars(s, i, n, alphabet) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when ch == `-` {
+        when i == 0 {
+            <- all_in_chars(s, i + 1, n, alphabet)
+        }
+        <- false
+    }
+    when Str.index_of(alphabet, ch) == -1 {
+        <- false
+    }
+    <- all_in_chars(s, i + 1, n, alphabet)
+}
+
+function coerce_literal(value) {
+    when value == Nothing {
+        <- Nothing
+    }
+    when value == true or value == false {
+        <- value
+    }
+    let s -> Str.to_string(value)
+    when s == `true` or s == `True` {
+        <- true
+    }
+    when s == `false` or s == `False` {
+        <- false
+    }
+    when s == `Nothing` or s == `nothing` or s == `None` {
+        <- Nothing
+    }
+    when s == `Default` or s == `default` {
+        <- default_sentinel()
+    }
+    // integer?
+    when looks_int_str(s) {
+        <- parse_int_str(s)
+    }
+    // leave strings / decimals as-is (decimal parse optional later)
+    <- value
+}
+
+function looks_int_str(s) {
+    let n -> Str.length(s)
+    when n == 0 {
+        <- false
+    }
+    let digits -> `0123456789`
+    let i -> 0
+    let ch0 -> Str.at(s, 0)
+    when ch0 == `-` {
+        when n == 1 {
+            <- false
+        }
+        i -> 1
+    }
+    <- all_digits(s, i, n, digits)
+}
+
+function all_digits(s, i, n, digits) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when Str.index_of(digits, ch) == -1 {
+        <- false
+    }
+    <- all_digits(s, i + 1, n, digits)
+}
+
+function parse_int_str(s) {
+    // fold digits; support leading -
+    let n -> Str.length(s)
+    let i -> 0
+    let neg -> false
+    when Str.at(s, 0) == `-` {
+        neg -> true
+        i -> 1
+    }
+    let acc -> 0
+    let digits -> `0123456789`
+    do while i < n {
+        let ch -> Str.at(s, i)
+        let d -> Str.index_of(digits, ch)
+        acc -> acc * 10 + d
+        i -> i + 1
+    }
+    when neg {
+        <- 0 - acc
+    }
+    <- acc
+}

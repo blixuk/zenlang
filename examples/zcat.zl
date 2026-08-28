@@ -1,0 +1,128 @@
+/!
+  zcat — a visual `cat` with line numbers and colored gutter.
+
+  Like Unix cat, but easier to read for code and logs.
+
+  Run:
+    python3 bootstrap/Zen.py examples/zcat.zl [file ...]
+    ./bin/zen examples/zcat.zl README.md
+    ./bin/zen -g examples/zcat.zl lib/zen/sys/term.zl
+
+  With no files, reads nothing and prints usage (stdin cat can be added later).
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.io as io
+import zen.text.string as Str
+
+function pad_left(s, width) {
+    let n -> Str.length(s)
+    let out -> s
+    do while Str.length(out) < width {
+        out -> ` ` + out
+    }
+    <- out
+}
+
+function line_no_width(total) {
+    // fixed-ish width from magnitude (avoid float division)
+    when total < 10 { <- 3 }
+    when total < 100 { <- 3 }
+    when total < 1000 { <- 4 }
+    when total < 10000 { <- 5 }
+    <- 6
+}
+
+function print_header(path, nlines) {
+    term.color(`black`, `cyan`)
+    term.write(` ` + path + ` `)
+    term.reset()
+    term.color(`cyan`, `black`)
+    term.write(` ` + Str.to_string(nlines) + ` lines `)
+    term.reset()
+    io.writeln(``)
+}
+
+function cat_file(path) {
+    when not file.exists(path) {
+        term.color(`red`, `black`)
+        io.writeln(`zcat: no such file: ` + path)
+        term.reset()
+        <- false
+    }
+    when file.is_dir(path) {
+        term.color(`red`, `black`)
+        io.writeln(`zcat: is a directory: ` + path)
+        term.reset()
+        <- false
+    }
+
+    let lines -> file.read_lines(path)
+    // drop trailing empty line from final newline
+    when lines.length > 0 {
+        let last -> lines[lines.length - 1]
+        when last == `` and lines.length > 1 {
+            let trimmed -> []
+            let ti -> 0
+            do while ti < lines.length - 1 {
+                trimmed.append(lines[ti])
+                ti -> ti + 1
+            }
+            lines -> trimmed
+        }
+    }
+
+    let n -> lines.length
+    let width -> line_no_width(n)
+    print_header(path, n)
+
+    let i -> 0
+    do while i < n {
+        let num -> pad_left(Str.to_string(i + 1), width)
+        // gutter
+        term.color(`black`, `white`)
+        term.write(` ` + num + ` `)
+        term.reset()
+        term.write(` `)
+        // content — light tint for comments-ish lines
+        let line -> lines[i]
+        when Str.starts_with(Str.trim(line), `/`) or Str.starts_with(Str.trim(line), `#`) {
+            term.color(`blue`, `black`)
+            term.write(line)
+            term.reset()
+        } or {
+            term.write(line)
+        }
+        io.writeln(``)
+        i -> i + 1
+    }
+    io.writeln(``)
+    <- true
+}
+
+function usage() {
+    io.writeln(`zcat — visual cat with line numbers`)
+    io.writeln(`usage: zcat <file> [file ...]`)
+}
+
+function main() {
+    let args -> sys.get_args()
+    // args[0] = script path; rest are files
+    when args.length < 2 {
+        usage()
+        <- 1
+    }
+
+    let ok -> true
+    let i -> 1
+    do while i < args.length {
+        when not cat_file(args[i]) {
+            ok -> false
+        }
+        i -> i + 1
+    }
+
+    when ok { <- 0 } or { <- 1 }
+}

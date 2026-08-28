@@ -1,0 +1,14 @@
+/!
+ Phase A3: import zen.text.string under selfhost interpret.
+ Exit 0 iff Str.to_string(42) == `42`.
+ !/
+
+import zen.text.string as Str
+
+function main() {
+    let s -> Str.to_string(42)
+    when s == `42` {
+        <- 0
+    }
+    <- 1
+}

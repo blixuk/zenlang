@@ -1,0 +1,30 @@
+import zen.math.range as R
+import zen.test as test
+
+function test_range_sequence() {
+    // Prefer operator form; library helpers delegate to it.
+    let values -> 2..6
+    let via_lib -> R.range(2, 6)
+    let pass -> test.assert_equal(values.length, 4, `range should create the expected number of values`)
+    pass -> pass and test.assert_equal(values[0], 2, `range should include the start value`)
+    pass -> pass and test.assert_equal(values[3], 5, `range should exclude the end value`)
+    pass -> pass and test.assert_equal(via_lib, values, `R.range matches 2..6`)
+    pass -> pass and test.assert_equal(R.range_inclusive(2, 4), 2..=4, `inclusive helper matches ..=`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Range.sequence`, `fn` -> test_range_sequence}
+    ]
+
+    <- test.run_suite(`Range Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

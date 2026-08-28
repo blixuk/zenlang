@@ -1,0 +1,27 @@
+// Chapter 5: Variables, Assignment & Flow Operators
+
+Heading { text -> `Variables, Assignment & Flow Operators`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang uses directional flow arrows to make data movement visually unambiguous across all statements.`
+},
+
+Heading { text -> `Binding (let) and Mutation (set)`, size -> 2 },
+
+Paragraph {
+    text -> `Variables are introduced into scope using the let keyword followed by an identifier, the right arrow (->), and an initializing expression. Subsequent reassignments use the set keyword to make mutability intentional and explicit.`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        let count -> 0           // Variable binding with initial value
+        set count -> count + 1   // Reassignment using set keyword
+        
+        // Destructuring assignment
+        let (first, second) -> [10, 20]
+        let { `name` -> user_name, `role` -> user_role } -> user_record
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

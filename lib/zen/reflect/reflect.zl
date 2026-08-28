@@ -1,0 +1,211 @@
+/!
+  zen.reflect — value introspection.
+
+  P1: kind predicates + map fields
+  P2: `is reflectable` types register metadata (fields/methods)
+
+  Import: use zen.reflect as reflect
+!/
+
+use zen.text.string as Str
+
+// ---------- Type / kind ----------
+
+export function type_name(x) {
+    let t -> __builtin_reflect.type_name(x)
+    when t != Nothing and t != `` {
+        when t == `FunctionObject` {
+            <- `Function`
+        }
+        <- Str.to_string(t)
+    }
+    let k -> x.kind
+    when k == `FunctionObject` {
+        <- `Function`
+    }
+    when k == Nothing {
+        <- `Nothing`
+    }
+    <- Str.to_string(k)
+}
+
+export function kind(x) {
+    <- type_name(x)
+}
+
+export function is_reflectable(x) {
+    <- __builtin_reflect.is_reflectable(x) == true
+}
+
+// ---------- Predicates ----------
+
+export function is_nothing(x) {
+    <- type_name(x) == `Nothing`
+}
+
+export function is_boolean(x) {
+    <- type_name(x) == `Boolean`
+}
+
+export function is_integer(x) {
+    <- type_name(x) == `Integer`
+}
+
+export function is_decimal(x) {
+    <- type_name(x) == `Decimal`
+}
+
+export function is_string(x) {
+    <- type_name(x) == `String`
+}
+
+export function is_list(x) {
+    <- type_name(x) == `List`
+}
+
+export function is_map(x) {
+    when type_name(x) == `Map` {
+        <- true
+    }
+    when x.kind == `Map` {
+        <- true
+    }
+    <- false
+}
+
+export function is_set(x) {
+    <- type_name(x) == `Set`
+}
+
+export function is_function(x) {
+    let t -> type_name(x)
+    when t == `Function` {
+        <- true
+    }
+    when t == `FunctionObject` {
+        <- true
+    }
+    <- false
+}
+
+export function is_structure(x) {
+    when is_reflectable(x) {
+        when not is_function(x) {
+            <- true
+        }
+    }
+    when is_map(x) {
+        when x.has(`kind`) {
+            let k -> x[`kind`]
+            when k != `Map` and k != Nothing {
+                <- true
+            }
+        }
+    }
+    <- false
+}
+
+export function is_object(x) {
+    when type_name(x) == `Object` {
+        <- true
+    }
+    <- false
+}
+
+// ---------- Fields / methods (runtime registry + maps) ----------
+
+export function fields(x) {
+    <- __builtin_reflect.fields(x)
+}
+
+export function has_field(x, name) {
+    <- __builtin_reflect.has_field(x, name) == true
+}
+
+export function field(x, name) {
+    <- __builtin_reflect.field(x, name)
+}
+
+export function set_field(x, name, value) {
+    <- __builtin_reflect.set_field(x, name, value)
+}
+
+export function methods(x) {
+    <- __builtin_reflect.methods(x)
+}
+
+export function has_method(x, name) {
+    <- __builtin_reflect.has_method(x, name) == true
+}
+
+export function method(x, name) {
+    when has_method(x, name) {
+        <- name
+    }
+    <- Nothing
+}
+
+/!
+  Dynamic call by name.
+  - Map: call the function stored at key `name` with `args` (a list).
+  - Reflectable class instance: call method `name` (interpreter; native maps first).
+  @param recv Receiver (map or instance)
+  @param name Method/key string
+  @param args List of arguments (use [] for none)
+!/
+export function call(recv, name, args) {
+    when args == Nothing {
+        <- __builtin_reflect.call(recv, name, [])
+    }
+    <- __builtin_reflect.call(recv, name, args)
+}
+
+/!
+  Apply a function value to a list of arguments.
+!/
+export function apply(fn, args) {
+    when args == Nothing {
+        <- __builtin_reflect.apply(fn, [])
+    }
+    <- __builtin_reflect.apply(fn, args)
+}
+
+// ---------- Map helpers ----------
+
+export function keys(x) {
+    when x.kind == `Map` {
+        <- x.keys()
+    }
+    <- fields(x)
+}
+
+export function values(x) {
+    when x.kind == `Map` {
+        <- x.values()
+    }
+    let fs -> fields(x)
+    let out -> []
+    let n -> fs.length
+    let i -> 0
+    do while i < n {
+        out.append(field(x, fs[i]))
+        i -> i + 1
+    }
+    <- out
+}
+
+export function items(x) {
+    when x.kind == `Map` {
+        <- x.items()
+    }
+    let fs -> fields(x)
+    let out -> []
+    let n -> fs.length
+    let i -> 0
+    do while i < n {
+        let k -> fs[i]
+        out.append({ `key` -> k, `value` -> field(x, k) })
+        i -> i + 1
+    }
+    <- out
+}

@@ -1,0 +1,34 @@
+import zen.io.io as io
+
+enumerator Message {
+    Quit,
+    Move(x, y),
+    Write(text),
+    ChangeColor(r, g, b)
+}
+
+function process_message(msg) {
+    when msg {
+        is Message.Quit {
+            io.write_line("Quitting...")
+        }
+        is Message.Move(x, y) {
+            io.write_line("Moving to " + x.to_string() + ", " + y.to_string())
+        }
+        is Message.Write(t) {
+            io.write_line("Message: " + t)
+        }
+        is Message.ChangeColor(r, g, b) {
+            io.write_line("Color changed")
+        }
+        or {
+            io.write_line("Unknown message")
+        }
+    }
+}
+
+function main() {
+    process_message(Message.Move(10, 20))
+    process_message(Message.Write("Hello World"))
+    process_message(Message.Quit)
+}

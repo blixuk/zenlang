@@ -1,0 +1,61 @@
+import zen.error as error
+import zen.test as test
+
+function raise_dynamic() {
+    raise error.new(`dynamic`)
+}
+
+function raise_literal() {
+    raise error.literal(`literal`)
+}
+
+function test_error_constructors() {
+    let literal -> error.literal(`literal`)
+    let caught_dynamic -> false
+    check {
+        error.new(`dynamic`)
+    } or {
+        caught_dynamic -> true
+    }
+
+    let pass -> test.assert_true(caught_dynamic, `error.new should raise a catchable error`)
+    pass -> pass and when literal is Error { true } or { false }
+    <- test.assert_true(pass, `error constructors should create Error values`)
+}
+
+function test_error_raise_and_check() {
+    let caught_dynamic -> false
+    check {
+        raise_dynamic()
+    } or {
+        caught_dynamic -> true
+    }
+
+    let caught_literal -> false
+    check {
+        raise_literal()
+    } or {
+        caught_literal -> true
+    }
+
+    let pass -> test.assert_true(caught_dynamic, `check should catch dynamically created errors`)
+    pass -> pass and test.assert_true(caught_literal, `check should catch literal errors`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Error.constructors`, `fn` -> test_error_constructors},
+        {`name` -> `Error.raise_and_check`, `fn` -> test_error_raise_and_check}
+    ]
+
+    <- test.run_suite(`Error Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

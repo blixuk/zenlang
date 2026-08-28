@@ -1,0 +1,57 @@
+import zen.text.string as str
+
+/!
+ AWK-like Utility Module.
+ !/
+
+/!
+ Processes text line by line, splitting each line into fields.
+ @param text The text to process.
+ @param callback A function(fields) to call for each line.
+ !/
+function process(text, callback) {
+    let lines -> str.split(text, `\n`)
+    do for line in lines {
+        let trimmed -> str.trim(line)
+        when trimmed.length > 0 {
+            let fields -> str.split(trimmed, ` `)
+            // Filter empty fields (multiple spaces)
+            let clean_fields -> []
+            do for f in fields {
+                when f.length > 0 {
+                    clean_fields.append(f)
+                }
+            }
+            callback(clean_fields)
+        }
+    }
+}
+
+/!
+ Simple column extractor (like awk '{print $1}').
+ Implemented without lambdas so native `-g` does not need
+ outer-local captures in callback closures.
+ @param text The text to process.
+ @param index The field index (0-based).
+ @return A list of values from that column.
+ !/
+function column(text, index) {
+    let result -> []
+    let lines -> str.split(text, `\n`)
+    do for line in lines {
+        let trimmed -> str.trim(line)
+        when trimmed.length > 0 {
+            let fields -> str.split(trimmed, ` `)
+            let clean_fields -> []
+            do for f in fields {
+                when f.length > 0 {
+                    clean_fields.append(f)
+                }
+            }
+            when index < clean_fields.length {
+                result.append(clean_fields[index])
+            }
+        }
+    }
+    <- result
+}

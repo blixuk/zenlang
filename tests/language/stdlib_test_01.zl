@@ -1,0 +1,10 @@
+import zen.io.io as io
+import zen.sys.sys as sys
+
+function zen_entry() {
+    io.write_line("Zenlang Version: " + sys.version())
+    io.write_line("Platform: " + sys.platform())
+    io.write_line("CWD: " + sys.get_cwd())
+    
+    io.write_line("[SUCCESS] Standard library test passed.")
+}

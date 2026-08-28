@@ -1,0 +1,142 @@
+// Test Suite: Directional Guard Returns & Concise Functions
+import zen.io.io as io
+import zen.text.string as Str
+
+// 1. Concise Functions
+function square(x) <- x * x
+
+function greet(name) <- `Hello, ` + name + `!`
+
+function factorial(n) {
+    when n <= 1 <- 1
+    <- n * factorial(n - 1)
+}
+
+function fibonacci(n) {
+    when n <= 0 <- 0
+    or when n == 1 <- 1
+    <- fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+// 2. Multi-branch Guard Returns
+function sign_of(x) {
+    when x > 0 <- `positive`
+    or when x < 0 <- `negative`
+    or <- `zero`
+}
+
+function classify_score(score) {
+    when score >= 90 <- `A`
+    or when score >= 80 <- `B`
+    or when score >= 70 <- `C`
+    or <- `F`
+}
+
+// 3. Class with Concise Methods
+class Calculator {
+    let base: Integer
+
+    function init() {
+        self.base -> 10
+    }
+
+    function add(x) <- self.base + x
+    function multiply(x, y) <- x * y
+}
+
+function test_concise_functions() {
+    let sq -> square(5)
+    when sq != 25 {
+        io.writeln(`[FAIL] square(5) expected 25, got ` + Str.to_string(sq))
+        <- 1
+    }
+    
+    let msg -> greet(`Zen`)
+    when msg != `Hello, Zen!` {
+        io.writeln(`[FAIL] greet('Zen') expected 'Hello, Zen!', got ` + msg)
+        <- 1
+    }
+    
+    let fact5 -> factorial(5)
+    when fact5 != 120 {
+        io.writeln(`[FAIL] factorial(5) expected 120, got ` + Str.to_string(fact5))
+        <- 1
+    }
+
+    let fib7 -> fibonacci(7)
+    when fib7 != 13 {
+        io.writeln(`[FAIL] fibonacci(7) expected 13, got ` + Str.to_string(fib7))
+        <- 1
+    }
+
+    io.writeln(`[PASS] Concise functions`)
+    <- 0
+}
+
+function test_guard_returns() {
+    when sign_of(42) != `positive` {
+        io.writeln(`[FAIL] sign_of(42) expected 'positive'`)
+        <- 1
+    }
+    when sign_of(-7) != `negative` {
+        io.writeln(`[FAIL] sign_of(-7) expected 'negative'`)
+        <- 1
+    }
+    when sign_of(0) != `zero` {
+        io.writeln(`[FAIL] sign_of(0) expected 'zero'`)
+        <- 1
+    }
+
+    when classify_score(95) != `A` {
+        io.writeln(`[FAIL] classify_score(95) expected 'A'`)
+        <- 1
+    }
+    when classify_score(85) != `B` {
+        io.writeln(`[FAIL] classify_score(85) expected 'B'`)
+        <- 1
+    }
+    when classify_score(75) != `C` {
+        io.writeln(`[FAIL] classify_score(75) expected 'C'`)
+        <- 1
+    }
+    when classify_score(50) != `F` {
+        io.writeln(`[FAIL] classify_score(50) expected 'F'`)
+        <- 1
+    }
+
+    io.writeln(`[PASS] Guard returns and chained branches`)
+    <- 0
+}
+
+function test_class_concise_methods() {
+    let calc -> Calculator()
+    let sum -> calc.add(5)
+    when sum != 15 {
+        io.writeln(`[FAIL] calc.add(5) expected 15, got ` + Str.to_string(sum))
+        <- 1
+    }
+
+    let prod -> calc.multiply(6, 7)
+    when prod != 42 {
+        io.writeln(`[FAIL] calc.multiply(6, 7) expected 42, got ` + Str.to_string(prod))
+        <- 1
+    }
+
+    io.writeln(`[PASS] Class concise methods`)
+    <- 0
+}
+
+function main() {
+    io.writeln(`--- Running Directional Guard & Concise Function Tests ---`)
+    let r1 -> test_concise_functions()
+    when r1 != 0 <- r1
+    
+    let r2 -> test_guard_returns()
+    when r2 != 0 <- r2
+    
+    let r3 -> test_class_concise_methods()
+    when r3 != 0 <- r3
+    
+    io.writeln(`ALL TESTS PASSED!`)
+    <- 0
+}

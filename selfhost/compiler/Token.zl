@@ -1,0 +1,377 @@
+/!
+ Token model for the self-hosted compiler.
+ Aligned with bootstrap/Lexer/Token.py (TokenType names and roles).
+ Field `kind` maps to bootstrap Token.type (Zen avoids bare `type` field name).
+ Native host stores integer kind ids (kind_id); strings remain for interpret.
+ !/
+
+import zen.text.string as Str
+
+enumerator TokenType {
+    // Categories / fallbacks
+    KEYWORD -> `KEYWORD`,
+    IDENTIFIER -> `IDENTIFIER`,
+    LITERAL -> `LITERAL`,
+    OPERATOR -> `OPERATOR`,
+    TYPE -> `TYPE`,
+    UNKNOWN -> `UNKNOWN`,
+    COMMENT -> `COMMENT`,
+    DOC_COMMENT -> `DOC_COMMENT`,
+
+    // Errors
+    ERROR -> `ERROR`,
+    ERROR_UNTERMINATED_STRING -> `ERROR_UNTERMINATED_STRING`,
+    ERROR_UNTERMINATED_STRING_EOF -> `ERROR_UNTERMINATED_STRING_EOF`,
+    ERROR_UNTERMINATED_CHARACTER -> `ERROR_UNTERMINATED_CHARACTER`,
+    ERROR_UNTERMINATED_CHARACTER_EOF -> `ERROR_UNTERMINATED_CHARACTER_EOF`,
+    ERROR_INVALID_NUMBER -> `ERROR_INVALID_NUMBER`,
+    ERROR_INVALID_ASSIGNMENT -> `ERROR_INVALID_ASSIGNMENT`,
+    ERROR_INVALID_ASSIGNMENT_OPERATOR -> `ERROR_INVALID_ASSIGNMENT_OPERATOR`,
+    ERROR_UNEXPECTED_CHARACTER -> `ERROR_UNEXPECTED_CHARACTER`,
+    ERROR_UNEXPECTED_TOKEN -> `ERROR_UNEXPECTED_TOKEN`,
+
+    // Type-ish tokens
+    VOID -> `VOID`,
+    NOTHING -> `NOTHING`,
+    DEFAULT -> `DEFAULT`,
+    VARIANT -> `VARIANT`,
+    INTEGER -> `INTEGER`,
+    DECIMAL -> `DECIMAL`,
+    STRING -> `STRING`,
+    RUNE -> `RUNE`,
+    BOOLEAN -> `BOOLEAN`,
+
+    // Declarations / keywords (as dedicated kinds where bootstrap uses them)
+    FUNCTION -> `FUNCTION`,
+    STRUCTURE -> `STRUCTURE`,
+    OBJECT -> `OBJECT`,
+    CLASS -> `CLASS`,
+    ENUMERATOR -> `ENUMERATOR`,
+    RAISE -> `RAISE`,
+    CHECK -> `CHECK`,
+    ASSERT -> `ASSERT`,
+    DEFER -> `DEFER`,
+    CASE -> `CASE`,
+    WITH -> `WITH`,
+    TASK -> `TASK`,
+    AWAIT -> `AWAIT`,
+
+    LIST -> `LIST`,
+    TUPLE -> `TUPLE`,
+    VECTOR -> `VECTOR`,
+    MAP -> `MAP`,
+    SET -> `SET`,
+    ITERATOR -> `ITERATOR`,
+    ITERABLE -> `ITERABLE`,
+    AUTO -> `AUTO`,
+
+    // Delimiters
+    LEFT_PAREN -> `LEFT_PAREN`,
+    RIGHT_PAREN -> `RIGHT_PAREN`,
+    LEFT_BRACE -> `LEFT_BRACE`,
+    RIGHT_BRACE -> `RIGHT_BRACE`,
+    LEFT_BRACKET -> `LEFT_BRACKET`,
+    RIGHT_BRACKET -> `RIGHT_BRACKET`,
+    COMMA -> `COMMA`,
+    DOT -> `DOT`,
+    SEMICOLON -> `SEMICOLON`,
+
+    // Assignment / type punctuation
+    TYPE_SET -> `TYPE_SET`,
+    TYPE_LET -> `TYPE_LET`,
+    ASSIGNMENT -> `ASSIGNMENT`,
+    RETURN -> `RETURN`,
+
+    // Arithmetic
+    ADDITION -> `ADDITION`,
+    SUBTRACTION -> `SUBTRACTION`,
+    MULTIPLICATION -> `MULTIPLICATION`,
+    DIVISION -> `DIVISION`,
+    MODULO -> `MODULO`,
+    EXPONENTIATION -> `EXPONENTIATION`,
+    QUOTIENT -> `QUOTIENT`,
+
+    // Logical words
+    AND -> `AND`,
+    OR -> `OR`,
+    NOT -> `NOT`,
+    XOR -> `XOR`,
+    NOR -> `NOR`,
+    NAND -> `NAND`,
+    XNOR -> `XNOR`,
+
+    // Bitwise
+    BITWISE_AND -> `BITWISE_AND`,
+    BITWISE_OR -> `BITWISE_OR`,
+    BITWISE_NOT -> `BITWISE_NOT`,
+    BITWISE_XOR -> `BITWISE_XOR`,
+    BITWISE_NOR -> `BITWISE_NOR`,
+    BITWISE_NAND -> `BITWISE_NAND`,
+    BITWISE_XNOR -> `BITWISE_XNOR`,
+    BITWISE_MOD -> `BITWISE_MOD`,
+    BITWISE_LEFT_SHIFT -> `BITWISE_LEFT_SHIFT`,
+    BITWISE_RIGHT_SHIFT -> `BITWISE_RIGHT_SHIFT`,
+
+    // Compound assignment
+    AND_EQUAL -> `AND_EQUAL`,
+    OR_EQUAL -> `OR_EQUAL`,
+    XOR_EQUAL -> `XOR_EQUAL`,
+    MOD_EQUAL -> `MOD_EQUAL`,
+    LEFT_SHIFT_EQUAL -> `LEFT_SHIFT_EQUAL`,
+    RIGHT_SHIFT_EQUAL -> `RIGHT_SHIFT_EQUAL`,
+
+    INCREMENT -> `INCREMENT`,
+    DECREMENT -> `DECREMENT`,
+
+    // Comparison (`=` and `==` both EQUAL, matching bootstrap)
+    EQUAL -> `EQUAL`,
+    NOT_EQUAL -> `NOT_EQUAL`,
+    GREATER_THAN -> `GREATER_THAN`,
+    LESS_THAN -> `LESS_THAN`,
+    GREATER_THAN_OR_EQUAL -> `GREATER_THAN_OR_EQUAL`,
+    LESS_THAN_OR_EQUAL -> `LESS_THAN_OR_EQUAL`,
+
+    // Ranges / rest
+    RANGE -> `RANGE`,
+    RANGE_INCLUSIVE -> `RANGE_INCLUSIVE`,
+    ELLIPSIS -> `ELLIPSIS`,
+
+    // Module / OOP words (also may appear as KEYWORD)
+    SCOPE -> `SCOPE`,
+    EXPORT -> `EXPORT`,
+    IS -> `IS`,
+    EXTENDS -> `EXTENDS`,
+    PARENT -> `PARENT`,
+    SELF -> `SELF`,
+    IMPORT -> `IMPORT`,
+    FROM -> `FROM`,
+    AS -> `AS`,
+
+    // Symbolic error/control punctuation
+    CHECK_SYMBOL -> `CHECK_SYMBOL`,
+    RAISE_SYMBOL -> `RAISE_SYMBOL`,
+    ASSERT_SYMBOL -> `ASSERT_SYMBOL`,
+
+    EOF -> `EOF`
+}
+
+/!
+ A single lexeme. Positional struct list: [kind, start, length, line, column, end_line, end_column].
+ THREE_LAYER phase 5.1: zero-copy integer span token representation.
+ !/
+function token(kind, start, length, line, column, end_line, end_column) {
+    <- [kind, start, length, line, column, end_line, end_column]
+}
+
+function tok_kind(t) {
+    when t == Nothing {
+        <- Nothing
+    }
+    <- t[0]
+}
+
+function tok_start(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[1]
+}
+
+function tok_length(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[2]
+}
+
+function tok_lexeme(src, t) {
+    when t == Nothing or src == Nothing {
+        <- ``
+    }
+    let s -> t[1]
+    let l -> t[2]
+    when l <= 0 {
+        <- ``
+    }
+    <- Str.substring(src, s, s + l)
+}
+
+function tok_value(t) {
+    when t == Nothing {
+        <- ``
+    }
+    // If a legacy token tuple contains a string at index 1
+    when t[1] is String {
+        <- t[1]
+    }
+    <- ``
+}
+
+function tok_line(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[3]
+}
+
+function tok_column(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[4]
+}
+
+function tok_end_line(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[5]
+}
+
+function tok_end_column(t) {
+    when t == Nothing {
+        <- 0
+    }
+    <- t[6]
+}
+
+/!
+ Map TokenType name / variant / already-int → small integer.
+ Lexer stores this on every token; Parser is_kind compares ints on -g.
+ !/
+function kind_id(kind) {
+    when kind == Nothing {
+        <- -1
+    }
+    let s -> Str.to_string(kind)
+    // Native TokenType.X is already an int (to_string "0".."114").
+    // Do not use `kind >= 0` — variants throw under bootstrap interpret.
+    when Str.length(s) <= 3 and Str.contains(`0123456789`, Str.at(s, 0)) {
+        <- kind
+    }
+    when Str.starts_with(s, `TokenType.`) {
+        s -> Str.substring(s, 10, Str.length(s))
+    }
+    when s == `KEYWORD` { <- 0 }
+    when s == `IDENTIFIER` { <- 1 }
+    when s == `LITERAL` { <- 2 }
+    when s == `OPERATOR` { <- 3 }
+    when s == `TYPE` { <- 4 }
+    when s == `UNKNOWN` { <- 5 }
+    when s == `COMMENT` { <- 6 }
+    when s == `DOC_COMMENT` { <- 7 }
+    when s == `ERROR` { <- 8 }
+    when s == `ERROR_UNTERMINATED_STRING` { <- 9 }
+    when s == `ERROR_UNTERMINATED_STRING_EOF` { <- 10 }
+    when s == `ERROR_UNTERMINATED_CHARACTER` { <- 11 }
+    when s == `ERROR_UNTERMINATED_CHARACTER_EOF` { <- 12 }
+    when s == `ERROR_INVALID_NUMBER` { <- 13 }
+    when s == `ERROR_INVALID_ASSIGNMENT` { <- 14 }
+    when s == `ERROR_INVALID_ASSIGNMENT_OPERATOR` { <- 15 }
+    when s == `ERROR_UNEXPECTED_CHARACTER` { <- 16 }
+    when s == `ERROR_UNEXPECTED_TOKEN` { <- 17 }
+    when s == `VOID` { <- 18 }
+    when s == `NOTHING` { <- 19 }
+    when s == `DEFAULT` { <- 20 }
+    when s == `VARIANT` { <- 21 }
+    when s == `INTEGER` { <- 22 }
+    when s == `DECIMAL` { <- 23 }
+    when s == `STRING` { <- 24 }
+    when s == `RUNE` { <- 25 }
+    when s == `BOOLEAN` { <- 26 }
+    when s == `FUNCTION` { <- 27 }
+    when s == `STRUCTURE` { <- 28 }
+    when s == `OBJECT` { <- 29 }
+    when s == `CLASS` { <- 30 }
+    when s == `ENUMERATOR` { <- 31 }
+    when s == `RAISE` { <- 32 }
+    when s == `CHECK` { <- 33 }
+    when s == `ASSERT` { <- 34 }
+    when s == `DEFER` { <- 35 }
+    when s == `CASE` { <- 36 }
+    when s == `WITH` { <- 37 }
+    when s == `TASK` { <- 38 }
+    when s == `AWAIT` { <- 39 }
+    when s == `LIST` { <- 40 }
+    when s == `TUPLE` { <- 41 }
+    when s == `VECTOR` { <- 42 }
+    when s == `MAP` { <- 43 }
+    when s == `SET` { <- 44 }
+    when s == `ITERATOR` { <- 45 }
+    when s == `ITERABLE` { <- 46 }
+    when s == `AUTO` { <- 47 }
+    when s == `LEFT_PAREN` { <- 48 }
+    when s == `RIGHT_PAREN` { <- 49 }
+    when s == `LEFT_BRACE` { <- 50 }
+    when s == `RIGHT_BRACE` { <- 51 }
+    when s == `LEFT_BRACKET` { <- 52 }
+    when s == `RIGHT_BRACKET` { <- 53 }
+    when s == `COMMA` { <- 54 }
+    when s == `DOT` { <- 55 }
+    when s == `SEMICOLON` { <- 56 }
+    when s == `TYPE_SET` { <- 57 }
+    when s == `TYPE_LET` { <- 58 }
+    when s == `ASSIGNMENT` { <- 59 }
+    when s == `RETURN` { <- 60 }
+    when s == `ADDITION` { <- 61 }
+    when s == `SUBTRACTION` { <- 62 }
+    when s == `MULTIPLICATION` { <- 63 }
+    when s == `DIVISION` { <- 64 }
+    when s == `MODULO` { <- 65 }
+    when s == `EXPONENTIATION` { <- 66 }
+    when s == `QUOTIENT` { <- 67 }
+    when s == `AND` { <- 68 }
+    when s == `OR` { <- 69 }
+    when s == `NOT` { <- 70 }
+    when s == `XOR` { <- 71 }
+    when s == `NOR` { <- 72 }
+    when s == `NAND` { <- 73 }
+    when s == `XNOR` { <- 74 }
+    when s == `BITWISE_AND` { <- 75 }
+    when s == `BITWISE_OR` { <- 76 }
+    when s == `BITWISE_NOT` { <- 77 }
+    when s == `BITWISE_XOR` { <- 78 }
+    when s == `BITWISE_NOR` { <- 79 }
+    when s == `BITWISE_NAND` { <- 80 }
+    when s == `BITWISE_XNOR` { <- 81 }
+    when s == `BITWISE_MOD` { <- 82 }
+    when s == `BITWISE_LEFT_SHIFT` { <- 83 }
+    when s == `BITWISE_RIGHT_SHIFT` { <- 84 }
+    when s == `AND_EQUAL` { <- 85 }
+    when s == `OR_EQUAL` { <- 86 }
+    when s == `XOR_EQUAL` { <- 87 }
+    when s == `MOD_EQUAL` { <- 88 }
+    when s == `LEFT_SHIFT_EQUAL` { <- 89 }
+    when s == `RIGHT_SHIFT_EQUAL` { <- 90 }
+    when s == `INCREMENT` { <- 91 }
+    when s == `DECREMENT` { <- 92 }
+    when s == `EQUAL` { <- 93 }
+    when s == `NOT_EQUAL` { <- 94 }
+    when s == `GREATER_THAN` { <- 95 }
+    when s == `LESS_THAN` { <- 96 }
+    when s == `GREATER_THAN_OR_EQUAL` { <- 97 }
+    when s == `LESS_THAN_OR_EQUAL` { <- 98 }
+    when s == `RANGE` { <- 99 }
+    when s == `RANGE_INCLUSIVE` { <- 100 }
+    when s == `ELLIPSIS` { <- 101 }
+    when s == `SCOPE` { <- 102 }
+    when s == `EXPORT` { <- 103 }
+    when s == `IS` { <- 104 }
+    when s == `EXTENDS` { <- 105 }
+    when s == `PARENT` { <- 106 }
+    when s == `SELF` { <- 107 }
+    when s == `IMPORT` { <- 108 }
+    when s == `FROM` { <- 109 }
+    when s == `AS` { <- 110 }
+    when s == `CHECK_SYMBOL` { <- 111 }
+    when s == `RAISE_SYMBOL` { <- 112 }
+    when s == `ASSERT_SYMBOL` { <- 113 }
+    when s == `EOF` { <- 114 }
+    // Already an integer id (native TokenType.X emit).
+    when Str.contains(`0123456789`, Str.at(s, 0)) {
+        <- kind
+    }
+    <- -1
+}
+
+

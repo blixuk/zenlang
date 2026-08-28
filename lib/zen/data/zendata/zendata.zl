@@ -1,0 +1,544 @@
+/!
+  Zen Data (ZD) Module — Declarative data format parser, serializer, and tagged struct engine.
+  Canonical path: `zen.data.zendata` (alias: `zen.zendata`).
+!/
+
+use zen.text.string as Str
+
+// ==========================================
+// 1. Comment Stripper & Lexical Helper
+// ==========================================
+
+function _strip_comments(text) {
+    let out -> ``
+    let i -> 0
+    let len -> Str.length(text)
+    
+    do while i < len {
+        let c -> Str.substring(text, i, i + 1)
+        let next_c -> when (i + 1 < len) { Str.substring(text, i + 1, i + 2) } or { `` }
+        
+        // Strings: preserve content verbatim
+        when c == `\`` {
+            let start -> i
+            i -> i + 1
+            // Check for triple backtick
+            let is_triple -> False
+            when i + 1 < len and Str.substring(text, i, i + 2) == `\`\`` {
+                is_triple -> True
+                i -> i + 2
+            }
+            
+            let closed -> False
+            do while i < len and not closed {
+                let sc -> Str.substring(text, i, i + 1)
+                when is_triple and (i + 2 < len) and Str.substring(text, i, i + 3) == `\`\`\`` {
+                    i -> i + 3
+                    closed -> True
+                } or when not is_triple and sc == `\`` {
+                    i -> i + 1
+                    closed -> True
+                } or {
+                    i -> i + 1
+                }
+            }
+            out -> out + Str.substring(text, start, i)
+        } or when c == `/` and next_c == `/` {
+            // Line comment: skip until newline
+            i -> i + 2
+            do while i < len and Str.substring(text, i, i + 1) != `\n` {
+                i -> i + 1
+            }
+        } or when c == `/` and next_c == `!` {
+            // Block comment /! ... !/
+            i -> i + 2
+            let closed -> False
+            do while i < len and not closed {
+                let sc -> Str.substring(text, i, i + 1)
+                let snc -> when (i + 1 < len) { Str.substring(text, i + 1, i + 2) } or { `` }
+                when sc == `!` and snc == `/` {
+                    i -> i + 2
+                    closed -> True
+                } or {
+                    i -> i + 1
+                }
+            }
+        } or {
+            out -> out + c
+            i -> i + 1
+        }
+    }
+    <- out
+}
+
+// ==========================================
+// 2. Parser State & Tokenizer
+// ==========================================
+
+function _skip_ws(text, pos) {
+    let len -> Str.length(text)
+    do while pos < len {
+        let c -> Str.substring(text, pos, pos + 1)
+        when c == ` ` or c == `\t` or c == `\r` or c == `\n` or c == `,` {
+            pos -> pos + 1
+        } or {
+            <- pos
+        }
+    }
+    <- pos
+}
+
+function _parse_hex(s) {
+    let hex_str -> Str.to_lower(Str.substring(s, 2, Str.length(s)))
+    let val -> 0
+    let i -> 0
+    let len -> Str.length(hex_str)
+    do while i < len {
+        let c -> Str.substring(hex_str, i, i + 1)
+        let digit -> 0
+        when c == `0` { digit -> 0 }
+        or when c == `1` { digit -> 1 }
+        or when c == `2` { digit -> 2 }
+        or when c == `3` { digit -> 3 }
+        or when c == `4` { digit -> 4 }
+        or when c == `5` { digit -> 5 }
+        or when c == `6` { digit -> 6 }
+        or when c == `7` { digit -> 7 }
+        or when c == `8` { digit -> 8 }
+        or when c == `9` { digit -> 9 }
+        or when c == `a` { digit -> 10 }
+        or when c == `b` { digit -> 11 }
+        or when c == `c` { digit -> 12 }
+        or when c == `d` { digit -> 13 }
+        or when c == `e` { digit -> 14 }
+        or when c == `f` { digit -> 15 }
+        val -> val * 16 + digit
+        i -> i + 1
+    }
+    <- val
+}
+
+function _parse_bin(s) {
+    let bin_str -> Str.substring(s, 2, Str.length(s))
+    let val -> 0
+    let i -> 0
+    let len -> Str.length(bin_str)
+    do while i < len {
+        let c -> Str.substring(bin_str, i, i + 1)
+        when c == `1` {
+            val -> val * 2 + 1
+        } or {
+            val -> val * 2
+        }
+        i -> i + 1
+    }
+    <- val
+}
+
+function _parse_value(text, pos) {
+    pos -> _skip_ws(text, pos)
+    let len -> Str.length(text)
+    when pos >= len {
+        <- { `val` -> Nothing, `pos` -> pos }
+    }
+    
+    let c -> Str.substring(text, pos, pos + 1)
+    
+    // 1. Strings (Backtick raw / multi-line)
+    when c == `\`` {
+        let is_triple -> False
+        let start -> pos + 1
+        when pos + 2 < len and Str.substring(text, pos, pos + 3) == `\`\`\`` {
+            is_triple -> True
+            pos -> pos + 3
+            start -> pos
+        } or {
+            pos -> pos + 1
+        }
+        
+        let s -> ``
+        let closed -> False
+        do while pos < len and not closed {
+            when is_triple and (pos + 2 < len) and Str.substring(text, pos, pos + 3) == `\`\`\`` {
+                s -> Str.substring(text, start, pos)
+                pos -> pos + 3
+                closed -> True
+            } or when not is_triple and Str.substring(text, pos, pos + 1) == `\`` {
+                s -> Str.substring(text, start, pos)
+                pos -> pos + 1
+                closed -> True
+            } or {
+                pos -> pos + 1
+            }
+        }
+        <- { `val` -> s, `pos` -> pos }
+    }
+    
+    // 2. Strings (Double quote)
+    when c == `"` {
+        pos -> pos + 1
+        let start -> pos
+        let closed -> False
+        do while pos < len and not closed {
+            let sc -> Str.substring(text, pos, pos + 1)
+            when sc == `\\` and pos + 1 < len {
+                pos -> pos + 2
+            } or when sc == `"` {
+                closed -> True
+            } or {
+                pos -> pos + 1
+            }
+        }
+        let s -> Str.substring(text, start, pos)
+        when pos < len and Str.substring(text, pos, pos + 1) == `"` {
+            pos -> pos + 1
+        }
+        <- { `val` -> s, `pos` -> pos }
+    }
+    
+    // 3. Lists [ ... ]
+    when c == `[` {
+        pos -> pos + 1
+        let list_res -> []
+        do while pos < len {
+            pos -> _skip_ws(text, pos)
+            when pos < len and Str.substring(text, pos, pos + 1) == `]` {
+                pos -> pos + 1
+                <- { `val` -> list_res, `pos` -> pos }
+            }
+            let item_res -> _parse_value(text, pos)
+            list_res.append(item_res.val)
+            pos -> item_res.pos
+            pos -> _skip_ws(text, pos)
+            when pos < len and Str.substring(text, pos, pos + 1) == `]` {
+                pos -> pos + 1
+                <- { `val` -> list_res, `pos` -> pos }
+            }
+        }
+        <- { `val` -> list_res, `pos` -> pos }
+    }
+    
+    // 3. Maps or Element Sequences { ... }
+    when c == `{` {
+        pos -> pos + 1
+        let map_res -> {}
+        let list_res -> []
+        let is_sequence -> False
+        
+        do while pos < len {
+            pos -> _skip_ws(text, pos)
+            when pos < len and Str.substring(text, pos, pos + 1) == `}` {
+                pos -> pos + 1
+                when is_sequence {
+                    <- { `val` -> { `elements` -> list_res }, `pos` -> pos }
+                }
+                <- { `val` -> map_res, `pos` -> pos }
+            }
+            
+            let item_res -> _parse_value(text, pos)
+            pos -> item_res.pos
+            pos -> _skip_ws(text, pos)
+            
+            // Check if followed by `->` or `:`
+            let has_arrow -> False
+            when pos + 1 < len and Str.substring(text, pos, pos + 2) == `->` {
+                pos -> pos + 2
+                has_arrow -> True
+            } or when pos < len and Str.substring(text, pos, pos + 1) == `:` {
+                pos -> pos + 1
+                has_arrow -> True
+            }
+            
+            when has_arrow {
+                pos -> _skip_ws(text, pos)
+                let val_res -> _parse_value(text, pos)
+                let key_str -> Str.to_string(item_res.val)
+                map_res[key_str] -> val_res.val
+                pos -> val_res.pos
+            } or {
+                is_sequence -> True
+                list_res.append(item_res.val)
+            }
+            
+            pos -> _skip_ws(text, pos)
+            when pos < len and Str.substring(text, pos, pos + 1) == `}` {
+                pos -> pos + 1
+                when is_sequence {
+                    <- { `val` -> { `elements` -> list_res }, `pos` -> pos }
+                }
+                <- { `val` -> map_res, `pos` -> pos }
+            }
+        }
+        
+        when is_sequence {
+            <- { `val` -> { `elements` -> list_res }, `pos` -> pos }
+        }
+        <- { `val` -> map_res, `pos` -> pos }
+    }
+    
+    // 4. Literals, Sentinels, Numbers, or Typed Structs
+    let start_pos -> pos
+    do while pos < len {
+        let ch -> Str.substring(text, pos, pos + 1)
+        when ch == ` ` or ch == `\t` or ch == `\r` or ch == `\n` or ch == `,` or ch == `}` or ch == `]` or ch == `{` {
+            break
+        }
+        pos -> pos + 1
+    }
+    let token_str -> Str.substring(text, start_pos, pos)
+    
+    // Check if followed by `{` (Tagged Struct: TypeName { ... })
+    pos -> _skip_ws(text, pos)
+    when pos < len and Str.substring(text, pos, pos + 1) == `{` {
+        let body_res -> _parse_value(text, pos)
+        let struct_map -> body_res.val
+        when struct_map != Nothing {
+            struct_map[`__type__`] -> token_str
+        }
+        <- { `val` -> struct_map, `pos` -> body_res.pos }
+    }
+    
+    // Check Sentinels & Booleans
+    when token_str == `Nothing` or token_str == `nothing` or token_str == `null` {
+        <- { `val` -> Nothing, `pos` -> pos }
+    }
+    when token_str == `Default` or token_str == `default` {
+        <- { `val` -> Default, `pos` -> pos }
+    }
+    when token_str == `True` or token_str == `true` {
+        <- { `val` -> True, `pos` -> pos }
+    }
+    when token_str == `False` or token_str == `false` {
+        <- { `val` -> False, `pos` -> pos }
+    }
+    
+    // Hex / Binary numbers
+    when Str.starts_with(token_str, `0x`) or Str.starts_with(token_str, `0X`) {
+        <- { `val` -> _parse_hex(token_str), `pos` -> pos }
+    }
+    when Str.starts_with(token_str, `0b`) or Str.starts_with(token_str, `0B`) {
+        <- { `val` -> _parse_bin(token_str), `pos` -> pos }
+    }
+    
+    // Decimal / Integer Numbers
+    when _is_number_str(token_str) {
+        <- { `val` -> _parse_dec_or_int(token_str), `pos` -> pos }
+    }
+    
+    // Bare word identifier (fallback string)
+    <- { `val` -> token_str, `pos` -> pos }
+}
+
+function _char_to_digit(c) {
+    when c == `0` { <- 0 }
+    when c == `1` { <- 1 }
+    when c == `2` { <- 2 }
+    when c == `3` { <- 3 }
+    when c == `4` { <- 4 }
+    when c == `5` { <- 5 }
+    when c == `6` { <- 6 }
+    when c == `7` { <- 7 }
+    when c == `8` { <- 8 }
+    when c == `9` { <- 9 }
+    <- -1
+}
+
+function _is_number_str(s) {
+    when s == Nothing or Str.length(s) == 0 { <- False }
+    let first -> Str.substring(s, 0, 1)
+    when first == `-` and Str.length(s) > 1 {
+        first -> Str.substring(s, 1, 2)
+    }
+    <- _char_to_digit(first) >= 0
+}
+
+function _parse_dec_or_int(s) {
+    let neg -> False
+    when Str.starts_with(s, `-`) {
+        neg -> True
+        s -> Str.substring(s, 1, Str.length(s))
+    }
+    
+    let dot_idx -> Str.index_of(s, `.`)
+    when dot_idx < 0 {
+        let val -> 0
+        let i -> 0
+        let len -> Str.length(s)
+        do while i < len {
+            let c -> Str.substring(s, i, i + 1)
+            let digit -> _char_to_digit(c)
+            when digit >= 0 {
+                val -> val * 10 + digit
+            }
+            i -> i + 1
+        }
+        when neg { <- -val }
+        <- val
+    } or {
+        let int_part_str -> Str.substring(s, 0, dot_idx)
+        let frac_part_str -> Str.substring(s, dot_idx + 1, Str.length(s))
+        
+        let int_val -> 0
+        let i -> 0
+        do while i < Str.length(int_part_str) {
+            let c -> Str.substring(int_part_str, i, i + 1)
+            let digit -> _char_to_digit(c)
+            when digit >= 0 {
+                int_val -> int_val * 10 + digit
+            }
+            i -> i + 1
+        }
+        
+        let frac_val -> 0.0
+        let div -> 10.0
+        let j -> 0
+        do while j < Str.length(frac_part_str) {
+            let c -> Str.substring(frac_part_str, j, j + 1)
+            let digit -> _char_to_digit(c)
+            when digit >= 0 {
+                frac_val -> frac_val + (digit / div)
+                div -> div * 10.0
+            }
+            j -> j + 1
+        }
+        
+        let total -> int_val + frac_val
+        when neg { <- -total }
+        <- total
+    }
+}
+
+// ==========================================
+// 3. Public API
+// ==========================================
+
+/!
+  Parses all root Zen Data structures from a string into a list of values.
+  @param text The .zd source text.
+  @return List of parsed data trees.
+!/
+function parse_all(text) {
+    when text == Nothing or Str.trim(text) == `` {
+        <- []
+    }
+    let clean -> _strip_comments(text)
+    let pos -> 0
+    let len -> Str.length(clean)
+    let results -> []
+    
+    do while pos < len {
+        pos -> _skip_ws(clean, pos)
+        when pos >= len { break }
+        let res -> _parse_value(clean, pos)
+        when res == Nothing or res.pos <= pos {
+            break
+        }
+        when res.val != Nothing {
+            results.append(res.val)
+        }
+        pos -> res.pos
+    }
+    
+    <- results
+}
+
+/!
+  Parses a Zen Data string into native Zen values, maps, and typed structs.
+  @param text The .zd source text.
+  @return The parsed data tree (or list of trees if multiple roots exist).
+!/
+function parse(text) {
+    let all -> parse_all(text)
+    when all.length == 0 { <- Nothing }
+    when all.length == 1 { <- all[0] }
+    <- all
+}
+
+/!
+  Serializes any Zen value, list, map, or struct into formatted .zd text.
+  @param value The value to serialize.
+  @param indent_level Current indentation level (defaults to 0).
+  @return Formatted Zen Data string.
+!/
+function stringify(value, indent_level) {
+    when indent_level == Nothing { indent_level -> 0 }
+    let pad -> ``
+    let i -> 0
+    do while i < indent_level {
+        pad -> pad + `    `
+        i -> i + 1
+    }
+    let inner_pad -> pad + `    `
+    
+    when value == Nothing { <- `Nothing` }
+    when value == Default { <- `Default` }
+    when value == True { <- `True` }
+    when value == False { <- `False` }
+    
+    when value is String {
+        // Use backticks for clean output
+        <- `\`` + value + `\``
+    }
+    
+    when value is Integer or value is Decimal {
+        <- Str.to_string(value)
+    }
+    
+    // Lists
+    when value is List {
+        when value.length == 0 { <- `[]` }
+        let out -> `[\n`
+        let idx -> 0
+        let len -> value.length
+        do while idx < len {
+            out -> out + inner_pad + stringify(value[idx], indent_level + 1) + `,\n`
+            idx -> idx + 1
+        }
+        out -> out + pad + `]`
+        <- out
+    }
+    
+    // Maps & Structs
+    when value is Map {
+        let keys -> __builtin_map.keys(value)
+        when keys.length == 0 { <- `{}` }
+        
+        let type_prefix -> ``
+        when value.has(`__type__`) {
+            type_prefix -> value[`__type__`] + ` `
+        }
+        
+        let out -> type_prefix + `{\n`
+        let ki -> 0
+        do while ki < keys.length {
+            let k -> keys[ki]
+            when k != `__type__` {
+                out -> out + inner_pad + `\`` + Str.to_string(k) + `\` -> ` + stringify(value[k], indent_level + 1) + `,\n`
+            }
+            ki -> ki + 1
+        }
+        out -> out + pad + `}`
+        <- out
+    }
+    
+    <- Str.to_string(value)
+}
+
+/!
+  Safely retrieves a value by key, returning a default fallback if absent.
+!/
+function get(data, key, default_val) {
+    when data != Nothing and data.has(key) {
+        let v -> data[key]
+        when v != Nothing { <- v }
+    }
+    <- default_val
+}
+
+/!
+  Checks if a key exists in the data map.
+!/
+function has(data, key) {
+    when data == Nothing { <- False }
+    <- data.has(key)
+}

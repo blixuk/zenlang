@@ -1,0 +1,128 @@
+import compiler.Parser as Parser
+import compiler.Bytecode as Bytecode
+import zen.test as test
+
+function run_src(src) {
+    let prog -> Parser.parse_source(src)
+    let res -> Bytecode.compile_program(prog)
+    when not res[`ok`] {
+        <- Nothing
+    }
+    <- Bytecode.eval_chunk(res[`chunk`], {})
+}
+
+function test_vm_arithmetic() {
+    let src -> `
+        let a -> 10 + 20 * 2
+        let b -> a - 5
+        let c -> b / 3
+        let d -> c % 4
+        <- d
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 3, `test_vm_arithmetic`)
+}
+
+function test_vm_comparisons() {
+    let src -> `
+        let a -> 10 < 20
+        let b -> 50 >= 50
+        let c -> 30 == 30
+        let d -> 40 != 40
+        <- [a, b, c, d]
+    `
+    let res -> run_src(src)
+    let expected -> [true, true, true, false]
+    <- test.assert_equal(res, expected, `test_vm_comparisons`)
+}
+
+function test_vm_branching() {
+    let src -> `
+        let x -> 15
+        let res -> 0
+        when x > 20 {
+            res -> 100
+        } or when x > 10 {
+            res -> 200
+        } or {
+            res -> 300
+        }
+        <- res
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 200, `test_vm_branching`)
+}
+
+function test_vm_while_loop() {
+    let src -> `
+        let i -> 1
+        let sum -> 0
+        do while i <= 10 {
+            sum -> sum + i
+            i -> i + 1
+        }
+        <- sum
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 55, `test_vm_while_loop`)
+}
+
+function test_vm_functions() {
+    let src -> `
+        function add3(a, b, c) {
+            <- a + b + c
+        }
+        let r -> add3(10, 20, 30)
+        <- r
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 60, `test_vm_functions`)
+}
+
+function test_vm_recursion() {
+    let src -> `
+        function fib(n) {
+            when n <= 1 {
+                <- n
+            }
+            <- fib(n - 1) + fib(n - 2)
+        }
+        let r -> fib(7)
+        <- r
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 13, `test_vm_recursion`)
+}
+
+function test_vm_collections() {
+    let src -> `
+        let items -> [10, 20, 30]
+        let m -> { x -> 100, y -> 200 }
+        let a -> items[1]
+        let b -> m.y
+        <- a + b
+    `
+    let res -> run_src(src)
+    <- test.assert_equal(res, 220, `test_vm_collections`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `VM.arithmetic`, `fn` -> test_vm_arithmetic},
+        {`name` -> `VM.comparisons`, `fn` -> test_vm_comparisons},
+        {`name` -> `VM.branching`, `fn` -> test_vm_branching},
+        {`name` -> `VM.while_loop`, `fn` -> test_vm_while_loop},
+        {`name` -> `VM.functions`, `fn` -> test_vm_functions},
+        {`name` -> `VM.recursion`, `fn` -> test_vm_recursion},
+        {`name` -> `VM.collections`, `fn` -> test_vm_collections}
+    ]
+    <- test.run_suite(`Selfhost Stage3 Bytecode VM`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -1,0 +1,408 @@
+/!
+  Process and shell control for scripting.
+
+  Goal: replace common bash script patterns with explicit Zen APIs while still
+  using `/bin/sh` for full shell power (pipes, globs, redirects, `&&` / `||`).
+
+  Preferred styles:
+  - `process.shell(\`ls -la | head\`)` — one-shot shell string (bash-like)
+  - `process.result(\`make\`)` — `{stdout, stderr, code}` map for branching
+  - `process.ok(\`test -f x\`)` / `process.require(\`make\`)` — predicates & fail-fast
+  - `process.run(cmd, args)` — argv form without a shell (safer when no metacharacters)
+  - `process.shell_in(dir, cmd)` — run in a directory without changing parent cwd
+  - Fluent argv pipelines via real OS pipes (no shell):
+    `let p -> process.Pipeline(\`printf\`, [\`a\\nb\\n\`]); p.pipe(\`wc\`, [\`-l\`]); p.run()`
+  - Stream lines: `process.each_line(\`cmd\`, function(line) { ... })`
+!/
+
+import zen.text.string as Str
+
+/!
+  Run a shell command string via `/bin/sh -c`.
+!/
+function shell(command) {
+    <- __builtin_process.shell(command)
+}
+
+/!
+  Run shell command in `cwd` without changing the parent process directory.
+  bash: `(cd dir && cmd)`
+!/
+function shell_in(cwd, command) {
+    <- __builtin_process.shell_in(cwd, command)
+}
+
+/!
+  Run shell with env overlay (bash: `FOO=bar cmd`). Parent environment unchanged.
+  @param env Map of string → string.
+  @param command Shell command.
+!/
+function shell_env(env, command) {
+    <- __builtin_process.shell_env(env, command)
+}
+
+/!
+  Child-only chdir + env overlay.
+!/
+function shell_in_env(cwd, env, command) {
+    <- __builtin_process.shell_in_env(cwd, env, command)
+}
+
+/!
+  Run a shell command; return map: stdout, stderr, code.
+!/
+function result(command) {
+    <- __builtin_process.shell_result(command)
+}
+
+/!
+  Like result(), but child chdir(cwd) first.
+!/
+function result_in(cwd, command) {
+    <- __builtin_process.shell_result_in(cwd, command)
+}
+
+/!
+  result() with env overlay.
+!/
+function result_env(env, command) {
+    <- __builtin_process.shell_result_env(env, command)
+}
+
+/!
+  result() with cwd + env.
+!/
+function result_in_env(cwd, env, command) {
+    <- __builtin_process.shell_result_in_env(cwd, env, command)
+}
+
+/!
+  True when the shell command exits 0.
+!/
+function ok(command) {
+    let r -> result(command)
+    <- r.code == 0
+}
+
+/!
+  True when shell command in `cwd` exits 0.
+!/
+function ok_in(cwd, command) {
+    let r -> result_in(cwd, command)
+    <- r.code == 0
+}
+
+/!
+  True when shell command with env overlay exits 0.
+!/
+function ok_env(env, command) {
+    let r -> result_env(env, command)
+    <- r.code == 0
+}
+
+/!
+  Run shell command; raise if non-zero. Returns stdout on success.
+!/
+function require(command) {
+    let r -> result(command)
+    when r.code != 0 {
+        let msg -> `command failed (` + Str.to_string(r.code) + `): ` + command
+        when r.stderr != `` {
+            msg -> msg + `\n` + r.stderr
+        }
+        raise msg
+    }
+    <- r.stdout
+}
+
+/!
+  require() with child-only chdir.
+!/
+function require_in(cwd, command) {
+    let r -> result_in(cwd, command)
+    when r.code != 0 {
+        let msg -> `command failed (` + Str.to_string(r.code) + `) in ` + cwd + `: ` + command
+        when r.stderr != `` {
+            msg -> msg + `\n` + r.stderr
+        }
+        raise msg
+    }
+    <- r.stdout
+}
+
+/!
+  Shell command; return stdout split into lines (trimmed).
+  Loads the full output then splits (fine for small outputs).
+!/
+function lines(command) {
+    let out -> Str.trim(shell(command))
+    when out == `` { <- [] }
+    <- Str.split(out, `\n`)
+}
+
+/!
+  Stream shell stdout line-by-line, calling `fn(line)` for each line.
+  Does not keep the full output in memory. Returns the line count.
+  @param command Shell command string.
+  @param fn Callback function(line).
+  @example
+  process.each_line(`printf 'a\nb\n'`, function(line) { io.write(line + `\n`) })
+!/
+function each_line(command, fn) {
+    <- __builtin_process.shell_each_line(command, fn)
+}
+
+/!
+  each_line with child-only chdir.
+!/
+function each_line_in(cwd, command, fn) {
+    <- __builtin_process.shell_each_line_in(cwd, command, fn)
+}
+
+/!
+  each_line with env overlay.
+!/
+function each_line_env(env, command, fn) {
+    <- __builtin_process.shell_each_line_env(env, command, fn)
+}
+
+/!
+  Alias for shell pipelines written as a single string (bash `|`).
+!/
+function pipeline(command) {
+    <- shell(command)
+}
+
+function get_id() {
+    <- __builtin_process.get_id()
+}
+
+/!
+  Represents a system process (argv form).
+!/
+class Process {
+    let _instance
+    let _cmd
+    let _args
+
+    /!
+     @param cmd The executable name or path.
+     @param args A list of string arguments.
+     @example
+     let p -> Process(`ls`, [`-l`, `/tmp`])
+    !/
+    function init(cmd, args) {
+        self._cmd -> cmd
+        self._args -> args
+        self._instance -> Nothing
+    }
+
+    function start() {
+        self._instance -> __builtin_process.spawn(self._cmd, self._args)
+    }
+
+    function wait() {
+        when self._instance == Nothing { raise `ProcessNotStarted` }
+        <- self._instance.wait()
+    }
+
+    function stdout() {
+        when self._instance == Nothing { raise `ProcessNotStarted` }
+        <- self._instance.get_stdout()
+    }
+
+    function code() {
+        when self._instance == Nothing { raise `ProcessNotStarted` }
+        <- self._instance.get_code()
+    }
+
+    function kill() {
+        when self._instance == Nothing { raise `ProcessNotStarted` }
+        self._instance.kill()
+    }
+}
+
+/!
+  Quote a string for safe inclusion in a shell command (single-quoted).
+  @param s Raw argument.
+  @return Shell-safe single-quoted string.
+!/
+function shell_quote(s) {
+    let text -> Str.to_string(s)
+    // bash: 'foo'"'"'bar' embeds a single quote inside single quotes
+    let escaped -> Str.replace(text, `'`, `'"'"'`)
+    <- `'` + escaped + `'`
+}
+
+/!
+  Format argv as a shell stage: cmd arg1 arg2 ...
+!/
+function format_stage(command, arguments) {
+    let s -> shell_quote(command)
+    do for a in arguments {
+        s -> s + ` ` + shell_quote(a)
+    }
+    <- s
+}
+
+/!
+  Build one pipeline stage as [cmd, arg1, ...] for real pipe(2) execution.
+!/
+function make_stage(command, arguments) {
+    let stage -> [command]
+    do for a in arguments {
+        stage.append(a)
+    }
+    <- stage
+}
+
+/!
+  Fluent multi-stage pipeline.
+  - Stores argv stages and runs them with real OS pipes (no shell) by Default.
+  - `script()` still shows the equivalent shell form for debugging.
+  - Use process.shell(\`a | b\`) when you need shell metacharacters in a stage.
+!/
+class Pipeline {
+    let _stages
+    let _script
+    let _cwd
+    let _env
+
+    function init(command, arguments) {
+        let stage -> make_stage(command, arguments)
+        self._stages -> [stage]
+        self._script -> format_stage(command, arguments)
+        self._cwd -> ``
+        self._env -> Nothing
+    }
+
+    /!
+     Append another stage (bash `|`) — connected with pipe(2) at run time.
+     @return self for chaining.
+    !/
+    function pipe(command, arguments) {
+        let stage -> make_stage(command, arguments)
+        self._stages.append(stage)
+        self._script -> self._script + ` | ` + format_stage(command, arguments)
+        <- self
+    }
+
+    /!
+     Run the pipeline in `path` (child-only chdir). Empty string = current dir.
+     @return self for chaining.
+    !/
+    function in_dir(path) {
+        self._cwd -> path
+        <- self
+    }
+
+    /!
+     Overlay environment variables for each stage (bash: `FOO=bar cmd`).
+     @param env Map of string keys to string values.
+     @return self for chaining.
+    !/
+    function with_env(env) {
+        self._env -> env
+        <- self
+    }
+
+    /!
+     Equivalent shell string for this pipeline (for debugging or process.shell).
+    !/
+    function script() {
+        <- self._script
+    }
+
+    function run() {
+        let r -> self.result()
+        <- r.stdout
+    }
+
+    function result() {
+        // Real multi-process pipeline via pipe(2)
+        <- __builtin_process.pipeline_run(self._stages, self._cwd, self._env)
+    }
+
+    function ok() {
+        let r -> self.result()
+        <- r.code == 0
+    }
+
+    function require() {
+        let r -> self.result()
+        when r.code != 0 {
+            let msg -> `pipeline failed (` + Str.to_string(r.code) + `): ` + self._script
+            when r.stderr != `` {
+                msg -> msg + `\n` + r.stderr
+            }
+            raise msg
+        }
+        <- r.stdout
+    }
+}
+
+/!
+  Start a fluent pipeline from argv (manifesto style: cmd → pipe → run).
+  @example
+  process.cmd(`printf`, [`a\nb\n`]).pipe(`wc`, [`-l`]).run()
+!/
+function cmd(command, arguments) {
+    <- Pipeline(command, arguments)
+}
+
+/!
+  Run an executable with an argument list (no shell). Safer for untrusted input.
+  Returns combined stdout (stderr merged by the host). Prefer `run_result` for exit code.
+!/
+function run(command, arguments) {
+    <- __builtin_process.run(command, arguments)
+}
+
+/!
+  Run argv without an interactive shell; return `{stdout, stderr, code}`.
+  Implemented via a carefully quoted `/bin/sh -c` stage so dual-path hosts share
+  the same result shape as `result()`.
+!/
+function run_result(command, arguments) {
+    <- result(format_stage(command, arguments))
+}
+
+/!
+  True when argv form exits 0.
+!/
+function run_ok(command, arguments) {
+    let r -> run_result(command, arguments)
+    <- r.code == 0
+}
+
+/!
+  Run argv; raise if non-zero. Returns stdout on success.
+!/
+function run_require(command, arguments) {
+    let r -> run_result(command, arguments)
+    when r.code != 0 {
+        let msg -> `command failed (` + Str.to_string(r.code) + `): ` + format_stage(command, arguments)
+        when r.stderr != `` {
+            msg -> msg + `\n` + r.stderr
+        }
+        raise msg
+    }
+    <- r.stdout
+}
+
+/!
+  Resolve an executable on PATH (`command -v`). Returns path string or ``.
+!/
+function which(name) {
+    let r -> result(`command -v ` + shell_quote(name) + ` 2>/dev/null`)
+    when r.code != 0 { <- `` }
+    <- Str.trim(r.stdout)
+}
+
+/!
+  True when `name` resolves on PATH.
+!/
+function available(name) {
+    <- which(name) != ``
+}
+

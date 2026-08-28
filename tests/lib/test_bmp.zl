@@ -1,0 +1,38 @@
+import zen.graphics.bmp as bmp
+import zen.test as test
+import zen.io.file as file
+
+function test_bmp_creation() {
+    let img -> bmp.BMP(2, 2)
+    let pass -> test.assert_equal(img.width, 2, `width should be 2`)
+    pass -> pass and test.assert_equal(img.height, 2, `height should be 2`)
+    pass -> pass and test.assert_equal(img.pixels.length, 4, `pixels length should be 4`)
+    <- pass
+}
+
+function test_bmp_set_pixel() {
+    let img -> bmp.BMP(2, 2)
+    img.set_pixel(1, 1, 255, 0, 128)
+    let p -> img.pixels[3]
+    let pass -> test.assert_equal(p[`r`], 255, `r should be 255`)
+    pass -> pass and test.assert_equal(p[`g`], 0, `g should be 0`)
+    pass -> pass and test.assert_equal(p[`b`], 128, `b should be 128`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `BMP.creation`, `fn` -> test_bmp_creation},
+        {`name` -> `BMP.set_pixel`, `fn` -> test_bmp_set_pixel}
+    ]
+
+    <- test.run_suite(`Graphics.BMP Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

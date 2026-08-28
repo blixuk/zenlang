@@ -1,0 +1,93 @@
+/!
+ Mathematics module.
+ Provides common mathematical constants and functions.
+ !/
+
+/!
+ The Archimedes constant PI.
+ !/
+set PI -> __builtin_math.pi
+
+/!
+ Euler's number E.
+ !/
+set E -> __builtin_math.e
+
+function abs(x) {
+    <- when x < 0 { -x } or { x }
+}
+
+/!
+ Returns the minimum of two numbers.
+ @param a The first number.
+ @param b The second number.
+ @return The smaller of a and b.
+ !/
+function min(a, b) {
+    <- when a < b { a } or { b }
+}
+
+/!
+ Returns the maximum of two numbers.
+ @param a The first number.
+ @param b The second number.
+ @return The larger of a and b.
+ !/
+function max(a, b) {
+    <- when a > b { a } or { b }
+}
+
+/!
+ Returns the square root of x.
+ @param x The number.
+ @return The square root.
+ !/
+function sqrt(x) {
+    <- __builtin_math.sqrt(x)
+}
+
+/!
+ Returns x raised to the power of y.
+ @param x The base.
+ @param y The exponent.
+ @return x^y.
+ !/
+function pow(x, y) {
+    <- __builtin_math.pow(x, y)
+}
+
+/!
+ Returns the sine of x (in radians).
+ @param x The angle in radians.
+ @return The sine value.
+ !/
+function sin(x) {
+    <- __builtin_math.sin(x)
+}
+
+/!
+ Returns the cosine of x (in radians).
+ @param x The angle in radians.
+ @return The cosine value.
+ !/
+function cos(x) {
+    <- __builtin_math.cos(x)
+}
+
+/!
+ Returns the largest integer less than or equal to x.
+ @param x The number.
+ @return The floor value.
+ !/
+function floor(x) {
+    <- __builtin_math.floor(x)
+}
+
+/!
+ Returns the smallest integer greater than or equal to x.
+ @param x The number.
+ @return The ceiling value.
+ !/
+function ceil(x) {
+    <- __builtin_math.ceil(x)
+}

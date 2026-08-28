@@ -1,0 +1,104 @@
+/!
+  Bubble Tea–style counter using zen.ui.app + canvas.
+
+  Run:
+    python3 bootstrap/Zen.py examples/tui_counter.zl
+    python3 bootstrap/Zen.py -g examples/tui_counter.zl
+
+  Keys:  + / =  increment   −  decrement   q / Esc / Ctrl-C  quit
+
+  Headless smoke (no TUI loop — for CI):
+    ZEN_TUI_HEADLESS=1 python3 bootstrap/Zen.py examples/tui_counter.zl
+!/
+
+use zen.ui.app as app
+use zen.ui.canvas as canvas
+use zen.sys.process as process
+use zen.text.string as Str
+use zen.io as io
+
+// Note: do not name this `init` — free functions named init are treated as void constructors under -g.
+function counter_init() {
+    <- {
+        `n` -> 0,
+        `width` -> 60,
+        `height` -> 16,
+        `quit` -> false
+    }
+}
+
+function update(model, msg) {
+    when app.is_quit(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    when app.is_resize(msg) {
+        model[`width`] -> msg[`width`]
+        model[`height`] -> msg[`height`]
+        <- model
+    }
+    when app.key_char(msg, `+`) or app.key_char(msg, `=`) {
+        model[`n`] -> model[`n`] + 1
+        <- model
+    }
+    when app.key_char(msg, `-`) {
+        model[`n`] -> model[`n`] - 1
+        <- model
+    }
+    when app.is_default_quit_key(msg) {
+        model[`quit`] -> true
+        <- model
+    }
+    <- model
+}
+
+function view(model) {
+    let w -> model[`width`]
+    let h -> model[`height`]
+    when w < 20 { w -> 40 }
+    when h < 8 { h -> 12 }
+
+    let c -> canvas.create(w, h)
+    canvas.clear(c, ` `, `white`, `black`)
+    canvas.draw_rect(c, 0, 0, w, h, `#`, `bright_black`, `black`)
+    canvas.draw_text(c, 2, 1, ` Zenlang TUI Counter `, `cyan`, `black`)
+    canvas.draw_text(c, 2, 3, `n = ` + Str.to_string(model[`n`]), `yellow`, `black`)
+    canvas.draw_text(c, 2, 5, `+ / =   increment`, `white`, `black`)
+    canvas.draw_text(c, 2, 6, `-       decrement`, `white`, `black`)
+    canvas.draw_text(c, 2, 7, `q/Esc   quit`, `bright_black`, `black`)
+    canvas.draw_text(c, 2, h - 2, `zen.ui.app  init/update/view`, `bright_black`, `black`)
+    <- c
+}
+
+function headless_smoke() {
+    let m -> counter_init()
+    let msgs -> [
+        app.msg_resize(40, 12),
+        app.msg_char(`+`),
+        app.msg_char(`+`),
+        app.msg_char(`-`),
+        app.msg_char(`q`)
+    ]
+    m -> app.run_msgs(m, msgs, update)
+    let c -> view(m)
+    io.writeln(`headless n=` + Str.to_string(m[`n`]) + ` quit=` + Str.to_string(m[`quit`]))
+    io.writeln(`canvas ` + Str.to_string(c[`width`]) + `x` + Str.to_string(c[`height`]))
+    when m[`n`] == 1 and m[`quit`] {
+        <- 0
+    }
+    <- 1
+}
+
+function main() {
+    let flag -> Str.trim(process.shell(`printenv ZEN_TUI_HEADLESS || true`))
+    when flag == `1` or flag == `true` {
+        <- headless_smoke()
+    }
+
+    let final -> app.run(counter_init, update, view, {
+        `poll_ms` -> 50,
+        `tick` -> false
+    })
+    io.writeln(`final n=` + Str.to_string(final[`n`]))
+    <- 0
+}

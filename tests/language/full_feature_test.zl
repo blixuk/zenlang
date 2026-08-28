@@ -1,0 +1,62 @@
+import zen.io.io as io
+
+structure Point {
+    x: Decimal
+    y: Decimal
+}
+
+enumerator Shape {
+    Circle(radius),
+    Rectangle(width, height),
+    Unknown
+}
+
+function describe_shape(shp) {
+    when shp {
+        is Shape.Circle(r) {
+            io.write(`Circle with radius: `)
+            io.writeln(r)
+        }
+        is Shape.Rectangle(w, h) {
+            io.write(`Rectangle: `)
+            io.write(w)
+            io.write(` x `)
+            io.writeln(h)
+        }
+        is Shape.Unknown {
+            io.writeln(`Unknown shape`)
+        }
+    }
+}
+
+function main() {
+    io.writeln(`--- Zenlang Full Feature Test ---`)
+
+    // 1. Structs
+    let p -> Point(10.5, 20.0)
+    io.write(`Point: `)
+    io.write(p.x)
+    io.write(`, `)
+    io.writeln(p.y)
+
+    // 2. ADTs and Pattern Matching
+    let c -> Shape.Circle(5.0)
+    let r -> Shape.Rectangle(10.0, 20.0)
+    let u -> Shape.Unknown
+
+    describe_shape(c)
+    describe_shape(r)
+    describe_shape(u)
+
+    // 3. Loops and Conditionals
+    io.write(`Counting: `)
+    let i -> 1
+    do while i <= 3 {
+        io.write(i)
+        io.write(` `)
+        i -> i + 1
+    }
+    io.writeln(``)
+
+    io.writeln(`Test Complete.`)
+}

@@ -1,0 +1,123 @@
+/!
+ S-Expression Parser.
+ Converts Lisp-style data into nested Zenlang lists.
+ Dual-path: recursive rest-string parser (no mutable index loops).
+ !/
+
+import zen.text.string as Str
+
+/!
+ Returns true if character is S-expression whitespace.
+ !/
+function _is_ws(ch) {
+    <- ch == ` ` or ch == `\n` or ch == `\t` or ch == `\r`
+}
+
+/!
+ Returns true if character ends an atom.
+ !/
+function _is_delim(ch) {
+    <- ch == `(` or ch == `)` or _is_ws(ch)
+}
+
+/!
+ Drop leading whitespace; returns remaining string.
+ !/
+function _skip_ws(s) {
+    when Str.length(s) == 0 {
+        <- s
+    }
+    let ch -> Str.at(s, 0)
+    when _is_ws(ch) {
+        <- _skip_ws(Str.substring(s, 1, Str.length(s)))
+    }
+    <- s
+}
+
+/!
+ Read a double-quoted string body; s starts after opening quote.
+ Returns { value, rest }.
+ !/
+function _read_string(s) {
+    let n -> Str.length(s)
+    when n == 0 {
+        <- {`value` -> ``, `rest` -> s}
+    }
+    let ch -> Str.at(s, 0)
+    when ch == `"` {
+        <- {`value` -> ``, `rest` -> Str.substring(s, 1, n)}
+    }
+    let rest_part -> _read_string(Str.substring(s, 1, n))
+    <- {
+        `value` -> ch + rest_part[`value`],
+        `rest` -> rest_part[`rest`]
+    }
+}
+
+/!
+ Read an atom (unquoted token).
+ Returns { value, rest }.
+ !/
+function _read_atom(s) {
+    when Str.length(s) == 0 {
+        <- {`value` -> ``, `rest` -> s}
+    }
+    let ch -> Str.at(s, 0)
+    when _is_delim(ch) {
+        <- {`value` -> ``, `rest` -> s}
+    }
+    let rest_part -> _read_atom(Str.substring(s, 1, Str.length(s)))
+    <- {
+        `value` -> ch + rest_part[`value`],
+        `rest` -> rest_part[`rest`]
+    }
+}
+
+function _read_value(s) {
+    s -> _skip_ws(s)
+    when Str.length(s) == 0 {
+        <- {`value` -> [], `rest` -> s}
+    }
+    let ch -> Str.at(s, 0)
+    when ch == `(` {
+        let items -> []
+        let rest -> Str.substring(s, 1, Str.length(s))
+        
+        rest -> _skip_ws(rest)
+        do while Str.length(rest) > 0 and Str.at(rest, 0) != `)` {
+            let part -> _read_value(rest)
+            items.append(part[`value`])
+            rest -> _skip_ws(part[`rest`])
+        }
+        
+        when Str.length(rest) > 0 and Str.at(rest, 0) == `)` {
+            rest -> Str.substring(rest, 1, Str.length(rest))
+        }
+        
+        <- {`value` -> items, `rest` -> rest}
+    } or when ch == `"` {
+        <- _read_string(Str.substring(s, 1, Str.length(s)))
+    } or when ch == `)` {
+        // Unexpected close; leave for caller
+        <- {`value` -> ``, `rest` -> s}
+    } or {
+        <- _read_atom(s)
+    }
+}
+
+/!
+ Parses an S-Expression string into nested lists.
+ @param text The S-Expression string.
+ @return Nested lists and strings.
+ !/
+function parse(text) {
+    when Str.length(text) == 0 {
+        <- []
+    }
+    let result -> _read_value(text)
+    let v -> result[`value`]
+    when v == Nothing {
+        <- []
+    }
+    <- v
+}

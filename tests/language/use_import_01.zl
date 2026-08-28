@@ -1,0 +1,26 @@
+/!
+  `use` is an alias for `import` (preferred surface; full migration later).
+  Package short form, optional `as`, and `from … use`.
+
+  Run:
+    python3 bootstrap/Zen.py tests/language/use_import_01.zl
+    python3 bootstrap/Zen.py -g tests/language/use_import_01.zl
+!/
+
+use zen.io
+use zen.text.string as Str
+from zen.io use writeln
+
+function main() {
+    // Default binding from `use zen.io` → name `io`
+    io.writeln(`use zen.io ok`)
+
+    // Renamed binding
+    let s -> Str.trim(`  zen  `)
+    io.writeln(`trim=` + s)
+
+    // Selective from … use (same as from … import)
+    writeln(`from zen.io use writeln`)
+
+    <- 0
+}

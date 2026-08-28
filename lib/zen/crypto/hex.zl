@@ -1,0 +1,178 @@
+/!
+    Hexadecimal encoding, decoding, and hexdump utility module.
+    Pure Zenlang implementation compatible with both interpreter and native backend.
+!/
+
+import zen.text.string as Str
+
+function _hex_char_to_nibble(c) {
+    let lower -> Str.to_lower(c)
+    when lower == `0` { <- 0 }
+    when lower == `1` { <- 1 }
+    when lower == `2` { <- 2 }
+    when lower == `3` { <- 3 }
+    when lower == `4` { <- 4 }
+    when lower == `5` { <- 5 }
+    when lower == `6` { <- 6 }
+    when lower == `7` { <- 7 }
+    when lower == `8` { <- 8 }
+    when lower == `9` { <- 9 }
+    when lower == `a` { <- 10 }
+    when lower == `b` { <- 11 }
+    when lower == `c` { <- 12 }
+    when lower == `d` { <- 13 }
+    when lower == `e` { <- 14 }
+    when lower == `f` { <- 15 }
+    <- -1
+}
+
+function _hex_nibble_to_char(n) {
+    let digits -> `0123456789abcdef`
+    when n >= 0 and n < 16 {
+        <- Str.at(digits, n)
+    }
+    <- `0`
+}
+
+function _pad_hex(num, width) {
+    let res -> ``
+    let n -> num
+    when n == 0 {
+        res -> `0`
+    }
+    do while n > 0 {
+        let rem -> n % 16
+        res -> _hex_nibble_to_char(rem) + res
+        n -> (n - rem) / 16
+    }
+    do while Str.length(res) < width {
+        res -> `0` + res
+    }
+    <- res
+}
+
+/!
+    Encodes a string or byte list into a hexadecimal string.
+    @param data String or List of byte integers (0-255).
+    @return Lowercase hexadecimal string.
+!/
+function encode(data) {
+    let bytes -> []
+    when data.kind == `String` {
+        bytes -> __builtin.string_to_bytes(data)
+    } or {
+        bytes -> data
+    }
+    when bytes == Nothing {
+        <- ``
+    }
+
+    let out -> ``
+    let i -> 0
+    let len -> bytes.length
+    do while i < len {
+        let b -> bytes[i]
+        when b < 0 { b -> b + 256 }
+        let hi -> (b >> 4) & 15
+        let lo -> b & 15
+        out -> out + _hex_nibble_to_char(hi) + _hex_nibble_to_char(lo)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Decodes a hexadecimal string into the original text string.
+    @param hex_str Hexadecimal string (e.g. "48656c6c6f" or "0x4865").
+    @return Decoded string.
+!/
+function decode(hex_str) {
+    let clean -> Str.trim(hex_str)
+    when Str.starts_with(clean, `0x`) or Str.starts_with(clean, `0X`) {
+        clean -> Str.substring(clean, 2, Str.length(clean))
+    }
+
+    let len -> Str.length(clean)
+    when (len % 2) != 0 {
+        raise `Hex decode failed: Odd string length`
+    }
+
+    let bytes -> []
+    let i -> 0
+    do while i < len {
+        let c1 -> Str.at(clean, i)
+        let c2 -> Str.at(clean, i + 1)
+        let n1 -> _hex_char_to_nibble(c1)
+        let n2 -> _hex_char_to_nibble(c2)
+        when n1 == -1 or n2 == -1 {
+            raise `Hex decode failed: Invalid hex character in "` + clean + `"`
+        }
+        let b -> (n1 * 16) + n2
+        bytes.append(b)
+        i -> i + 2
+    }
+
+    <- __builtin.bytes_to_string(bytes)
+}
+
+/!
+    Formats a string or byte list into a canonical Unix hexdump format.
+    @param data String or List of byte integers.
+    @return Formatted multi-line hexdump string.
+!/
+function hexdump(data) {
+    let bytes -> []
+    when data.kind == `String` {
+        bytes -> __builtin.string_to_bytes(data)
+    } or {
+        bytes -> data
+    }
+    when bytes == Nothing or bytes.length == 0 {
+        <- ``
+    }
+
+    let total -> bytes.length
+    let out -> ``
+    let offset -> 0
+
+    do while offset < total {
+        // Line offset: 8 hex digits
+        let line -> _pad_hex(offset, 8) + `  `
+
+        // Hex bytes in two groups of 8
+        let ascii_col -> `|`
+        let i -> 0
+        do while i < 16 {
+            let idx -> offset + i
+            when idx < total {
+                let b -> bytes[idx]
+                when b < 0 { b -> b + 256 }
+                let hi -> (b >> 4) & 15
+                let lo -> b & 15
+                line -> line + _hex_nibble_to_char(hi) + _hex_nibble_to_char(lo) + ` `
+
+                // Printable ASCII 32..126
+                when b >= 32 and b <= 126 {
+                    let char_str -> __builtin.bytes_to_string([b])
+                    ascii_col -> ascii_col + char_str
+                } or {
+                    ascii_col -> ascii_col + `.`
+                }
+            } or {
+                line -> line + `   `
+            }
+
+            when i == 7 {
+                line -> line + ` `
+            }
+            i -> i + 1
+        }
+
+        ascii_col -> ascii_col + `|`
+        line -> line + ` ` + ascii_col + `\n`
+        out -> out + line
+        offset -> offset + 16
+    }
+
+    <- out
+}

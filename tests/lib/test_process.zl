@@ -1,0 +1,223 @@
+import zen.sys.process as process
+import zen.text.string as str
+import zen.test as test
+
+function test_run_and_pid() {
+    let output -> process.run(`echo`, [`zen`])
+    let pass -> test.assert_true(process.get_id() > 0, `get_id should return a positive process id`)
+    pass -> pass and test.assert_equal(str.trim(output), `zen`, `run should capture stdout`)
+    <- pass
+}
+
+function test_which_and_run_result() {
+    let sh -> process.which(`sh`)
+    let pass -> test.assert_true(sh != ``, `which(sh) finds a path`)
+    pass -> pass and test.assert_true(process.available(`sh`), `available(sh)`)
+    pass -> pass and test.assert_false(process.available(`zen_no_such_cmd_xyz`), `missing cmd`)
+
+    let r -> process.run_result(`echo`, [`argv_ok`])
+    pass -> pass and test.assert_equal(r.code, 0, `run_result exit 0`)
+    pass -> pass and test.assert_equal(str.trim(r.stdout), `argv_ok`, `run_result stdout`)
+
+    let bad -> process.run_result(`false`, [])
+    pass -> pass and test.assert_true(bad.code != 0, `run_result false non-zero`)
+    pass -> pass and test.assert_true(process.run_ok(`true`, []), `run_ok true`)
+    pass -> pass and test.assert_false(process.run_ok(`false`, []), `run_ok false`)
+
+    let req -> process.run_require(`echo`, [`need`])
+    pass -> pass and test.assert_equal(str.trim(req), `need`, `run_require stdout`)
+
+    let raised -> false
+    check {
+        process.run_require(`false`, [])
+    } or {
+        raised -> true
+    }
+    pass -> pass and test.assert_true(raised, `run_require raises`)
+    <- pass
+}
+
+function test_process_class() {
+    let p -> process.Process(`echo`, [`class`])
+    p.start()
+    let code -> p.wait()
+    let output -> p.stdout()
+
+    let pass -> test.assert_equal(code, 0, `Process.wait should report the child exit code`)
+    pass -> pass and test.assert_equal(p.code(), 0, `Process.code should match the child exit code`)
+    pass -> pass and test.assert_equal(str.trim(output), `class`, `Process.stdout should expose child stdout`)
+    <- pass
+}
+
+function test_shell_and_pipeline() {
+    let out -> process.shell(`echo hello_shell`)
+    let pass -> test.assert_equal(str.trim(out), `hello_shell`, `shell should run via /bin/sh`)
+
+    let piped -> process.pipeline(`printf 'a\nb\nc\n' | wc -l`)
+    pass -> pass and test.assert_true(str.trim(piped) == `3`, `pipeline should support bash-style pipes`)
+
+    let ls -> process.lines(`printf 'one\ntwo\n'`)
+    pass -> pass and test.assert_equal(ls.length, 2, `lines should split shell stdout`)
+    pass -> pass and test.assert_equal(ls[0], `one`, `lines[0]`)
+    pass -> pass and test.assert_equal(ls[1], `two`, `lines[1]`)
+    <- pass
+}
+
+function test_result_ok_require() {
+    let good -> process.result(`true`)
+    let bad -> process.result(`false`)
+    let pass -> test.assert_equal(good.code, 0, `true exits 0`)
+    pass -> pass and test.assert_true(bad.code != 0, `false exits non-zero`)
+    pass -> pass and test.assert_true(process.ok(`true`), `ok(true)`)
+    pass -> pass and test.assert_false(process.ok(`false`), `ok(false)`)
+
+    let req_out -> process.require(`echo required`)
+    pass -> pass and test.assert_equal(str.trim(req_out), `required`, `require returns stdout on success`)
+
+    let raised -> false
+    check {
+        process.require(`false`)
+    } or {
+        raised -> true
+    }
+    pass -> pass and test.assert_true(raised, `require raises on failure`)
+    <- pass
+}
+
+function test_fluent_pipeline() {
+    // Construct Pipeline directly so native keeps Class method types (like file.File).
+    let p -> process.Pipeline(`printf`, [`a\nb\nc\n`])
+    p.pipe(`wc`, [`-l`])
+    let out -> p.run()
+    let pass -> test.assert_equal(str.trim(out), `3`, `Pipeline pipe+run counts lines`)
+
+    let p2 -> process.Pipeline(`echo`, [`hi`])
+    p2.pipe(`cat`, [])
+    let script -> p2.script()
+    pass -> pass and test.assert_true(str.contains(script, `|`), `script() includes pipe`)
+
+    let p3 -> process.Pipeline(`false`, [])
+    let r -> p3.result()
+    pass -> pass and test.assert_true(r.code != 0, `pipeline result exposes code`)
+
+    let p4 -> process.Pipeline(`true`, [])
+    let okp -> p4.ok()
+    pass -> pass and test.assert_true(okp, `pipeline.ok`)
+
+    // process.cmd factory (interpret always; native prefers Pipeline(...) for typing)
+    let p5 -> process.cmd(`printf`, [`x\n`])
+    // Re-wrap via constructor when needed: named Pipeline keeps class methods typed.
+    <- pass
+}
+
+function test_shell_in_dir() {
+    // Child-only chdir: parent cwd must not change permanently for this check
+    let before -> process.shell(`pwd`)
+    let in_tmp -> str.trim(process.shell_in(`/tmp`, `pwd`))
+    let after -> process.shell(`pwd`)
+
+    let pass -> test.assert_equal(in_tmp, `/tmp`, `shell_in runs under /tmp`)
+    pass -> pass and test.assert_equal(str.trim(before), str.trim(after), `parent cwd unchanged`)
+
+    let r -> process.result_in(`/tmp`, `pwd`)
+    pass -> pass and test.assert_equal(r.code, 0, `result_in succeeds`)
+    pass -> pass and test.assert_equal(str.trim(r.stdout), `/tmp`, `result_in stdout is /tmp`)
+
+    let p -> process.Pipeline(`pwd`, [])
+    p.in_dir(`/tmp`)
+    let fluent -> str.trim(p.run())
+    pass -> pass and test.assert_equal(fluent, `/tmp`, `Pipeline.in_dir + run`)
+    <- pass
+}
+
+function test_real_pipe_pipeline() {
+    // Must use real pipe(2) path — argv stages, not a shell string
+    let p -> process.Pipeline(`printf`, [`a\nb\nc\n`])
+    p.pipe(`wc`, [`-l`])
+    let r -> p.result()
+    let pass -> test.assert_equal(r.code, 0, `real pipeline exit 0`)
+    pass -> pass and test.assert_equal(str.trim(r.stdout), `3`, `real pipe counts lines`)
+
+    // three stages
+    let p2 -> process.Pipeline(`printf`, [`hello world\n`])
+    p2.pipe(`tr`, [`a-z`, `A-Z`])
+    p2.pipe(`tr`, [`-d`, `\n`])
+    let up -> str.trim(p2.run())
+    pass -> pass and test.assert_equal(up, `HELLO WORLD`, `multi-stage real pipe`)
+    <- pass
+}
+
+function test_each_line() {
+    // Pure callback (no outer mutation) — native captures are by-value snapshots.
+    let n -> process.each_line(`printf 'one\ntwo\nthree\n'`, function(line) {
+        // touch the line so the callback is not optimized away
+        when line == `` { }
+    })
+    let pass -> test.assert_equal(n, 3, `each_line returns count`)
+
+    // Content still available via lines() for full-buffer compare
+    let all -> process.lines(`printf 'one\ntwo\nthree\n'`)
+    pass -> pass and test.assert_equal(all.length, 3, `lines matches each_line count`)
+    pass -> pass and test.assert_equal(all[0], `one`, `line 0`)
+    pass -> pass and test.assert_equal(all[2], `three`, `line 2`)
+
+    let n2 -> process.each_line_env({`ZEN_LINE` -> `z`}, `printenv ZEN_LINE`, function(line) {
+        when line == `z` { }
+    })
+    pass -> pass and test.assert_equal(n2, 1, `each_line_env count`)
+    let zline -> str.trim(process.shell_env({`ZEN_LINE` -> `z`}, `printenv ZEN_LINE`))
+    pass -> pass and test.assert_equal(zline, `z`, `each_line_env value check`)
+    <- pass
+}
+
+function test_shell_env() {
+    // bash: FOO=hello_env printenv FOO
+    let env -> {`ZEN_TEST_FOO` -> `hello_env`, `ZEN_TEST_BAR` -> `x`}
+    let out -> str.trim(process.shell_env(env, `printenv ZEN_TEST_FOO`))
+    let pass -> test.assert_equal(out, `hello_env`, `shell_env sets var for child`)
+
+    // Outer process must not see the overlay
+    let outside -> process.shell(`printenv ZEN_TEST_FOO || true`)
+    pass -> pass and test.assert_true(str.trim(outside) != `hello_env`, `outer env not polluted`)
+
+    let r -> process.result_env(env, `printenv ZEN_TEST_BAR`)
+    pass -> pass and test.assert_equal(r.code, 0, `result_env exit 0`)
+    pass -> pass and test.assert_equal(str.trim(r.stdout), `x`, `result_env stdout`)
+
+    // Pipeline with_env
+    let p -> process.Pipeline(`printenv`, [`ZEN_TEST_FOO`])
+    p.with_env(env)
+    let pout -> str.trim(p.run())
+    pass -> pass and test.assert_equal(pout, `hello_env`, `Pipeline.with_env`)
+
+    // cwd + env together
+    let both -> str.trim(process.shell_in_env(`/tmp`, env, `printenv ZEN_TEST_FOO; pwd`))
+    pass -> pass and test.assert_true(str.contains(both, `hello_env`), `shell_in_env has FOO`)
+    pass -> pass and test.assert_true(str.contains(both, `/tmp`), `shell_in_env under /tmp`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Process.run_and_pid`, `fn` -> test_run_and_pid},
+        {`name` -> `Process.which_run_result`, `fn` -> test_which_and_run_result},
+        {`name` -> `Process.class`, `fn` -> test_process_class},
+        {`name` -> `Process.shell_and_pipeline`, `fn` -> test_shell_and_pipeline},
+        {`name` -> `Process.result_ok_require`, `fn` -> test_result_ok_require},
+        {`name` -> `Process.fluent_pipeline`, `fn` -> test_fluent_pipeline},
+        {`name` -> `Process.shell_in_dir`, `fn` -> test_shell_in_dir},
+        {`name` -> `Process.shell_env`, `fn` -> test_shell_env},
+        {`name` -> `Process.real_pipe_pipeline`, `fn` -> test_real_pipe_pipeline},
+        {`name` -> `Process.each_line`, `fn` -> test_each_line}
+    ]
+
+    <- test.run_suite(`Process Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

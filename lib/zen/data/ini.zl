@@ -1,0 +1,163 @@
+/!
+    Parser and serializer for INI configuration files.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+
+function _strip_comments(line) {
+    let s -> Str.trim(line)
+    when Str.starts_with(s, `;`) or Str.starts_with(s, `#`) {
+        <- ``
+    }
+    <- s
+}
+
+/!
+    Parses INI configuration string into a Map of section Maps.
+    Top-level properties before any section header are stored under the "" (empty string) section.
+    @param content Raw INI file text.
+    @return Map of sections, where each section is a Map of key-value pairs.
+!/
+function parse(content) {
+    let result -> {
+        `` -> {}
+    }
+    when content == Nothing or content == `` {
+        <- result
+    }
+
+    let current_section -> ``
+    let lines -> Str.split(content, `\n`)
+    let i -> 0
+    let len -> lines.length
+
+    do while i < len {
+        let raw_line -> lines[i]
+        let line -> _strip_comments(raw_line)
+
+        when Str.length(line) > 0 {
+            // Check for section header [section]
+            when Str.starts_with(line, `[`) and Str.ends_with(line, `]`) {
+                let sec_name -> Str.trim(Str.substring(line, 1, Str.length(line) - 1))
+                current_section -> sec_name
+                when not result.has(current_section) {
+                    result[current_section] -> {}
+                }
+            } or {
+                // Key-value pair (separated by = or :)
+                let sep_idx -> Str.index_of(line, `=`)
+                when sep_idx == -1 {
+                    sep_idx -> Str.index_of(line, `:`)
+                }
+
+                when sep_idx != -1 {
+                    let key -> Str.trim(Str.substring(line, 0, sep_idx))
+                    let val -> Str.trim(Str.substring(line, sep_idx + 1, Str.length(line)))
+
+                    // Strip inline comment
+                    let semi_idx -> Str.index_of(val, `;`)
+                    when semi_idx != -1 {
+                        val -> Str.trim(Str.substring(val, 0, semi_idx))
+                    }
+                    let hash_idx -> Str.index_of(val, ` #`)
+                    when hash_idx != -1 {
+                        val -> Str.trim(Str.substring(val, 0, hash_idx))
+                    }
+
+                    // Strip surrounding quotes
+                    let val_len -> Str.length(val)
+                    when val_len >= 2 {
+                        let f -> Str.at(val, 0)
+                        let l -> Str.at(val, val_len - 1)
+                        when (f == `"` and l == `"`) or (f == `'` and l == `'`) {
+                            val -> Str.substring(val, 1, val_len - 1)
+                        }
+                    }
+
+                    when Str.length(key) > 0 {
+                        when not result.has(current_section) {
+                            result[current_section] -> {}
+                        }
+                        let sec_map -> result[current_section]
+                        sec_map[key] -> val
+                    }
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    <- result
+}
+
+/!
+    Retrieves a value from a specific section and key with a fallback.
+    @param ini_map Map produced by parse().
+    @param section Section name (use "" for top-level keys).
+    @param key Property key name.
+    @param fallback Value to return if section or key is missing.
+    @return String value or fallback.
+!/
+function get(ini_map, section, key, fallback) {
+    when ini_map == Nothing { <- fallback }
+    when section == Nothing { section -> `` }
+
+    when ini_map.has(section) {
+        let sec -> ini_map[section]
+        when sec != Nothing and sec.has(key) {
+            <- sec[key]
+        }
+    }
+    <- fallback
+}
+
+/!
+    Serializes a Map of sections into standard INI format.
+    @param data Map of sections and key-value pairs.
+    @return Formatted INI string.
+!/
+function stringify(data) {
+    when data == Nothing { <- `` }
+
+    let lines -> []
+
+    // 1. Output global (empty section) keys first
+    when data.has(``) {
+        let root_sec -> data[``]
+        let root_keys -> root_sec.keys()
+        let ki -> 0
+        do while ki < root_keys.length {
+            let k -> root_keys[ki]
+            lines.append(k + ` = ` + Str.to_string(root_sec[k]))
+            ki -> ki + 1
+        }
+        when root_keys.length > 0 {
+            lines.append(``)
+        }
+    }
+
+    // 2. Output named sections
+    let sections -> data.keys()
+    let si -> 0
+    do while si < sections.length {
+        let sec_name -> sections[si]
+        when sec_name != `` {
+            lines.append(`[` + sec_name + `]`)
+            let sec_map -> data[sec_name]
+            when sec_map != Nothing and sec_map.kind == `Map` {
+                let keys -> sec_map.keys()
+                let ki -> 0
+                do while ki < keys.length {
+                    let k -> keys[ki]
+                    lines.append(k + ` = ` + Str.to_string(sec_map[k]))
+                    ki -> ki + 1
+                }
+            }
+            lines.append(``)
+        }
+        si -> si + 1
+    }
+
+    <- Str.join(lines, `\n`)
+}

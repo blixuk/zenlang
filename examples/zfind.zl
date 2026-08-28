@@ -1,0 +1,67 @@
+/!
+  zfind — bash `find` replacement (name match under a root).
+
+  Run:
+    python3 bootstrap/Zen.py examples/zfind.zl [root] [substring]
+    ./bin/zen examples/zfind.zl lib/zen term
+    ./bin/zen -g examples/zfind.zl . .zl
+
+  Defaults: root=`.`, substring=`` (list all files).
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.io as io
+import zen.text.string as Str
+
+function usage() {
+    io.writeln(`zfind — find files by name substring`)
+    io.writeln(`usage: zfind [root] [substring]`)
+    io.writeln(`  root       directory to search (default .)`)
+    io.writeln(`  substring  match against full path (default: all files)`)
+}
+
+function main() {
+    let args -> sys.get_args()
+    let root -> `.`
+    let needle -> ``
+
+    when args.length > 1 { root -> args[1] }
+    when args.length > 2 { needle -> args[2] }
+    when args.length > 3 {
+        usage()
+        <- 1
+    }
+
+    when not file.exists(root) {
+        term.color(`red`, `black`)
+        io.writeln(`zfind: no such path: ` + root)
+        term.reset()
+        <- 1
+    }
+
+    let files -> file.list_files(root)
+    let hits -> 0
+    let i -> 0
+    do while i < files.length {
+        let p -> files[i]
+        let match -> true
+        when needle != `` {
+            match -> Str.contains(p, needle)
+        }
+        when match {
+            hits -> hits + 1
+            term.color(`green`, `black`)
+            term.write(p)
+            term.reset()
+            io.writeln(``)
+        }
+        i -> i + 1
+    }
+
+    term.color(`cyan`, `black`)
+    io.writeln(`-- ` + Str.to_string(hits) + ` match(es) under ` + root + ` --`)
+    term.reset()
+    <- 0
+}

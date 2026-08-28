@@ -1,0 +1,155 @@
+/!
+ Path manipulation module.
+ Provides functions for interacting with Unix-style file paths.
+ !/
+
+import zen.text.string as Str
+
+/!
+ Joins two or more path components using the system separator (/).
+ @param p1 The first path component.
+ @param p2 The second path component.
+ @return The joined path string.
+ !/
+function join(p1, p2) {
+    when p1 == `` { <- p2 }
+    when p2 == `` { <- p1 }
+
+    let p1_ends -> Str.ends_with(p1, `/`)
+    let p2_starts -> Str.starts_with(p2, `/`)
+
+    when p1_ends and p2_starts {
+        <- p1 + Str.substring(p2, 1, Str.length(p2))
+    }
+    when p1_ends or p2_starts {
+        <- p1 + p2
+    }
+    <- p1 + `/` + p2
+}
+
+/!
+ Returns the final component of a path.
+ @param p The path string.
+ @return The basename of the path.
+ !/
+function basename(p) {
+    when p == `` { <- `.` }
+    when p == `/` { <- `/` }
+
+    let parts -> Str.split(p, `/`)
+    // parts is a List — use .length (Str.length is for strings; native returns 0/Nothing on lists)
+    let n -> parts.length
+
+    // Handle trailing slash
+    when parts[n - 1] == `` {
+        when n > 1 {
+            <- parts[n - 2]
+        }
+        <- `/`
+    }
+
+    <- parts[n - 1]
+}
+
+function base_name(p) {
+    <- basename(p)
+}
+
+/!
+ Returns the parent directory of a path.
+ @param p The path string.
+ @return The directory name.
+ !/
+function dirname(p) {
+    when p == `` or p == `.` { <- `.` }
+    when p == `/` { <- `/` }
+
+    let parts -> Str.split(p, `/`)
+    let n -> parts.length
+
+    // If ends in slash
+    when parts[n - 1] == `` {
+        n -> n - 1
+    }
+
+    when n <= 1 {
+        when Str.starts_with(p, `/`) { <- `/` }
+        <- `.`
+    }
+
+    let result -> parts[0]
+    when result == `` {
+        result -> `/` + parts[1]
+        let i -> 2
+        do while i < n - 1 {
+            result -> result + `/` + parts[i]
+            i -> i + 1
+        }
+        <- result
+    }
+
+    let i -> 1
+    do while i < n - 1 {
+        result -> result + `/` + parts[i]
+        i -> i + 1
+    }
+    <- result
+}
+
+function dir_name(p) {
+    <- dirname(p)
+}
+
+/!
+ Checks if a path is absolute (starts with /).
+ @param p The path string.
+ @return True if absolute, False otherwise.
+ !/
+function is_absolute(p) {
+    <- Str.starts_with(p, `/`)
+}
+
+/!
+ Returns the extension of a path (including the leading dot).
+ @param p The path string.
+ @return The extension, or empty string if none.
+ !/
+function extname(p) {
+    when p == `` or p == `.` {
+        <- ``
+    }
+    let base -> p
+    when Str.contains(p, `/`) {
+        let parts -> Str.split(p, `/`)
+        let pn -> parts.length
+        when pn > 0 {
+            when parts[pn - 1] == `` and pn > 1 {
+                base -> parts[pn - 2]
+            } or {
+                base -> parts[pn - 1]
+            }
+        }
+    }
+    let dot_idx -> Str.index_of(base, `.`)
+    when dot_idx == -1 {
+        <- ``
+    }
+
+    // Find LAST dot
+    let last_dot -> dot_idx
+    let search_from -> last_dot + 1
+    do while search_from < Str.length(base) {
+        let next_dot -> Str.index_of(Str.substring(base, search_from, Str.length(base)), `.`)
+        when next_dot == -1 {
+            break
+        }
+        last_dot -> search_from + next_dot
+        search_from -> last_dot + 1
+    }
+
+    <- Str.substring(base, last_dot, Str.length(base))
+}
+
+function extension(p) {
+    <- extname(p)
+}

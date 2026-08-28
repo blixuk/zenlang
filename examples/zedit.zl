@@ -1,0 +1,517 @@
+/!
+  zedit — a tiny nano-like terminal text editor for Zen.
+
+  Run:
+    python3 bootstrap/Zen.py examples/zedit.zl [file]
+    python3 bootstrap/Zen.py -g examples/zedit.zl [file]
+    ./bin/zen examples/zedit.zl notes.txt
+
+  Keys:
+    arrows / Home / End     move cursor
+    printable characters    insert
+    Enter                   split line
+    Backspace / Delete      delete
+    Ctrl+S                  save
+    Ctrl+Q                  quit (twice if unsaved)
+    Ctrl+L                  redraw
+!/
+
+import zen.sys.term as term
+import zen.sys.sys as sys
+import zen.io.file as file
+import zen.text.string as Str
+
+// --- string helpers ---
+
+function s_len(s) {
+    <- Str.length(s)
+}
+
+function s_insert(s, col, ch) {
+    let n -> s_len(s)
+    when col < 0 { col -> 0 }
+    when col > n { col -> s_len(s) }
+    let left -> Str.substring(s, 0, col)
+    let right -> Str.substring(s, col, s_len(s))
+    <- left + ch + right
+}
+
+function s_delete_at(s, col) {
+    let n -> s_len(s)
+    when col < 0 or col >= n { <- s }
+    let left -> Str.substring(s, 0, col)
+    let right -> Str.substring(s, col + 1, s_len(s))
+    <- left + right
+}
+
+function s_slice(s, start, end) {
+    let n -> s_len(s)
+    when start < 0 { start -> 0 }
+    when end > n { end -> s_len(s) }
+    when start >= end { <- `` }
+    <- Str.substring(s, start, end)
+}
+
+// --- editor state (mutable class) ---
+
+class Editor {
+    let lines
+    let row
+    let col
+    let row_off
+    let col_off
+    let path
+    let dirty
+    let status
+    let quit_times
+
+    function init(path) {
+        self.path -> path
+        self.lines -> [``]
+        self.row -> 0
+        self.col -> 0
+        self.row_off -> 0
+        self.col_off -> 0
+        self.dirty -> false
+        self.status -> `HELP: Ctrl+S save | Ctrl+Q quit | arrows move`
+        self.quit_times -> 0
+        when path != `` {
+            self.open_file(path)
+        }
+    }
+
+    function open_file(path) {
+        self.path -> path
+        when file.exists(path) {
+            let text -> file.read(path)
+            // normalize newlines
+            text -> Str.replace(text, `\r\n`, `\n`)
+            text -> Str.replace(text, `\r`, `\n`)
+            when text == `` {
+                self.lines -> [``]
+            } or {
+                let parts -> Str.split(text, `\n`)
+                // drop trailing empty from final newline
+                when parts.length > 0 {
+                    let last -> parts[parts.length - 1]
+                    when last == `` and parts.length > 1 {
+                        // keep simpler: allow trailing empty as last line
+                    }
+                }
+                self.lines -> parts
+                when self.lines.length == 0 {
+                    self.lines -> [``]
+                }
+            }
+            self.dirty -> false
+            self.status -> `Opened ` + path
+        } or {
+            self.lines -> [``]
+            self.dirty -> false
+            self.status -> `New file: ` + path
+        }
+        self.row -> 0
+        self.col -> 0
+        self.row_off -> 0
+        self.col_off -> 0
+    }
+
+    function save() {
+        when self.path == `` {
+            self.status -> `No file name — open with: zedit.zl <path>`
+            <- false
+        }
+        let body -> Str.join(self.lines, `\n`)
+        // ensure trailing newline like many editors
+        when not Str.ends_with(body, `\n`) {
+            body -> body + `\n`
+        }
+        file.write(self.path, body)
+        self.dirty -> false
+        self.status -> `Saved ` + self.path
+        <- true
+    }
+
+    function line_count() {
+        <- self.lines.length
+    }
+
+    function current_line() {
+        when self.row < 0 or self.row >= self.lines.length {
+            <- ``
+        }
+        <- self.lines[self.row]
+    }
+
+    function set_line(r, s) {
+        // rebuild list with replacement at r (portable list update)
+        let out -> []
+        let i -> 0
+        do while i < self.lines.length {
+            when i == r {
+                out.append(s)
+            } or {
+                out.append(self.lines[i])
+            }
+            i -> i + 1
+        }
+        self.lines -> out
+    }
+
+    function clamp_cursor() {
+        when self.row < 0 { self.row -> 0 }
+        when self.row >= self.lines.length {
+            self.row -> self.lines.length - 1
+            when self.row < 0 { self.row -> 0 }
+        }
+        let ln -> s_len(self.current_line())
+        when self.col < 0 { self.col -> 0 }
+        when self.col > ln { self.col -> ln }
+    }
+
+    function scroll(screen_rows) {
+        // keep cursor row visible in [row_off, row_off + screen_rows)
+        when self.row < self.row_off {
+            self.row_off -> self.row
+        }
+        when self.row >= self.row_off + screen_rows {
+            self.row_off -> self.row - screen_rows + 1
+        }
+        when self.row_off < 0 { self.row_off -> 0 }
+
+        let screen_cols -> 0
+        // horizontal: leave to draw using col_off
+        when self.col < self.col_off {
+            self.col_off -> self.col
+        }
+    }
+
+    function insert_char(ch) {
+        let line -> self.current_line()
+        let nl -> s_insert(line, self.col, ch)
+        self.set_line(self.row, nl)
+        self.col -> self.col + 1
+        self.dirty -> true
+        self.quit_times -> 0
+    }
+
+    function insert_newline() {
+        let line -> self.current_line()
+        let left -> s_slice(line, 0, self.col)
+        let right -> s_slice(line, self.col, s_len(line))
+        self.set_line(self.row, left)
+        // insert right as new line after row
+        let out -> []
+        let i -> 0
+        do while i < self.lines.length {
+            out.append(self.lines[i])
+            when i == self.row {
+                out.append(right)
+            }
+            i -> i + 1
+        }
+        self.lines -> out
+        self.row -> self.row + 1
+        self.col -> 0
+        self.dirty -> true
+        self.quit_times -> 0
+    }
+
+    function backspace() {
+        when self.col > 0 {
+            let line -> self.current_line()
+            let nl -> s_delete_at(line, self.col - 1)
+            self.set_line(self.row, nl)
+            self.col -> self.col - 1
+            self.dirty -> true
+            self.quit_times -> 0
+            <- nothing
+        }
+        when self.row > 0 {
+            let prev -> self.lines[self.row - 1]
+            let cur -> self.current_line()
+            let joined -> prev + cur
+            let new_col -> s_len(prev)
+            // remove current row and set prev
+            let out -> []
+            let i -> 0
+            do while i < self.lines.length {
+                when i == self.row - 1 {
+                    out.append(joined)
+                } or {
+                    when i != self.row {
+                        out.append(self.lines[i])
+                    }
+                }
+                i -> i + 1
+            }
+            self.lines -> out
+            self.row -> self.row - 1
+            self.col -> new_col
+            self.dirty -> true
+            self.quit_times -> 0
+        }
+    }
+
+    function delete_forward() {
+        let line -> self.current_line()
+        let n -> s_len(line)
+        when self.col < n {
+            let nl -> s_delete_at(line, self.col)
+            self.set_line(self.row, nl)
+            self.dirty -> true
+            self.quit_times -> 0
+            <- nothing
+        }
+        // join with next line
+        when self.row + 1 < self.lines.length {
+            let next -> self.lines[self.row + 1]
+            self.set_line(self.row, line + next)
+            let out -> []
+            let i -> 0
+            do while i < self.lines.length {
+                when i != self.row + 1 {
+                    out.append(self.lines[i])
+                }
+                i -> i + 1
+            }
+            self.lines -> out
+            self.dirty -> true
+            self.quit_times -> 0
+        }
+    }
+
+    function draw() {
+        let size -> term.get_size()
+        let w -> size.width
+        let h -> size.height
+        when w < 10 { w -> 10 }
+        when h < 4 { h -> 4 }
+        let text_rows -> h - 2   // status + message
+
+        self.scroll(text_rows)
+
+        // horizontal scroll
+        when self.col < self.col_off {
+            self.col_off -> self.col
+        }
+        when self.col >= self.col_off + w {
+            self.col_off -> self.col - w + 1
+        }
+
+        term.hide_cursor()
+        term.move(1, 1)
+
+        let y -> 0
+        do while y < text_rows {
+            let file_row -> self.row_off + y
+            term.move(1, y + 1)
+            when file_row >= self.lines.length {
+                term.color(`blue`, `black`)
+                term.write(`~`)
+                term.reset()
+                term.clear_eol()
+            } or {
+                let line -> self.lines[file_row]
+                let visible -> s_slice(line, self.col_off, self.col_off + w)
+                term.write(visible)
+                term.clear_eol()
+            }
+            y -> y + 1
+        }
+
+        // status bar
+        term.move(1, text_rows + 1)
+        term.color(`black`, `white`)
+        let dirty_mark -> ``
+        when self.dirty { dirty_mark -> ` *` }
+        let name -> self.path
+        when name == `` { name -> `[No Name]` }
+        let left -> ` ` + name + dirty_mark + ` `
+        let right -> ` ` + Str.to_string(self.row + 1) + `:` + Str.to_string(self.col + 1) + ` `
+        let pad -> w - s_len(left) - s_len(right)
+        when pad < 0 { pad -> 0 }
+        let mid -> ``
+        let pi -> 0
+        do while pi < pad {
+            mid -> mid + ` `
+            pi -> pi + 1
+        }
+        term.write(left + mid + right)
+        term.reset()
+        term.clear_eol()
+
+        // message line
+        term.move(1, text_rows + 2)
+        term.write(self.status)
+        term.clear_eol()
+
+        // place cursor (1-based screen coords)
+        let cx -> (self.col - self.col_off) + 1
+        let cy -> (self.row - self.row_off) + 1
+        when cx < 1 { cx -> 1 }
+        when cy < 1 { cy -> 1 }
+        when cy > text_rows { cy -> text_rows }
+        term.move(cx, cy)
+        term.show_cursor()
+        term.flush()
+    }
+
+    // returns true if editor should exit
+    function handle_key(k) {
+        let kind -> k.kind
+        let name -> k.name
+        let ch -> k.ch
+
+        // EOF / no input (piped stdin closed) — exit cleanly
+        when kind == `none` {
+            <- true
+        }
+
+        when kind == `resize` {
+            self.status -> `Resized`
+            <- false
+        }
+
+        when kind == `special` {
+            when name == `up` {
+                self.row -> self.row - 1
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `down` {
+                self.row -> self.row + 1
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `left` {
+                when self.col > 0 {
+                    self.col -> self.col - 1
+                } or {
+                    when self.row > 0 {
+                        self.row -> self.row - 1
+                        self.col -> s_len(self.current_line())
+                    }
+                }
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `right` {
+                let ln -> s_len(self.current_line())
+                when self.col < ln {
+                    self.col -> self.col + 1
+                } or {
+                    when self.row + 1 < self.lines.length {
+                        self.row -> self.row + 1
+                        self.col -> 0
+                    }
+                }
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `home` {
+                self.col -> 0
+                <- false
+            }
+            when name == `end` {
+                self.col -> s_len(self.current_line())
+                <- false
+            }
+            when name == `pageup` {
+                let size -> term.get_size()
+                let h -> size.height - 2
+                when h < 1 { h -> 1 }
+                self.row -> self.row - h
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `pagedown` {
+                let size -> term.get_size()
+                let h -> size.height - 2
+                when h < 1 { h -> 1 }
+                self.row -> self.row + h
+                self.clamp_cursor()
+                <- false
+            }
+            when name == `backspace` {
+                self.backspace()
+                <- false
+            }
+            when name == `delete` {
+                self.delete_forward()
+                <- false
+            }
+            when name == `enter` {
+                self.insert_newline()
+                <- false
+            }
+            when name == `tab` {
+                self.insert_char(` `)
+                self.insert_char(` `)
+                self.insert_char(` `)
+                self.insert_char(` `)
+                <- false
+            }
+            when name == `ctrl_s` {
+                self.save()
+                <- false
+            }
+            when name == `ctrl_l` {
+                self.status -> `Redraw`
+                <- false
+            }
+            when name == `ctrl_q` {
+                when self.dirty and self.quit_times == 0 {
+                    self.quit_times -> 1
+                    self.status -> `Unsaved changes — Ctrl+Q again to quit`
+                    <- false
+                }
+                <- true
+            }
+            <- false
+        }
+
+        when kind == `char` {
+            when ch != `` {
+                self.insert_char(ch)
+            }
+            <- false
+        }
+
+        <- false
+    }
+}
+
+function main() {
+    let args -> sys.get_args()
+    let path -> ``
+    // args[0] is usually the script path; first user arg is the file
+    when args.length > 1 {
+        path -> args[1]
+    }
+
+    let ed -> Editor(path)
+
+    // Ensure clean terminal restore
+    term.raw_enter()
+    term.alt_screen_enter()
+    term.hide_cursor()
+
+    let done -> false
+    check {
+        do {
+            ed.draw()
+            let k -> term.read_key()
+            done -> ed.handle_key(k)
+        } until done
+    } or {
+        ed.status -> `Error — exiting`
+    }
+
+    term.show_cursor()
+    term.alt_screen_exit()
+    term.raw_exit()
+    term.reset()
+    term.clear()
+    <- 0
+}

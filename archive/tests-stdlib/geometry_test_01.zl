@@ -1,0 +1,20 @@
+import zen.io.io as IO
+import zen.geometry as Geometry
+import zen.text.string as Str
+
+function test_geometry_structures() {
+    IO.info(`--- Testing Geometry Structures ---`)
+    
+    let p -> Geometry.point(10, 20)
+    IO.info(`  Point: {x: ` + Str.to_string(p.x) + `, y: ` + Str.to_string(p.y) + `}`)
+    
+    let r -> Geometry.rectangle(0, 0, 100, 50)
+    IO.info(`  Rect: {x: ` + Str.to_string(r.x) + `, y: ` + Str.to_string(r.y) + `, w: ` + Str.to_string(r.w) + `, h: ` + Str.to_string(r.h) + `}`)
+    
+    let s -> Geometry.size(800, 600)
+    IO.info(`  Size: {w: ` + Str.to_string(s.w) + `, h: ` + Str.to_string(s.h) + `}`)
+}
+
+function zen_entry() {
+    test_geometry_structures()
+}

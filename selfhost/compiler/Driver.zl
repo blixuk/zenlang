@@ -1,0 +1,1820 @@
+/!
+ Stage 6: selfhost driver pipeline.
+ parse (Stage 2) → optional check (Stage 4) → codegen (Stage 5).
+ Dual-path free functions; no legacy CTranspiler class path.
+ !/
+
+import compiler.Parser as Parser
+import compiler.AST as AST
+import compiler.TypeChecker as Checker
+import compiler.Codegen as Codegen
+import compiler.CLink as CLink
+import compiler.Interpreter as Interp
+import compiler.Bytecode as Bytecode
+import compiler.Module.GraphBuilder as GraphBuilder
+import compiler.Module.DependencyGraph as Graph
+import compiler.Module.Resolver as Resolver
+import zen.io.io as io
+import zen.text.string as Str
+import zen.io.path as Path
+import zen.time.time as Time
+import zen.sys.sys as Sys
+
+function fs_read(path) {
+    <- __builtin_file.read(path)
+}
+
+function fs_write(path, content) {
+    <- __builtin_file.write(path, content)
+}
+
+function fs_is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function parse_file_cached(path) {
+    let hit -> GraphBuilder.parse_cached(path)
+    when hit != Nothing {
+        <- hit
+    }
+    let src -> fs_read(path)
+    <- Parser.parse_source(src)
+}
+
+/!
+ Compile source text through the selfhost pipeline.
+ @param src Zen source string
+ @param do_check when true, run TypeChecker and fail on errors
+ @return map: ok, c_code, errors, program
+ !/
+function compile_string(src, do_check) {
+    let prog -> Parser.parse_source(src)
+    when AST.prog_err(prog) != Nothing {
+        let pe -> []
+        pe.append(`parse: ` + Str.to_string(AST.prog_err(prog)))
+        <- {
+            `ok` -> false,
+            `c_code` -> ``,
+            `errors` -> pe,
+            `program` -> prog
+        }
+    }
+
+    let errors -> []
+    when do_check == true {
+        let cr -> Checker.check_program(prog)
+        when cr[`ok`] != true {
+            let errs -> cr[`errors`]
+            let n -> errs.length
+            let i -> 0
+            // copy by index (for-in consumes under -g)
+            errors -> copy_errors(errs, 0, n, [])
+            <- {
+                `ok` -> false,
+                `c_code` -> ``,
+                `errors` -> errors,
+                `program` -> prog
+            }
+        }
+    }
+
+    let c_code -> Codegen.transpile_program(prog, true, `zen_module_init`)
+    // Real codegen failure prefixes with `/* parse error` — do not scan the whole
+    // unit (merged sources embed the words "parse error" as string data).
+    when c_code == Nothing or c_code == `` or Str.starts_with(c_code, `/* parse error`) {
+        let pe -> []
+        pe.append(`codegen: empty or parse error output`)
+        <- {
+            `ok` -> false,
+            `c_code` -> c_code,
+            `errors` -> pe,
+            `program` -> prog
+        }
+    }
+
+    <- {
+        `ok` -> true,
+        `c_code` -> c_code,
+        `errors` -> errors,
+        `program` -> prog
+    }
+}
+
+function copy_errors(errs, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    acc.append(errs[i])
+    <- copy_errors(errs, i + 1, n, acc)
+}
+
+/!
+ True when free functions in this file should be Prefix_name namespaced.
+ Compiler + stdlib yes; test fixtures no (bare cross-file free-fn merge).
+ !/
+function should_namespace_path(path) {
+    when path == Nothing {
+        <- false
+    }
+    let p -> Str.to_string(path)
+    when Str.contains(p, `lib/zen/`) or Str.contains(p, `/lib/zen/`) {
+        <- true
+    }
+    when Str.contains(p, `selfhost/compiler`) or Str.contains(p, `selfhost/Module`) {
+        <- true
+    }
+    when Str.contains(p, `/compiler/`) {
+        <- true
+    }
+    when Str.contains(p, `selfhost/lsp`) {
+        <- true
+    }
+    <- false
+}
+
+/!
+ Module prefix for multi-file free-function names (avoids Str.join vs Path.join).
+ Matches import aliases: Path, Str, Ty, AST, …
+ !/
+function module_fn_prefix(path) {
+    when path == Nothing or path == `` {
+        <- ``
+    }
+    when Str.ends_with(path, `/string.zl`) or Str.ends_with(path, `text/string.zl`) {
+        <- `Str`
+    }
+    when Str.ends_with(path, `/path.zl`) or Str.ends_with(path, `io/path.zl`) {
+        <- `Path`
+    }
+    when Str.ends_with(path, `/io.zl`) or Str.ends_with(path, `io/io.zl`) {
+        <- `IO`
+    }
+    when Str.ends_with(path, `/sys.zl`) or Str.ends_with(path, `sys/sys.zl`) {
+        <- `Sys`
+    }
+    when Str.ends_with(path, `/AST.zl`) {
+        <- `AST`
+    }
+    when Str.ends_with(path, `/Types.zl`) {
+        <- `Ty`
+    }
+    when Str.ends_with(path, `/TypeChecker.zl`) {
+        <- `Checker`
+    }
+    when Str.ends_with(path, `/Parser.zl`) {
+        <- `Parser`
+    }
+    when Str.ends_with(path, `/Lexer.zl`) {
+        <- `Lexer`
+    }
+    when Str.ends_with(path, `/Codegen.zl`) {
+        <- `Codegen`
+    }
+    when Str.ends_with(path, `/Driver.zl`) {
+        <- `Driver`
+    }
+    when Str.ends_with(path, `/Resolver.zl`) {
+        <- `Resolver`
+    }
+    when Str.ends_with(path, `/DependencyGraph.zl`) {
+        <- `Graph`
+    }
+    when Str.ends_with(path, `/GraphBuilder.zl`) {
+        <- `GraphBuilder`
+    }
+    when Str.ends_with(path, `/Interpreter.zl`) {
+        <- `Interp`
+    }
+    when Str.ends_with(path, `/CLink.zl`) {
+        <- `CLink`
+    }
+    when Str.ends_with(path, `/process.zl`) or Str.ends_with(path, `sys/process.zl`) {
+        <- `Proc`
+    }
+    when Str.ends_with(path, `/json.zl`) or Str.ends_with(path, `data/json.zl`) {
+        <- `json`
+    }
+    when Str.ends_with(path, `/Protocol.zl`) {
+        <- `Protocol`
+    }
+    when Str.ends_with(path, `/Server.zl`) or Str.contains(path, `/lsp/Server`) {
+        <- `LspServer`
+    }
+    when Str.ends_with(path, `/file.zl`) or Str.ends_with(path, `io/file.zl`) {
+        <- `File`
+    }
+    // Default: basename without .zl
+    <- file_stem(path)
+}
+
+/!
+ Last path component without .zl (pure string; no Path.join).
+ !/
+function file_stem(path) {
+    let s -> Str.to_string(path)
+    let n -> Str.length(s)
+    when n == 0 {
+        <- ``
+    }
+    // strip trailing slash without rebind loops (-g safe recursion)
+    when Str.ends_with(s, `/`) and n > 1 {
+        <- file_stem(Str.substring(s, 0, n - 1))
+    }
+    <- file_stem_from(s, n - 1)
+}
+
+function file_stem_from(s, i) {
+    when i < 0 {
+        <- strip_zl(s)
+    }
+    when Str.at(s, i) == `/` {
+        <- strip_zl(Str.substring(s, i + 1, Str.length(s)))
+    }
+    <- file_stem_from(s, i - 1)
+}
+
+function strip_zl(base) {
+    when Str.ends_with(base, `.zl`) {
+        let bl -> Str.length(base)
+        when bl > 3 {
+            <- Str.substring(base, 0, bl - 3)
+        }
+    }
+    <- base
+}
+
+/!
+ True if `name` is in list `names` (index walk; dual-path safe).
+ !/
+function names_has(names, name) {
+    when names == Nothing {
+        <- false
+    }
+    let n -> names.length
+    let i -> 0
+    do while i < n {
+        when names[i] == name {
+            <- true
+        }
+        i -> i + 1
+    }
+    <- false
+}
+
+/!
+ Collect bare free-function names from a file's statements (excluding main).
+ !/
+function collect_local_fn_names(stmts, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let s -> stmts[i]
+    when AST.ast_kind(s) == AST.K_FUNCTION {
+        let fname -> Str.to_string(AST.fn_name(s))
+        when fname != `main` and fname != `` {
+            acc.append(fname)
+        }
+    }
+    <- collect_local_fn_names(stmts, i + 1, n, acc)
+}
+
+/!
+ Rewrite bare free-fn calls inside a node to Prefix_name for same-file linkage.
+ Only touch known AST kinds (never probe missing map keys).
+ !/
+function rewrite_calls_node(node, local_names, prefix) {
+    when node == Nothing or prefix == `` {
+        <- node
+    }
+    let k -> AST.ast_kind(node)
+    when k == AST.K_CALL {
+        let callee -> AST.call_callee(node)
+        when callee != Nothing {
+            let ck -> AST.ast_kind(callee)
+            when ck == AST.K_VARIABLE {
+                let nm -> Str.to_string(AST.var_name(callee))
+                when names_has(local_names, nm) {
+                    AST.set_var_name(callee, prefix + `_` + nm)
+                }
+            } or {
+                rewrite_calls_node(callee, local_names, prefix)
+            }
+        }
+        rewrite_calls_list(AST.call_args(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_FUNCTION {
+        rewrite_calls_node(AST.fn_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_BLOCK {
+        rewrite_calls_list(AST.block_stmts(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_LET {
+        rewrite_calls_node(AST.let_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_EXPR_STMT or k == AST.K_ASSERT {
+        rewrite_calls_node(AST.expr_stmt_expr(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_RETURN {
+        rewrite_calls_node(AST.ret_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_WHEN {
+        rewrite_calls_list(AST.when_cases(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_CASE {
+        rewrite_calls_node(AST.case_cond(node), local_names, prefix)
+        rewrite_calls_node(AST.case_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_WHILE or k == AST.K_DO_WHILE {
+        rewrite_calls_node(AST.while_cond(node), local_names, prefix)
+        rewrite_calls_node(AST.while_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_FOR {
+        rewrite_calls_node(AST.for_iter(node), local_names, prefix)
+        rewrite_calls_node(AST.for_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_BINARY or k == AST.K_LOGICAL {
+        rewrite_calls_node(AST.bin_left(node), local_names, prefix)
+        rewrite_calls_node(AST.bin_right(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_UNARY {
+        rewrite_calls_node(AST.un_right(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_GROUPING {
+        rewrite_calls_node(AST.grp_expr(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_ASSIGN {
+        rewrite_calls_node(AST.assign_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_INDEX_ASSIGN {
+        rewrite_calls_node(AST.idx_assign_obj(node), local_names, prefix)
+        rewrite_calls_node(AST.idx_assign_expr(node), local_names, prefix)
+        rewrite_calls_node(AST.idx_assign_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_SET {
+        rewrite_calls_node(AST.set_obj(node), local_names, prefix)
+        rewrite_calls_node(AST.set_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_GET {
+        rewrite_calls_node(AST.get_obj(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_INDEX {
+        rewrite_calls_node(AST.idx_obj(node), local_names, prefix)
+        rewrite_calls_node(AST.idx_expr(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_LIST {
+        rewrite_calls_list(AST.list_elems(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_MAP {
+        rewrite_calls_list(AST.map_entries(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_STRUCT_INIT {
+        rewrite_calls_list(AST.struct_init_fields(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_STRUCT_FIELD {
+        rewrite_calls_node(AST.struct_field_val(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_DEFER {
+        rewrite_calls_node(AST.defer_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_SCOPE {
+        rewrite_calls_node(AST.scope_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_CLASS {
+        rewrite_calls_list(AST.class_methods(node), local_names, prefix)
+        rewrite_calls_list(AST.class_members(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_WITH {
+        rewrite_calls_node(AST.with_expr(node), local_names, prefix)
+        rewrite_calls_node(AST.with_body(node), local_names, prefix)
+        <- node
+    }
+    <- node
+}
+
+function rewrite_calls_list(lst, local_names, prefix) {
+    when lst == Nothing {
+        <- Nothing
+    }
+    let n -> lst.length
+    let i -> 0
+    do while i < n {
+        rewrite_calls_node(lst[i], local_names, prefix)
+        i -> i + 1
+    }
+    <- Nothing
+}
+
+/!
+ Map import aliases in this file to the merge prefix of the imported module.
+ Skip TokenType from-imports (GetExpression TokenType.X must stay).
+ !/
+function collect_import_alias_pairs(stmts, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let s -> stmts[i]
+    let k -> AST.ast_kind(s)
+    when k == AST.K_IMPORT or k == AST.K_FROM_IMPORT {
+        let path -> Str.to_string(AST.import_path(s))
+        let alias -> AST.import_alias(s)
+        when alias == Nothing or alias == `` {
+            alias -> import_path_stem(path)
+        }
+        let als -> Str.to_string(alias)
+        when als != `TokenType` and Str.contains(path, `Token`) == false {
+            when import_should_rewrite(path) {
+                let pfx -> prefix_for_import_path(path)
+                when pfx != `` and pfx != als {
+                    acc.append({`a` -> als, `p` -> pfx})
+                }
+            }
+        }
+    }
+    <- collect_import_alias_pairs(stmts, i + 1, n, acc)
+}
+
+function import_path_stem(path) {
+    let s -> Str.to_string(path)
+    let n -> Str.length(s)
+    <- import_path_stem_from(s, n - 1, n)
+}
+
+function import_path_stem_from(s, i, n) {
+    when i < 0 {
+        <- s
+    }
+    when Str.at(s, i) == `.` or Str.at(s, i) == `/` {
+        <- Str.substring(s, i + 1, n)
+    }
+    <- import_path_stem_from(s, i - 1, n)
+}
+
+function import_should_rewrite(path) {
+    let s -> Str.to_string(path)
+    when Str.contains(s, `compiler.`) or Str.contains(s, `zen.`) or
+         Str.contains(s, `selfhost.`) or Str.contains(s, `lib/zen`) {
+        <- true
+    }
+    <- false
+}
+
+function prefix_for_import_path(path) {
+    let s -> Str.to_string(path)
+    <- module_fn_prefix(`/` + import_path_stem(s) + `.zl`)
+}
+
+function alias_prefix_at(pairs, name, i, n) {
+    when pairs == Nothing or i >= n {
+        <- Nothing
+    }
+    let p -> pairs[i]
+    when p[`a`] == name {
+        <- p[`p`]
+    }
+    <- alias_prefix_at(pairs, name, i + 1, n)
+}
+
+function rewrite_alias_calls_node(node, pairs) {
+    when node == Nothing or pairs == Nothing {
+        <- node
+    }
+    let pn -> pairs.length
+    when pn == 0 {
+        <- node
+    }
+    let k -> AST.ast_kind(node)
+    when k == AST.K_GET {
+        let obj -> AST.get_obj(node)
+        when obj != Nothing {
+            let okind -> AST.ast_kind(obj)
+            when okind == AST.K_VARIABLE {
+                let nm -> Str.to_string(AST.var_name(obj))
+                let pfx -> alias_prefix_at(pairs, nm, 0, pn)
+                when pfx != Nothing and pfx != `` {
+                    AST.set_var_name(obj, pfx)
+                }
+            } or {
+                rewrite_alias_calls_node(obj, pairs)
+            }
+        }
+        <- node
+    }
+    when k == AST.K_CALL {
+        rewrite_alias_calls_node(AST.call_callee(node), pairs)
+        rewrite_alias_calls_list(AST.call_args(node), pairs)
+        <- node
+    }
+    when k == AST.K_FUNCTION {
+        rewrite_alias_calls_node(AST.fn_body(node), pairs)
+        <- node
+    }
+    when k == AST.K_BLOCK {
+        rewrite_alias_calls_list(AST.block_stmts(node), pairs)
+        <- node
+    }
+    when k == AST.K_LET {
+        rewrite_alias_calls_node(AST.let_val(node), pairs)
+        <- node
+    }
+    when k == AST.K_ASSIGN {
+        rewrite_alias_calls_node(AST.assign_val(node), pairs)
+        <- node
+    }
+    when k == AST.K_SET {
+        rewrite_alias_calls_node(AST.set_obj(node), pairs)
+        rewrite_alias_calls_node(AST.set_val(node), pairs)
+        <- node
+    }
+    when k == AST.K_LIST {
+        rewrite_alias_calls_list(AST.list_elems(node), pairs)
+        <- node
+    }
+    when k == AST.K_MAP {
+        rewrite_alias_calls_list(AST.map_entries(node), pairs)
+        <- node
+    }
+    when k == AST.K_RETURN {
+        rewrite_alias_calls_node(AST.ret_val(node), pairs)
+        <- node
+    }
+    when k == AST.K_EXPR_STMT or k == AST.K_ASSERT {
+        rewrite_alias_calls_node(AST.expr_stmt_expr(node), pairs)
+        <- node
+    }
+    when k == AST.K_WHEN {
+        rewrite_alias_calls_list(AST.when_cases(node), pairs)
+        <- node
+    }
+    when k == AST.K_CASE {
+        rewrite_alias_calls_node(AST.case_cond(node), pairs)
+        rewrite_alias_calls_node(AST.case_body(node), pairs)
+        <- node
+    }
+    when k == AST.K_WHILE or k == AST.K_DO_WHILE {
+        rewrite_alias_calls_node(AST.while_cond(node), pairs)
+        rewrite_alias_calls_node(AST.while_body(node), pairs)
+        <- node
+    }
+    when k == AST.K_FOR {
+        rewrite_alias_calls_node(AST.for_iter(node), pairs)
+        rewrite_alias_calls_node(AST.for_body(node), pairs)
+        <- node
+    }
+    when k == AST.K_BINARY or k == AST.K_LOGICAL {
+        rewrite_alias_calls_node(AST.bin_left(node), pairs)
+        rewrite_alias_calls_node(AST.bin_right(node), pairs)
+        <- node
+    }
+    when k == AST.K_UNARY {
+        rewrite_alias_calls_node(AST.un_right(node), pairs)
+        <- node
+    }
+    when k == AST.K_GROUPING {
+        rewrite_alias_calls_node(AST.grp_expr(node), pairs)
+        <- node
+    }
+    when k == AST.K_INDEX_ASSIGN {
+        rewrite_alias_calls_node(AST.idx_assign_obj(node), pairs)
+        rewrite_alias_calls_node(AST.idx_assign_expr(node), pairs)
+        rewrite_alias_calls_node(AST.idx_assign_val(node), pairs)
+        <- node
+    }
+    when k == AST.K_INDEX {
+        rewrite_alias_calls_node(AST.idx_obj(node), pairs)
+        rewrite_alias_calls_node(AST.idx_expr(node), pairs)
+        <- node
+    }
+    when k == AST.K_CLASS {
+        rewrite_alias_calls_list(AST.class_methods(node), pairs)
+        rewrite_alias_calls_list(AST.class_members(node), pairs)
+        <- node
+    }
+    when k == AST.K_WITH {
+        rewrite_alias_calls_node(AST.with_expr(node), pairs)
+        rewrite_alias_calls_node(AST.with_body(node), pairs)
+        <- node
+    }
+    <- node
+}
+
+function rewrite_alias_calls_list(lst, pairs) {
+    when lst == Nothing {
+        <- Nothing
+    }
+    let n -> lst.length
+    let i -> 0
+    do while i < n {
+        rewrite_alias_calls_node(lst[i], pairs)
+        i -> i + 1
+    }
+    <- Nothing
+}
+
+/!
+ Append statements from one dependency file into `acc`.
+ - Strip imports; drop non-entry `main`
+ - Namespace free functions as Prefix_name (all deps, not only stdlib)
+ - Rewrite same-file bare calls to Prefix_name
+ Entry file statements are appended elsewhere without rename (or prefix ``).
+ !/
+function append_file_stmts(acc, stmts, path, entry_path, seen_names) {
+    when stmts == Nothing {
+        <- acc
+    }
+    let is_entry -> path == entry_path
+    // Namespace compiler + stdlib only. Fixtures keep bare free-fn names (multi_lib_val).
+    let prefix -> ``
+    when is_entry == false and should_namespace_path(path) {
+        prefix -> module_fn_prefix(path)
+    }
+    let n -> stmts.length
+    let alias_pairs -> collect_import_alias_pairs(stmts, 0, n, [])
+    let local_names -> []
+    when prefix != `` {
+        local_names -> collect_local_fn_names(stmts, 0, n, [])
+    }
+    let i -> 0
+    do while i < n {
+        let s -> stmts[i]
+        let k -> AST.ast_kind(s)
+        let skip -> false
+        when k == AST.K_IMPORT or k == AST.K_FROM_IMPORT {
+            skip -> true
+        }
+        when k == AST.K_FUNCTION {
+            let fname -> Str.to_string(AST.fn_name(s))
+            when fname == `main` and is_entry == false {
+                skip -> true
+            }
+            when skip == false {
+                rewrite_alias_calls_node(s, alias_pairs)
+            }
+            when skip == false and prefix != `` and fname != `main` {
+                rewrite_calls_node(AST.fn_body(s), local_names, prefix)
+                AST.set_fn_name(s, prefix + `_` + fname)
+            }
+        }
+        when skip == false and k != AST.K_FUNCTION {
+            rewrite_alias_calls_node(s, alias_pairs)
+            when prefix != `` {
+                rewrite_calls_node(s, local_names, prefix)
+            }
+        }
+        when skip == false {
+            acc -> drv_list_push(acc, s)
+        }
+        i -> i + 1
+    }
+    <- acc
+}
+
+function drv_list_push(lst, node) {
+    when lst == Nothing {
+        lst -> []
+    }
+    let grown -> lst.append(node)
+    when grown != Nothing {
+        <- grown
+    }
+    <- lst
+}
+
+/!
+ Parse files in dependency order and merge into one Program map.
+ Entry file's `main` is kept; dependency mains are dropped.
+ !/
+function merge_program_files(order, entry_path) {
+    let acc -> []
+    let n -> order.length
+    let i -> 0
+    let last_err -> Nothing
+    do while i < n {
+        let path -> order[i]
+        when fs_is_file(path) {
+            let prog -> parse_file_cached(path)
+            when AST.prog_err(prog) != Nothing {
+                last_err -> `parse ` + path + `: ` + Str.to_string(AST.prog_err(prog))
+            } or {
+                acc -> append_file_stmts(acc, AST.prog_stmts(prog), path, entry_path, Nothing)
+            }
+        }
+        i -> i + 1
+    }
+    when last_err != Nothing {
+        <- AST.program_error(last_err)
+    }
+    <- AST.program(acc)
+}
+
+function prof_on() {
+    let v -> Sys.get_env(`ZEN_PROFILE`)
+    when v == `1` {
+        <- true
+    }
+    <- false
+}
+
+function prof_log(on, label, t0) {
+    when on != true {
+        <- Nothing
+    }
+    let ms -> (Time.monotonic() - t0) * 1000
+    io.writeln(`profile ` + label + ` ` + Str.to_string(ms) + ` ms`)
+    <- Nothing
+}
+
+/!
+ Compile entry .zl with multi-file dependency merge (Stage 5.x / 7.x).
+ Search roots: entry dir, ., lib, selfhost (+ Resolver always adds tests/self_hosting).
+ Default: one merged C translation unit.
+ ZEN_PROFILE=1 prints stage ms (graph / merge / check / codegen / total).
+ !/
+function compile_file(source_path, output_path, do_check) {
+    when not fs_is_file(source_path) {
+        let pe -> []
+        pe.append(`file not found: ` + source_path)
+        <- {
+            `ok` -> false,
+            `c_code` -> ``,
+            `errors` -> pe,
+            `program` -> Nothing
+        }
+    }
+
+    let want -> prof_on()
+    let t_all -> Time.monotonic()
+    let base -> Path.dirname(source_path)
+    let t_graph -> Time.monotonic()
+    let order -> ensure_compile_order(source_path, base)
+    prof_log(want, `graph`, t_graph)
+
+    let t_merge -> Time.monotonic()
+    let prog -> merge_program_files(order, source_path)
+    prof_log(want, `merge`, t_merge)
+    when AST.prog_err(prog) != Nothing {
+        let pe -> []
+        pe.append(Str.to_string(AST.prog_err(prog)))
+        <- {
+            `ok` -> false,
+            `c_code` -> ``,
+            `errors` -> pe,
+            `program` -> prog
+        }
+    }
+
+    let errors -> []
+    when do_check == true {
+        let t_check -> Time.monotonic()
+        let cr -> Checker.check_program(prog)
+        prof_log(want, `check`, t_check)
+        when cr[`ok`] != true {
+            let errs -> cr[`errors`]
+            errors -> copy_errors(errs, 0, errs.length, [])
+            <- {
+                `ok` -> false,
+                `c_code` -> ``,
+                `errors` -> errors,
+                `program` -> prog
+            }
+        }
+    }
+
+    when output_path != Nothing and output_path != `` {
+        let t_cg -> Time.monotonic()
+        let marker -> Codegen.transpile_program_to_file(prog, output_path)
+        prof_log(want, `codegen`, t_cg)
+        prof_log(want, `total`, t_all)
+        when marker != `ok` {
+            let pe -> []
+            pe.append(`codegen: empty or parse error output`)
+            <- {
+                `ok` -> false,
+                `c_code` -> marker,
+                `errors` -> pe,
+                `program` -> prog
+            }
+        }
+        <- {
+            `ok` -> true,
+            `c_code` -> `__streamed__`,
+            `errors` -> errors,
+            `program` -> prog,
+            `files` -> order
+        }
+    }
+
+    let t_cg2 -> Time.monotonic()
+    let c_code -> Codegen.transpile_program(prog, true, `zen_module_init`)
+    prof_log(want, `codegen`, t_cg2)
+    prof_log(want, `total`, t_all)
+    when c_code == Nothing or c_code == `` or Str.starts_with(c_code, `/* parse error`) {
+        let pe -> []
+        pe.append(`codegen: empty or parse error output`)
+        <- {
+            `ok` -> false,
+            `c_code` -> c_code,
+            `errors` -> pe,
+            `program` -> prog
+        }
+    }
+
+    <- {
+        `ok` -> true,
+        `c_code` -> c_code,
+        `errors` -> errors,
+        `program` -> prog,
+        `files` -> order
+    }
+}
+
+/!
+ Parse one dependency path into a namespaced unit Program (imports stripped).
+ Same rewrite rules as merge, but one file only.
+ !/
+function prepare_unit(path, entry_path) {
+    when not fs_is_file(path) {
+        <- {
+            `ok` -> false,
+            `program` -> Nothing,
+            `error` -> `file not found: ` + path,
+            `stem` -> file_stem(path),
+            `path` -> path
+        }
+    }
+    let prog -> parse_file_cached(path)
+    when AST.prog_err(prog) != Nothing {
+        <- {
+            `ok` -> false,
+            `program` -> prog,
+            `error` -> `parse ` + path + `: ` + Str.to_string(AST.prog_err(prog)),
+            `stem` -> file_stem(path),
+            `path` -> path
+        }
+    }
+    let acc -> []
+    acc -> append_file_stmts(acc, AST.prog_stmts(prog), path, entry_path, Nothing)
+    <- {
+        `ok` -> true,
+        `program` -> AST.program(acc),
+        `error` -> Nothing,
+        `stem` -> file_stem(path),
+        `path` -> path,
+        `is_entry` -> path == entry_path
+    }
+}
+
+/!
+ Sanitize stem for C identifiers (init / file base).
+ !/
+function c_safe_stem(stem, idx) {
+    when stem == Nothing or stem == `` {
+        <- `u` + Str.to_string(idx)
+    }
+    let s -> Str.to_string(stem)
+    when s == `` or s == `Nothing` or s == `None` {
+        <- `u` + Str.to_string(idx)
+    }
+    // Prefer stem as-is when already a simple ident (fixtures, modules).
+    <- s
+}
+
+/!
+ Unique non-static init name for multi-unit: zen_mod_init_<stem>
+ !/
+function unit_init_name(stem, idx) {
+    <- `zen_mod_init_` + c_safe_stem(stem, idx)
+}
+
+/!
+ Join proto blocks; skip empties. Dual-path safe recursion.
+ !/
+function join_proto_blocks(blocks, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let b -> blocks[i]
+    when b == Nothing or b == `` {
+        <- join_proto_blocks(blocks, i + 1, n, acc)
+    }
+    let s -> Str.to_string(b)
+    when s == `` {
+        <- join_proto_blocks(blocks, i + 1, n, acc)
+    }
+    when acc == `` {
+        <- join_proto_blocks(blocks, i + 1, n, s)
+    }
+    <- join_proto_blocks(blocks, i + 1, n, acc + `\n` + s)
+}
+
+/!
+ Emit one C file per module + host main. Writes under out_dir.
+ Returns { ok, c_files, init_names, errors, files, out_dir }.
+ Single-unit merge remains compile_file Default.
+ !/
+function compile_file_multi(source_path, out_dir, do_check) {
+    when not fs_is_file(source_path) {
+        let pe -> []
+        pe.append(`file not found: ` + source_path)
+        <- {
+            `ok` -> false,
+            `c_files` -> [],
+            `errors` -> pe,
+            `out_dir` -> out_dir
+        }
+    }
+
+    let base -> Path.dirname(source_path)
+    let order -> ensure_compile_order(source_path, base)
+
+    // Optional typecheck still uses merged program (one graph).
+    when do_check == true {
+        let merged -> merge_program_files(order, source_path)
+        when AST.prog_err(merged) != Nothing {
+            let pe -> []
+            pe.append(Str.to_string(AST.prog_err(merged)))
+            <- {
+                `ok` -> false,
+                `c_files` -> [],
+                `errors` -> pe,
+                `out_dir` -> out_dir
+            }
+        }
+        let cr -> Checker.check_program(merged)
+        when cr[`ok`] != true {
+            let errs -> cr[`errors`]
+            let errors -> copy_errors(errs, 0, errs.length, [])
+            <- {
+                `ok` -> false,
+                `c_files` -> [],
+                `errors` -> errors,
+                `out_dir` -> out_dir
+            }
+        }
+    }
+
+    let dir -> out_dir
+    when dir == Nothing or dir == `` {
+        dir -> `output/multi_c`
+    }
+    // Best-effort create out dir (ignore failure; write will fail loudly).
+    __builtin_file.mkdir_p(dir)
+
+    let n -> order.length
+    let units -> prepare_units(order, source_path, 0, n, [])
+    when units[`ok`] != true {
+        let pe -> []
+        pe.append(Str.to_string(units[`error`]))
+        <- {
+            `ok` -> false,
+            `c_files` -> [],
+            `errors` -> pe,
+            `out_dir` -> dir
+        }
+    }
+    let ulist -> units[`list`]
+    let un -> ulist.length
+
+    // Shared protos + extern module globals (AST.K_* across TUs)
+    let gblocks -> collect_unit_globals(ulist, 0, un, [])
+    let pblocks -> collect_unit_protos(ulist, 0, un, [])
+    let gshared -> join_proto_blocks(gblocks, 0, gblocks.length, ``)
+    let pshared -> join_proto_blocks(pblocks, 0, pblocks.length, ``)
+    let shared -> gshared
+    when pshared != `` {
+        when shared == `` {
+            shared -> pshared
+        } or {
+            shared -> shared + `\n` + pshared
+        }
+    }
+
+    let c_files -> []
+    let init_names -> []
+    let wi -> 0
+    do while wi < un {
+        let u -> ulist[wi]
+        let stem -> c_safe_stem(u[`stem`], wi)
+        let iname -> unit_init_name(stem, wi)
+        init_names.append(iname)
+        // No host main in module TUs — host file owns main.
+        let cpath -> Path.join(dir, stem + `.c`)
+        let code -> Codegen.transpile_unit_ex_to_file(u[`program`], false, iname, shared, cpath)
+        when code != `ok` {
+            let pe -> []
+            pe.append(`codegen multi: bad unit ` + Str.to_string(u[`path`]))
+            <- {
+                `ok` -> false,
+                `c_files` -> c_files,
+                `errors` -> pe,
+                `out_dir` -> dir
+            }
+        }
+        c_files.append(cpath)
+        wi -> wi + 1
+    }
+
+    let host -> Codegen.emit_multi_host_main(init_names)
+    let host_path -> Path.join(dir, `zen_host_main.c`)
+    fs_write(host_path, host)
+    c_files.append(host_path)
+
+    <- {
+        `ok` -> true,
+        `c_files` -> c_files,
+        `init_names` -> init_names,
+        `errors` -> [],
+        `files` -> order,
+        `out_dir` -> dir,
+        `c_code` -> host
+    }
+}
+
+/!
+ Prepare all units; fail fast on first error.
+ !/
+function prepare_units(order, entry_path, i, n, acc) {
+    when i >= n {
+        <- {
+            `ok` -> true,
+            `list` -> acc,
+            `error` -> Nothing
+        }
+    }
+    let path -> order[i]
+    let u -> prepare_unit(path, entry_path)
+    when u[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `list` -> acc,
+            `error` -> u[`error`]
+        }
+    }
+    acc.append(u)
+    <- prepare_units(order, entry_path, i + 1, n, acc)
+}
+
+function collect_unit_protos(ulist, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let u -> ulist[i]
+    let block -> Codegen.proto_block_for_program(u[`program`])
+    when block != Nothing and block != `` {
+        acc.append(block)
+    }
+    <- collect_unit_protos(ulist, i + 1, n, acc)
+}
+
+function collect_unit_globals(ulist, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let u -> ulist[i]
+    let block -> Codegen.global_extern_block_for_program(u[`program`])
+    when block != Nothing and block != `` {
+        acc.append(block)
+    }
+    <- collect_unit_globals(ulist, i + 1, n, acc)
+}
+
+/!
+ dep_order + guarantee non-empty list containing at least entry_path.
+ Avoid rebinding order in caller (native when-branch rebind is sticky-broken).
+ !/
+function ensure_compile_order(source_path, base) {
+    let src -> fs_read(source_path)
+    when not GraphBuilder.source_may_import(src) {
+        let single -> []
+        single.append(source_path)
+        <- single
+    }
+    let order -> dep_order(source_path, base, `.`, `lib`, `selfhost`)
+    when order == Nothing or order.length == 0 {
+        let single2 -> []
+        single2.append(source_path)
+        <- single2
+    }
+    <- order
+}
+
+/!
+ Typecheck only (no C emit).
+ !/
+function check_string_file(src, filename) {
+    <- Checker.check_source_file(src, filename)
+}
+
+function check_string(src) {
+    <- check_string_file(src, `<source>`)
+}
+
+/!
+ Build dependency order for an entry file (Stage 3).
+ roots: up to four search roots.
+ !/
+function dep_order(entry_path, r0, r1, r2, r3) {
+    let g -> GraphBuilder.build_from_file_roots(entry_path, r0, r1, r2, r3)
+    <- Graph.get_compilation_order(g)
+}
+
+/!
+ True when s is a CLI subcommand or bare .zl entry (not a program path).
+ !/
+function is_cli_token(s) {
+    when s == `help` or s == `-h` or s == `--help` {
+        <- true
+    }
+    when s == `check` or s == `deps` or s == `compile` or s == `build` or s == `run` or s == `interpret` or s == `eval` or s == `vm` or s == `test` or s == `--test` or s == `lsp` {
+        <- true
+    }
+    when s == `-g` or s == `--generate` {
+        <- true
+    }
+    when Str.ends_with(s, `.zl`) {
+        <- true
+    }
+    <- false
+}
+
+/!
+ Skip argv[0] when it is the script/binary path (not a command).
+ Interpret: a0 = selfhost/zen.zl; native: a0 = .../zen-selfhost or zen_program.
+ Tests may pass bare [`help`] with no program name.
+ !/
+function cli_cmd_index(args, n) {
+    when n <= 0 {
+        <- 0
+    }
+    let a0 -> Str.to_string(args[0])
+    when is_cli_token(a0) {
+        // Bare .zl as first token is the compile target, not the driver script.
+        // Only skip .zl when it is clearly the host script name (contains selfhost/zen or ends with /zen.zl).
+        when Str.ends_with(a0, `.zl`) {
+            when Str.contains(a0, `selfhost/zen`) or Str.ends_with(a0, `/zen.zl`) or a0 == `zen.zl` {
+                <- 1
+            }
+            <- 0
+        }
+        <- 0
+    }
+    // Binary path or unknown argv0 — skip
+    <- 1
+}
+
+/!
+ Finish compile CLI after source path is known (no rebind of src under -g).
+ Supports --multi → compile_file_multi (out = directory).
+ !/
+function compile_cli(src_path, args, opt_start, n) {
+    let arena -> __builtin_memory.create_arena(32 * 1024 * 1024)
+    __builtin_memory.push_arena(arena)
+    let opts -> parse_compile_opts(args, opt_start, n, `out.c`, false, false)
+    let out_path -> opts[`out`]
+    let do_check -> opts[`check`]
+    let multi -> opts[`multi`]
+    let ok_flag -> false
+    let extra -> ``
+    let err_msg -> ``
+    when multi == true {
+        let multi_res -> compile_cli_multi(src_path, out_path, do_check)
+        __builtin_memory.pop_arena()
+        __builtin_memory.free_arena(arena)
+        <- multi_res
+    } or {
+        let r -> compile_file(src_path, out_path, do_check)
+        when r[`ok`] == true {
+            ok_flag -> true
+            when r[`c_code`] != `__streamed__` and r[`c_code`] != Nothing {
+                extra -> ` (` + Str.to_string(Str.length(r[`c_code`])) + ` bytes)`
+            }
+        } or {
+            ok_flag -> false
+            err_msg -> `compile failed:\n` + join_errs(r[`errors`])
+        }
+    }
+    __builtin_memory.pop_arena()
+    __builtin_memory.free_arena(arena)
+    when ok_flag == true {
+        <- {
+            `code` -> 0,
+            `message` -> `wrote ` + out_path + extra
+        }
+    }
+    <- {
+        `code` -> 1,
+        `message` -> err_msg
+    }
+}
+
+function compile_cli_multi(src_path, out_path, do_check) {
+    let dir -> out_path
+    // If user passed out.c, use sibling dir out_multi (or strip .c).
+    when dir == Nothing or dir == `` or dir == `out.c` {
+        dir -> `output/multi_c`
+    }
+    when Str.ends_with(dir, `.c`) {
+        // Treat foo.c as directory "foo_multi" under same parent, or just drop extension
+        let bl -> Str.length(dir)
+        when bl > 2 {
+            dir -> Str.substring(dir, 0, bl - 2)
+        }
+    }
+    let r -> compile_file_multi(src_path, dir, do_check)
+    when r[`ok`] == true {
+        let nfiles -> 0
+        when r[`c_files`] != Nothing {
+            nfiles -> r[`c_files`].length
+        }
+        <- {
+            `code` -> 0,
+            `message` -> `multi-unit wrote ` + Str.to_string(nfiles) + ` files under ` + dir
+        }
+    }
+    <- {
+        `code` -> 1,
+        `message` -> `multi compile failed:\n` + join_errs(r[`errors`])
+    }
+}
+
+/!
+ CLI-style dispatch on an args list (args[0] may be script/binary name).
+ Supports:
+   compile <in.zl> [out.c] [--typecheck|-t]
+   check <in.zl>
+   deps <in.zl>
+   help
+ Returns exit map: { code: Integer, message: String }
+ !/
+function run_args(args) {
+    let n -> 0
+    when args != Nothing {
+        n -> args.length
+    }
+    let i0 -> cli_cmd_index(args, n)
+    when i0 >= n {
+        <- {
+            `code` -> 1,
+            `message` -> usage_text()
+        }
+    }
+    let cmd -> Str.to_string(args[i0])
+
+    when cmd == `help` or cmd == `-h` or cmd == `--help` {
+        <- {
+            `code` -> 0,
+            `message` -> usage_text()
+        }
+    }
+
+    when cmd == `check` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `check: missing file`}
+        }
+        let path -> Str.to_string(args[i0 + 1])
+        when not fs_is_file(path) {
+            <- {`code` -> 1, `message` -> `check: not found ` + path}
+        }
+        let src -> fs_read(path)
+        let r -> check_string_file(src, path)
+        when r[`ok`] == true {
+            <- {`code` -> 0, `message` -> `check ok: ` + path}
+        }
+        let msg -> `check failed:\n` + join_errs(r[`errors`])
+        <- {`code` -> 1, `message` -> msg}
+    }
+
+    when cmd == `deps` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `deps: missing file`}
+        }
+        let path -> Str.to_string(args[i0 + 1])
+        let base -> Path.dirname(path)
+        let order -> dep_order(path, base, `.`, `lib`, `selfhost`)
+        let on -> order.length
+        let msg -> `deps (` + Str.to_string(on) + `):\n` + join_paths(order, 0, on, ``)
+        <- {`code` -> 0, `message` -> msg}
+    }
+
+    when cmd == `compile` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `compile: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- compile_cli(src_path, args, i0 + 2, n)
+    }
+
+    when cmd == `build` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `build: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- build_cli(src_path, args, i0 + 2, n)
+    }
+
+    when cmd == `run` or cmd == `-g` or cmd == `--generate` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `run: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- run_cli(src_path, args, i0 + 2, n)
+    }
+
+    when cmd == `interpret` or cmd == `eval` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `interpret: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- interpret_cli(src_path)
+    }
+
+    when cmd == `vm` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `vm: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- vm_cli(src_path)
+    }
+
+    when cmd == `test` or cmd == `--test` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `test: missing file`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        <- test_cli(src_path)
+    }
+
+    when cmd == `lsp` {
+        // LSP is a separate entry (tools/zenlsp.zl) so zen-selfhost
+        // does not link Protocol/json into every compile/interpret.
+        <- {
+            `code` -> 1,
+            `message` -> `lsp is not linked into zen-selfhost. Use: python3 bootstrap/Zen.py tools/zenlsp.zl\n  hybrid: ./bin/zen lsp`
+        }
+    }
+
+    when Str.ends_with(cmd, `.zl`) {
+        // bare file.zl [out] [--typecheck] → C emit only (legacy)
+        <- compile_cli(cmd, args, i0 + 1, n)
+    }
+
+    <- {
+        `code` -> 1,
+        `message` -> `unknown command: ` + cmd + `\n` + usage_text()
+    }
+}
+
+/!
+ Execute script directly via fast Bytecode VM.
+ !/
+function vm_cli(src_path) {
+    when not fs_is_file(src_path) {
+        <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
+    }
+    let prog -> parse_file_cached(src_path)
+    when prog == Nothing or AST.prog_err(prog) != Nothing {
+        let err -> AST.prog_err(prog)
+        when err == Nothing {
+            err -> `parse error`
+        }
+        <- {`code` -> 1, `message` -> `vm: ` + Str.to_string(err)}
+    }
+    let b_res -> Bytecode.compile_program(prog)
+    when b_res[`ok`] != true {
+        let errs -> b_res[`errors`]
+        let msg -> `bytecode compilation failed`
+        when errs != Nothing and errs.length > 0 {
+            msg -> Str.to_string(errs[0])
+        }
+        <- {`code` -> 1, `message` -> `vm: ` + msg}
+    }
+    let chunk -> b_res[`chunk`]
+    let v -> Bytecode.eval_chunk(chunk, {})
+    when v == Nothing or v == 0 {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    when v == 1 {
+        <- {`code` -> 1, `message` -> ``}
+    }
+    let s -> Str.to_string(v)
+    when s == `0` {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    <- {`code` -> 0, `message` -> s}
+}
+
+/!
+ Script interpret: accelerated by Bytecode VM (Phase 3),
+ falling back to AST interpreter for complex multi-module imports.
+ !/
+function interpret_cli(src_path) {
+    when not fs_is_file(src_path) {
+        <- {`code` -> 1, `message` -> `interpret: not found ` + src_path}
+    }
+    let r -> Interp.interpret_file(src_path)
+    when r[`ok`] != true {
+        let err -> r[`error`]
+        when err == Nothing {
+            err -> `interpret failed`
+        }
+        <- {`code` -> 1, `message` -> Str.to_string(err)}
+    }
+    let v -> r[`value`]
+    when v == Nothing {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    when v == 0 {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    when v == 1 {
+        <- {`code` -> 1, `message` -> ``}
+    }
+    let s -> Str.to_string(v)
+    when s == `0` {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    <- {`code` -> 0, `message` -> s}
+}
+
+function vm_cli(src_path) {
+    when not fs_is_file(src_path) {
+        <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
+    }
+    let prog -> parse_file_cached(src_path)
+    when prog != Nothing and AST.prog_err(prog) == Nothing {
+        let b_res -> Bytecode.compile_program(prog)
+        when b_res[`ok`] == true {
+            let chunk -> b_res[`chunk`]
+            let v -> Bytecode.eval_chunk(chunk, {})
+            when v == Nothing or v == 0 {
+                <- {`code` -> 0, `message` -> ``}
+            }
+            when v == 1 {
+                <- {`code` -> 1, `message` -> ``}
+            }
+            let s -> Str.to_string(v)
+            when s == `0` {
+                <- {`code` -> 0, `message` -> ``}
+            }
+            <- {`code` -> 0, `message` -> s}
+        }
+    }
+    <- {`code` -> 1, `message` -> `vm failed`}
+}
+
+/!
+ Discover test_* functions in src_path and run them under Interpreter,
+ or execute main() if no test_* functions exist (e.g. test suites using zen.test).
+ !/
+function test_cli(src_path) {
+    when not fs_is_file(src_path) {
+        <- {`code` -> 1, `message` -> `test: not found ` + src_path}
+    }
+    let res -> Interp.interpret_file_env(src_path)
+    when res[`ok`] != true {
+        let err -> res[`error`]
+        when err == Nothing {
+            err -> `test setup failed`
+        }
+        <- {`code` -> 1, `message` -> Str.to_string(err)}
+    }
+    let env -> res[`env`]
+    let prog -> res[`program`]
+    let test_fns -> collect_test_fn_names(AST.prog_stmts(prog))
+    let count -> test_fns.length
+    when count == 0 {
+        // No explicit test_* functions; run main() if present (e.g. test_*.zl test suites)
+        let main_res -> Interp.call_named_fn(env, `main`, Nothing)
+        when main_res[`ok`] != true {
+            let err -> main_res[`error`]
+            when err == Nothing {
+                err -> `test run failed`
+            }
+            <- {`code` -> 1, `message` -> Str.to_string(err)}
+        }
+        let v -> main_res[`value`]
+        when v == false {
+            <- {`code` -> 1, `message` -> `test suite failed`}
+        }
+        when v == 1 {
+            <- {`code` -> 1, `message` -> `test suite failed with code 1`}
+        }
+        <- {`code` -> 0, `message` -> ``}
+    }
+
+    // Run discovered test_* functions
+    io.writeln(`--- Running tests in ` + src_path + ` ---`)
+    let passed -> run_test_fn_list(env, test_fns, 0, count, 0)
+    io.writeln(`--- ` + src_path + `: ` + Str.to_string(passed) + `/` + Str.to_string(count) + ` tests passed ---`)
+    when passed == count {
+        <- {`code` -> 0, `message` -> ``}
+    }
+    <- {`code` -> 1, `message` -> `some tests failed in ` + src_path}
+}
+
+function collect_test_fn_names(stmts) {
+    let acc -> []
+    when stmts == Nothing {
+        <- acc
+    }
+    let n -> stmts.length
+    let i -> 0
+    do while i < n {
+        let s -> stmts[i]
+        when s != Nothing and AST.ast_kind(s) == AST.K_FUNCTION {
+            let name -> Str.to_string(AST.fn_name(s))
+            when Str.starts_with(name, `test_`) {
+                acc.append(name)
+            }
+        }
+        i -> i + 1
+    }
+    <- acc
+}
+
+function run_test_fn_list(env, test_fns, i, n, passed) {
+    when i >= n {
+        <- passed
+    }
+    let name -> test_fns[i]
+    io.write(`  [TEST] ` + name + `... `)
+    let res -> Interp.call_named_fn(env, name, Nothing)
+    when res[`ok`] != true {
+        let err -> res[`error`]
+        when err == Nothing {
+            err -> `error`
+        }
+        io.writeln(`FAIL: ` + Str.to_string(err))
+        <- run_test_fn_list(env, test_fns, i + 1, n, passed)
+    }
+    let v -> res[`value`]
+    when v == false {
+        io.writeln(`FAIL: returned false`)
+        <- run_test_fn_list(env, test_fns, i + 1, n, passed)
+    }
+    io.writeln(`PASS`)
+    <- run_test_fn_list(env, test_fns, i + 1, n, passed + 1)
+}
+
+/!
+ Zen → C → gcc → binary (no run).
+ build <file.zl> [exe] [--typecheck|-t] [--workdir dir]
+ !/
+function build_cli(src_path, args, opt_start, n) {
+    let opts -> parse_build_opts(args, opt_start, n, `output/build/selfhost_native/zen_program`, `output/build/selfhost_native`, false)
+    let r -> build_file(src_path, opts[`workdir`], opts[`exe`], opts[`check`])
+    when r[`ok`] == true {
+        <- {
+            `code` -> 0,
+            `message` -> `built ` + r[`exe`]
+        }
+    }
+    <- {
+        `code` -> 1,
+        `message` -> `build failed:\n` + Str.to_string(r[`message`])
+    }
+}
+
+/!
+ Zen → C → gcc → run (bootstrap -g equivalent for selfhost).
+ run|-g <file.zl> [--typecheck|-t] [--workdir dir] [--] [prog args...]
+ !/
+function run_cli(src_path, args, opt_start, n) {
+    let opts -> parse_run_opts(args, opt_start, n, `output/build/selfhost_native`, false, [])
+    let r -> build_file(src_path, opts[`workdir`], Path.join(opts[`workdir`], `zen_program`), opts[`check`])
+    when r[`ok`] != true {
+        <- {
+            `code` -> 1,
+            `message` -> `run: build failed:\n` + Str.to_string(r[`message`])
+        }
+    }
+    let exe -> r[`exe`]
+    let prog_args -> opts[`prog_args`]
+    let exit_c -> CLink.run_exe(exe, prog_args)
+    when exit_c == 0 {
+        <- {
+            `code` -> 0,
+            `message` -> `ran ` + exe + ` (exit 0)`
+        }
+    }
+    <- {
+        `code` -> exit_c,
+        `message` -> `ran ` + exe + ` (exit ` + Str.to_string(exit_c) + `)`
+    }
+}
+
+/!
+ Full pipeline: compile_file → CLink.build_c_code.
+ !/
+function build_file(source_path, workdir, exe_path, do_check) {
+    when not fs_is_file(source_path) {
+        <- {
+            `ok` -> false,
+            `message` -> `file not found: ` + source_path,
+            `exe` -> ``
+        }
+    }
+    let c_path -> Path.join(workdir, `out.c`)
+    // Ensure workdir exists before compile write
+    __builtin_file.mkdir_p(workdir)
+    let cr -> compile_file(source_path, c_path, do_check)
+    when cr[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `message` -> join_errs(cr[`errors`]),
+            `exe` -> ``
+        }
+    }
+    let lr -> CLink.build_c_code(cr[`c_code`], workdir, exe_path)
+    when lr[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `message` -> lr[`message`],
+            `exe` -> ``
+        }
+    }
+    <- {
+        `ok` -> true,
+        `message` -> lr[`message`],
+        `exe` -> lr[`exe`],
+        `workdir` -> workdir
+    }
+}
+
+function parse_build_opts(args, k, n, exe_path, workdir, do_check) {
+    when k >= n {
+        <- {
+            `exe` -> exe_path,
+            `workdir` -> workdir,
+            `check` -> do_check
+        }
+    }
+    let a -> Str.to_string(args[k])
+    when a == `--typecheck` or a == `-t` {
+        <- parse_build_opts(args, k + 1, n, exe_path, workdir, true)
+    }
+    when a == `--workdir` {
+        when k + 1 >= n {
+            <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check)
+        }
+        <- parse_build_opts(args, k + 2, n, exe_path, Str.to_string(args[k + 1]), do_check)
+    }
+    when not Str.starts_with(a, `-`) {
+        // bare path = exe output
+        <- parse_build_opts(args, k + 1, n, a, workdir, do_check)
+    }
+    <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check)
+}
+
+function parse_run_opts(args, k, n, workdir, do_check, prog_args) {
+    when k >= n {
+        <- {
+            `workdir` -> workdir,
+            `check` -> do_check,
+            `prog_args` -> prog_args
+        }
+    }
+    let a -> Str.to_string(args[k])
+    when a == `--typecheck` or a == `-t` {
+        <- parse_run_opts(args, k + 1, n, workdir, true, prog_args)
+    }
+    when a == `--workdir` {
+        when k + 1 >= n {
+            <- parse_run_opts(args, k + 1, n, workdir, do_check, prog_args)
+        }
+        <- parse_run_opts(args, k + 2, n, Str.to_string(args[k + 1]), do_check, prog_args)
+    }
+    when a == `--` {
+        // rest are program args
+        let rest -> []
+        let j -> k + 1
+        do while j < n {
+            rest.append(args[j])
+            j -> j + 1
+        }
+        <- {
+            `workdir` -> workdir,
+            `check` -> do_check,
+            `prog_args` -> rest
+        }
+    }
+    when Str.starts_with(a, `-`) {
+        <- parse_run_opts(args, k + 1, n, workdir, do_check, prog_args)
+    }
+    // positional after file: treat as program args (no out.c for run)
+    prog_args.append(a)
+    <- parse_run_opts(args, k + 1, n, workdir, do_check, prog_args)
+}
+
+/!
+ Parse compile CLI options from args[k..n) into { out, check, multi }.
+ !/
+function parse_compile_opts(args, k, n, out_path, do_check, multi) {
+    when k >= n {
+        <- {
+            `out` -> out_path,
+            `check` -> do_check,
+            `multi` -> multi
+        }
+    }
+    let a -> Str.to_string(args[k])
+    // Note: bootstrap Zen.py claims `--check`; use --typecheck for the selfhost driver.
+    when a == `--typecheck` or a == `-t` {
+        <- parse_compile_opts(args, k + 1, n, out_path, true, multi)
+    }
+    when a == `--multi` or a == `-m` {
+        <- parse_compile_opts(args, k + 1, n, out_path, do_check, true)
+    }
+    when not Str.starts_with(a, `-`) {
+        <- parse_compile_opts(args, k + 1, n, a, do_check, multi)
+    }
+    <- parse_compile_opts(args, k + 1, n, out_path, do_check, multi)
+}
+
+function usage_text() {
+    <- `selfhost driver (toward full Zen host)
+
+Usage:
+  compile   <file.zl> [out.c|outdir] [--typecheck|-t] [--multi|-m]
+  build     <file.zl> [exe] [--typecheck|-t] [--workdir dir]
+  run|-g    <file.zl> [--typecheck|-t] [--workdir dir] [--] [prog args...]
+  interpret <file.zl>
+  vm        <file.zl>
+  test      <file.zl>
+  check     <file.zl>
+  deps      <file.zl>
+  lsp
+  help
+
+  compile     Zen → C only (merge Default; --multi = one TU per module)
+  build       Zen → C → gcc/runtime → binary
+  run / -g    Zen → C → gcc/runtime → run (bootstrap -g equivalent)
+  interpret   Run via Bytecode VM (with AST walk fallback)
+  vm          Direct Bytecode VM execution (no C/gcc)
+  test        Run test_* functions or test suites natively
+  lsp         (not in zen-selfhost) → tools/zenlsp.zl / hybrid ./bin/zen lsp
+
+Endgame: drop Python bootstrap; selfhost owns compile, recompile, run, and
+interpret. See selfhost/PARITY.md (Full selfhost endgame).
+
+Note: --typecheck (not --check); bootstrap CLI still uses --check.
+Native: bin/zen-selfhost (./scripts/zen install-selfhost)
+`
+}
+
+function join_errs(errs) {
+    when errs == Nothing {
+        <- ``
+    }
+    let n -> errs.length
+    <- join_errs_rec(errs, 0, n, ``)
+}
+
+function join_errs_rec(errs, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let e -> Str.to_string(errs[i])
+    let next -> acc + e + `\n`
+    <- join_errs_rec(errs, i + 1, n, next)
+}
+
+function join_paths(order, i, n, acc) {
+    when i >= n {
+        <- acc
+    }
+    let raw -> order[i]
+    when raw == Nothing or raw == `` {
+        <- join_paths(order, i + 1, n, acc)
+    }
+    let p -> Str.to_string(raw)
+    when p == `Nothing` or p == `None` or p == `` {
+        <- join_paths(order, i + 1, n, acc)
+    }
+    let next -> acc + p + `\n`
+    <- join_paths(order, i + 1, n, next)
+}

@@ -1,0 +1,215 @@
+/!
+  Terminal control for TUI and editors.
+
+  Display: clear, move, color, write, cursor show/hide, alt screen.
+  Input: raw_enter/raw_exit + read_key/poll_key (returns a key map).
+
+  Key map fields:
+  - kind: `char` | `special` | `resize` | `none`
+  - name: e.g. `left`, `enter`, `backspace`, `ctrl_s` (empty for plain chars)
+  - ch: printable character string
+  - ctrl: boolean
+  - code: integer (raw byte when relevant)
+!/
+
+/!
+ Clears the terminal screen and homes the cursor.
+!/
+function clear() {
+    __builtin_term.clear()
+}
+
+/!
+ Moves the cursor to column x, row y (1-based).
+!/
+function move(x, y) {
+    __builtin_term.move(x, y)
+}
+
+/!
+ Sets foreground/background color by name (e.g. `green`, `black`).
+!/
+function color(fg, bg) {
+    __builtin_term.color(fg, bg)
+}
+
+function reset() {
+    __builtin_term.reset()
+}
+
+/!
+ @return Map with `width` and `height`.
+!/
+function get_size() {
+    <- __builtin_term.get_size()
+}
+
+function alt_screen_enter() {
+    __builtin_term.alt_screen_enter()
+}
+
+function alt_screen_exit() {
+    __builtin_term.alt_screen_exit()
+}
+
+/!
+ Enter the alternate screen, run `fn`, always leave alt screen afterward.
+!/
+function alt_screen(fn) {
+    __builtin_term.alt_screen_enter()
+    move(1, 1)
+    let result -> fn()
+    __builtin_term.alt_screen_exit()
+    <- result
+}
+
+/!
+ Enable raw/cbreak-like input (no echo, no line buffering). Always pair with raw_exit.
+ @return True if the terminal was switched successfully.
+!/
+function raw_enter() {
+    <- __builtin_term.raw_enter()
+}
+
+/!
+ Restore cooked terminal settings and show cursor / leave alt screen if needed.
+!/
+function raw_exit() {
+    __builtin_term.raw_exit()
+}
+
+/!
+ Run `fn` in raw mode; always restores the terminal even if `fn` raises.
+!/
+function with_raw(fn) {
+    raw_enter()
+    let result -> Nothing
+    check {
+        result -> fn()
+    } or {
+        raw_exit()
+        raise `term.with_raw failed`
+    }
+    raw_exit()
+    <- result
+}
+
+function hide_cursor() {
+    __builtin_term.hide_cursor()
+}
+
+function show_cursor() {
+    __builtin_term.show_cursor()
+}
+
+function clear_eol() {
+    __builtin_term.clear_eol()
+}
+
+/!
+ Write text without a trailing newline (does not always flush).
+!/
+function write(text) {
+    __builtin_term.write(text)
+}
+
+function flush() {
+    __builtin_term.flush()
+}
+
+/!
+ Write at (x,y) then restore Nothing else.
+!/
+function write_at(x, y, text) {
+    move(x, y)
+    write(text)
+}
+
+/!
+ Blocking key/event read. See module docs for the key map shape.
+!/
+function read_key() {
+    <- __builtin_term.read_key()
+}
+
+/!
+ Non-blocking key read; waits up to `timeout_ms` milliseconds.
+ Returns kind `none` if Nothing was pressed.
+!/
+function poll_key(timeout_ms) {
+    <- __builtin_term.poll_key(timeout_ms)
+}
+
+/!
+ Enables SGR mouse tracking. Terminal will capture mouse clicks and send them as key events.
+!/
+function enable_mouse() {
+    __builtin_term.mouse_enable()
+}
+
+/!
+ Disables SGR mouse tracking.
+!/
+function disable_mouse() {
+    __builtin_term.mouse_disable()
+}
+
+/!
+ True when stdin is attached to a TTY (interactive terminal).
+!/
+function is_tty() {
+    <- __builtin_term.is_tty()
+}
+
+/!
+ Write text with optional fg/bg colors, then reset attributes.
+ Does not add a newline.
+!/
+function style(fg, bg, text) {
+    color(fg, bg)
+    write(text)
+    reset()
+}
+
+/!
+ Write a line (with newline) using optional colors, then reset.
+!/
+function style_line(fg, bg, text) {
+    style(fg, bg, text)
+    write(`\n`)
+    flush()
+}
+
+/!
+ Convenience: green success line to stdout.
+!/
+function success(text) {
+    style_line(`green`, `black`, text)
+}
+
+/!
+ Convenience: yellow warning line.
+!/
+function warn(text) {
+    style_line(`yellow`, `black`, text)
+}
+
+/!
+ Convenience: red error line.
+!/
+function error(text) {
+    style_line(`red`, `black`, text)
+}
+
+/!
+ Simple spinner frame for CLI progress (no TTY required; just returns the glyph).
+ Cycle index `i` through 0..3.
+!/
+function spinner_frame(i) {
+    let frames -> [`|`, `/`, `-`, `\\`]
+    let n -> frames.length
+    when n == 0 { <- `|` }
+    let idx -> i % n
+    when idx < 0 { idx -> 0 }
+    <- frames[idx]
+}

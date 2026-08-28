@@ -1,0 +1,145 @@
+/!
+  Publishing and version management module for Zenlang projects.
+  Handles semantic version bumping (zen bump), Git tagging,
+  and release archive packaging (zen publish).
+!/
+
+import zen.tooling.manifest as manifest
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.data.tar as tar
+
+/!
+  Bumps a semantic version string (e.g. 0.1.0 -> 0.1.1 or 0.2.0 or 1.0.0).
+!/
+export function bump_version_string(ver, part) {
+    let raw -> Str.to_string(ver)
+    let parts -> Str.split(raw, `.`)
+    let major -> 0
+    let minor -> 1
+    let patch -> 0
+
+    when parts.length >= 1 {
+        let s0 -> Str.to_string(parts[0])
+        major -> s0.to_number()
+    }
+    when parts.length >= 2 {
+        let s1 -> Str.to_string(parts[1])
+        minor -> s1.to_number()
+    }
+    when parts.length >= 3 {
+        let s2 -> Str.to_string(parts[2])
+        patch -> s2.to_number()
+    }
+
+    let p -> Str.to_lower(part)
+    when p == `major` {
+        major -> major + 1
+        minor -> 0
+        patch -> 0
+    } or when p == `minor` {
+        minor -> minor + 1
+        patch -> 0
+    } or {
+        patch -> patch + 1
+    }
+
+    <- Str.to_string(major) + `.` + Str.to_string(minor) + `.` + Str.to_string(patch)
+}
+
+/!
+  Bumps the version in .zbuild and optionally creates a Git commit and tag.
+!/
+export function bump_project_version(proj, part, do_git_tag) {
+    let manifest_map -> proj[`manifest`]
+    let old_ver -> manifest_map[`version`]
+    let new_ver -> bump_version_string(old_ver, part)
+    manifest_map[`version`] -> new_ver
+
+    let manifest_path -> path.join(proj[`root`], `.zbuild`)
+    file.write(manifest_path, manifest.stringify_manifest(manifest_map))
+
+    io.writeln(`[VERSION] Bumping ` + manifest_map[`name`] + `: ` + old_ver + ` -> ` + new_ver)
+
+    when do_git_tag != false and process.available(`git`) {
+        let tag_name -> `v` + new_ver
+        let root -> proj[`root`]
+        process.shell_in(root, `git add .zbuild 2>/dev/null`)
+        process.shell_in(root, `git commit -m ` + process.shell_quote(`chore: bump version to ` + new_ver) + ` 2>/dev/null`)
+        process.shell_in(root, `git tag ` + process.shell_quote(tag_name) + ` 2>/dev/null`)
+        io.writeln(`[GIT] Created commit and tag ` + tag_name)
+    }
+
+    <- {
+        `ok` -> true,
+        `old_version` -> old_ver,
+        `new_version` -> new_ver
+    }
+}
+
+/!
+  Packages a project release archive (.tar or .tar.gz) in build/.
+!/
+export function publish_project(proj, out_dir) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let name -> manifest_map[`name`]
+    let ver -> manifest_map[`version`]
+
+    let dest_dir -> out_dir
+    when dest_dir == Nothing or dest_dir == `` {
+        dest_dir -> path.join(root, `build`)
+    }
+    file.make_dirs(dest_dir)
+
+    let tar_name -> name + `-` + ver + `.tar`
+    let tar_path -> path.join(dest_dir, tar_name)
+
+    io.writeln(`[PUBLISH] Packaging ` + name + ` v` + ver + ` into ` + tar_path + `...`)
+
+    // Collect all source files to archive
+    let archive_files -> []
+    let add_file -> function(p) {
+        when file.exists(p) {
+            let rel -> p.replace(root + `/`, ``)
+            archive_files.append({ `path` -> rel, `full` -> p })
+        }
+    }
+
+    add_file(path.join(root, `.zbuild`))
+    add_file(path.join(root, `zen.lock`))
+    add_file(path.join(root, `README.md`))
+    add_file(path.join(root, `.gitignore`))
+
+    let src_dir -> path.join(root, `src`)
+    when file.exists(src_dir) {
+        let s_files -> file.find_files(src_dir, `.zl`)
+        do for f in s_files { add_file(f) }
+    }
+
+    let test_dir -> path.join(root, `tests`)
+    when file.exists(test_dir) {
+        let t_files -> file.find_files(test_dir, `.zl`)
+        do for f in t_files { add_file(f) }
+    }
+
+    // Build tar archive using stdlib zen.data.tar
+    let builder -> tar.TarBuilder()
+    do for item in archive_files {
+        let content -> file.read(item[`full`])
+        builder.add_file(item[`path`], content)
+    }
+    builder.write_to_file(tar_path)
+
+    io.writeln(`[PUBLISH] Successfully created release archive: ` + tar_path)
+    <- {
+        `ok` -> true,
+        `archive` -> tar_path,
+        `version` -> ver,
+        `file_count` -> archive_files.length
+    }
+}

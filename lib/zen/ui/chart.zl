@@ -1,0 +1,174 @@
+/!
+    Terminal Charts and Data Visualization.
+    Provides Unicode sparklines, horizontal bar charts, and vertical histogram plots.
+!/
+
+import zen.text.string as Str
+import zen.math.math as Math
+
+/!
+    Generates a compact inline Unicode sparkline string.
+    @param values List of numbers.
+    @return Sparkline string using Unicode blocks ( ▂▃▄▅▆▇█).
+!/
+function sparkline(values) {
+    when values == Nothing or values.length == 0 { <- `` }
+    let count -> values.length
+
+    let min_val -> 0.0 + values[0]
+    let max_val -> 0.0 + values[0]
+    let i -> 1
+    do while i < count {
+        let v -> 0.0 + values[i]
+        min_val -> Math.min(min_val, v)
+        max_val -> Math.max(max_val, v)
+        i -> i + 1
+    }
+
+    let glyphs -> [` `, `▂`, `▃`, `▄`, `▅`, `▆`, `▇`, `█`]
+    let range -> max_val - min_val
+    let out -> ``
+
+    i -> 0
+    do while i < count {
+        let v -> 0.0 + values[i]
+        let idx -> 0
+        when range > 0.000001 {
+            let normalized -> (v - min_val) / range
+            idx -> Math.floor(normalized * 7.0)
+            when idx < 0 { idx -> 0 }
+            when idx > 7 { idx -> 7 }
+        }
+        out -> out + glyphs[idx]
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Renders a horizontal bar chart.
+    @param data List of items. Each item can be a map with "label" and "value" or a 2-element list [label, value].
+    @param options Map with optional "max_width" (default 30), "char" (default "█"), "show_values" (default True).
+    @return Formatted multi-line bar chart string.
+!/
+function bar_chart_h(data, options) {
+    when data == Nothing or data.length == 0 { <- `` }
+    let count -> data.length
+
+    let max_w -> 30.0
+    let fill_char -> `█`
+    let show_values -> True
+
+    when options != Nothing {
+        when options.has(`max_width`) { max_w -> 0.0 + options[`max_width`] }
+        when options.has(`char`) { fill_char -> options[`char`] }
+        when options.has(`show_values`) { show_values -> options[`show_values`] }
+    }
+
+    // Extract items & find max label length and max value
+    let labels -> []
+    let values -> []
+    let max_val -> 0.0
+    let max_label_len -> 0
+
+    let i -> 0
+    do while i < count {
+        let item -> data[i]
+        let lbl -> ``
+        let val -> 0.0
+        when item.has(`label`) {
+            lbl -> Str.to_string(item[`label`])
+            val -> 0.0 + item[`value`]
+        } or {
+            lbl -> Str.to_string(item[0])
+            val -> 0.0 + item[1]
+        }
+
+        labels.append(lbl)
+        values.append(val)
+
+        let len -> Str.length(lbl)
+        max_label_len -> Math.max(max_label_len, len)
+        max_val -> Math.max(max_val, val)
+        i -> i + 1
+    }
+
+    let out -> ``
+    i -> 0
+    do while i < count {
+        let lbl -> labels[i]
+        let val -> values[i]
+
+        // Pad label
+        let padded_lbl -> Str.pad_right(lbl, max_label_len, ` `)
+
+        // Compute bar length
+        let bar_len -> when max_val > 0.000001 {
+            Math.floor(val / max_val * max_w)
+        } or {
+            0
+        }
+        when bar_len < 0 { bar_len -> 0 }
+        when bar_len > max_w { bar_len -> 0 + max_w }
+
+        let bar -> Str.repeat(fill_char, bar_len)
+        let line -> padded_lbl + ` | ` + bar
+
+        when show_values {
+            line -> line + ` ` + Str.to_string(val)
+        }
+
+        out -> out + line + `\n`
+        i -> i + 1
+    }
+
+    when Str.ends_with(out, `\n`) {
+        out -> Str.substring(out, 0, Str.length(out) - 1)
+    }
+    <- out
+}
+
+/!
+    Renders a vertical column bar chart with specified height.
+    @param values List of numbers.
+    @param height Column height in lines (default 5).
+    @return Formatted multi-line string.
+!/
+function bar_chart_v(values, height) {
+    when values == Nothing or values.length == 0 { <- `` }
+    let h_num -> 0.0 + height
+    when h_num <= 0.0 { h_num -> 5.0 }
+
+    let count -> values.length
+    let max_v -> 0.0 + values[0]
+    let i -> 1
+    do while i < count {
+        let v -> 0.0 + values[i]
+        max_v -> Math.max(max_v, v)
+        i -> i + 1
+    }
+
+    let out -> ``
+    let row -> 0 + height
+    when row <= 0 { row -> 5 }
+
+    do while row >= 1 {
+        let col -> 0
+        do while col < count {
+            let v -> 0.0 + values[col]
+            let ratio -> when max_v > 0.000001 { (0.0 + v) / (0.0 + max_v) } or { 0.0 }
+            let col_h -> ratio * h_num
+            let r_thresh -> (0.0 + row) - 0.5
+            let cell -> when col_h >= r_thresh { `█ ` } or { `  ` }
+            out -> out + cell
+            col -> col + 1
+        }
+        out -> out + `\n`
+        row -> row - 1
+    }
+
+    when Str.ends_with(out, `\n`) {
+        out -> Str.substring(out, 0, Str.length(out) - 1)
+    }
+    <- out
+}

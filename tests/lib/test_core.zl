@@ -1,0 +1,147 @@
+import zen.core as core
+import zen.test as test
+
+function test_option_helpers() {
+    let some -> Option.Something(42)
+    let none -> Option.Nothing
+
+    let pass -> test.assert_true(core.is_something(some), `Option.Something should be recognized as present`)
+    pass -> pass and test.assert_false(core.is_nothing(some), `Option.Something should not be empty`)
+    pass -> pass and test.assert_true(core.is_nothing(none), `Option.Nothing should be empty`)
+    pass -> pass and test.assert_false(core.is_something(none), `Option.Nothing should not be present`)
+    pass -> pass and test.assert_equal(core.unwrap(some), 42, `unwrap should extract Option.Something value`)
+    pass -> pass and test.assert_equal(core.unwrap_or(none, 99), 99, `unwrap_or should use the fallback value`)
+    <- pass
+}
+
+function test_result_helpers() {
+    let ok -> Result.Ok(`zen`)
+    let err -> Result.Error(`boom`)
+
+    let pass -> test.assert_true(core.is_ok(ok), `Result.Ok should be recognized as ok`)
+    pass -> pass and test.assert_false(core.is_error(ok), `Result.Ok should not be recognized as an error`)
+    pass -> pass and test.assert_true(core.is_error(err), `Result.Error should be recognized as an error`)
+    pass -> pass and test.assert_equal(core.unwrap(ok), `zen`, `unwrap should extract Result.Ok value`)
+    pass -> pass and test.assert_equal(core.unwrap_or(err, `fallback`), `fallback`, `unwrap_or should use the fallback for Result.Error`)
+    pass -> pass and test.assert_equal(core.expect(ok, `unused`), `zen`, `expect should return the contained ok value`)
+    <- pass
+}
+
+function test_combinators() {
+    let double_fn -> function(x) { <- x * 2 }
+    let some_num -> Option.Something(10)
+    let none_num -> Option.Nothing
+    let ok_num -> Result.Ok(10)
+    let err_num -> Result.Error(`fail`)
+
+    // map
+    let mapped_some -> core.map(some_num, double_fn)
+    let mapped_none -> core.map(none_num, double_fn)
+    let mapped_ok -> core.map(ok_num, double_fn)
+    let mapped_err -> core.map(err_num, double_fn)
+
+    let pass -> test.assert_equal(core.unwrap(mapped_some), 20, `map should transform Option value`)
+    pass -> pass and test.assert_true(core.is_nothing(mapped_none), `map on Option.Nothing should remain Nothing`)
+    pass -> pass and test.assert_equal(core.unwrap(mapped_ok), 20, `map should transform Result.Ok value`)
+    pass -> pass and test.assert_true(core.is_error(mapped_err), `map on Result.Error should remain Error`)
+
+    // map_error
+    let prefix_fn -> function(msg) { <- `prefix: ` + msg }
+    let err_mapped -> core.map_error(err_num, prefix_fn)
+    let ok_mapped -> core.map_error(ok_num, prefix_fn)
+
+    pass -> pass and test.assert_true(core.is_error(err_mapped), `map_error should return an error Result`)
+    pass -> pass and test.assert_equal(core.unwrap(ok_mapped), 10, `map_error on Ok should leave value unchanged`)
+
+    // map_flat
+    let chain_opt -> function(x) {
+        when x > 5 { <- Option.Something(x + 1) }
+        or { <- Option.Nothing }
+    }
+    let flat_res1 -> core.map_flat(some_num, chain_opt)
+    let flat_res2 -> core.map_flat(Option.Something(2), chain_opt)
+    let flat_none -> core.map_flat(none_num, chain_opt)
+
+    pass -> pass and test.assert_equal(core.unwrap(flat_res1), 11, `map_flat should return chained Something`)
+    pass -> pass and test.assert_true(core.is_nothing(flat_res2), `map_flat should return Nothing when predicate fails`)
+    pass -> pass and test.assert_true(core.is_nothing(flat_none), `map_flat on Nothing should stay Nothing`)
+
+    // filter
+    let is_even -> function(x) { <- (x % 2) == 0 }
+    let filtered_even -> core.filter(Option.Something(4), is_even)
+    let filtered_odd -> core.filter(Option.Something(5), is_even)
+    let filtered_none -> core.filter(Option.Nothing, is_even)
+
+    pass -> pass and test.assert_equal(core.unwrap(filtered_even), 4, `filter should keep matching elements`)
+    pass -> pass and test.assert_true(core.is_nothing(filtered_odd), `filter should discard non-matching elements`)
+    pass -> pass and test.assert_true(core.is_nothing(filtered_none), `filter on Nothing should stay Nothing`)
+
+    <- pass
+}
+
+function test_conversions() {
+    let some -> Option.Something(100)
+    let none -> Option.Nothing
+    let ok -> Result.Ok(200)
+    let err -> Result.Error(`not found`)
+
+    // to_result
+    let res_from_some -> core.to_result(some, `default error`)
+    let res_from_none -> core.to_result(none, `default error`)
+    let pass -> test.assert_equal(core.unwrap(res_from_some), 100, `to_result should convert Something to Ok`)
+    pass -> pass and test.assert_true(core.is_error(res_from_none), `to_result should convert Nothing to Error`)
+
+    // to_option
+    let opt_from_ok -> core.to_option(ok)
+    let opt_from_err -> core.to_option(err)
+    pass -> pass and test.assert_equal(core.unwrap(opt_from_ok), 200, `to_option should convert Ok to Something`)
+    pass -> pass and test.assert_true(core.is_nothing(opt_from_err), `to_option should convert Error to Nothing`)
+
+    // from_value & to_value
+    let opt_val -> core.from_value(50)
+    let opt_nothing -> core.from_value(Nothing)
+    pass -> pass and test.assert_equal(core.unwrap(opt_val), 50, `from_value on non-nothing should wrap in Something`)
+    pass -> pass and test.assert_true(core.is_nothing(opt_nothing), `from_value on Nothing should return Nothing`)
+
+    let raw_val -> core.to_value(some)
+    let raw_nothing -> core.to_value(none)
+    pass -> pass and test.assert_equal(raw_val, 100, `to_value on Something should extract raw value`)
+    pass -> pass and test.assert_equal(raw_nothing, Nothing, `to_value on Nothing should return Nothing`)
+
+    <- pass
+}
+
+function test_primitives() {
+    let pass -> test.assert_equal(core.identity(123), 123, `identity should return input unchanged`)
+    pass -> pass and test.assert_equal(core.identity(`test`), `test`, `identity on string should return string`)
+
+    let ord1 -> core.compare(1, 2)
+    let ord2 -> core.compare(2, 2)
+    let ord3 -> core.compare(3, 2)
+
+    pass -> pass and test.assert_equal(ord1, Ordering.Less, `compare(1, 2) should be Less`)
+    pass -> pass and test.assert_equal(ord2, Ordering.Equal, `compare(2, 2) should be Equal`)
+    pass -> pass and test.assert_equal(ord3, Ordering.Greater, `compare(3, 2) should be Greater`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Core.option_helpers`, `fn` -> test_option_helpers},
+        {`name` -> `Core.result_helpers`, `fn` -> test_result_helpers},
+        {`name` -> `Core.combinators`, `fn` -> test_combinators},
+        {`name` -> `Core.conversions`, `fn` -> test_conversions},
+        {`name` -> `Core.primitives`, `fn` -> test_primitives}
+    ]
+
+    <- test.run_suite(`Core Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

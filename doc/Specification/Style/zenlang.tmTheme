@@ -18,9 +18,10 @@
 				</dict>
 			</dict>
 
+			<!-- Line Comments -->
 			<dict>
 				<key>scope</key>
-				<string>comment.line.zenlang</string>
+				<string>comment.line, comment.block</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -30,21 +31,10 @@
 				</dict>
 			</dict>
 
+			<!-- Documentation Comments /! ... !/ -->
 			<dict>
 				<key>scope</key>
-				<string>comment.block.zenlang</string>
-				<key>settings</key>
-				<dict>
-					<key>foreground</key>
-					<string>#a3be8c</string>
-					<key>fontStyle</key>
-					<string>italic</string>
-				</dict>
-			</dict>
-
-			<dict>
-				<key>scope</key>
-				<string>comment.doc.zenlang</string>
+				<string>comment.doc</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -54,9 +44,23 @@
 				</dict>
 			</dict>
 
+			<!-- Docblock Tags @param, @return, @example -->
 			<dict>
 				<key>scope</key>
-				<string>string</string>
+				<string>keyword.other.documentation.tag</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#ebcb8b</string>
+					<key>fontStyle</key>
+					<string>bold</string>
+				</dict>
+			</dict>
+
+			<!-- Strings -->
+			<dict>
+				<key>scope</key>
+				<string>string, string.quoted, constant.character</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -64,9 +68,23 @@
 				</dict>
 			</dict>
 
+			<!-- Character Escape Codes -->
 			<dict>
 				<key>scope</key>
-				<string>constant.numeric, constant.language</string>
+				<string>constant.character.escape</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#ebcb8b</string>
+					<key>fontStyle</key>
+					<string>bold</string>
+				</dict>
+			</dict>
+
+			<!-- Numbers -->
+			<dict>
+				<key>scope</key>
+				<string>constant.numeric</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -74,9 +92,36 @@
 				</dict>
 			</dict>
 
+			<!-- Booleans & Sentinels (Nothing, Default, True, False) -->
 			<dict>
 				<key>scope</key>
-				<string>keyword</string>
+				<string>constant.language.boolean, constant.language.sentinel</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#d08770</string>
+					<key>fontStyle</key>
+					<string>bold</string>
+				</dict>
+			</dict>
+
+			<!-- Language Variables (self, parent, module, entry) -->
+			<dict>
+				<key>scope</key>
+				<string>variable.language</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#ebcb8b</string>
+					<key>fontStyle</key>
+					<string>italic</string>
+				</dict>
+			</dict>
+
+			<!-- Keywords & Declarations -->
+			<dict>
+				<key>scope</key>
+				<string>keyword.control, keyword.declaration</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -86,6 +131,7 @@
 				</dict>
 			</dict>
 
+			<!-- Types & Generics -->
 			<dict>
 				<key>scope</key>
 				<string>storage.type, support.type</string>
@@ -96,9 +142,10 @@
 				</dict>
 			</dict>
 
+			<!-- Function Names & Declarations -->
 			<dict>
 				<key>scope</key>
-				<string>entity.name.function, support.function</string>
+				<string>entity.name.function, variable.function</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>
@@ -106,6 +153,20 @@
 				</dict>
 			</dict>
 
+			<!-- Data Flow Operators (-> and <-) -->
+			<dict>
+				<key>scope</key>
+				<string>keyword.operator.flow</string>
+				<key>settings</key>
+				<dict>
+					<key>foreground</key>
+					<string>#a3be8c</string>
+					<key>fontStyle</key>
+					<string>bold</string>
+				</dict>
+			</dict>
+
+			<!-- Standard Operators -->
 			<dict>
 				<key>scope</key>
 				<string>keyword.operator</string>
@@ -116,9 +177,10 @@
 				</dict>
 			</dict>
 
+			<!-- Punctuation -->
 			<dict>
 				<key>scope</key>
-				<string>punctuation.definition.generic</string>
+				<string>punctuation.definition.generic, punctuation.definition.string, punctuation.definition.comment</string>
 				<key>settings</key>
 				<dict>
 					<key>foreground</key>

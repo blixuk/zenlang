@@ -1,0 +1,35 @@
+/!
+ with + arena: auto push/pop user arena stack when resource is ZEN_ARENA.
+ Exit 0 iff depth increases inside with and restores after.
+ !/
+
+import zen.memory as memory
+
+function main() {
+    let base -> memory.arena_depth()
+    with memory.create_arena(8192) as region {
+        // region is bound; selfhost auto-pushes because type is ZEN_ARENA
+        when memory.arena_depth() != base + 1 {
+            <- 1
+        }
+        when memory.using_arena() != True {
+            <- 2
+        }
+    }
+    when memory.arena_depth() != base {
+        <- 3
+    }
+    when memory.using_arena() == True {
+        <- 4
+    }
+    // with without as (anonymous bind still scopes push/pop)
+    with memory.create_arena(1024) {
+        when memory.arena_depth() != base + 1 {
+            <- 5
+        }
+    }
+    when memory.arena_depth() != base {
+        <- 6
+    }
+    <- 0
+}

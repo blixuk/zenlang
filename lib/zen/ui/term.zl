@@ -1,0 +1,134 @@
+/!
+ Terminal UI Module.
+ Provides higher-level terminal control and styling.
+ !/
+
+let colors -> {
+    `black` -> 0,
+    `red` -> 1,
+    `green` -> 2,
+    `yellow` -> 3,
+    `blue` -> 4,
+    `magenta` -> 5,
+    `cyan` -> 6,
+    `white` -> 7,
+    `bright_black` -> 8,
+    `bright_red` -> 9,
+    `bright_green` -> 10,
+    `bright_yellow` -> 11,
+    `bright_blue` -> 12,
+    `bright_magenta` -> 13,
+    `bright_cyan` -> 14,
+    `bright_white` -> 15
+}
+
+/!
+ Clears the screen and moves cursor to home.
+ !/
+function clear() {
+    __builtin_term.clear()
+}
+
+/!
+ Moves the cursor to (x, y).
+ !/
+function move(x, y) {
+    __builtin_term.move(x, y)
+}
+
+/!
+ Sets the foreground and background colors.
+ @param fg Foreground color name (e.g. `green`, `bright_white`).
+ @param bg Background color name.
+ Native/interpret builtins expect **names**, not numeric codes.
+ !/
+function color(fg, bg) {
+    let f -> fg
+    let b -> bg
+    when f == Nothing { f -> `white` }
+    when b == Nothing { b -> `black` }
+    // Validate known names; unknown still forwarded (runtime may no-op)
+    when colors.has(f) == false {
+        f -> `white`
+    }
+    when colors.has(b) == false {
+        b -> `black`
+    }
+    __builtin_term.color(f, b)
+}
+
+/!
+ Resets all terminal attributes.
+ !/
+function reset() {
+    __builtin_term.reset()
+}
+
+/!
+ Gets terminal dimensions.
+ @return A map with `width` and `height`.
+ @example
+ let s -> term.size()
+ io.writeln(`Terminal: ` + s.width + `x` + s.height)
+ !/
+function size() {
+    <- __builtin_term.get_size()
+}
+
+/!
+ Runs a block of code in the alternate screen buffer.
+ Automatically restores the terminal state on exit.
+ @param fn The function to execute.
+ @example
+ term.alt_screen(function() {
+     term.move(10, 10)
+     io.write(`Secret Screen`)
+     time.sleep(2)
+ })
+ !/
+function alt_screen(fn) {
+    __builtin_term.alt_screen_enter()
+    check {
+        fn()
+    }
+    __builtin_term.alt_screen_exit()
+}
+
+/!
+ Enables SGR mouse tracking. Terminal will capture mouse clicks and send them as key events.
+!/
+function enable_mouse() {
+    __builtin_term.mouse_enable()
+}
+
+/!
+ Disables SGR mouse tracking.
+!/
+function disable_mouse() {
+    __builtin_term.mouse_disable()
+}
+
+function raw_enter() {
+    <- __builtin_term.raw_enter()
+}
+
+function raw_exit() {
+    __builtin_term.raw_exit()
+}
+
+function with_raw(fn) {
+    raw_enter()
+    let result -> Nothing
+    check {
+        result -> fn()
+    } or {
+        raw_exit()
+        raise `term.with_raw failed`
+    }
+    raw_exit()
+    <- result
+}
+
+function read_key() {
+    <- __builtin_term.read_key()
+}

@@ -1,0 +1,12 @@
+import `lib/zen/io` as IO
+from `selfhost/Token` import TokenType
+
+function main() {
+    let a : TokenType -> TokenType.KEYWORD
+    let b : TokenType -> TokenType.KEYWORD
+    when a = b {
+        IO.write(`They are equal\n`)
+    } or {
+        IO.write(`They are not equal\n`)
+    }
+}

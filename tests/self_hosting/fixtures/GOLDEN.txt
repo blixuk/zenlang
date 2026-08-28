@@ -1,0 +1,26 @@
+# E3 golden run-vs-bootstrap set
+# Only programs bootstrap can execute (selfhost-only MATRIX fixtures stay in MATRIX.md).
+# columns: path  mode
+#   both       — interpret pair + AOT pair (bootstrap -g vs selfhost run)
+#   interpret  — bootstrap interpret vs selfhost interpret only
+#   aot        — bootstrap -g vs selfhost run only
+
+tests/hello.zl	both
+tests/01_primitives.zl	both
+tests/02_variables.zl	both
+tests/03_scopes.zl	interpret
+tests/04_functions.zl	both
+tests/05_control_flow.zl	both
+tests/06_structs.zl	both
+
+tests/self_hosting/fixtures/stage7_add.zl	both
+tests/self_hosting/fixtures/stage5_for_sum.zl	both
+tests/self_hosting/fixtures/class_counter.zl	both
+tests/self_hosting/fixtures/class_inherit.zl	interpret
+tests/self_hosting/fixtures/class_dispatch.zl	both
+tests/self_hosting/fixtures/enum_color.zl	both
+tests/self_hosting/fixtures/enum_payload.zl	aot
+tests/self_hosting/fixtures/closure_add.zl	both
+tests/self_hosting/fixtures/closure_nested.zl	both
+
+tests/self_hosting/fixtures/nothing_default.zl	interpret

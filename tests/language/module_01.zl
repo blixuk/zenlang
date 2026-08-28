@@ -1,0 +1,25 @@
+/!
+  Built-in `module` context: name, path, file, dir, is_entry.
+
+  Run:
+    python3 bootstrap/Zen.py tests/language/module_01.zl
+    python3 bootstrap/Zen.py -g tests/language/module_01.zl
+!/
+
+use zen.io
+use zen.text.string as Str
+
+function main() {
+    // Entry module
+    ! module.is_entry == True
+    ! module.name == `module_01`
+    ! Str.contains(module.file, `module_01.zl`)
+    ! Str.contains(module.dir, `language`) or Str.contains(module.dir, `tests`)
+    ! module.path == `module_01`
+
+    io.writeln(`module.name=` + module.name)
+    io.writeln(`module.is_entry=` + Str.to_string(module.is_entry))
+    io.writeln(`module.file=` + module.file)
+
+    <- 0
+}

@@ -1,0 +1,41 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+function add(a, b) {
+    <- a + b
+}
+
+function factorial(n) {
+    when n <= 1 {
+        <- 1
+    } or {
+        <- n * factorial(n - 1)
+    }
+}
+
+function test_basic_functions() {
+    io.write(`  - Basic functions... `)
+    utils.assert_eq(add(5, 7), 12, `simple addition function`)
+    utils.assert_eq(factorial(5), 120, `recursive factorial function`)
+    io.write(`PASS\n`)
+}
+
+function multiplier(factor) {
+    // <- function(x) {
+    //    <- x * factor
+    // }
+    <- 0
+}
+
+function test_closures() {
+    io.write(`  - Closures... `)
+    // let double -> multiplier(2)
+    // utils.assert_eq(double(10), 20, `closure with factor 2`)
+    io.write(`SKIPPED\n`)
+}
+
+function run_functions_tests() {
+    io.write(`Running Functions Tests:\n`)
+    test_basic_functions()
+    test_closures()
+}

@@ -1,0 +1,490 @@
+/!
+    HTML processing and generation module.
+    Provides HTML escaping/unescaping, tag/document builders, and lightweight parsing.
+!/
+
+import zen.text.string as Str
+
+/!
+    Escapes special HTML characters (&, <, >, ", ') in a string.
+    @param s The string to escape.
+    @return The escaped HTML-safe string.
+!/
+function escape(s) {
+    when s == Nothing { <- `` }
+    let str_val -> Str.to_string(s)
+    str_val -> Str.replace(str_val, `&`, `&amp;`)
+    str_val -> Str.replace(str_val, `<`, `&lt;`)
+    str_val -> Str.replace(str_val, `>`, `&gt;`)
+    str_val -> Str.replace(str_val, `"`, `&quot;`)
+    str_val -> Str.replace(str_val, `'`, `&#39;`)
+    <- str_val
+}
+
+/!
+    Decodes standard HTML entities back into plain characters.
+    @param s The HTML entity-encoded string.
+    @return The unescaped plain string.
+!/
+function unescape(s) {
+    when s == Nothing { <- `` }
+    let str_val -> Str.to_string(s)
+    str_val -> Str.replace(str_val, `&lt;`, `<`)
+    str_val -> Str.replace(str_val, `&gt;`, `>`)
+    str_val -> Str.replace(str_val, `&quot;`, `"`)
+    str_val -> Str.replace(str_val, `&#39;`, `'`)
+    str_val -> Str.replace(str_val, `&apos;`, `'`)
+    str_val -> Str.replace(str_val, `&nbsp;`, ` `)
+    str_val -> Str.replace(str_val, `&copy;`, `©`)
+    str_val -> Str.replace(str_val, `&mdash;`, `—`)
+    str_val -> Str.replace(str_val, `&ndash;`, `–`)
+    str_val -> Str.replace(str_val, `&amp;`, `&`)
+    <- str_val
+}
+
+/!
+    Strips all HTML tags from a string.
+    @param s The HTML string.
+    @return Text content without any HTML markup.
+!/
+function strip_tags(s) {
+    when s == Nothing { <- `` }
+    let out -> ``
+    let in_tag -> false
+    let idx -> 0
+    let s_len -> Str.length(s)
+    do while idx < s_len {
+        let ch -> Str.at(s, idx)
+        when ch == `<` {
+            in_tag -> true
+        } or when ch == `>` {
+            in_tag -> false
+        } or {
+            when not in_tag {
+                out -> out + ch
+            }
+        }
+        idx -> 0 + idx + 1
+    }
+    <- out
+}
+
+/!
+    Checks if a tag name represents an HTML void / self-closing element.
+    @param name Tag name (case-insensitive).
+    @return True if self-closing, False otherwise.
+!/
+function is_void_tag(name) {
+    when name == Nothing { <- false }
+    let lower_name -> Str.to_lower(Str.trim(name))
+    let voids -> [
+        `area`, `base`, `br`, `col`, `embed`, `hr`, `img`,
+        `input`, `link`, `meta`, `param`, `source`, `track`, `wbr`
+    ]
+    let idx -> 0
+    let count -> voids.length
+    do while idx < count {
+        when voids[idx] == lower_name {
+            <- true
+        }
+        idx -> 0 + idx + 1
+    }
+    <- false
+}
+
+/!
+    Formats a Map of attributes into an HTML attribute string.
+    @param attrs Map of attribute key-value pairs.
+    @return Formatted attributes string (e.g. ` class="btn" disabled`).
+!/
+function format_attributes(attrs) {
+    when attrs == Nothing { <- `` }
+    let out -> ``
+    let keys -> attrs.keys()
+    let idx -> 0
+    let count -> keys.length
+    do while idx < count {
+        let k -> keys[idx]
+        let val -> attrs[k]
+        when val == true {
+            out -> out + ` ` + k
+        } or when val != false and val != Nothing {
+            out -> out + ` ` + k + `="` + escape(Str.to_string(val)) + `"`
+        }
+        idx -> 0 + idx + 1
+    }
+    <- out
+}
+
+/!
+    Constructs an HTML element with optional attributes and inner content.
+    @param name Element tag name (e.g. "div", "a", "img").
+    @param attrs Map of element attributes or Nothing.
+    @param content Inner HTML content, text, or list of children.
+    @return Rendered HTML element string.
+!/
+function tag(name, attrs, content) {
+    let attr_str -> format_attributes(attrs)
+    when is_void_tag(name) {
+        <- `<` + name + attr_str + ` />`
+    }
+    let body -> ``
+    when content != Nothing {
+        body -> Str.to_string(content)
+    }
+    <- `<` + name + attr_str + `>` + body + `</` + name + `>`
+}
+
+/! Shorthand alias for tag(). !/
+function h(name, attrs, content) {
+    <- tag(name, attrs, content)
+}
+
+/! Constructs a `<p>` paragraph element. !/
+function p(content, attrs) {
+    <- tag(`p`, attrs, content)
+}
+
+/! Constructs a `<div>` container element. !/
+function div(content, attrs) {
+    <- tag(`div`, attrs, content)
+}
+
+/! Constructs a `<span>` inline element. !/
+function span(content, attrs) {
+    <- tag(`span`, attrs, content)
+}
+
+/! Constructs an `<a>` anchor link element. !/
+function a(href, content, attrs) {
+    when attrs == Nothing { attrs -> {} }
+    attrs[`href`] -> href
+    <- tag(`a`, attrs, content)
+}
+
+/! Constructs an `<img>` image element. !/
+function img(src, alt, attrs) {
+    when attrs == Nothing { attrs -> {} }
+    attrs[`src`] -> src
+    when alt != Nothing { attrs[`alt`] -> alt }
+    <- tag(`img`, attrs, Nothing)
+}
+
+/! Constructs a `<button>` element. !/
+function button(content, attrs) {
+    <- tag(`button`, attrs, content)
+}
+
+/! Constructs an `<input>` void element. !/
+function input_tag(type_name, name, value, attrs) {
+    when attrs == Nothing { attrs -> {} }
+    when type_name != Nothing { attrs[`type`] -> type_name }
+    when name != Nothing { attrs[`name`] -> name }
+    when value != Nothing { attrs[`value`] -> value }
+    <- tag(`input`, attrs, Nothing)
+}
+
+/! Constructs a `<link>` void element for stylesheets or favicons. !/
+function link_tag(rel, href, attrs) {
+    when attrs == Nothing { attrs -> {} }
+    attrs[`rel`] -> rel
+    attrs[`href`] -> href
+    <- tag(`link`, attrs, Nothing)
+}
+
+/! Constructs a `<script>` tag. !/
+function script_tag(src, content, attrs) {
+    when attrs == Nothing { attrs -> {} }
+    when src != Nothing { attrs[`src`] -> src }
+    <- tag(`script`, attrs, content)
+}
+
+/! Constructs a `<meta>` void element. !/
+function meta_tag(attrs) {
+    <- tag(`meta`, attrs, Nothing)
+}
+
+/! Constructs a `<style>` tag containing CSS. !/
+function style_tag(css, attrs) {
+    <- tag(`style`, attrs, css)
+}
+
+/!
+    Constructs an unordered list `<ul>` with `<li>` items.
+    @param items List of strings or child HTML elements.
+    @param attrs Map of attributes for `<ul>`.
+    @return HTML `<ul>` string.
+!/
+function ul(items, attrs) {
+    let list_items -> ``
+    when items != Nothing {
+        let idx -> 0
+        let count -> items.length
+        do while idx < count {
+            list_items -> list_items + tag(`li`, Nothing, items[idx]) + `\n`
+            idx -> 0 + idx + 1
+        }
+    }
+    <- tag(`ul`, attrs, `\n` + list_items)
+}
+
+/!
+    Constructs an ordered list `<ol>` with `<li>` items.
+    @param items List of strings or child HTML elements.
+    @param attrs Map of attributes for `<ol>`.
+    @return HTML `<ol>` string.
+!/
+function ol(items, attrs) {
+    let list_items -> ``
+    when items != Nothing {
+        let idx -> 0
+        let count -> items.length
+        do while idx < count {
+            list_items -> list_items + tag(`li`, Nothing, items[idx]) + `\n`
+            idx -> 0 + idx + 1
+        }
+    }
+    <- tag(`ol`, attrs, `\n` + list_items)
+}
+
+/!
+    Constructs an HTML `<table>` from header columns and row data.
+    @param headers List of column header names.
+    @param rows List of row lists.
+    @param attrs Attributes for the `<table>` element.
+    @return HTML `<table>` string.
+!/
+function table(headers, rows, attrs) {
+    let thead -> ``
+    when headers != Nothing and headers.length > 0 {
+        let ths -> ``
+        let idx -> 0
+        let count -> headers.length
+        do while idx < count {
+            ths -> ths + tag(`th`, Nothing, headers[idx])
+            idx -> 0 + idx + 1
+        }
+        thead -> tag(`thead`, Nothing, tag(`tr`, Nothing, ths)) + `\n`
+    }
+    let tbody -> ``
+    when rows != Nothing {
+        let r_idx -> 0
+        let r_count -> rows.length
+        let trs -> ``
+        do while r_idx < r_count {
+            let row -> rows[r_idx]
+            let tds -> ``
+            let c_idx -> 0
+            let c_count -> row.length
+            do while c_idx < c_count {
+                tds -> tds + tag(`td`, Nothing, row[c_idx])
+                c_idx -> 0 + c_idx + 1
+            }
+            trs -> trs + tag(`tr`, Nothing, tds) + `\n`
+            r_idx -> 0 + r_idx + 1
+        }
+        tbody -> tag(`tbody`, Nothing, `\n` + trs)
+    }
+    <- tag(`table`, attrs, `\n` + thead + tbody + `\n`)
+}
+
+/!
+    Generates a full HTML5 document template.
+    @param title Document page title.
+    @param body_content Main body inner HTML.
+    @param options Optional configuration: `lang`, `head` (extra head tags), `body_attrs`.
+    @return Complete HTML5 document string.
+!/
+function document(title, body_content, options) {
+    let lang -> `en`
+    let head_extra -> ``
+    let body_attrs -> ``
+    when options != Nothing {
+        when options.has(`lang`) { lang -> options[`lang`] }
+        when options.has(`head`) { head_extra -> options[`head`] }
+        when options.has(`body_attrs`) { body_attrs -> format_attributes(options[`body_attrs`]) }
+    }
+    let doc -> `<!DOCTYPE html>\n<html lang="` + lang + `">\n<head>\n`
+    doc -> doc + `  <meta charset="utf-8" />\n`
+    doc -> doc + `  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n`
+    doc -> doc + `  <title>` + escape(title) + `</title>\n`
+    when head_extra != `` {
+        doc -> doc + `  ` + head_extra + `\n`
+    }
+    doc -> doc + `</head>\n<body` + body_attrs + `>\n`
+    when body_content != Nothing {
+        doc -> doc + body_content + `\n`
+    }
+    doc -> doc + `</body>\n</html>`
+    <- doc
+}
+
+/!
+    Parses an HTML attribute string into a Map of key-value pairs.
+    Handles quoted attributes (`class="btn"`) and boolean flags (`disabled`).
+    @param attr_str Raw attribute string.
+    @return Map of attribute names to values.
+!/
+function parse_attributes(attr_str) {
+    let result -> {}
+    when attr_str == Nothing { <- result }
+    let s -> Str.trim(attr_str)
+    let s_len -> Str.length(s)
+    let idx -> 0
+
+    do while idx < s_len {
+        // Skip leading whitespace
+        do while idx < s_len and (Str.at(s, idx) == ` ` or Str.at(s, idx) == `\t` or Str.at(s, idx) == `\n`) {
+            idx -> 0 + idx + 1
+        }
+        when idx >= s_len { break }
+
+        // Read attribute name
+        let key_start -> 0 + idx
+        do while idx < s_len {
+            let ch -> Str.at(s, idx)
+            when ch == `=` or ch == ` ` or ch == `\t` or ch == `\n` or ch == `/` or ch == `>` {
+                break
+            }
+            idx -> 0 + idx + 1
+        }
+        let key -> Str.substring(s, key_start, idx)
+        when Str.length(key) == 0 {
+            idx -> 0 + idx + 1
+            continue
+        }
+
+        // Skip whitespace before '='
+        do while idx < s_len and (Str.at(s, idx) == ` ` or Str.at(s, idx) == `\t`) {
+            idx -> 0 + idx + 1
+        }
+
+        when idx < s_len and Str.at(s, idx) == `=` {
+            idx -> 0 + idx + 1 // skip '='
+            // Skip whitespace after '='
+            do while idx < s_len and (Str.at(s, idx) == ` ` or Str.at(s, idx) == `\t`) {
+                idx -> 0 + idx + 1
+            }
+            when idx < s_len {
+                let quote -> Str.at(s, idx)
+                when quote == `"` or quote == `'` {
+                    idx -> 0 + idx + 1 // skip quote
+                    let val_start -> 0 + idx
+                    do while idx < s_len and Str.at(s, idx) != quote {
+                        idx -> 0 + idx + 1
+                    }
+                    let val -> Str.substring(s, val_start, idx)
+                    when idx < s_len { idx -> 0 + idx + 1 } // skip closing quote
+                    result[key] -> unescape(val)
+                } or {
+                    // Unquoted value
+                    let val_start -> 0 + idx
+                    do while idx < s_len {
+                        let ch -> Str.at(s, idx)
+                        when ch == ` ` or ch == `\t` or ch == `\n` or ch == `>` or ch == `/` {
+                            break
+                        }
+                        idx -> 0 + idx + 1
+                    }
+                    let val -> Str.substring(s, val_start, idx)
+                    result[key] -> unescape(val)
+                }
+            }
+        } or {
+            result[key] -> true
+        }
+    }
+
+    <- result
+}
+
+/!
+    Finds all occurrences of a specified HTML tag in a string.
+    @param html Source HTML markup.
+    @param target_tag Tag name to search for (case-insensitive).
+    @return List of maps with keys `tag`, `attrs` (Map), and `content`.
+!/
+function find_tags(html, target_tag) {
+    let results -> []
+    when html == Nothing or target_tag == Nothing { <- results }
+
+    let target_lower -> Str.to_lower(Str.trim(target_tag))
+    let open_prefix -> `<` + target_lower
+    let open_prefix_len -> Str.length(open_prefix)
+    let close_tag -> `</` + target_lower + `>`
+    let close_tag_len -> Str.length(close_tag)
+
+    let html_len -> Str.length(html)
+    let idx -> 0
+
+    do while idx < html_len {
+        let tag_start -> Str.index_of(Str.substring(html, idx, html_len), `<`)
+        when tag_start == -1 { break }
+        idx -> 0 + idx + tag_start
+
+        // Check tag name
+        let after_bracket -> Str.substring(html, idx, html_len)
+        let after_lower -> Str.to_lower(after_bracket)
+        when Str.starts_with(after_lower, open_prefix) {
+            let next_char_idx -> 0 + idx + open_prefix_len
+            let next_ch -> ``
+            when next_char_idx < html_len {
+                next_ch -> Str.at(html, next_char_idx)
+            }
+
+            when next_ch == ` ` or next_ch == `\t` or next_ch == `\n` or next_ch == `>` or next_ch == `/` {
+                let close_bracket_idx -> Str.index_of(Str.substring(html, idx, html_len), `>`)
+                when close_bracket_idx != -1 {
+                    let full_tag_end -> 0 + idx + close_bracket_idx
+                    let raw_open_tag -> Str.substring(html, idx, full_tag_end + 1)
+                    
+                    let attr_content -> Str.substring(html, next_char_idx, full_tag_end)
+                    when Str.ends_with(attr_content, `/`) {
+                        attr_content -> Str.substring(attr_content, 0, Str.length(attr_content) - 1)
+                    }
+                    let attrs -> parse_attributes(attr_content)
+
+                    let is_void -> is_void_tag(target_lower) or Str.ends_with(raw_open_tag, `/>`)
+                    let content -> ``
+                    let next_search_idx -> full_tag_end + 1
+
+                    when not is_void {
+                        let close_found -> Str.index_of(Str.to_lower(Str.substring(html, full_tag_end + 1, html_len)), close_tag)
+                        when close_found != -1 {
+                            let content_start -> full_tag_end + 1
+                            let content_end -> content_start + close_found
+                            content -> Str.substring(html, content_start, content_end)
+                            next_search_idx -> content_end + close_tag_len
+                        }
+                    }
+
+                    results.append({
+                        `tag` -> target_lower,
+                        `attrs` -> attrs,
+                        `content` -> content
+                    })
+
+                    idx -> 0 + next_search_idx
+                    continue
+                }
+            }
+        }
+        idx -> 0 + idx + 1
+    }
+
+    <- results
+}
+
+/!
+    Finds the first occurrence of a specified HTML tag in a string.
+    @param html Source HTML markup.
+    @param target_tag Tag name to search for.
+    @return First matched tag map or Nothing if not found.
+!/
+function find_tag(html, target_tag) {
+    let list_results -> find_tags(html, target_tag)
+    when list_results.length > 0 {
+        <- list_results[0]
+    }
+    <- Nothing
+}

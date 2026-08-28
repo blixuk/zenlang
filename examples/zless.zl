@@ -1,0 +1,245 @@
+/!
+  zless — simple full-screen pager (like `less`, smaller).
+
+  Keys:
+    j / ↓ / Enter / Space   next line / page
+    k / ↑                   previous line
+    f / PageDown / Space    page down
+    b / PageUp              page up
+    g / Home                top
+    G / End                 bottom
+    q / Ctrl+Q              quit
+    Ctrl+L                  redraw
+
+  Run:
+    python3 bootstrap/Zen.py examples/zless.zl <file>
+    ./bin/zen examples/zless.zl README.md
+    ./bin/zen -g examples/zless.zl tests/hello.zl
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.io as io
+import zen.text.string as Str
+
+function load_lines(path) {
+    let text -> file.read(path)
+    text -> Str.replace(text, `\r\n`, `\n`)
+    text -> Str.replace(text, `\r`, `\n`)
+    when text == `` { <- [``] }
+    let parts -> Str.split(text, `\n`)
+    when parts.length == 0 { <- [``] }
+    <- parts
+}
+
+function clamp(v, lo, hi) {
+    when v < lo { <- lo }
+    when v > hi { <- hi }
+    <- v
+}
+
+function draw(path, lines, top, status) {
+    let size -> term.get_size()
+    let w -> size.width
+    let h -> size.height
+    when w < 20 { w -> 20 }
+    when h < 4 { h -> 4 }
+    let body_h -> h - 2
+
+    term.hide_cursor()
+    term.move(1, 1)
+
+    let y -> 0
+    do while y < body_h {
+        let idx -> top + y
+        term.move(1, y + 1)
+        when idx >= lines.length {
+            term.color(`blue`, `black`)
+            term.write(`~`)
+            term.reset()
+            term.clear_eol()
+        } or {
+            let line -> lines[idx]
+            // clip to width
+            let n -> Str.length(line)
+            when n > w {
+                line -> Str.substring(line, 0, w)
+            }
+            term.write(line)
+            term.clear_eol()
+        }
+        y -> y + 1
+    }
+
+    // status bar
+    term.move(1, body_h + 1)
+    term.color(`black`, `white`)
+    let pct -> 0
+    when lines.length > 0 {
+        let bottom -> top + body_h
+        when bottom >= lines.length { pct -> 100 }
+        or {
+            // pct ~ top / (len - body) * 100 via integer bar logic
+            let span -> lines.length - body_h
+            when span <= 0 {
+                pct -> 100
+            } or {
+                pct -> 0
+                let i -> 0
+                do while i < 100 {
+                    when i * span < top * 100 {
+                        pct -> i + 1
+                    }
+                    i -> i + 1
+                }
+            }
+        }
+    }
+    let left -> ` ` + path + `  ` + Str.to_string(top + 1) + `/` + Str.to_string(lines.length) + `  ` + Str.to_string(pct) + `% `
+    when Str.length(left) > w { left -> Str.substring(left, 0, w) }
+    term.write(left)
+    let pad -> w - Str.length(left)
+    let pi -> 0
+    do while pi < pad {
+        term.write(` `)
+        pi -> pi + 1
+    }
+    term.reset()
+    term.clear_eol()
+
+    // help / message line
+    term.move(1, body_h + 2)
+    term.color(`cyan`, `black`)
+    let help -> status
+    when help == `` {
+        help -> ` j/k line · space/f page · g/G top/end · q quit `
+    }
+    when Str.length(help) > w { help -> Str.substring(help, 0, w) }
+    term.write(help)
+    term.reset()
+    term.clear_eol()
+    term.flush()
+}
+
+function usage() {
+    io.writeln(`zless — simple pager`)
+    io.writeln(`usage: zless <file>`)
+}
+
+function main() {
+    let args -> sys.get_args()
+    when args.length < 2 {
+        usage()
+        <- 1
+    }
+    let path -> args[1]
+    when not file.exists(path) {
+        io.writeln(`zless: no such file: ` + path)
+        <- 1
+    }
+    when file.is_dir(path) {
+        io.writeln(`zless: is a directory: ` + path)
+        <- 1
+    }
+
+    let lines -> load_lines(path)
+    let top -> 0
+    let status -> ``
+    let done -> false
+
+    term.raw_enter()
+    term.alt_screen_enter()
+    term.hide_cursor()
+
+    check {
+        do {
+            let size -> term.get_size()
+            let body_h -> size.height - 2
+            when body_h < 1 { body_h -> 1 }
+            let max_top -> lines.length - body_h
+            when max_top < 0 { max_top -> 0 }
+            top -> clamp(top, 0, max_top)
+
+            draw(path, lines, top, status)
+            status -> ``
+
+            let k -> term.read_key()
+            let kind -> k.kind
+            let name -> k.name
+            let ch -> k.ch
+
+            when kind == `none` {
+                done -> true
+            }
+
+            when kind == `resize` {
+                status -> ` resized `
+            }
+
+            when kind == `special` {
+                when name == `down` or name == `enter` {
+                    top -> top + 1
+                }
+                when name == `up` {
+                    top -> top - 1
+                }
+                when name == `pagedown` {
+                    top -> top + body_h
+                }
+                when name == `pageup` {
+                    top -> top - body_h
+                }
+                when name == `home` {
+                    top -> 0
+                }
+                when name == `end` {
+                    top -> lines.length - body_h
+                    when top < 0 { top -> 0 }
+                }
+                when name == `ctrl_q` or name == `escape` {
+                    done -> true
+                }
+                when name == `ctrl_l` {
+                    status -> ` redraw `
+                }
+                when name == `space` {
+                    top -> top + body_h
+                }
+            }
+
+            when kind == `char` {
+                when ch == `q` or ch == `Q` {
+                    done -> true
+                }
+                when ch == `j` {
+                    top -> top + 1
+                }
+                when ch == `k` {
+                    top -> top - 1
+                }
+                when ch == `f` or ch == ` ` {
+                    top -> top + body_h
+                }
+                when ch == `b` {
+                    top -> top - body_h
+                }
+                when ch == `g` {
+                    top -> 0
+                }
+                when ch == `G` {
+                    top -> lines.length - body_h
+                    when top < 0 { top -> 0 }
+                }
+            }
+        } until done
+    } or {
+        status -> `error`
+    }
+
+    term.show_cursor()
+    term.alt_screen_exit()
+    term.raw_exit()
+    term.reset()
+    <- 0
+}

@@ -1,53 +1,31 @@
-== Keywords
+#import "template.typ": *
 
-Reserved keywords (cannot be used as identifiers):
+= Reserved Keywords & Sentinels
 
-```zl
-let
-set
+== Reserved Language Keywords
 
-type
+The following identifiers are reserved language keywords and cannot be used as variable or function names:
 
-class
-function
-structure
-enumerator
+#table(
+  columns: (1fr, 1fr, 1fr, 1fr),
+  [`let`], [`set`], [`function`], [`class`],
+  [`structure`], [`enumerator`], [`type`], [`scope`],
+  [`when`], [`or`], [`and`], [`not`],
+  [`xor`], [`do`], [`while`], [`until`],
+  [`for`], [`in`], [`break`], [`continue`],
+  [`defer`], [`check`], [`raise`], [`assert`],
+  [`use`], [`import`], [`from`], [`as`],
+  [`export`], [`extend`], [`spawn`], [`await`],
+  [`self`], [`parent`], [`module`], [`entry`]
+)
 
-when
-check
-with
+== Sentinel Literals & Constants
 
-do
-while
-until
-for
-break
-continue
-assign
-return
-
-in
-is
-and
-or
-not
-
-raise
-assert
-defer
-
-import
-from
-as
-export
-extend
-```
-
-== Values
-
-```zl
-True
-False
-
-Nothing
-```
+#table(
+  columns: (1.5fr, 3fr),
+  [Sentinel], [Description],
+  [`Nothing`], [Represents the intentional absence of a value (null/nil state)],
+  [`Default`], [Materializes the canonical zero-state for a type (`0`, `""`, `[]`, `{}`)],
+  [`True`], [Boolean truth literal (also lowercase `true`)],
+  [`False`], [Boolean false literal (also lowercase `false`)]
+)

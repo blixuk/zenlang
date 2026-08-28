@@ -1,0 +1,39 @@
+Entry {
+    `title` -> `Zenlang Tooling & Developer Ecosystem`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-27`,
+    `version` -> `1.0.0`,
+    `archetype` -> `guide`,
+    `theme` -> `antiquarian`
+}
+
+Document {
+    Heading { `text` -> `Zenlang Tooling & Developer Ecosystem`, `size` -> 1 },
+    Paragraph {
+        `text` -> `Zenlang provides a unified, Unix-native developer ecosystem covering compilation, interpretation, automated testing, documentation generation, syntax formatting, and editor language servers.`
+    },
+    
+    Heading { `text` -> `1. The Zen Command-Line Interface`, `size` -> 2 },
+    Table {
+        `headers` -> [`Command`, `Usage Example`, `Description`],
+        `rows` -> [
+            [`compile`, `zen compile main.zl out.c`, `Transpiles Zenlang source to clean, optimized C`],
+            [`build`, `zen build main.zl -o app`, `Builds standalone native binary via CLink`],
+            [`run`, `zen run main.zl -- args`, `Builds, links, and runs native binary in one step`],
+            [`interpret`, `zen interpret script.zl`, `Instantly executes script via VM or AST walker`],
+            [`check`, `zen check main.zl`, `Runs static typechecker with Clang/Rust carets`],
+            [`test`, `zen test suite.zl`, `Auto-discovers and runs test_* functions and doctests`]
+        ]
+    },
+    
+    Heading { `text` -> `2. Developer Tooling Ecosystem`, `size` -> 2 },
+    Table {
+        `headers` -> [`Tool`, `Executable`, `Role`],
+        `rows` -> [
+            [`zenmark`, `tools/build_spec.zl`, `Compiles Zen Mark (.zm) to vector PDF & HTML`],
+            [`zendoc`, `tools/zendoc.zl`, `Extracts /! ... !/ doc comments into API references`],
+            [`zenfmt`, `tools/zenfmt.zl`, `Automated syntax and style formatter`],
+            [`zenlsp`, `tools/zenlsp.zl`, `Language Server Protocol daemon for VS Code, Zed, Sublime`]
+        ]
+    }
+}

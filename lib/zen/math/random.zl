@@ -1,0 +1,120 @@
+/!
+ Deterministic randomness (pure Zen, native-safe).
+
+ API:
+   let g -> random.seed(42)
+   let u -> random.next(g)        // [0,1)
+   let i -> random.rng_integer(g, 1, 100)
+   let d -> random.rng_decimal(g, 0.0, 1.0)
+
+ Module helpers (shared Default generator):
+   random.integer(min, max)
+   random.decimal(min, max)
+   random.range(min, max)
+
+ Generators are maps `{state: Integer}` so interpret and `-g` share the same path
+ without opaque class method dispatch.
+!/
+
+set _A -> 1103515245
+set _C -> 12345
+set _M -> 2147483648
+set _MASK -> 2147483647
+
+function _fold(n) {
+    when n < 0 { n -> 0 - n }
+    n -> n & _MASK
+    when n == 0 { n -> 1 }
+    <- n
+}
+
+function _step_state(state) {
+    let n -> _A * state + _C
+    <- _fold(n)
+}
+
+/!
+ Create a seedable generator: map with `state` field.
+!/
+function seed(s) {
+    let st -> s
+    when st < 0 { st -> 0 - st }
+    when st == 0 { st -> 1 }
+    st -> _fold(st)
+    <- {`state` -> st}
+}
+
+/!
+ Advance generator; return unit sample in [0, 1).
+ Mutates `g.state`.
+!/
+function next(g) {
+    let st -> _step_state(g[`state`])
+    g[`state`] -> st
+    <- st / _M
+}
+
+/!
+ Integer in [min, max] inclusive; mutates generator.
+!/
+function rng_integer(g, min, max) {
+    when max < min {
+        let t -> min
+        min -> max
+        max -> t
+    }
+    let span -> max - min + 1
+    when span <= 1 { <- min }
+    let st -> _step_state(g[`state`])
+    g[`state`] -> st
+    let offset -> st % span
+    <- min + offset
+}
+
+/!
+ Decimal in [min, max]; mutates generator.
+!/
+function rng_decimal(g, min, max) {
+    when max < min {
+        let t -> min
+        min -> max
+        max -> t
+    }
+    let u -> next(g)
+    <- min + u * (max - min)
+}
+
+/!
+ Integer range if both bounds are integers, else decimal.
+!/
+function rng_range(g, min, max) {
+    when min is Integer and max is Integer {
+        <- rng_integer(g, min, max)
+    }
+    <- rng_decimal(g, min, max)
+}
+
+// --- module-level Default generator ---
+let _default -> Nothing
+
+function _ensure_default() {
+    when _default == Nothing {
+        _default -> seed(42)
+    }
+    <- _default
+}
+
+function integer(min, max) {
+    let g -> _ensure_default()
+    <- rng_integer(g, min, max)
+}
+
+function decimal(min, max) {
+    let g -> _ensure_default()
+    <- rng_decimal(g, min, max)
+}
+
+function range(min, max) {
+    let g -> _ensure_default()
+    <- rng_range(g, min, max)
+}

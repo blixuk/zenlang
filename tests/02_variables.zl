@@ -1,0 +1,15 @@
+function test_assignment() {
+    let x -> 10
+    set PI : Decimal -> 3.14
+    let name :> `Zen`
+    
+    x -> 20
+    ! x == 20
+    ! PI == 3.14
+    ! name == `Zen`
+}
+
+function main() {
+    test_assignment()
+    io.write(`02_variables passed!\n`)
+}

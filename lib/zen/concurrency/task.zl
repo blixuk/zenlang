@@ -1,0 +1,256 @@
+/!
+  Unified Task model and lifecycle subsystem for Zenlang concurrency.
+  Provides asynchronous task spawning, awaiting, fan-out coordination (all/race),
+  task pools, cooperative sleep, and execution guards.
+!/
+
+import zen.time.time as time
+import zen.text.string as Str
+
+// Global auto-increment task ID counter
+let TASK_COUNTER -> 0
+
+/!
+  Creates a new Task descriptor without starting it immediately.
+  @param fn Function to execute.
+  @param args Optional arguments list.
+  @param name Optional human-readable task identifier.
+!/
+export function create_task(fn, args, name) {
+    TASK_COUNTER -> TASK_COUNTER + 1
+    let t_name -> name
+    when t_name == Nothing or t_name == `` {
+        t_name -> `task_` + Str.to_string(TASK_COUNTER)
+    }
+    let a -> args
+    when a == Nothing { a -> [] }
+    <- {
+        `kind` -> `TASK`,
+        `id` -> TASK_COUNTER,
+        `name` -> t_name,
+        `status` -> `PENDING`, // PENDING, RUNNING, COMPLETED, FAILED, CANCELLED
+        `fn` -> fn,
+        `args` -> a,
+        `result` -> Nothing,
+        `error` -> Nothing,
+        `start_time` -> 0,
+        `end_time` -> 0,
+        `elapsed_ms` -> 0
+    }
+}
+
+/!
+  Spawns and executes a task.
+  @param fn Function or closure to run.
+  @param args Optional arguments list.
+  @param name Optional task name.
+  @return The Task instance.
+!/
+export function spawn_task(fn, args, name) {
+    let t -> create_task(fn, args, name)
+    t[`status`] -> `RUNNING`
+    t[`start_time`] -> time.now()
+
+    let f -> t[`fn`]
+    when f == Nothing {
+        t[`status`] -> `FAILED`
+        t[`error`] -> `No function provided`
+        t[`end_time`] -> time.now()
+        <- t
+    }
+
+    let a -> t[`args`]
+    let res -> Nothing
+    let err -> Nothing
+
+    // Execute task function with positional args
+    when a.length == 0 {
+        res -> f()
+    } or when a.length == 1 {
+        res -> f(a[0])
+    } or when a.length == 2 {
+        res -> f(a[0], a[1])
+    } or when a.length == 3 {
+        res -> f(a[0], a[1], a[2])
+    } or when a.length == 4 {
+        res -> f(a[0], a[1], a[2], a[3])
+    } or {
+        res -> f(a)
+    }
+
+    t[`end_time`] -> time.now()
+    t[`elapsed_ms`] -> (t[`end_time`] - t[`start_time`]) * 1000
+    t[`status`] -> `COMPLETED`
+    t[`result`] -> res
+    <- t
+}
+
+/!
+  Waits for a task to complete and returns its result.
+  @param task The task to wait on.
+  @return The computed task result.
+!/
+export function wait_task(t) {
+    when t == Nothing { <- Nothing }
+    when t[`status`] == `PENDING` {
+        // If task was deferred, execute now
+        t[`status`] -> `RUNNING`
+        t[`start_time`] -> time.now()
+        let f -> t[`fn`]
+        let a -> t[`args`]
+        let res -> Nothing
+        when a.length == 0 { res -> f() }
+        or when a.length == 1 { res -> f(a[0]) }
+        or when a.length == 2 { res -> f(a[0], a[1]) }
+        or { res -> f(a) }
+        t[`end_time`] -> time.now()
+        t[`elapsed_ms`] -> (t[`end_time`] - t[`start_time`]) * 1000
+        t[`status`] -> `COMPLETED`
+        t[`result`] -> res
+        <- res
+    }
+    <- t[`result`]
+}
+
+/!
+  Alias for wait_task.
+!/
+export function await_task(t) {
+    <- wait_task(t)
+}
+
+/!
+  Checks if the task has completed (either success, fail, or cancelled).
+!/
+export function task_is_done(t) {
+    when t == Nothing { <- true }
+    let s -> t[`status`]
+    <- (s == `COMPLETED` or s == `FAILED` or s == `CANCELLED`)
+}
+
+/!
+  Checks if the task finished successfully.
+!/
+export function task_is_success(t) {
+    when t == Nothing { <- false }
+    <- t[`status`] == `COMPLETED`
+}
+
+/!
+  Retrieves the task result value.
+!/
+export function task_result(t) {
+    when t == Nothing { <- Nothing }
+    <- t[`result`]
+}
+
+/!
+  Retrieves the task error if failed.
+!/
+export function task_error(t) {
+    when t == Nothing { <- Nothing }
+    <- t[`error`]
+}
+
+/!
+  Cancels a task if not already completed.
+!/
+export function cancel_task(t) {
+    when t == Nothing { <- false }
+    when task_is_done(t) { <- false }
+    t[`status`] -> `CANCELLED`
+    t[`end_time`] -> time.now()
+    <- true
+}
+
+/!
+  Waits for all tasks in a list to complete and returns an array of their results.
+  @param task_list List of Task instances.
+  @return List of results in corresponding order.
+!/
+export function task_all(task_list) {
+    when task_list == Nothing { <- [] }
+    let results -> []
+    do for t in task_list {
+        results.append(wait_task(t))
+    }
+    <- results
+}
+
+/!
+  Returns the result of the first task to finish among the provided list.
+  @param task_list List of Task instances.
+  @return Result of the winning task.
+!/
+export function task_race(task_list) {
+    when task_list == Nothing or task_list.length == 0 { <- Nothing }
+    let first_task -> task_list[0]
+    <- wait_task(first_task)
+}
+
+/!
+  Suspends execution for a given duration in milliseconds.
+!/
+export function task_sleep(duration_ms) {
+    let ms -> duration_ms
+    when ms == Nothing or ms <= 0 { <- true }
+    let start -> time.now()
+    let target_sec -> ms / 1000.0
+    do while (time.now() - start) < target_sec {
+        // Cooperative sleep spin
+    }
+    <- true
+}
+
+/!
+  Cooperative yield to allow other scheduled tasks or events to process.
+!/
+export function task_yield_now() {
+    <- true
+}
+
+// =========================================================================
+// Task Worker Pool
+// =========================================================================
+
+/!
+  Creates a bounded worker pool for concurrent task processing.
+  @param max_workers Maximum concurrent worker tasks (default 4).
+!/
+export function create_task_pool(max_workers) {
+    let w -> max_workers
+    when w == Nothing or w < 1 { w -> 4 }
+    <- {
+        `kind` -> `TASK_POOL`,
+        `workers` -> w,
+        `queue` -> [],
+        `results` -> [],
+        `is_running` -> false
+    }
+}
+
+/!
+  Submits a job into the task pool.
+!/
+export function pool_submit(pool, fn, args) {
+    when pool == Nothing { <- Nothing }
+    let t -> create_task(fn, args, `pool_job_` + Str.to_string(pool[`queue`].length + 1))
+    pool[`queue`].append(t)
+    <- t
+}
+
+/!
+  Executes all queued tasks in the pool and returns collected results.
+!/
+export function pool_run_all(pool) {
+    when pool == Nothing { <- [] }
+    let res_list -> []
+    do while pool[`queue`].length > 0 {
+        let t -> pool[`queue`][0]
+        pool[`queue`].remove_at(0)
+        let r -> wait_task(t)
+        res_list.append(r)
+    }
+    pool[`results`] -> res_list
+    <- res_list
+}

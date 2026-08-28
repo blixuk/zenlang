@@ -1,0 +1,342 @@
+/!
+ Stage 4: TypeChecker dual-path smoke.
+ !/
+
+import compiler.TypeChecker as Checker
+import zen.test as test
+import zen.text.string as Str
+
+function errors_join(errs) {
+    let n -> errs.length
+    let out -> ``
+    do for e in errs {
+        out -> out + e + `|`
+    }
+    <- out
+}
+
+function test_ok_program() {
+    let src -> `
+function add(a: Integer, b: Integer) : Integer {
+    <- a + b
+}
+
+function main() {
+    let x -> add(1, 2)
+    <- x
+}
+`
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `ok program`)
+    let n -> r[`errors`].length
+    pass -> pass and test.assert_equal(n, 0, `no errors`)
+    <- pass
+}
+
+function test_undefined_variable() {
+    let src -> `
+function main() {
+    <- missing_name
+}
+`
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Undefined`), true, `undefined msg`)
+    <- pass
+}
+
+function test_redeclare() {
+    let src -> `
+function main() {
+    let x -> 1
+    let x -> 2
+    <- x
+}
+`
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `redecl not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Redeclaration`), true, `redecl msg`)
+    <- pass
+}
+
+function test_structure_ok() {
+    let src -> `
+structure Point {
+    x: Integer
+    y: Integer
+}
+
+function main() {
+    let p -> Point { x -> 1, y -> 2 }
+    <- p.x
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    // structure field types are Variant-friendly; should not error
+    let pass -> test.assert_equal(r[`ok`], true, `struct ok`)
+    pass -> pass and test.assert_equal(n, 0, `no struct errors`)
+    <- pass
+}
+
+function test_unknown_field() {
+    let src -> `
+structure Point {
+    x: Integer
+}
+
+function main() {
+    let p -> Point { x -> 1, z -> 9 }
+    <- p
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `bad field not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `Unknown field`) or Str.contains(joined, `z`), true, `field msg`)
+    <- pass
+}
+
+function test_when_and_call() {
+    let src -> `
+function f(x) {
+    when x == 1 {
+        <- 10
+    } or {
+        <- 0
+    }
+}
+
+function main() {
+    let v -> f(1)
+    <- v
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    let pass -> test.assert_equal(r[`ok`], true, `when ok`)
+    pass -> pass and test.assert_equal(n, 0, `no when errors`)
+    <- pass
+}
+
+function test_with_binds_alias() {
+    let src -> `
+function make() {
+    <- 1
+}
+
+function main() {
+    with make() as region {
+        let x -> region
+        <- x
+    }
+    <- 0
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    let pass -> test.assert_equal(r[`ok`], true, `with ok`)
+    pass -> pass and test.assert_equal(n, 0, `with no errors`)
+    <- pass
+}
+
+function test_with_undefined_outside() {
+    let src -> `
+function make() {
+    <- 1
+}
+
+function main() {
+    with make() as region {
+        <- region
+    }
+    <- region
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `region escapes not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `Undefined`), true, `undefined region`)
+    <- pass
+}
+
+function test_class_self_ok() {
+    let src -> `
+class Counter {
+    function init() {
+        self.n -> 0
+    }
+    function get() {
+        <- self.n
+    }
+}
+
+function main() {
+    let c -> Counter()
+    <- c.get()
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    let pass -> test.assert_equal(r[`ok`], true, `class ok`)
+    pass -> pass and test.assert_equal(n, 0, `class no errors`)
+    <- pass
+}
+
+function test_enum_and_is() {
+    let src -> `
+enumerator Color {
+    Red
+    Blue
+}
+
+function main() {
+    let c -> Color.Red
+    when c is Color.Red {
+        <- 1
+    }
+    <- 0
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    let pass -> test.assert_equal(r[`ok`], true, `enum is ok`)
+    pass -> pass and test.assert_equal(n, 0, `enum no errors`)
+    <- pass
+}
+
+function test_unknown_method() {
+    let src -> `
+class Counter {
+    function get() {
+        <- 1
+    }
+}
+
+function main() {
+    let c -> Counter()
+    <- c.nope()
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `unknown method not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `Unknown method`) or Str.contains(joined, `nope`), true, `method msg`)
+    <- pass
+}
+
+function test_wrong_arity() {
+    let src -> `
+function add(a: Integer, b: Integer) : Integer {
+    <- a + b
+}
+
+function main() {
+    <- add(1)
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `arity not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `arity`) or Str.contains(joined, `expected`), true, `arity msg`)
+    <- pass
+}
+
+function test_with_non_arena_note() {
+    let src -> `
+function main() {
+    with 1 as r {
+        let x -> r
+        <- 0
+    }
+    <- 0
+}
+`
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `soft with still ok`)
+    let notes -> r[`notes`]
+    let joined -> ``
+    when notes != Nothing {
+        joined -> errors_join(notes)
+    }
+    pass -> pass and test.assert_equal(Str.contains(joined, `arena`) or Str.contains(joined, `with`), true, `arena note`)
+    <- pass
+}
+
+function test_owned_use_after_move() {
+    let src -> `
+function main() {
+    let a : owned Integer -> 1
+    let b -> a
+    <- a
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `move not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `move`) or Str.contains(joined, `Use after`), true, `move msg`)
+    <- pass
+}
+
+function test_borrowed_escape() {
+    let src -> `
+function main() {
+    with 1 as r {
+        <- r
+    }
+}
+`
+    let r -> Checker.check_source(src)
+    let joined -> errors_join(r[`errors`])
+    let pass -> test.assert_equal(r[`ok`], false, `escape not ok`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `borrowed`) or Str.contains(joined, `escape`), true, `escape msg`)
+    <- pass
+}
+
+function test_lambda_ok() {
+    let src -> `
+function main() {
+    let add -> function(a, b) {
+        <- a + b
+    }
+    <- add(1, 2)
+}
+`
+    let r -> Checker.check_source(src)
+    let n -> r[`errors`].length
+    let pass -> test.assert_equal(r[`ok`], true, `lambda ok`)
+    pass -> pass and test.assert_equal(n, 0, `lambda no errors`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Checker.ok_program`, `fn` -> test_ok_program},
+        {`name` -> `Checker.undefined`, `fn` -> test_undefined_variable},
+        {`name` -> `Checker.redeclare`, `fn` -> test_redeclare},
+        {`name` -> `Checker.structure_ok`, `fn` -> test_structure_ok},
+        {`name` -> `Checker.unknown_field`, `fn` -> test_unknown_field},
+        {`name` -> `Checker.when_call`, `fn` -> test_when_and_call},
+        {`name` -> `Checker.with_bind`, `fn` -> test_with_binds_alias},
+        {`name` -> `Checker.with_escape`, `fn` -> test_with_undefined_outside},
+        {`name` -> `Checker.class_self`, `fn` -> test_class_self_ok},
+        {`name` -> `Checker.enum_is`, `fn` -> test_enum_and_is},
+        {`name` -> `Checker.lambda`, `fn` -> test_lambda_ok},
+        {`name` -> `Checker.unknown_method`, `fn` -> test_unknown_method},
+        {`name` -> `Checker.wrong_arity`, `fn` -> test_wrong_arity},
+        {`name` -> `Checker.with_note`, `fn` -> test_with_non_arena_note},
+        {`name` -> `Checker.owned_move`, `fn` -> test_owned_use_after_move},
+        {`name` -> `Checker.borrowed_escape`, `fn` -> test_borrowed_escape}
+    ]
+    <- test.run_suite(`Selfhost Stage4 Checker`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

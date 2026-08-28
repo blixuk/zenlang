@@ -1,0 +1,59 @@
+Entry {
+    `title` -> `Getting Started with Zenlang`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-27`,
+    `version` -> `1.0.0`,
+    `archetype` -> `guide`,
+    `theme` -> `antiquarian`
+}
+
+Document {
+    Heading { `text` -> `Getting Started with Zenlang`, `size` -> 1 },
+    Paragraph {
+        `text` -> `A practical tutorial for writing Zenlang programs: how the language works, the features you will use day to day, and design patterns that fit Zen's philosophy.`
+    },
+    
+    Heading { `text` -> `1. Core Philosophy`, `size` -> 2 },
+    Table {
+        `headers` -> [`Principle`, `In Practice`],
+        `rows` -> [
+            [`Visual Data Flow`, `-> binds values left-to-right; <- returns outward`],
+            [`Explicit Over Magic`, `No hidden coercions; explicit Nothing and Default`],
+            [`Dual Execution Parity`, `Byte-exact match between VM script interpretation and AOT C compilation`],
+            [`Terminal-First`, `Sub-millisecond ANSI canvas rendering and interactive keyboard polling`],
+            [`Snapshot Concurrency`, `Captured outer variables are snapshotted by value for safe concurrency`]
+        ]
+    },
+    
+    Heading { `text` -> `2. Installation & Quick Start`, `size` -> 2 },
+    CodeBlock {
+        `language` -> `bash`,
+        `code` -> ```# 1. Install daily CLI router
+./scripts/zen install
+
+# 2. Run your first program
+./bin/zen examples/getting_started/01_hello.zl
+
+# 3. Compile to standalone native binary
+./bin/zen compile examples/getting_started/01_hello.zl output/hello.c
+gcc output/hello.c -I runtime/ -o output/hello -O2
+./output/hello```
+    },
+    
+    Heading { `text` -> `3. Visual Flow & Functions`, `size` -> 2 },
+    CodeBlock {
+        `language` -> `zen`,
+        `code` -> ```import zen.io.io as io
+
+function greet(name: String) : String {
+    when name == "" <- "Hello, stranger!"
+    <- "Hello, " + name + "!"
+}
+
+function main() {
+    let message -> greet("Zen Developer")
+    io.writeln(message)
+    <- 0
+}```
+    }
+}

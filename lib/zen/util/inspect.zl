@@ -1,0 +1,49 @@
+/!
+    Runtime Value Inspection and Type Introspection Module.
+    Provides deep object structure inspection, type introspection, and formatted dumps.
+!/
+
+import zen.text.string as Str
+import zen.io.io as io
+
+/!
+    Returns the type name of any Zenlang value.
+!/
+function type_of(val) {
+    when (val == Nothing) { <- `Nothing` }
+    when (val.kind != Nothing) {
+        <- Str.to_string(val.kind)
+    }
+    let s -> Str.to_string(val)
+    when (s == `true` or s == `false`) { <- `Boolean` }
+    when (Str.starts_with(s, `[`)) { <- `List` }
+    when (Str.starts_with(s, `{`)) { <- `Map` }
+    <- `String`
+}
+
+/!
+    Produces a detailed string representation of a value with type info.
+!/
+function inspect(val) {
+    when (val == Nothing) { <- `<Nothing>` }
+    let t -> type_of(val)
+    let s -> Str.to_string(val)
+
+    when (t == `String`) {
+        <- `"` + s + `" (String, len ` + Str.to_string(Str.length(s)) + `)`
+    }
+    when (t == `List`) {
+        <- s + ` (List, ` + Str.to_string(val.length) + ` items)`
+    }
+    when (t == `Map`) {
+        <- s + ` (Map)`
+    }
+    <- s + ` (` + t + `)`
+}
+
+/!
+    Prints an inspected value to stdout.
+!/
+function dump(val) {
+    io.writeln(inspect(val))
+}

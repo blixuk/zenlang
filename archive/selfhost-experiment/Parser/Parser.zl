@@ -1,0 +1,101 @@
+import `lib/zen/io` as IO
+from `selfhost/Token` import Token, TokenType
+from `selfhost/AST` import ASTKind, ASTNode
+
+from `selfhost/Parser/Handlers/StatementHandler` import ParserStatementHandler
+from `selfhost/Parser/Handlers/ExpressionHandler` import ParserExpressionHandler
+
+let sentinel : Token -> Nothing
+
+class Parser {
+    let tokens : List
+    let curr_idx : Integer
+    let filename : String
+
+    let stmt_handler : ParserStatementHandler
+    let expr_handler : ParserExpressionHandler
+
+    function init(tokens: List, filename: String) {
+        self.tokens -> tokens
+        self.curr_idx -> 0
+        self.filename -> filename
+        self.expr_handler -> ParserExpressionHandler(self)
+        self.stmt_handler -> ParserStatementHandler(self, self.expr_handler)
+    }
+
+    function peek_token(offset: Integer) : Token {
+        let pos -> self.curr_idx + offset
+        when pos >= self.tokens.length {
+            <- self.tokens[self.tokens.length - 1]
+        }
+        <- self.tokens[pos]
+    }
+
+    function peek() : Token {
+        <- self.peek_token(0)
+    }
+
+    function advance() : Token {
+        let token -> self.peek()
+        when token.kind != TokenType.TK_EOF {
+            self.curr_idx -> self.curr_idx + 1
+        }
+        <- token
+    }
+
+    function is_at_end() : Boolean {
+        <- self.peek().kind = TokenType.TK_EOF
+    }
+
+    function check_token(kind: TokenType) : Boolean {
+        let t -> self.peek()
+        IO.write(`[DEBUG check_token] Comparing token ` + t.kind + ` to ` + kind + `\n`)
+        <- t.kind = kind
+    }
+
+    function check_value(val: String) : Boolean {
+        let t -> self.peek()
+        <- t.value = val
+    }
+
+    function match(kind: TokenType) : Boolean {
+        when self.check_token(kind) {
+            self.advance()
+            <- True
+        }
+        <- False
+    }
+
+    function match_value(val: String) : Boolean {
+        when self.check_value(val) {
+            self.advance()
+            <- True
+        }
+        <- False
+    }
+
+    function previous() : Token {
+        <- self.peek_token(-1)
+    }
+
+    function consume(kind: TokenType, message: String) : Token {
+        when self.check_token(kind) {
+            <- self.advance()
+        }
+        IO.write(`Error at ` + self.filename + `:` + Str.to_string(self.peek().line) + ` - ` + message + `\n`)
+        // Simple error recovery strategy for now
+        <- self.peek()
+    }
+
+    function parse() : List {
+        let statements : List -> []
+        while not self.is_at_end() {
+            let decl : Variant -> self.stmt_handler.declaration()
+            when (decl != Nothing) {
+                IO.write(`[DEBUG] Parsed statement\n`)
+                statements.append(decl)
+            }
+        }
+        <- statements
+    }
+}

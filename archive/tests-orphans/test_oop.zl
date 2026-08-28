@@ -1,0 +1,35 @@
+import zen.io.io as io
+
+// tests/test_oop.zl
+// tests/test_oop.zl
+
+// 1. Base Class
+class Animal {
+    let name : String -> `Unknown`
+
+    function init(name: String) {
+        self.name -> name
+    }
+
+    function sound() : String {
+        return `...`
+    }
+}
+
+// 2. Subclass
+class Dog extends Animal {
+    function init(name: String) {
+        // parent.init(name)
+        self.name -> name
+    }
+
+    function sound() : String {
+        return `Woof!`
+    }
+}
+
+// 3. Instantiation
+let d : Dog -> Dog(`Rex`)
+io.write(d.name)
+io.write(d.sound())
+

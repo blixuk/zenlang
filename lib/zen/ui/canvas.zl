@@ -1,0 +1,181 @@
+/!
+ Terminal canvas — buffer of characters and colors.
+ Dual-path: map-based API is the supported surface under interpret and `-g`.
+
+ Canvas map keys:
+   width, height, buffer, fg_buffer, bg_buffer
+ !/
+
+use zen.sys.term as term
+use zen.text.string as Str
+
+/!
+ Create a blank canvas map: { width, height, buffer, fg_buffer, bg_buffer }.
+ !/
+function create(w, h) {
+    let buffer -> []
+    let fg_buffer -> []
+    let bg_buffer -> []
+    do for y in 0..h {
+        let row -> []
+        let fg_row -> []
+        let bg_row -> []
+        do for x in 0..w {
+            row.append(` `)
+            fg_row.append(`white`)
+            bg_row.append(`black`)
+        }
+        buffer.append(row)
+        fg_buffer.append(fg_row)
+        bg_buffer.append(bg_row)
+    }
+    <- {
+        `width` -> w,
+        `height` -> h,
+        `buffer` -> buffer,
+        `fg_buffer` -> fg_buffer,
+        `bg_buffer` -> bg_buffer
+    }
+}
+
+/!
+ Set a cell on a canvas map.
+ !/
+function set_cell(c, x, y, char, fg, bg) {
+    let w -> c[`width`]
+    let h -> c[`height`]
+    when x >= 0 and x < w and y >= 0 and y < h {
+        c[`buffer`][y][x] -> char
+        when fg != Nothing {
+            c[`fg_buffer`][y][x] -> fg
+        }
+        when bg != Nothing {
+            c[`bg_buffer`][y][x] -> bg
+        }
+    }
+}
+
+/!
+ Get character at (x, y), or empty string if OOB.
+ !/
+function get_cell(c, x, y) {
+    let w -> c[`width`]
+    let h -> c[`height`]
+    when x >= 0 and x < w and y >= 0 and y < h {
+        <- c[`buffer`][y][x]
+    }
+    <- ``
+}
+
+/!
+ Clear canvas map to a character (Default space).
+ !/
+function clear(c, char, fg, bg) {
+    let fill_char -> ` `
+    when char != Nothing {
+        fill_char -> char
+    }
+    let fill_fg -> `white`
+    when fg != Nothing {
+        fill_fg -> fg
+    }
+    let fill_bg -> `black`
+    when bg != Nothing {
+        fill_bg -> bg
+    }
+    let w -> c[`width`]
+    let h -> c[`height`]
+    do for y in 0..h {
+        do for x in 0..w {
+            c[`buffer`][y][x] -> fill_char
+            c[`fg_buffer`][y][x] -> fill_fg
+            c[`bg_buffer`][y][x] -> fill_bg
+        }
+    }
+}
+
+/!
+ Draw axis-aligned rectangle outline from (x0,y0) with size width×height.
+ !/
+function draw_rect(c, x0, y0, width, height, char, fg, bg) {
+    when width <= 0 or height <= 0 { <- Nothing }
+    let x2 -> x0 + width - 1
+    let y2 -> y0 + height - 1
+    do for x in x0..(x2 + 1) {
+        set_cell(c, x, y0, char, fg, bg)
+        set_cell(c, x, y2, char, fg, bg)
+    }
+    do for y in y0..(y2 + 1) {
+        set_cell(c, x0, y, char, fg, bg)
+        set_cell(c, x2, y, char, fg, bg)
+    }
+}
+
+/!
+ Draw text starting at (x, y). Clips at canvas edge.
+ !/
+function draw_text(c, x, y, text, fg, bg) {
+    let s -> Str.to_string(text)
+    let n -> Str.length(s)
+    let i -> 0
+    do while i < n {
+        set_cell(c, x + i, y, Str.at(s, i), fg, bg)
+        i -> i + 1
+    }
+}
+
+/!
+ Fill a rectangle with a character.
+ !/
+function fill_rect(c, x0, y0, width, height, char, fg, bg) {
+    when width <= 0 or height <= 0 { <- Nothing }
+    let y1 -> y0 + height
+    let x1 -> x0 + width
+    do for y in y0..y1 {
+        do for x in x0..x1 {
+            set_cell(c, x, y, char, fg, bg)
+        }
+    }
+}
+
+/!
+ Draw into a laid-out map node {x,y,w,h} (from zen.ui.layout map API).
+ !/
+function fill_node(c, node, char, fg, bg) {
+    fill_rect(c, node[`x`], node[`y`], node[`w`], node[`h`], char, fg, bg)
+}
+
+/!
+ Draw text at the top-left of a layout node.
+ !/
+function text_node(c, node, text, fg, bg) {
+    draw_text(c, node[`x`], node[`y`], text, fg, bg)
+}
+
+/!
+ Renders the canvas to the terminal.
+
+ Native `-g`: C hot path `ZenTerm_paint_canvas` (no per-cell Zen calls,
+ color only on change, one flush).
+
+ Interpret: same algorithm in Python via `__builtin_term.paint_canvas`.
+ !/
+function render(c) {
+    __builtin_term.paint_canvas(c)
+}
+
+/!
+ Snapshot one row of characters as a string (for tests).
+ !/
+function row_string(c, y) {
+    let w -> c[`width`]
+    let h -> c[`height`]
+    when y < 0 or y >= h { <- `` }
+    let out -> ``
+    let x -> 0
+    do while x < w {
+        out -> out + c[`buffer`][y][x]
+        x -> x + 1
+    }
+    <- out
+}

@@ -1,0 +1,29 @@
+import zen.data.xml as xml
+import zen.test as test
+
+function test_xml_basic() {
+    let data -> {`name` -> `Zenlang`, `version` -> `1.0`}
+    let text -> xml.stringify(data)
+    
+    let parsed -> xml.parse(text)
+    let pass -> test.assert_equal(parsed.get(`name`), `Zenlang`, `name should be Zenlang`)
+    pass -> pass and test.assert_equal(parsed.get(`version`), `1.0`, `version should be 1.0`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `XML.basic`, `fn` -> test_xml_basic}
+    ]
+
+    <- test.run_suite(`Data XML Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

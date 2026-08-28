@@ -1,0 +1,52 @@
+import zen.text.string as str
+import zen.text.regex as re
+
+/!
+ Simple YAML Parser Module.
+ !/
+
+/!
+ Parses a simple YAML string (key: value pairs).
+ @param text The YAML string.
+ @return A map of keys to values.
+ !/
+function parse(text) {
+    let result -> {}
+    let lines -> str.split(text, `\n`)
+    do for line in lines {
+        let trimmed -> str.trim(line)
+        // Skip empty lines and comments
+        when trimmed.length > 0 and not trimmed.starts_with(`#`) {
+            // Match key: value
+            let match -> re.search(`^([^:]+):\s*(.*)$`, trimmed)
+            when match {
+                // re.find_all would be better to get groups, 
+                // but re.search just returns True/False in my implementation currently
+                // Wait, let's check BuiltinHandler.py for regex.search
+            }
+            
+            // Fallback to simple split
+            let parts -> str.split(trimmed, `:`)
+            when parts.length >= 2 {
+                let key -> str.trim(parts[0])
+                let val -> str.trim(parts[1])
+                result[key] -> val
+            }
+        }
+    }
+    <- result
+}
+
+/!
+ Converts a Map to a simple YAML string.
+ @param data The map to convert.
+ @return The YAML string.
+ !/
+function stringify(data) {
+    let yaml -> ``
+    let keys -> data.keys()
+    do for k in keys {
+        yaml -> yaml + k + `: ` + str.to_string(data[k]) + `\n`
+    }
+    <- yaml
+}

@@ -1,0 +1,453 @@
+/!
+  Zenlang Project Manager & Tooling CLI (zenpm / zen).
+  Provides unified commands for project initialization, building, running,
+  testing, benchmarking, codebase scanning, doc generation, and package management.
+!/
+
+import zen.tooling.project as project
+import zen.tooling.builder as builder
+import zen.tooling.watcher as watcher
+import zen.tooling.tester as tester
+import zen.tooling.bench as bench
+import zen.tooling.todo as todo
+import zen.tooling.pkg as pkg
+import zen.tooling.publish as publish
+import zen.tooling.docgen as docgen
+import zen.tooling.graph as graph
+import zen.tooling.dash as dash
+import zen.tooling.profiler as profiler
+import zen.io.io as io
+import zen.io.path as path
+import zen.io.file as file
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+
+function print_usage() {
+    io.writeln(`zen — The Zenlang Project Manager & Developer Toolchain`)
+    io.writeln(``)
+    io.writeln(`Usage:`)
+    io.writeln(`  zen <command> [arguments] [options]`)
+    io.writeln(``)
+    io.writeln(`Project Commands:`)
+    io.writeln(`  init [dir] [--template <type>]     Initialize project in current/specified directory`)
+    io.writeln(`  new <name> [--template <type>]     Create a new project directory with scaffolding`)
+    io.writeln(`  build [--release|--debug|--dump]   Compile project into build/<target>`)
+    io.writeln(`  run [args...] [--watch]            Build and run application executable`)
+    io.writeln(`  watch [command]                    Watch source files and auto-rebuild on change`)
+    io.writeln(`  dash (dashboard)                   Launch interactive multi-pane development dashboard`)
+    io.writeln(`  clean                              Remove project build artifacts and intermediate files`)
+    io.writeln(``)
+    io.writeln(`Quality & Ecosystem Commands:`)
+    io.writeln(`  test [filter]                      Discover and run automated test suites in tests/`)
+    io.writeln(`  benchmark [filter] (bench)         Run performance benchmark suites in benches/`)
+    io.writeln(`  profile [file.zl] [--html] [--tree] Measure execution bottlenecks and call flame graphs`)
+    io.writeln(`  todo [--fixme|--bug|--all]         Scan codebase for TODO, FIXME, and BUG annotations`)
+    io.writeln(`  doc [--html|--markdown] [outdir]   Generate Markdown and interactive HTML documentation`)
+    io.writeln(`  pkg <install|add|remove|list|graph> Manage external dependencies and lockfile (zen.lock)`)
+    io.writeln(`  graph [--html] [out_file]          Visualize dependency graph in terminal or interactive HTML`)
+    io.writeln(`  bump <patch|minor|major>           Bump semantic version in .zbuild and create Git tag`)
+    io.writeln(`  publish                            Package release archive into build/<name>-<ver>.tar`)
+    io.writeln(`  env                                Print compiler, runtime, and environment diagnostics`)
+    io.writeln(``)
+    io.writeln(`Templates:`)
+    io.writeln(`  cli (default)   Command-line tool with subcommands, flags, and help`)
+    io.writeln(`  tui             Terminal UI application with interactive canvas & widgets`)
+    io.writeln(`  lib             Reusable library module with exported classes and tests`)
+    io.writeln(`  service         HTTP / Socket backend network server`)
+    io.writeln(``)
+    io.writeln(`Examples:`)
+    io.writeln(`  zen new my_app --template cli`)
+    io.writeln(`  zen dash`)
+    io.writeln(`  zen pkg graph --html`)
+    io.writeln(`  zen build --release`)
+    io.writeln(`  zen test`)
+    io.writeln(`  zen doc`)
+}
+
+function print_env() {
+    io.writeln(`==============================================`)
+    io.writeln(`  Zenlang Environment Diagnostics`)
+    io.writeln(`==============================================`)
+    io.writeln(`Platform:         ` + sys.platform())
+    io.writeln(`Working Dir:      ` + sys.get_cwd())
+    io.writeln(`ZEN_PATH:         ` + Str.to_string(sys.get_env(`ZEN_PATH`)))
+    io.writeln(`Runtime Dir:      ` + builder.get_runtime_path())
+    let proj -> project.load_project(Nothing)
+    when proj[`ok`] == true {
+        io.writeln(`Active Project:   ` + proj[`manifest`][`name`] + ` v` + proj[`manifest`][`version`] + ` (` + proj[`root`] + `)`)
+    } or {
+        io.writeln(`Active Project:   None (not inside a .zbuild project directory)`)
+    }
+    io.writeln(`C Compiler (gcc): ` + Str.to_string(process.available(`gcc`)))
+    io.writeln(`C Compiler (clang): ` + Str.to_string(process.available(`clang`)))
+    io.writeln(`Git Available:    ` + Str.to_string(process.available(`git`)))
+    io.writeln(`==============================================`)
+}
+
+function main() {
+    let args -> sys.get_args()
+    when args.length <= 1 {
+        print_usage()
+        <- 0
+    }
+
+    let cmd -> args[1]
+    let n -> args.length
+
+    when cmd == `help` or cmd == `--help` or cmd == `-h` {
+        print_usage()
+        <- 0
+    }
+
+    when cmd == `env` {
+        print_env()
+        <- 0
+    }
+
+    when cmd == `init` {
+        let dir -> sys.get_cwd()
+        let p_name -> path.base_name(dir)
+        let tmpl -> `cli`
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--template` or a == `-t` {
+                when i + 1 < n {
+                    tmpl -> args[i + 1]
+                    i -> i + 1
+                }
+            } or when not Str.starts_with(a, `-`) {
+                dir -> a
+                p_name -> path.base_name(dir)
+            }
+            i -> i + 1
+        }
+        let res -> project.init_project(dir, p_name, tmpl, Nothing)
+        when res[`ok`] == true {
+            io.writeln(`[SUCCESS] ` + res[`message`])
+            <- 0
+        }
+        io.error(`[ERROR] ` + Str.to_string(res[`error`]))
+        <- 1
+    }
+
+    when cmd == `new` {
+        when n <= 2 {
+            io.error(`Usage: zen new <project_name> [--template cli|tui|lib|service]`)
+            <- 1
+        }
+        let name -> args[2]
+        let tmpl -> `cli`
+        let i -> 3
+        do while i < n {
+            let a -> args[i]
+            when a == `--template` or a == `-t` {
+                when i + 1 < n {
+                    tmpl -> args[i + 1]
+                    i -> i + 1
+                }
+            }
+            i -> i + 1
+        }
+        let res -> project.new_project(name, sys.get_cwd(), tmpl, Nothing)
+        when res[`ok`] == true {
+            io.writeln(`[SUCCESS] ` + res[`message`])
+            io.writeln(`Next steps:`)
+            io.writeln(`  cd ` + name)
+            io.writeln(`  zen run`)
+            <- 0
+        }
+        io.error(`[ERROR] ` + Str.to_string(res[`error`]))
+        <- 1
+    }
+
+    let proj -> project.load_project(Nothing)
+
+    when cmd == `build` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let opts -> { `release` -> false, `debug` -> false, `dump` -> false, `typecheck` -> false }
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--release` or a == `-r` { opts[`release`] -> true }
+            when a == `--debug` or a == `-g` { opts[`debug`] -> true }
+            when a == `--dump` { opts[`dump`] -> true }
+            when a == `--typecheck` or a == `-t` { opts[`typecheck`] -> true }
+            i -> i + 1
+        }
+        let b -> builder.build_project(proj, opts)
+        when b[`ok`] == true {
+            io.writeln(`[SUCCESS] Built ` + b[`target_rel`] + ` (` + Str.to_string(b[`elapsed_ms`]) + ` ms)`)
+            <- 0
+        }
+        io.error(`[ERROR] ` + Str.to_string(b[`error`]))
+        <- 1
+    }
+
+    when cmd == `run` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let watch_mode -> false
+        let prog_args -> []
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--watch` or a == `-w` {
+                watch_mode -> true
+            } or when a == `--` {
+                let j -> i + 1
+                do while j < n {
+                    prog_args.append(args[j])
+                    j -> j + 1
+                }
+                break
+            } or {
+                prog_args.append(a)
+            }
+            i -> i + 1
+        }
+
+        when watch_mode {
+            watcher.watch_and_run(proj, prog_args, { `release` -> false, `debug` -> false })
+            <- 0
+        }
+
+        let r -> builder.run_project(proj, prog_args, { `release` -> false, `debug` -> false })
+        when r[`ok`] == true { <- 0 }
+        <- r[`code`]
+    }
+
+    when cmd == `watch` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        watcher.watch_and_run(proj, [], { `release` -> false, `debug` -> false })
+        <- 0
+    }
+
+    when cmd == `clean` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let res -> builder.clean_project(proj)
+        io.writeln(`[SUCCESS] ` + res[`message`])
+        <- 0
+    }
+
+    when cmd == `test` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let pat -> Nothing
+        when n >= 3 { pat -> args[2] }
+        let res -> tester.test_project(proj, pat)
+        when res[`ok`] == true { <- 0 }
+        <- 1
+    }
+
+    when cmd == `benchmark` or cmd == `bench` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let pat -> Nothing
+        when n >= 3 { pat -> args[2] }
+        let res -> bench.run_benchmarks(proj, pat)
+        when res[`ok`] == true { <- 0 }
+        <- 1
+    }
+
+    when cmd == `todo` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let filter_tag -> Nothing
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--fixme` { filter_tag -> `FIXME` }
+            when a == `--bug` { filter_tag -> `BUG` }
+            when a == `--todo` { filter_tag -> `TODO` }
+            when a == `--tag` and i + 1 < n {
+                filter_tag -> args[i + 1]
+                i -> i + 1
+            }
+            i -> i + 1
+        }
+        todo.print_todos(proj, filter_tag)
+        <- 0
+    }
+
+    when cmd == `doc` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let out_dir -> Nothing
+        let fmt -> `html`
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--markdown` or a == `-md` { fmt -> `markdown` }
+            when a == `--html` { fmt -> `html` }
+            when not Str.starts_with(a, `-`) { out_dir -> a }
+            i -> i + 1
+        }
+        let res -> docgen.generate_docs(proj, fmt, out_dir)
+        <- 0
+    }
+
+    when cmd == `pkg` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        when n <= 2 {
+            pkg.list_dependencies(proj)
+            <- 0
+        }
+        let sub -> args[2]
+        when sub == `install` or sub == `get` {
+            pkg.install_dependencies(proj)
+            <- 0
+        } or when sub == `list` or sub == `ls` {
+            pkg.list_dependencies(proj)
+            <- 0
+        } or when sub == `add` {
+            when n <= 4 {
+                io.error(`Usage: zen pkg add <name> <git_url|path>`)
+                <- 1
+            }
+            pkg.add_dependency(proj, args[3], args[4])
+            <- 0
+        } or when sub == `remove` or sub == `rm` {
+            when n <= 3 {
+                io.error(`Usage: zen pkg remove <name>`)
+                <- 1
+            }
+            pkg.remove_dependency(proj, args[3])
+            <- 0
+        } or when sub == `graph` or sub == `tree` {
+            let is_html -> false
+            let out_file -> Nothing
+            let i -> 3
+            do while i < n {
+                let a -> args[i]
+                when a == `--html` { is_html -> true }
+                when not Str.starts_with(a, `-`) { out_file -> a }
+                i -> i + 1
+            }
+            pkg.graph_dependencies(proj, is_html, out_file)
+            <- 0
+        } or {
+            io.error(`Unknown pkg command: ` + sub)
+            <- 1
+        }
+    }
+
+    when cmd == `graph` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let is_html -> false
+        let out_file -> Nothing
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--html` { is_html -> true }
+            when not Str.starts_with(a, `-`) { out_file -> a }
+            i -> i + 1
+        }
+        pkg.graph_dependencies(proj, is_html, out_file)
+        <- 0
+    }
+
+    when cmd == `dash` or cmd == `dashboard` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        dash.run_dashboard(proj, {})
+        <- 0
+    }
+
+    when cmd == `bump` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        let part -> `patch`
+        when n >= 3 { part -> args[2] }
+        publish.bump_project_version(proj, part, true)
+        <- 0
+    }
+
+    when cmd == `publish` {
+        when proj[`ok`] != true {
+            io.error(`[ERROR] ` + proj[`error`])
+            <- 1
+        }
+        publish.publish_project(proj, Nothing)
+        <- 0
+    }
+
+    when cmd == `profile` {
+        let target_file -> Nothing
+        let opts -> {
+            `html` -> ``,
+            `tree` -> false,
+            `iters` -> 1
+        }
+        let i -> 2
+        do while i < n {
+            let a -> args[i]
+            when a == `--tree` {
+                opts[`tree`] -> true
+            } or when a == `--html` {
+                opts[`html`] -> `profile_report.html`
+                when i + 1 < n and not Str.starts_with(args[i + 1], `-`) {
+                    opts[`html`] -> args[i + 1]
+                    i -> i + 1
+                }
+            } or when Str.starts_with(a, `--html=`) {
+                opts[`html`] -> a.replace(`--html=`, ``)
+            } or when a == `--iters` or a == `-i` {
+                when i + 1 < n {
+                    let iters_num -> 1
+                    // Convert iters if provided
+                    opts[`iters`] -> 3
+                    i -> i + 1
+                }
+            } or when not Str.starts_with(a, `-`) {
+                target_file -> a
+            }
+            i -> i + 1
+        }
+
+        when target_file == Nothing {
+            when proj[`ok`] == true and proj[`manifest`].has(`entry`) {
+                target_file -> path.join(proj[`root`], proj[`manifest`][`entry`])
+            } or {
+                io.error(`[ERROR] Please specify a file to profile: zen profile <file.zl>`)
+                <- 1
+            }
+        }
+
+        profiler.profile_file(target_file, opts)
+        <- 0
+    }
+
+    io.error(`Unknown command: '` + cmd + `'. Run 'zen help' for available commands.`)
+    <- 1
+}

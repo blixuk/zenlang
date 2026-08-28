@@ -1,0 +1,26 @@
+/!
+  08 — Closures (by-value capture)
+
+  Run:
+    ./bin/zen examples/getting_started/08_closures.zl
+
+  Learn: function(...) { } as a value; outer locals captured by value.
+!/
+
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let double -> function(x) { <- x * 2 }
+    io.writeln(`double(21) = ` + Str.to_string(double(21)))
+
+    let n -> 10
+    let add_n -> function(x) { <- x + n }
+    io.writeln(`add_n(5) = ` + Str.to_string(add_n(5)))
+
+    // Capture is a snapshot: rebinding n does not change the closure
+    n -> 99
+    io.writeln(`after n->99, add_n(5) still = ` + Str.to_string(add_n(5)))
+
+    <- 0
+}

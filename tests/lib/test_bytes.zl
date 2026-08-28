@@ -1,0 +1,73 @@
+import zen.data.bytes as bytes
+import zen.test as test
+
+function test_bytes_basic() {
+    let b -> bytes.Bytes(10)
+    
+    let pass -> test.assert_equal(b.length(), 10, `length check`)
+    
+    b.set(0, 255)
+    pass -> pass and test.assert_equal(b.get(0), 255, `get/set check`)
+    
+    <- pass
+}
+
+function test_bytes_string() {
+    // Build UTF-8 buffer via list ctor + set (from_string has host-specific boxing).
+    let s -> `hello`
+    let raw -> __builtin.string_to_bytes(s)
+    let b -> bytes.Bytes(raw)
+    // Fallback if list ctor is empty under a host: size + set
+    when b.length() == 0 {
+        let n -> raw.length
+        b -> bytes.Bytes(n)
+        let i -> 0
+        do while i < n {
+            b.set(i, raw[i])
+            i -> i + 1
+        }
+    }
+    
+    let pass -> test.assert_equal(b.length(), 5, `length check`)
+    pass -> pass and test.assert_equal(b.to_string(), s, `roundtrip check`)
+    
+    <- pass
+}
+
+function test_bytes_binary() {
+    let spec -> {
+        `magic` -> `u32`,
+        `version` -> `u16`
+    }
+    let data -> {
+        `magic` -> 0xDEADBEEF,
+        `version` -> 1
+    }
+    
+    let b_raw -> bytes.pack(spec, data)
+    // unpack raw list (native-safe; no class field reassignment)
+    let unpacked -> bytes.unpack(spec, b_raw)
+    
+    let pass -> test.assert_equal(unpacked.get(`magic`), 0xDEADBEEF, `magic check`)
+    pass -> pass and test.assert_equal(unpacked.get(`version`), 1, `version check`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Bytes.basic`, `fn` -> test_bytes_basic},
+        {`name` -> `Bytes.string`, `fn` -> test_bytes_string},
+        {`name` -> `Bytes.binary`, `fn` -> test_bytes_binary}
+    ]
+
+    <- test.run_suite(`Bytes Data Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

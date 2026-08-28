@@ -1,0 +1,118 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zen Data",
+  "scopeName": "source.zendata",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#sentinels" },
+    { "include": "#structs" },
+    { "include": "#operators" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.zendata",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.zendata",
+          "begin": "/!",
+          "end": "!/"
+        }
+      ]
+    },
+    "sentinels": {
+      "patterns": [
+        {
+          "name": "constant.language.sentinel.zendata",
+          "match": "\\b(Nothing|Default|True|False|nothing|default|true|false|null)\\b"
+        }
+      ]
+    },
+    "structs": {
+      "patterns": [
+        {
+          "name": "entity.name.type.struct.zendata",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*(?=\\s*\\{)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.flow.zendata",
+          "match": "->"
+        },
+        {
+          "name": "punctuation.separator.key-value.zendata",
+          "match": ":"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.raw.backtick.zendata",
+          "begin": "```",
+          "end": "```"
+        },
+        {
+          "name": "string.quoted.raw.backtick.zendata",
+          "begin": "`",
+          "end": "`"
+        },
+        {
+          "name": "string.quoted.double.zendata",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.zendata",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.zendata",
+          "match": "\\b0[xX][0-9a-fA-F]+\\b"
+        },
+        {
+          "name": "constant.numeric.bin.zendata",
+          "match": "\\b0[bB][01]+\\b"
+        },
+        {
+          "name": "constant.numeric.decimal.zendata",
+          "match": "\\b-?[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.zendata",
+          "match": "\\b-?[0-9]+\\b"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.zendata",
+          "match": "[\\{\\}]"
+        },
+        {
+          "name": "punctuation.definition.list.zendata",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.delimiter.zendata",
+          "match": ","
+        }
+      ]
+    }
+  }
+}

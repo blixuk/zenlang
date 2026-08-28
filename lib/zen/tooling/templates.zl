@@ -1,0 +1,290 @@
+/!
+  Project templates module for Zenlang project tooling.
+  Provides starter templates for CLI applications, TUI apps,
+  reusable libraries, and network services.
+!/
+
+import zen.text.string as Str
+
+/!
+  Generates the CLI application template main.zl.
+!/
+export function get_cli_template(name, description) {
+    let app_name -> name
+    when app_name == Nothing or app_name == `` { app_name -> `zen_app` }
+    let desc -> description
+    when desc == Nothing or desc == `` { desc -> `A command-line application built with Zenlang` }
+
+    let out -> `/!\n`
+    out -> out + `  ` + app_name + ` — ` + desc + `\n`
+    out -> out + `!/\n\n`
+    out -> out + `use zen.io.io as IO\n`
+    out -> out + `use zen.sys.sys as sys\n`
+    out -> out + `use zen.sys.cli as cli\n`
+    out -> out + `use zen.text.string as Str\n\n`
+    out -> out + `function print_banner() {\n`
+    out -> out + `    IO.write_line(\`==============================================\`)\n`
+    out -> out + `    IO.write_line(\`  ` + app_name + ` v0.1.0\`)\n`
+    out -> out + `    IO.write_line(\`  ` + desc + `\`)\n`
+    out -> out + `    IO.write_line(\`==============================================\`)\n`
+    out -> out + `}\n\n`
+    out -> out + `function main() {\n`
+    out -> out + `    let args -> sys.get_args()\n`
+    out -> out + `    let p -> cli.Parser(\`` + app_name + `\`, \`` + desc + `\`)\n`
+    out -> out + `    p.flag(\`v\`, \`version\`, \`Show version information\`)\n`
+    out -> out + `    p.flag(\`d\`, \`debug\`, \`Enable debug diagnostics\`)\n`
+    out -> out + `    p.option(\`o\`, \`output\`, \`Output file path\`, \`out.txt\`)\n`
+    out -> out + `    p.argument(\`command\`, \`Subcommand to run (run | info | help)\`)\n\n`
+    out -> out + `    let opts -> p.parse(args)\n\n`
+    out -> out + `    when opts.has(\`version\`) and opts[\`version\`] == true {\n`
+    out -> out + `        IO.write_line(\`` + app_name + ` version 0.1.0\`)\n`
+    out -> out + `        <- 0\n`
+    out -> out + `    }\n\n`
+    out -> out + `    let cmd -> \`help\`\n`
+    out -> out + `    when opts.has(\`command\`) and opts[\`command\`] != Nothing {\n`
+    out -> out + `        cmd -> opts[\`command\`]\n`
+    out -> out + `    }\n\n`
+    out -> out + `    when cmd == \`help\` {\n`
+    out -> out + `        p.help()\n`
+    out -> out + `        <- 0\n`
+    out -> out + `    }\n\n`
+    out -> out + `    when cmd == \`info\` {\n`
+    out -> out + `        print_banner()\n`
+    out -> out + `        IO.write_line(\`Platform: \` + sys.platform())\n`
+    out -> out + `        IO.write_line(\`Working directory: \` + sys.get_cwd())\n`
+    out -> out + `        <- 0\n`
+    out -> out + `    }\n\n`
+    out -> out + `    when cmd == \`run\` {\n`
+    out -> out + `        print_banner()\n`
+    out -> out + `        IO.write_line(\`Running ` + app_name + ` task...\`)\n`
+    out -> out + `        when opts.has(\`output\`) and opts[\`output\`] != Nothing {\n`
+    out -> out + `            IO.write_line(\`Output destination: \` + opts[\`output\`])\n`
+    out -> out + `        }\n`
+    out -> out + `        IO.write_line(\`Done! Complete.\`)\n`
+    out -> out + `        <- 0\n`
+    out -> out + `    }\n\n`
+    out -> out + `    IO.write_line(\`[ERROR] Unknown command: \` + cmd)\n`
+    out -> out + `    p.help()\n`
+    out -> out + `    <- 1\n`
+    out -> out + `}\n`
+    <- out
+}
+
+/!
+  Generates the TUI application template main.zl.
+!/
+export function get_tui_template(name, description) {
+    let app_name -> name
+    when app_name == Nothing or app_name == `` { app_name -> `zen_tui` }
+    let desc -> description
+    when desc == Nothing or desc == `` { desc -> `Terminal UI application built with Zenlang` }
+
+    let out -> `/!\n`
+    out -> out + `  ` + app_name + ` — ` + desc + `\n`
+    out -> out + `!/\n\n`
+    out -> out + `import zen.io.io as io\n`
+    out -> out + `import zen.ui.canvas as canvas\n`
+    out -> out + `import zen.ui.layout as layout\n`
+    out -> out + `import zen.sys.term as term\n`
+    out -> out + `import zen.text.string as Str\n\n`
+    out -> out + `function main() {\n`
+    out -> out + `    let cv -> canvas.Canvas(60, 16)\n`
+    out -> out + `    cv.box(0, 0, 60, 16, \`double\`)\n`
+    out -> out + `    cv.text(3, 1, \`[ ` + app_name + ` — Terminal UI ]\`)\n`
+    out -> out + `    cv.line(1, 2, 59, 2, \`horizontal\`)\n\n`
+    out -> out + `    cv.text(4, 4, \`Welcome to your Zenlang Terminal Application!\`)\n`
+    out -> out + `    cv.text(4, 6, \`• Status: Online and ready\`)\n`
+    out -> out + `    cv.text(4, 7, \`• Canvas Layout Engine: Active\`)\n`
+    out -> out + `    cv.text(4, 8, \`• Color Profile: ANSI 256 / TrueColor\`)\n\n`
+    out -> out + `    cv.box(4, 10, 52, 4, \`rounded\`)\n`
+    out -> out + `    cv.text(6, 11, \`Tip: Run 'zen build' to compile to a native binary.\`)\n`
+    out -> out + `    cv.text(6, 12, \`Press Ctrl+C or Enter to exit.\`)\n\n`
+    out -> out + `    term.clear_screen()\n`
+    out -> out + `    cv.render()\n`
+    out -> out + `    io.writeln(\`\`)\n`
+    out -> out + `    <- 0\n`
+    out -> out + `}\n`
+    <- out
+}
+
+/!
+  Generates the Library template lib.zl.
+!/
+export function get_lib_template(name, description) {
+    let lib_name -> name
+    when lib_name == Nothing or lib_name == `` { lib_name -> `zen_lib` }
+    let desc -> description
+    when desc == Nothing or desc == `` { desc -> `A reusable Zenlang library` }
+
+    let out -> `/!\n`
+    out -> out + `  ` + lib_name + ` — ` + desc + `\n`
+    out -> out + `!/\n\n`
+    out -> out + `import zen.text.string as Str\n\n`
+    out -> out + `/!\n`
+    out -> out + `  Core engine for ` + lib_name + `.\n`
+    out -> out + `!/\n`
+    out -> out + `export class ` + Str.to_upper(Str.substring(lib_name, 0, 1)) + Str.substring(lib_name, 1, Str.length(lib_name)) + `Engine {\n`
+    out -> out + `    let name: String\n`
+    out -> out + `    let counter: Integer\n\n`
+    out -> out + `    function init(name) {\n`
+    out -> out + `        self.name -> name\n`
+    out -> out + `        self.counter -> 0\n`
+    out -> out + `    }\n\n`
+    out -> out + `    /!\n`
+    out -> out + `      Increments the internal counter.\n`
+    out -> out + `      @return The new counter value.\n`
+    out -> out + `    !/\n`
+    out -> out + `    function increment() {\n`
+    out -> out + `        self.counter -> self.counter + 1\n`
+    out -> out + `        <- self.counter\n`
+    out -> out + `    }\n\n`
+    out -> out + `    /!\n`
+    out -> out + `      Returns a formatted status string.\n`
+    out -> out + `    !/\n`
+    out -> out + `    function status() {\n`
+    out -> out + `        <- \`Engine[\` + self.name + \`]: counter=\` + Str.to_string(self.counter)\n`
+    out -> out + `    }\n`
+    out -> out + `}\n\n`
+    out -> out + `/!\n`
+    out -> out + `  Calculates the sum of a list of numbers.\n`
+    out -> out + `!/\n`
+    out -> out + `export function sum_items(items) {\n`
+    out -> out + `    let total -> 0\n`
+    out -> out + `    when items != Nothing {\n`
+    out -> out + `        do for x in items {\n`
+    out -> out + `            total -> total + x\n`
+    out -> out + `        }\n`
+    out -> out + `    }\n`
+    out -> out + `    <- total\n`
+    out -> out + `}\n`
+    <- out
+}
+
+/!
+  Generates the Network Service template main.zl.
+!/
+export function get_service_template(name, description) {
+    let svc_name -> name
+    when svc_name == Nothing or svc_name == `` { svc_name -> `zen_service` }
+    let desc -> description
+    when desc == Nothing or desc == `` { desc -> `HTTP backend service built with Zenlang` }
+
+    let out -> `/!\n`
+    out -> out + `  ` + svc_name + ` — ` + desc + `\n`
+    out -> out + `!/\n\n`
+    out -> out + `import zen.io.io as io\n`
+    out -> out + `import zen.net.server as server\n`
+    out -> out + `import zen.log.log as log\n`
+    out -> out + `import zen.data.json as json\n`
+    out -> out + `import zen.sys.sys as sys\n\n`
+    out -> out + `function handle_health(req) {\n`
+    out -> out + `    <- server.json_response(200, {\n`
+    out -> out + `        \`status\` -> \`healthy\`,\n`
+    out -> out + `        \`service\` -> \`` + svc_name + `\`,\n`
+    out -> out + `        \`platform\` -> sys.platform(),\n`
+    out -> out + `        \`uptime\` -> \`active\`\n`
+    out -> out + `    })\n`
+    out -> out + `}\n\n`
+    out -> out + `function handle_echo(req) {\n`
+    out -> out + `    let body -> req[\`body\`]\n`
+    out -> out + `    <- server.json_response(200, {\n`
+    out -> out + `        \`message\` -> \`Echo response\`,\n`
+    out -> out + `        \`received\` -> body\n`
+    out -> out + `    })\n`
+    out -> out + `}\n\n`
+    out -> out + `function main() {\n`
+    out -> out + `    let s -> server.Server(\`0.0.0.0\`, 8080)\n`
+    out -> out + `    s.get(\`/health\`, handle_health)\n`
+    out -> out + `    s.post(\`/echo\`, handle_echo)\n\n`
+    out -> out + `    io.writeln(\`[INFO] Starting ` + svc_name + ` on http://0.0.0.0:8080\`)\n`
+    out -> out + `    io.writeln(\`[INFO] Routes: GET /health, POST /echo\`)\n`
+    out -> out + `    io.writeln(\`[INFO] Ready for requests.\`)\n`
+    out -> out + `    <- 0\n`
+    out -> out + `}\n`
+    <- out
+}
+
+/!
+  Generates starter test suite test_main.zl.
+!/
+export function get_test_template(name, ptype) {
+    let out -> `/!\n`
+    out -> out + `  Test suite for ` + name + `\n`
+    out -> out + `!/\n\n`
+    out -> out + `import zen.test.test as test\n`
+    out -> out + `import zen.io.io as io\n\n`
+    out -> out + `function test_basic_assertion() {\n`
+    out -> out + `    test.assert_true(1 + 1 == 2, \`arithmetic identity\`)\n`
+    out -> out + `    <- true\n`
+    out -> out + `}\n\n`
+    out -> out + `function test_string_formatting() {\n`
+    out -> out + `    let msg -> \`Hello from \` + \`` + name + `\`\n`
+    out -> out + `    test.assert_true(msg != \`\`, \`non empty message\`)\n`
+    out -> out + `    <- true\n`
+    out -> out + `}\n\n`
+    out -> out + `function main() {\n`
+    out -> out + `    let suite -> [\n`
+    out -> out + `        { \`name\` -> \`test_basic_assertion\`, \`fn\` -> test_basic_assertion },\n`
+    out -> out + `        { \`name\` -> \`test_string_formatting\`, \`fn\` -> test_string_formatting }\n`
+    out -> out + `    ]\n`
+    out -> out + `    let ok -> test.run_suite(\`` + name + ` Test Suite\`, suite)\n`
+    out -> out + `    when ok { <- 0 }\n`
+    out -> out + `    <- 1\n`
+    out -> out + `}\n`
+    <- out
+}
+
+/!
+  Generates .gitignore for Zenlang projects.
+!/
+export function get_gitignore() {
+    let out -> `# Zenlang build artifacts\n`
+    out -> out + `build/\n`
+    out -> out + `out/\n`
+    out -> out + `output/\n`
+    out -> out + `*.o\n`
+    out -> out + `*.so\n`
+    out -> out + `*.dylib\n`
+    out -> out + `*.a\n`
+    out -> out + `*.log\n`
+    out -> out + `*.tmp\n\n`
+    out -> out + `# Dependency cache (optional: commit or ignore)\n`
+    out -> out + `deps/\n\n`
+    out -> out + `# Editor / OS metadata\n`
+    out -> out + `.DS_Store\n`
+    out -> out + `.vscode/\n`
+    out -> out + `.idea/\n`
+    <- out
+}
+
+/!
+  Generates README.md for new projects.
+!/
+export function get_readme(name, description) {
+    let desc -> description
+    when desc == Nothing or desc == `` { desc -> `A Zenlang application` }
+    let out -> `# ` + name + `\n\n`
+    out -> out + desc + `\n\n`
+    out -> out + `## Quick Start\n\n`
+    out -> out + `### Build Project\n`
+    out -> out + `\`\`\`bash\n`
+    out -> out + `zen build\n`
+    out -> out + `\`\`\`\n\n`
+    out -> out + `### Run Project\n`
+    out -> out + `\`\`\`bash\n`
+    out -> out + `zen run\n`
+    out -> out + `\`\`\`\n\n`
+    out -> out + `### Run Tests\n`
+    out -> out + `\`\`\`bash\n`
+    out -> out + `zen test\n`
+    out -> out + `\`\`\`\n\n`
+    out -> out + `### Development Watch Mode\n`
+    out -> out + `\`\`\`bash\n`
+    out -> out + `zen watch\n`
+    out -> out + `\`\`\`\n\n`
+    out -> out + `### Generate Documentation\n`
+    out -> out + `\`\`\`bash\n`
+    out -> out + `zen doc\n`
+    out -> out + `\`\`\`\n`
+    <- out
+}

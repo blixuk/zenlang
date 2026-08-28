@@ -1,0 +1,30 @@
+import zen.util.awk as awk
+import zen.test as test
+
+function test_awk_column() {
+    let text -> `user1 100\nuser2 200\nuser3 300`
+    let names -> awk.column(text, 0)
+    let scores -> awk.column(text, 1)
+    
+    let pass -> test.assert_equal(names.length, 3, `names count`)
+    pass -> pass and test.assert_equal(names[1], `user2`, `name index 1`)
+    pass -> pass and test.assert_equal(scores[2], `300`, `score index 2`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `AWK.column`, `fn` -> test_awk_column}
+    ]
+
+    <- test.run_suite(`Util AWK Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

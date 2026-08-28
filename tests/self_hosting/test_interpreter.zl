@@ -1,0 +1,296 @@
+/!
+ Endgame #5: selfhost AST interpreter dual-path smoke.
+ !/
+
+import compiler.Interpreter as Interp
+import zen.test as test
+import zen.text.string as Str
+
+function test_add_main() {
+    let src -> `
+function add(a, b) {
+    <- a + b
+}
+
+function main() {
+    let x -> add(2, 3)
+    when x == 5 {
+        <- 0
+    }
+    <- 1
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `main returns 0`)
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error`)
+    <- pass
+}
+
+function test_undefined() {
+    let src -> `
+function main() {
+    <- missing_name
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `not ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(Str.contains(err, `Undefined`), true, `undefined msg`)
+    <- pass
+}
+
+function test_when_else() {
+    let src -> `
+function main() {
+    let x -> 2
+    when x == 1 {
+        <- 10
+    } or {
+        <- 20
+    }
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `when ok`)
+    pass -> pass and test.assert_equal(r[`value`], 20, `else branch`)
+    <- pass
+}
+
+function test_nested_call() {
+    let src -> `
+function double(n) {
+    <- n * 2
+}
+
+function main() {
+    <- double(double(3))
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `nested ok`)
+    pass -> pass and test.assert_equal(r[`value`], 12, `3*2*2`)
+    <- pass
+}
+
+function test_compare_ops() {
+    let src -> `
+function main() {
+    when 3 < 5 and 5 != 4 {
+        <- 1
+    }
+    <- 0
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `cmp ok`)
+    pass -> pass and test.assert_equal(r[`value`], 1, `cmp true`)
+    <- pass
+}
+
+function test_fixture_stage7() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/stage7_add.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `fixture ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `fixture exit 0`)
+    <- pass
+}
+
+function test_import_graph() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/interp_import.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `import ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `import exit 0`)
+    <- pass
+}
+
+function test_for_sum() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/stage5_for_sum.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `for-sum ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `for-sum exit 0`)
+    <- pass
+}
+
+function test_index_assign() {
+    let src -> `
+function main() {
+    let xs -> [1, 2, 3]
+    xs[1] -> 9
+    when xs[0] == 1 {
+        when xs[1] == 9 {
+            when xs.length == 3 {
+                <- 0
+            }
+        }
+    }
+    <- 1
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `index ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `index exit 0`)
+    <- pass
+}
+
+function test_map_roundtrip() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/interp_map.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `map ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `map exit 0`)
+    <- pass
+}
+
+function test_str_import() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/interp_str.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `str ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `str exit 0`)
+    <- pass
+}
+
+function test_class_counter() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/class_counter.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `class ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `class exit 0`)
+    <- pass
+}
+
+function test_class_inherit() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/class_inherit.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `inherit ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `inherit exit 0`)
+    <- pass
+}
+
+function test_closure_add() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/closure_add.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `closure ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `closure exit 0`)
+    <- pass
+}
+
+function test_enum_color() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/enum_color.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `enum ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `enum exit 0`)
+    <- pass
+}
+
+function test_enum_payload() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/enum_payload.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `payload ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `payload exit 0`)
+    <- pass
+}
+
+function test_with_region() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/with_region.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `with ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `with exit 0`)
+    <- pass
+}
+
+function test_class_dispatch() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/class_dispatch.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `dispatch ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `dispatch exit 0`)
+    <- pass
+}
+
+function test_closure_nested() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/closure_nested.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `nested ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `nested exit 0`)
+    <- pass
+}
+
+function test_pattern_bind() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/pattern_bind.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `pattern ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `pattern exit 0`)
+    <- pass
+}
+
+function test_nothing_default() {
+    let r -> Interp.interpret_file(`tests/self_hosting/fixtures/nothing_default.zl`)
+    let pass -> test.assert_equal(r[`ok`], true, `nd ok`)
+    let err -> Str.to_string(r[`error`])
+    pass -> pass and test.assert_equal(r[`error`], Nothing, `no error ` + err)
+    pass -> pass and test.assert_equal(r[`value`], 0, `nd exit 0`)
+    <- pass
+}
+
+function test_list_length() {
+    let src -> `
+function main() {
+    let xs -> [7, 8, 9]
+    when xs.length == 3 {
+        when xs[2] == 9 {
+            <- 0
+        }
+    }
+    <- 1
+}
+`
+    let r -> Interp.interpret_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `len ok`)
+    pass -> pass and test.assert_equal(r[`value`], 0, `len exit 0`)
+    <- pass
+}
+
+function run_tests() {
+    // Driver.interpret CLI covered under bootstrap host:
+    //   python3 bootstrap/Zen.py selfhost/zen.zl interpret fixtures/stage7_add.zl
+    // (avoid importing Driver here so -g does not pull entire CLink/Codegen graph)
+    let tests -> [
+        {`name` -> `Interp.add_main`, `fn` -> test_add_main},
+        {`name` -> `Interp.undefined`, `fn` -> test_undefined},
+        {`name` -> `Interp.when_else`, `fn` -> test_when_else},
+        {`name` -> `Interp.nested_call`, `fn` -> test_nested_call},
+        {`name` -> `Interp.compare`, `fn` -> test_compare_ops},
+        {`name` -> `Interp.fixture_stage7`, `fn` -> test_fixture_stage7},
+        {`name` -> `Interp.import_graph`, `fn` -> test_import_graph},
+        {`name` -> `Interp.for_sum`, `fn` -> test_for_sum},
+        {`name` -> `Interp.index_assign`, `fn` -> test_index_assign},
+        {`name` -> `Interp.map_roundtrip`, `fn` -> test_map_roundtrip},
+        {`name` -> `Interp.str_import`, `fn` -> test_str_import},
+        {`name` -> `Interp.list_length`, `fn` -> test_list_length},
+        {`name` -> `Interp.nothing_default`, `fn` -> test_nothing_default},
+        {`name` -> `Interp.pattern_bind`, `fn` -> test_pattern_bind},
+        {`name` -> `Interp.class_counter`, `fn` -> test_class_counter},
+        {`name` -> `Interp.class_inherit`, `fn` -> test_class_inherit},
+        {`name` -> `Interp.closure_add`, `fn` -> test_closure_add},
+        {`name` -> `Interp.enum_color`, `fn` -> test_enum_color},
+        {`name` -> `Interp.enum_payload`, `fn` -> test_enum_payload},
+        {`name` -> `Interp.with_region`, `fn` -> test_with_region},
+        {`name` -> `Interp.class_dispatch`, `fn` -> test_class_dispatch},
+        {`name` -> `Interp.closure_nested`, `fn` -> test_closure_nested}
+    ]
+    <- test.run_suite(`Selfhost Interpreter`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

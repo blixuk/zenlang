@@ -1,0 +1,32 @@
+import zen.io.io as io
+
+function assert_eq(actual, expected, message) {
+    when actual != expected {
+        io.write(`[FAIL] `)
+        io.write(message)
+        io.write(`: Expected `)
+        io.write(expected)
+        io.write(`, got `)
+        io.write(actual)
+        io.write(`\n`)
+        raise `AssertionError`
+    }
+}
+
+function assert_true(actual, message) {
+    when not actual {
+        io.write(`[FAIL] `)
+        io.write(message)
+        io.write(`: Expected True, got False\n`)
+        raise `AssertionError`
+    }
+}
+
+function assert_false(actual, message) {
+    when actual {
+        io.write(`[FAIL] `)
+        io.write(message)
+        io.write(`: Expected False, got True\n`)
+        raise `AssertionError`
+    }
+}

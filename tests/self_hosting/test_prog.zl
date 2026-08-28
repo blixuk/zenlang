@@ -1,0 +1,25 @@
+import compiler.Driver as Driver
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let res -> Driver.compile_file(`tests/self_hosting/fixtures/stage7_add.zl`, `output/test_prog.c`, false)
+    io.writeln(`ok: ` + Str.to_string(res[`ok`]))
+    let files -> res[`files`]
+    io.writeln(`files count: ` + Str.to_string(files.length))
+    let i -> 0
+    do while i < files.length {
+        io.writeln(`file ` + Str.to_string(i) + `: ` + Str.to_string(files[i]))
+        i -> i + 1
+    }
+    let prog -> res[`program`]
+    let stmts -> prog[`statements`]
+    io.writeln(`merged stmts count: ` + Str.to_string(stmts.length))
+    i -> 0
+    do while i < stmts.length {
+        let s -> stmts[i]
+        io.writeln(`stmt ` + Str.to_string(i) + `: ` + Str.to_string(s[`kind`]) + ` name=` + Str.to_string(s[`name`]))
+        i -> i + 1
+    }
+    <- 0
+}

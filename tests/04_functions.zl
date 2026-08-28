@@ -1,0 +1,20 @@
+function fib(n: Integer) : Integer {
+    when n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+function add_three(a: Integer, b: Integer, c: Integer) : Integer {
+    return a + b + c
+}
+
+function test_functions() {
+    ! fib(10) == 55
+    ! add_three(1, 2, 3) == 6
+}
+
+function main() {
+    test_functions()
+    io.write(`04_functions passed!\n`)
+}

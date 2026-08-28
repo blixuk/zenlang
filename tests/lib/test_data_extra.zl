@@ -1,0 +1,93 @@
+import zen.data.yaml as yaml
+import zen.data.toml as toml
+import zen.data.dotenv as dotenv
+import zen.data.ini as ini
+import zen.test as test
+
+function test_yaml_basic() {
+    let data -> {`name` -> `Zenlang`, `type` -> `language`}
+    let text -> yaml.stringify(data)
+    let parsed -> yaml.parse(text)
+    
+    let pass -> test.assert_equal(parsed.get(`name`), `Zenlang`, `YAML name check`)
+    pass -> pass and test.assert_equal(parsed.get(`type`), `language`, `YAML type check`)
+    
+    <- pass
+}
+
+function test_toml_basic() {
+    let data -> {`title` -> `Hello TOML`, `ver` -> `0.1`}
+    let text -> toml.stringify(data)
+    let parsed -> toml.parse(text)
+    
+    let pass -> test.assert_equal(parsed.get(`title`), `Hello TOML`, `TOML title check`)
+    pass -> pass and test.assert_equal(parsed.get(`ver`), `0.1`, `TOML ver check`)
+    
+    <- pass
+}
+
+function test_dotenv() {
+    let env_content -> `
+# Server Configuration
+PORT=8080
+HOST=127.0.0.1
+export APP_NAME="Zen App"
+DEBUG=true
+`
+    let parsed -> dotenv.parse(env_content)
+    let pass -> test.assert_equal(parsed[`PORT`], `8080`, `dotenv PORT`)
+    pass -> pass and test.assert_equal(parsed[`HOST`], `127.0.0.1`, `dotenv HOST`)
+    pass -> pass and test.assert_equal(parsed[`APP_NAME`], `Zen App`, `dotenv APP_NAME`)
+    pass -> pass and test.assert_equal(parsed[`DEBUG`], `true`, `dotenv DEBUG`)
+
+    let stringified -> dotenv.stringify(parsed)
+    let reparsed -> dotenv.parse(stringified)
+    pass -> pass and test.assert_equal(reparsed[`PORT`], `8080`, `dotenv roundtrip PORT`)
+
+    <- pass
+}
+
+function test_ini() {
+    let ini_content -> `
+global_setting = enabled
+
+[server]
+port = 8080
+host = 0.0.0.0
+
+[database]
+name = zendb ; comment
+user = admin
+`
+    let parsed -> ini.parse(ini_content)
+    let pass -> test.assert_equal(ini.get(parsed, ``, `global_setting`, ``), `enabled`, `ini global`)
+    pass -> pass and test.assert_equal(ini.get(parsed, `server`, `port`, ``), `8080`, `ini server port`)
+    pass -> pass and test.assert_equal(ini.get(parsed, `server`, `host`, ``), `0.0.0.0`, `ini server host`)
+    pass -> pass and test.assert_equal(ini.get(parsed, `database`, `name`, ``), `zendb`, `ini db name`)
+    pass -> pass and test.assert_equal(ini.get(parsed, `missing`, `key`, `default`), `default`, `ini fallback`)
+
+    let text -> ini.stringify(parsed)
+    let reparsed -> ini.parse(text)
+    pass -> pass and test.assert_equal(ini.get(reparsed, `database`, `user`, ``), `admin`, `ini roundtrip`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `YAML.basic`, `fn` -> test_yaml_basic},
+        {`name` -> `TOML.basic`, `fn` -> test_toml_basic},
+        {`name` -> `Dotenv.parse_stringify`, `fn` -> test_dotenv},
+        {`name` -> `INI.parse_stringify`, `fn` -> test_ini}
+    ]
+
+    <- test.run_suite(`Data Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

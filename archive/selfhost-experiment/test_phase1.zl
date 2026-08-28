@@ -1,0 +1,4 @@
+import lib.zen.io as IO
+
+function main() {
+}

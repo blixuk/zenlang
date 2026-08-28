@@ -1,0 +1,38 @@
+import zen.io.io as io
+import tests.suite.test_primitives as primitives
+import tests.suite.test_control_flow as control_flow
+import tests.suite.test_functions as functions
+import tests.suite.test_data_structures as data_structures
+import tests.suite.test_structs_adts as structs_adts
+import tests.suite.test_error_handling as error_handling
+
+function main() {
+    io.writeln(`====================================`)
+    io.writeln(`   ZENLANG COMPILER TEST SUITE      `)
+    io.writeln(`====================================`)
+    io.writeln(``)
+
+    check {
+        primitives.run_primitives_tests()
+        io.writeln(``)
+        control_flow.run_control_flow_tests()
+        io.writeln(``)
+        functions.run_functions_tests()
+        io.writeln(``)
+        data_structures.run_data_structures_tests()
+        io.writeln(``)
+        structs_adts.run_structs_adts_tests()
+        io.writeln(``)
+        error_handling.run_error_handling_tests()
+        
+        io.writeln(``)
+        io.writeln(`====================================`)
+        io.writeln(`   ALL TESTS PASSED SUCCESSFULLY   `)
+        io.writeln(`====================================`)
+    } or {
+        io.writeln(``)
+        io.writeln(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`)
+        io.writeln(`       TEST SUITE FAILED!           `)
+        io.writeln(`!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!`)
+    }
+}

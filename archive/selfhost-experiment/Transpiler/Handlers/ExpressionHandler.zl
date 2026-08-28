@@ -1,0 +1,91 @@
+import `lib/zen/io` as IO
+from `selfhost/AST` import ASTKind, ASTNode
+
+class TranspilerExpressionHandler {
+    let generator : Variant // Reference to CodeGenerator
+
+    function init(generator: Variant) {
+        self.generator -> generator
+    }
+
+    function generate_expression(node: ASTNode) : String {
+        when node = Nothing {
+             <- `zen_create_nothing()`
+        }
+
+        check node.kind {
+            case ASTKind.LITERAL_EXPRESSION { <- self.generate_literal(node) }
+            case ASTKind.VARIABLE_EXPRESSION { <- self.generate_variable(node) }
+            case ASTKind.CALL_EXPRESSION { <- self.generate_call(node) }
+            case ASTKind.BINARY_EXPRESSION { <- self.generate_binary(node) }
+            case ASTKind.LOGICAL_EXPRESSION { <- self.generate_logical(node) }
+        } or {
+            // Fallback: emit a no-op or the kind for debugging
+            IO.write(`[DEBUG] Transpiler unhandled expression kind: ` + node.kind + `\n`)
+            <- `ZEN_BOX(0) /* unhandled ` + node.kind + ` */`
+        }
+    }
+
+    function generate_literal(node: Variant) : String {
+        when node.is_string {
+            <- `ZEN_BOX(zen_str(` + node.value + `))`
+        } or {
+            // number or bool etc.
+            <- `ZEN_BOX(` + node.value + `)`
+        }
+    }
+
+    function generate_variable(node: Variant) : String {
+        let n : Token -> node.name
+        <- n.value
+    }
+
+    function generate_call(node: Variant) : String {
+        let callee : String -> self.generate_expression(node.callee)
+        let args : List -> node.arguments
+        let arg_code : String -> ``
+
+        let i : Integer -> 0
+        while i < args.length {
+            let a : String -> self.generate_expression(args[i])
+            arg_code -> arg_code + a
+            i -> i + 1
+            when i < args.length {
+                arg_code -> arg_code + `, `
+            }
+        }
+
+        <- callee + `(` + arg_code + `)`
+    }
+
+    function generate_binary(node: Variant) : String {
+        let left : String -> self.generate_expression(node.left)
+        let op : String -> self.op_to_c(node.operator)
+        let right : String -> self.generate_expression(node.right)
+        <- `(` + left + ` ` + op + ` ` + right + `)`
+    }
+
+    function generate_logical(node: Variant) : String {
+        let left : String -> self.generate_expression(node.left)
+        let op : String -> self.op_to_c(node.operator)
+        let right : String -> self.generate_expression(node.right)
+        <- `(` + left + ` ` + op + ` ` + right + `)`
+    }
+
+    function op_to_c(tok: Variant) : String {
+        let v : String -> tok.value
+        when v = `+` { <- `+` }
+        when v = `-` { <- `-` }
+        when v = `*` { <- `*` }
+        when v = `/` { <- `/` }
+        when v = `==` { <- `==` }
+        when v = `!=` { <- `!=` }
+        when v = `<` { <- `<` }
+        when v = `>` { <- `>` }
+        when v = `<=` { <- `<=` }
+        when v = `>=` { <- `>=` }
+        when v = `and` { <- `&&` }
+        when v = `or` { <- `||` }
+        <- v
+    }
+}

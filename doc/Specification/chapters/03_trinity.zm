@@ -1,0 +1,30 @@
+// Chapter 3: The Zen Trinity
+
+Heading { id -> `sec-trinity`, text -> `The Zen Trinity: Code, Data, and Mark`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang unifies computation, data serialization, and technical documentation into three deeply cohesive, mutually reinforcing formats known as The Zen Trinity:`
+},
+
+Diagram {
+    type -> `flow`,
+    direction -> `right`,
+    nodes -> [`Zen Code (.zl)`, `Zen Data (.zd)`, `Zen Mark (.zm)`]
+},
+
+Table {
+    headers -> [`Pillar`, `Extension`, `Canonical Module`, `Core Purpose`],
+    rows -> [
+        [`Zen Code`, `.zl`, `zen.tooling.zencode`, `Universal executable programming language (VM & AOT C)`],
+        [`Zen Data`, `.zd`, `zen.data.zendata`, `Declarative data serialization superseding JSON, TOML & YAML`],
+        [`Zen Mark`, `.zm`, `zen.text.zenmark`, `Document Object Model and publishing engine replacing Typst & Markdown`]
+    ]
+},
+
+Callout {
+    type -> `note`,
+    title -> `Shared Trinity Semantics`,
+    text -> `All three Trinity formats share identical token semantics, flow arrows (->), sentinels (Nothing, Default), and raw backtick string escaping.`
+},
+
+HorizontalRule { symbol -> `*` }

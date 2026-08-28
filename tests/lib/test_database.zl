@@ -1,0 +1,44 @@
+import zen.data.database as db
+import zen.test as test
+import zen.io.file as file
+
+function test_db_persistence() {
+    let path -> `test_db.sexp`
+    
+    // Ensure clean start
+    when file.exists(path) {
+        file.remove(path)
+    }
+    
+    let database -> db.Database(path)
+    database.set(`user`, `alice`)
+    database.set(`score`, 100)
+    
+    // Close and reload
+    let db2 -> db.Database(path)
+    let pass -> test.assert_equal(db2.get(`user`), `alice`, `user should be alice`)
+    // Accept string or integer atoms from sexp (hosts differ)
+    let score -> db2.get(`score`)
+    pass -> pass and test.assert_true(score == 100 or score == `100`, `score should be 100`)
+    
+    // Cleanup
+    file.remove(path)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Database.persistence`, `fn` -> test_db_persistence}
+    ]
+
+    <- test.run_suite(`Data Database Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

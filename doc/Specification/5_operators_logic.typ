@@ -1,110 +1,77 @@
-== Logic
+#import "template.typ": *
 
-```zl
-True
-False
+= Operators & Logical Expressions
 
-True and False
-True or False
-not True 
-```
+== Visual Data Flow Operators
 
-== Logical Operators
+Zenlang uses directional arrow operators to express data transfer explicitly:
 
-```zl
-and     // Logical AND
-or      // Logical OR
-not     // Logical NOT
-xor     // Logical XOR
-nor     // Logical NOR
-nand    // Logical NAND
-xnor    // Logical XNOR
-```
-
-== Bitwise Operators
-
-```zl
-&&      // Bitwise AND
-||      // Bitwise OR
-!!      // Bitwise NOT
-^^      // Bitwise XOR
-!|      // Bitwise NOR
-!&      // Bitwise NAND
-!^      // Bitwise XNOR
-%%      // Bitwise MOD
-<<      // Bitwise LEFT SHIFT
->>      // Bitwise RIGHT SHIFT
-```
+#table(
+  columns: (1fr, 1.5fr, 3fr),
+  [Operator], [Name], [Description],
+  [`->`], [Bind / Assign], [Moves evaluation result into target variable or map key],
+  [`<-`], [Emit / Return], [Emits or returns a value outward to the caller],
+  [`:>`], [Type Constrain], [Declares type constraint during binding]
+)
 
 == Comparison Operators
 
-```zl
-=       // Equal
-!=      // NOT Equal
-&=      // AND Equal
-|=      // OR Equal
-^=      // XOR Equal
-%=      // MOD Equal
-<       // Less Than
->       // Greater Than
-<=      // Less Than or Equal
->=      // Greater Than or Equal
-<<=     // LEFT SHIFT Equal
->>=     // RIGHT SHIFT Equal
-```
+Comparison operators evaluate operands and return a `Boolean` (`True` or `False`).
 
-== Arithmetic Operators
+#table(
+  columns: (1fr, 2fr, 2.5fr),
+  [Operator], [Meaning], [Example],
+  [`==`], [Equal to], [`x == 42`, `val == Nothing`],
+  [`!=`], [Not equal to], [`x != 0`, `status != Default`],
+  [`<`], [Less than], [`a < 10`],
+  [`<=`], [Less than or equal], [`count <= max_count`],
+  [`>`], [Greater than], [`score > 100`],
+  [`>=`], [Greater than or equal], [`level >= 5`]
+)
+
+#tip[
+  Equality comparison in Zenlang is always `==`. Both `Nothing` and `Default` are fully comparable using `==` and `!=`.
+]
+
+== Logical Operators
+
+Logical operations use explicit english keywords rather than punctuation:
 
 ```zl
-+       // Addition
--       // Subtraction
-*       // Multiplication
-/       // Division
-%       // Remainder (Modulo)
-**      // Exponentiation (Power)
-++      // Increment
---      // Decrement
-//      // Quotient
-()      // Parentheses
+// Logical Boolean Operations
+let is_valid -> has_access and not is_expired
+let should_retry -> is_timeout or connection_failed
+let exclusive -> first_flag xor second_flag
 ```
 
 == Range Operators
 
-Range operators build *lists* of integers or single-character strings.
-They sit between comparison and arithmetic in the expression grammar.
+Range operators construct ordered `List` collections of integers or single-character runes:
+
+#feature(
+    "Range Operators",
+    "start..end     // Half-open range [start, end)\nstart..=end    // Closed range [start, end]",
+    "let r1 -> 0..5     // [0, 1, 2, 3, 4]\nlet r2 -> 0..=5    // [0, 1, 2, 3, 4, 5]\nlet letters -> `a`..=`c` // [`a`, `b`, `c`]\n\ndo for i in 1..=4 {\n    // Iterates i = 1, 2, 3, 4\n}"
+)
+
+#note[
+  `...` is not a range operator in Zenlang; it is used for pattern rest/spread matching (`[head, ...tail]`).
+]
+
+== Arithmetic & Bitwise Operators
 
 ```zl
-a..b     // Half-open range: start inclusive, end exclusive
-a..=b    // Closed range: start and end inclusive
-```
+// Arithmetic
+let sum -> a + b
+let diff -> a - b
+let product -> a * b
+let quotient -> a / b
+let remainder -> a % b
+let power -> 2 ** 8 // 256
 
-Examples:
-
-```zl
-0..5           // [0, 1, 2, 3, 4]
-0..=5          // [0, 1, 2, 3, 4, 5]
-5..2           // [5, 4, 3]           (descending)
-5..=2          // [5, 4, 3, 2]
-`a`..`d`       // [`a`, `b`, `c`]
-`a`..=`c`      // [`a`, `b`, `c`]
-
-do for i in 1..=4 {
-    // i = 1, 2, 3, 4
-}
-```
-
-Notes:
-
-- Result type is a `List`.
-- Operands are integers, or single-character strings (character code points).
-- `...` is *not* a range operator; it is rest/spread in patterns (`[head, ...tail]`).
-- Library helpers: `zen.math.range.range(start, end)` and `range_inclusive(start, end)`
-  (integer ranges; operators are preferred in new code).
-
-== Order of Operations
-
-```zl
-1 + (2 * 2)
-(2 + 2) * (8 / 2) + 10
-(4 * 4 / (4 + 4))
+// Bitwise
+let bit_and -> flags && 0xFF
+let bit_or -> flags || 0x01
+let bit_xor -> flags ^^ 0xAA
+let bit_shift -> 1 << 4
 ```

@@ -1,0 +1,147 @@
+/!
+  Zen Mark Themes Module — Color palettes, typography, syntax highlighting tokens, and styling presets.
+  Canonical path: `zen.text.zenmark.themes`.
+!/
+
+use zen.color as color
+
+/!
+  Returns the color palette and typography configuration for a given theme name.
+!/
+function get_theme(name) {
+    when name == `antiquarian` {
+        <- {
+            `name` -> `antiquarian`,
+            `bg` -> `#f6f4ee`,
+            `fg` -> `#0e221f`,
+            `accent` -> `#c27803`,
+            `border` -> `#c2bcb0`,
+            `code_bg` -> `#eae5d9`,
+            `code_fg` -> `#1e3a34`,
+            `font_family` -> `Georgia, "Times New Roman", serif`,
+            `font_mono` -> `"Courier New", monospace`,
+            `syntax_keyword` -> `#0284c7`,
+            `syntax_flow` -> `#d97706`,
+            `syntax_sentinel` -> `#dc2626`,
+            `syntax_string` -> `#15803d`,
+            `syntax_comment` -> `#78716c`,
+            `syntax_number` -> `#9333ea`,
+            `syntax_type` -> `#0369a1`
+        }
+    } or when name == `clean_light` {
+        <- {
+            `name` -> `clean_light`,
+            `bg` -> `#ffffff`,
+            `fg` -> `#1e293b`,
+            `accent` -> `#4f46e5`,
+            `border` -> `#e2e8f0`,
+            `code_bg` -> `#f8fafc`,
+            `code_fg` -> `#0f172a`,
+            `font_family` -> `system-ui, -apple-system, sans-serif`,
+            `font_mono` -> `"DejaVu Sans Mono", monospace`,
+            `syntax_keyword` -> `#2563eb`,
+            `syntax_flow` -> `#ea580c`,
+            `syntax_sentinel` -> `#e11d48`,
+            `syntax_string` -> `#16a34a`,
+            `syntax_comment` -> `#94a3b8`,
+            `syntax_number` -> `#7c3aed`,
+            `syntax_type` -> `#0891b2`
+        }
+    } or when name == `retro_terminal` {
+        <- {
+            `name` -> `retro_terminal`,
+            `bg` -> `#0a0a0a`,
+            `fg` -> `#ffb000`,
+            `accent` -> `#00ff66`,
+            `border` -> `#333333`,
+            `code_bg` -> `#141414`,
+            `code_fg` -> `#ffb000`,
+            `font_family` -> `"Courier New", monospace`,
+            `font_mono` -> `"Courier New", monospace`,
+            `syntax_keyword` -> `#00ff66`,
+            `syntax_flow` -> `#ffb000`,
+            `syntax_sentinel` -> `#ff3333`,
+            `syntax_string` -> `#ffff00`,
+            `syntax_comment` -> `#666666`,
+            `syntax_number` -> `#33ccff`,
+            `syntax_type` -> `#00ff66`
+        }
+    } or when name == `nord` or name == `nord_dark` {
+        // Official Arctic Nord Dark Palette (https://www.nordtheme.com)
+        <- {
+            `name` -> `nord_dark`,
+            `bg` -> `#2e3440`,            // nord0 Polar Night Dark Canvas
+            `fg` -> `#eceff4`,            // nord6 Snow Storm White Body
+            `accent` -> `#88c0d0`,        // nord8 Frost Ice Blue Accent
+            `border` -> `#4c566a`,        // nord3 Polar Night Muted Border
+            `code_bg` -> `#3b4252`,       // nord1 Polar Night Container
+            `code_fg` -> `#e5e9f0`,       // nord5 Snow Storm Code Text
+            `font_family` -> `system-ui, -apple-system, sans-serif`,
+            `font_mono` -> `"Fira Code", monospace`,
+            `syntax_keyword` -> `#81a1c1`,  // nord9 Frost Glacier Blue
+            `syntax_flow` -> `#d08770`,     // nord12 Aurora Orange
+            `syntax_sentinel` -> `#bf616a`, // nord11 Aurora Red
+            `syntax_string` -> `#a3be8c`,   // nord14 Aurora Green
+            `syntax_comment` -> `#616e88`,  // nord3 Polar Night Comment
+            `syntax_number` -> `#b48ead`,   // nord15 Aurora Purple
+            `syntax_type` -> `#8fbcbb`      // nord7 Frost Teal
+        }
+    } or when name == `monokai` {
+        <- {
+            `name` -> `monokai`,
+            `bg` -> `#272822`,
+            `fg` -> `#f8f8f2`,
+            `accent` -> `#f92672`,
+            `border` -> `#49483e`,
+            `code_bg` -> `#1e1f1c`,
+            `code_fg` -> `#f8f8f2`,
+            `font_family` -> `system-ui, sans-serif`,
+            `font_mono` -> `"Fira Code", monospace`,
+            `syntax_keyword` -> `#f92672`,
+            `syntax_flow` -> `#fd971f`,
+            `syntax_sentinel` -> `#ae81ff`,
+            `syntax_string` -> `#e6db74`,
+            `syntax_comment` -> `#75715e`,
+            `syntax_number` -> `#ae81ff`,
+            `syntax_type` -> `#66d9ef`
+        }
+    } or {
+        // Default: modernist_dark
+        <- {
+            `name` -> `modernist_dark`,
+            `bg` -> `#0f172a`,
+            `fg` -> `#f8fafc`,
+            `accent` -> `#38bdf8`,
+            `border` -> `#334155`,
+            `code_bg` -> `#1e293b`,
+            `code_fg` -> `#f8fafc`,
+            `font_family` -> `system-ui, -apple-system, sans-serif`,
+            `font_mono` -> `"Fira Code", monospace`,
+            `syntax_keyword` -> `#38bdf8`,
+            `syntax_flow` -> `#fbbf24`,
+            `syntax_sentinel` -> `#f87171`,
+            `syntax_string` -> `#4ade80`,
+            `syntax_comment` -> `#64748b`,
+            `syntax_number` -> `#c084fc`,
+            `syntax_type` -> `#2dd4bf`
+        }
+    }
+}
+
+/!
+  Generates CSS variables for HTML rendering corresponding to the theme.
+!/
+function get_theme_css(theme_name) {
+    let t -> get_theme(theme_name)
+    let css -> `:root {\n`
+    css -> css + `  --zm-bg: ` + t[`bg`] + `;\n`
+    css -> css + `  --zm-fg: ` + t[`fg`] + `;\n`
+    css -> css + `  --zm-accent: ` + t[`accent`] + `;\n`
+    css -> css + `  --zm-border: ` + t[`border`] + `;\n`
+    css -> css + `  --zm-code-bg: ` + t[`code_bg`] + `;\n`
+    css -> css + `  --zm-code-fg: ` + t[`code_fg`] + `;\n`
+    css -> css + `  --zm-font-body: ` + t[`font_family`] + `;\n`
+    css -> css + `  --zm-font-mono: ` + t[`font_mono`] + `;\n`
+    css -> css + `}\n`
+    <- css
+}

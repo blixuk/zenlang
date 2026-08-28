@@ -1,0 +1,5 @@
+
+from zen.io use writeln
+
+writeln(`Hello`) 
+writeln(`World`)

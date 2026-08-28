@@ -1,0 +1,312 @@
+/!
+  Zen View (zenview) — Terminal Reader and Pager for Zen Mark (.zm) and Zen Data (.zd) Documents.
+  Parses .zm files and renders them fully styled with ANSI typography, tables, and diagrams.
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.color.color as color
+import zen.text.string as Str
+import zen.data.zendata as zd
+import zen.zenmark as zm
+
+function print_usage() {
+    let title -> color.bold(color.paint(`Zen View (zenview) — Zen Mark Terminal Document Reader\n`, color.hex(`#38bdf8`), Nothing))
+    io.writeln(title)
+    io.writeln(`Usage:`)
+    io.writeln(`  zen tools/zenview.zl <path/to/doc.zm>              # Render directly to terminal stdout`)
+    io.writeln(`  zen tools/zenview.zl --interactive <doc.zm>       # Interactive scrollable TUI pager`)
+    io.writeln(`  zen tools/zenview.zl -i <doc.zm>                  # Short form interactive pager`)
+    io.writeln(``)
+}
+
+import zen.reflect as reflect
+
+/!
+  Normalize parsed Zen Data AST into a Zen Mark Document DOM.
+!/
+function normalize_zm_doc(parsed, base_dir) {
+    when parsed == Nothing {
+        <- zm.Document([], Nothing)
+    }
+    
+    let entry -> Nothing
+    let elements -> []
+    
+    when reflect.is_list(parsed) {
+        let i -> 0
+        do while i < parsed.length {
+            let item -> parsed[i]
+            let item_type -> when (item != Nothing and item.has(`__type__`)) { item[`__type__`] } or { Nothing }
+            
+            when item_type == `Entry` {
+                entry -> item
+            } or when item_type == `Document` {
+                let doc_inner -> normalize_zm_doc(item, base_dir)
+                let d_elements -> doc_inner.elements
+                let di -> 0
+                do while di < d_elements.length {
+                    elements.append(d_elements[di])
+                    di -> di + 1
+                }
+                when doc_inner.entry != Nothing and entry == Nothing {
+                    entry -> doc_inner.entry
+                }
+            } or {
+                let el -> normalize_element(item, base_dir)
+                when el != Nothing {
+                    elements.append(el)
+                }
+            }
+            i -> i + 1
+        }
+        <- zm.Document(elements, entry)
+    }
+    
+    let ptype -> when (parsed.has(`__type__`)) { parsed[`__type__`] } or { Nothing }
+    
+    when ptype == `Document` {
+        // Document with body elements or map of elements
+        // In Zen Data, Document { ... } with comma-separated children or flow map
+        when parsed.has(`elements`) and parsed.elements != Nothing {
+            let doc_els -> parsed.elements
+            let ei -> 0
+            do while ei < doc_els.length {
+                let el -> normalize_element(doc_els[ei], base_dir)
+                when el != Nothing {
+                    elements.append(el)
+                }
+                ei -> ei + 1
+            }
+        } or when parsed.has(`content`) and parsed.content != Nothing {
+            let doc_cnt -> parsed.content
+            let ci -> 0
+            do while ci < doc_cnt.length {
+                let el -> normalize_element(doc_cnt[ci], base_dir)
+                when el != Nothing {
+                    elements.append(el)
+                }
+                ci -> ci + 1
+            }
+        } or {
+            // Document might be a map where values are elements
+            let doc_keys -> parsed.keys()
+            let ki -> 0
+            do while ki < doc_keys.length {
+                let k -> doc_keys[ki]
+                when k != `__type__` and k != `__element__` {
+                    let v -> parsed[k]
+                    let el -> normalize_element(v, base_dir)
+                    when el != Nothing {
+                        elements.append(el)
+                    }
+                }
+                ki -> ki + 1
+            }
+        }
+        <- zm.Document(elements, Nothing)
+    }
+    
+    // Single element
+    let single_el -> normalize_element(parsed, base_dir)
+    when single_el != Nothing {
+        elements.append(single_el)
+    }
+    <- zm.Document(elements, Nothing)
+}
+
+function normalize_element(item, base_dir) {
+    when item == Nothing { <- Nothing }
+    let itype -> when (item.has(`__type__`)) { item[`__type__`] } or { Nothing }
+    
+    when itype == `Include` and item.has(`path`) {
+        let inc_path -> item.path
+        when not Str.starts_with(inc_path, `/`) and base_dir != `` {
+            inc_path -> base_dir + `/` + inc_path
+        }
+        when file.exists(inc_path) {
+            let inc_text -> file.read(inc_path)
+            let inc_parsed -> zd.parse(inc_text)
+            <- normalize_zm_doc(inc_parsed, base_dir)
+        }
+        <- Nothing
+    }
+    
+    <- item
+}
+
+/!
+  Interactive TUI Pager Mode (Flicker-free double-buffered renderer with alt screen).
+!/
+function run_interactive_pager(rendered_text, filename) {
+    let lines -> Str.split(rendered_text, `\n`)
+    let total_lines -> lines.length
+    let term_size -> term.get_size()
+    let term_h -> when (term_size != Nothing and term_size.has(`height`)) { term_size.height } or { 24 }
+    let term_w -> when (term_size != Nothing and term_size.has(`width`)) { term_size.width } or { 80 }
+    
+    term.alt_screen_enter()
+    term.raw_enter()
+    term.hide_cursor()
+    
+    let scroll_pos -> 0
+    let running -> True
+    let needs_redraw -> True
+    
+    do while running == True {
+        let curr_size -> term.get_size()
+        when curr_size != Nothing and curr_size.has(`height`) {
+            when curr_size.height != term_h or curr_size.width != term_w {
+                term_h -> curr_size.height
+                term_w -> curr_size.width
+                needs_redraw -> True
+            }
+        }
+        
+        let view_lines -> term_h - 1
+        when view_lines < 1 { view_lines -> 1 }
+        
+        when needs_redraw == True {
+            let end_idx -> scroll_pos + view_lines
+            when end_idx > total_lines { end_idx -> total_lines }
+            
+            // Single-frame double-buffer with cursor home (\x1b[H) to eliminate flicker
+            let frame -> `\x1b[H`
+            
+            let row -> 1
+            let li -> scroll_pos
+            do while li < end_idx and li < total_lines {
+                let ltext -> lines[li]
+                frame -> frame + ltext + `\x1b[K\r\n`
+                li -> li + 1
+                row -> row + 1
+            }
+            
+            do while row <= view_lines {
+                frame -> frame + `\x1b[K\r\n`
+                row -> row + 1
+            }
+            
+            // Status bar at bottom
+            let pct -> 100
+            when total_lines > view_lines {
+                pct -> (scroll_pos * 100) / (total_lines - view_lines)
+                when pct > 100 { pct -> 100 }
+            }
+            
+            let status -> ` [ZenView] ` + filename + ` | Lines: ` + Str.to_string(scroll_pos + 1) + `-` + Str.to_string(end_idx) + ` of ` + Str.to_string(total_lines) + ` (` + Str.to_string(pct) + `%) | [↑/k/↓/j/PgUp/PgDn] Scroll | [q] Quit `
+            frame -> frame + color.paint(status, color.hex(`#ffffff`), color.hex(`#3b82f6`)) + `\x1b[K`
+            
+            term.write(frame)
+            term.flush()
+            needs_redraw -> False
+        }
+        
+        let key_ev -> term.poll_key(50)
+        when key_ev != Nothing and key_ev.has(`kind`) and key_ev.kind != `none` {
+            let kname -> when (key_ev.has(`name`)) { key_ev.name } or { `` }
+            let kch -> when (key_ev.has(`ch`)) { key_ev.ch } or { `` }
+            
+            when kname == `escape` or kch == `q` or kch == `Q` {
+                running -> False
+            } or when kname == `down` or kch == `j` {
+                when scroll_pos + view_lines < total_lines {
+                    scroll_pos -> scroll_pos + 1
+                    needs_redraw -> True
+                }
+            } or when kname == `up` or kch == `k` {
+                when scroll_pos > 0 {
+                    scroll_pos -> scroll_pos - 1
+                    needs_redraw -> True
+                }
+            } or when kname == `page_down` or kch == ` ` {
+                let old_pos -> scroll_pos
+                scroll_pos -> scroll_pos + view_lines
+                when scroll_pos + view_lines > total_lines {
+                    scroll_pos -> total_lines - view_lines
+                }
+                when scroll_pos < 0 { scroll_pos -> 0 }
+                when scroll_pos != old_pos {
+                    needs_redraw -> True
+                }
+            } or when kname == `page_up` {
+                let old_pos -> scroll_pos
+                scroll_pos -> scroll_pos - view_lines
+                when scroll_pos < 0 { scroll_pos -> 0 }
+                when scroll_pos != old_pos {
+                    needs_redraw -> True
+                }
+            } or when kname == `home` or kch == `g` {
+                when scroll_pos != 0 {
+                    scroll_pos -> 0
+                    needs_redraw -> True
+                }
+            } or when kname == `end` or kch == `G` {
+                let max_scroll -> total_lines - view_lines
+                when max_scroll < 0 { max_scroll -> 0 }
+                when scroll_pos != max_scroll {
+                    scroll_pos -> max_scroll
+                    needs_redraw -> True
+                }
+            }
+        }
+    }
+    
+    term.show_cursor()
+    term.raw_exit()
+    term.alt_screen_exit()
+}
+
+function main() {
+    let args -> sys.get_args()
+    when args.length < 2 {
+        print_usage()
+        <- 1
+    }
+    
+    let interactive -> False
+    let target_file -> ``
+    
+    let ai -> 1
+    do while ai < args.length {
+        let a -> args[ai]
+        when a == `-i` or a == `--interactive` {
+            interactive -> True
+        } or when a == `-h` or a == `--help` {
+            print_usage()
+            <- 0
+        } or when not Str.starts_with(a, `-`) {
+            target_file -> a
+        }
+        ai -> ai + 1
+    }
+    
+    when target_file == `` {
+        io.writeln(`[ERROR] No .zm file specified.`)
+        print_usage()
+        <- 1
+    }
+    
+    when not file.exists(target_file) {
+        io.writeln(`[ERROR] File not found: ` + target_file)
+        <- 1
+    }
+    
+    let raw_text -> file.read(target_file)
+    let parsed_zd -> zd.parse(raw_text)
+    
+    let base_dir -> path.dirname(target_file)
+    let doc_dom -> normalize_zm_doc(parsed_zd, base_dir)
+    let term_rendered -> zm.render_term(doc_dom)
+    
+    when interactive == True {
+        run_interactive_pager(term_rendered, target_file)
+    } or {
+        io.writeln(term_rendered)
+    }
+    
+    <- 0
+}

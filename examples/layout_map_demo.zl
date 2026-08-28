@@ -1,0 +1,103 @@
+/!
+  Dual-path map-based layout + canvas demo (no class layout).
+
+  Run:
+    python3 bootstrap/Zen.py examples/layout_map_demo.zl
+    python3 bootstrap/Zen.py -g examples/layout_map_demo.zl
+!/
+
+use zen.ui.layout as layout
+use zen.ui.canvas as canvas
+use zen.sys.term as term
+use zen.sys.process as process
+use zen.text.string as Str
+
+function build_ui(w, h) {
+    let root -> layout.vbox()
+    let header -> layout.box(w, 1)
+    let mid -> layout.hbox()
+    layout.set_expand(mid, true)
+    let side -> layout.box(12, 0)
+    layout.set_size(side, 12, 0)
+    let body -> layout.box(0, 0)
+    layout.set_expand(body, true)
+    layout.add(mid, side)
+    layout.add(mid, body)
+    let footer -> layout.box(w, 1)
+    layout.add(root, header)
+    layout.add(root, mid)
+    layout.add(root, footer)
+    layout.layout(root, 0, 0, w, h)
+    <- {
+        `root` -> root,
+        `header` -> header,
+        `side` -> side,
+        `body` -> body,
+        `footer` -> footer
+    }
+}
+
+function paint(ui, frame) {
+    let h -> ui[`header`]
+    let s -> ui[`side`]
+    let b -> ui[`body`]
+    let f -> ui[`footer`]
+    let w -> h[`w`] + 0
+    // canvas size from root
+    let root -> ui[`root`]
+    let c -> canvas.create(root[`w`], root[`h`])
+    canvas.clear(c, ` `, `white`, `black`)
+    canvas.fill_node(c, h, ` `, `black`, `cyan`)
+    canvas.text_node(c, h, ` Zenlang Layout (map API) `, `black`, `cyan`)
+    canvas.fill_node(c, s, ` `, `white`, `blue`)
+    canvas.text_node(c, s, ` Menu `, `bright_white`, `blue`)
+    canvas.fill_node(c, b, `.`, `bright_black`, `black`)
+    canvas.text_node(c, b, `Frame ` + Str.to_string(frame) + `  (q quit)`, `yellow`, `black`)
+    canvas.fill_node(c, f, ` `, `black`, `white`)
+    canvas.text_node(c, f, ` dual-path canvas+layout `, `black`, `white`)
+    canvas.render(c)
+}
+
+function main() {
+    // Non-interactive smoke: one paint then exit (CI-friendly)
+    // Interactive: set ZEN_LAYOUT_INTERACTIVE=1
+    let interactive -> process.shell_env({}, `printenv ZEN_LAYOUT_INTERACTIVE || true`)
+    let size -> term.get_size()
+    let w -> size[`width`]
+    let h -> size[`height`]
+    when w < 20 { w -> 40 }
+    when h < 8 { h -> 12 }
+
+    term.alt_screen_enter()
+    term.hide_cursor()
+
+    let ui -> build_ui(w, h)
+    paint(ui, 0)
+
+    when Str.contains(Str.trim(interactive), `1`) {
+        term.raw_enter()
+        let running -> true
+        let frame -> 0
+        do while running {
+            let k -> term.poll_key(100)
+            when k[`kind`] == `char` and k[`ch`] == `q` {
+                running -> false
+            } or when k[`name`] == `ctrl_c` {
+                running -> false
+            }
+            frame -> frame + 1
+            when frame % 5 == 0 {
+                paint(ui, frame)
+            }
+        }
+        term.raw_exit()
+    } or {
+        // brief pause so a human can see one frame when run by hand
+        process.shell(`sleep 0.3`)
+    }
+
+    term.show_cursor()
+    term.alt_screen_exit()
+    term.reset()
+    <- 0
+}

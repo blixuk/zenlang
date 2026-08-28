@@ -1,0 +1,31 @@
+import zen.io.io as io
+import zen.memory as memory
+
+function zen_entry() {
+    let arena -> memory.Arena(1024)
+    
+    io.write_line("Writing to memory...")
+    arena.write_byte(0, 72)  // 'H'
+    arena.write_byte(1, 101) // 'e'
+    arena.write_byte(2, 108) // 'l'
+    arena.write_byte(3, 108) // 'l'
+    arena.write_byte(4, 111) // 'o'
+    
+    io.write_line("Reading from memory:")
+    io.write(arena.read_byte(0))
+    io.write(arena.read_byte(1))
+    io.write(arena.read_byte(2))
+    io.write(arena.read_byte(3))
+    io.write_line(arena.read_byte(4))
+    
+    io.write_line("Writing word (32-bit): 0xDEADBEEF")
+    arena.write_word(10, 3735928559) // 0xDEADBEEF
+    let val -> arena.read_word(10)
+    io.write_line("Read word: " + val)
+    
+    when val = 3735928559 {
+        io.write_line("[SUCCESS] Memory test passed.")
+    } or {
+        io.write_line("[FAILURE] Memory test failed.")
+    }
+}

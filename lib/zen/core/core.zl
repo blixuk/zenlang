@@ -1,0 +1,256 @@
+/!
+    The core prelude module for Zenlang.
+    Contains essential types and utilities for error handling, structural data, and functional combinators.
+!/
+
+/!
+    Represents an optional value that may or may not be present.
+    @variant Something(value) The value is present.
+    @variant Nothing The value is absent.
+!/
+enumerator Option {
+    Something(value),
+    Nothing
+}
+
+/!
+    Represents the result of an operation that can either succeed or fail.
+    @variant Ok(value) The operation succeeded with a value.
+    @variant Error(message) The operation failed with an error message.
+!/
+enumerator Result {
+    Ok(value),
+    Error(message)
+}
+
+/!
+    Represents the comparison outcome of two values.
+    @variant Less The first value is less than the second.
+    @variant Equal The two values are equal.
+    @variant Greater The first value is greater than the second.
+!/
+enumerator Ordering {
+    Less,
+    Equal,
+    Greater
+}
+
+/!
+    Forcefully extracts the value from an Option or Result.
+    Raises an error if the value is absent or represents a failure.
+    @param container The Option or Result to unwrap.
+    @return The internal value if present.
+!/
+function unwrap(container) {
+    when container {
+        is Option.Something(value) { <- value }
+        is Option.Nothing { raise `Unwrap failed: Option is Nothing` }
+        is Result.Ok(value) { <- value }
+        is Result.Error(message) { raise `Unwrap failed: ` + message }
+        or { raise `Unwrap failed: Not an Option or Result container` }
+    }
+}
+
+/!
+    Extracts the value from an Option or Result, or returns a Default value.
+    @param container The Option or Result to inspect.
+    @param default_value The value to return if the container is empty or an error.
+    @return The internal value or the Default value.
+!/
+function unwrap_or(container, default_value) {
+    when container {
+        is Option.Something(value) { <- value }
+        is Result.Ok(value) { <- value }
+        or { <- default_value }
+    }
+}
+
+/!
+    Extracts the value from an Option or Result, raising a custom error message on failure.
+    @param container The Option or Result to inspect.
+    @param message The error message to raise if the container is empty or an error.
+    @return The internal value.
+!/
+function expect(container, message) {
+    when container {
+        is Option.Something(value) { <- value }
+        is Result.Ok(value) { <- value }
+        or { raise message }
+    }
+}
+
+/!
+    Checks if a Result represents a successful outcome.
+    @param result The Result container to check.
+    @return True if the result is Ok, False otherwise.
+!/
+function is_ok(result) {
+    when result is Result.Ok(_) { <- true }
+    or { <- false }
+}
+
+/!
+    Checks if a Result represents a failure.
+    @param result The Result container to check.
+    @return True if the result is Error, False otherwise.
+!/
+function is_error(result) {
+    when result is Result.Error(_) { <- true }
+    or { <- false }
+}
+
+/!
+    Checks if an Option contains a value.
+    @param option The Option container to check.
+    @return True if the option is Something, False otherwise.
+!/
+function is_something(option) {
+    when option is Option.Something(_) { <- true }
+    or { <- false }
+}
+
+/!
+    Checks if an Option is empty.
+    @param option The Option container to check.
+    @return True if the option is Nothing, False otherwise.
+!/
+function is_nothing(option) {
+    when option is Option.Nothing { <- true }
+    or { <- false }
+}
+
+/!
+    Transforms the value inside an Option or Result using the provided mapping function.
+    Leaves Option.Nothing and Result.Error untouched.
+    @param container The Option or Result to map.
+    @param fn The mapping function to apply to the contained value.
+    @return A new Option or Result with the mapped value.
+!/
+function map(container, fn) {
+    when container {
+        is Option.Something(value) { <- Option.Something(fn(value)) }
+        is Option.Nothing { <- Option.Nothing }
+        is Result.Ok(value) { <- Result.Ok(fn(value)) }
+        is Result.Error(message) { <- Result.Error(message) }
+        or { raise `map: Invalid container` }
+    }
+}
+
+/!
+    Transforms the error message inside a Result using the provided mapping function.
+    Leaves Result.Ok untouched.
+    @param result The Result to map.
+    @param fn The mapping function to apply to the error message.
+    @return A new Result with the mapped error or original Ok value.
+!/
+function map_error(result, fn) {
+    when result {
+        is Result.Ok(value) { <- Result.Ok(value) }
+        is Result.Error(message) { <- Result.Error(fn(message)) }
+        or { raise `map_error: Not a Result` }
+    }
+}
+
+/!
+    Monadic chain: Applies a function returning an Option or Result to the contained value.
+    Leaves Option.Nothing and Result.Error untouched.
+    @param container The Option or Result container.
+    @param fn A function taking the contained value and returning an Option or Result.
+    @return The Result/Option returned by fn, or the unchanged empty/error container.
+!/
+function map_flat(container, fn) {
+    when container {
+        is Option.Something(value) { <- fn(value) }
+        is Option.Nothing { <- Option.Nothing }
+        is Result.Ok(value) { <- fn(value) }
+        is Result.Error(message) { <- Result.Error(message) }
+        or { raise `map_flat: Invalid container` }
+    }
+}
+
+/!
+    Filters an Option: returns Option.Something(value) if predicate(value) is true,
+    otherwise returns Option.Nothing.
+    @param option The Option to filter.
+    @param predicate A predicate function returning Boolean.
+    @return Option.Something(value) if predicate holds, else Option.Nothing.
+!/
+function filter(option, predicate) {
+    when option {
+        is Option.Something(value) {
+            when predicate(value) { <- Option.Something(value) }
+            or { <- Option.Nothing }
+        }
+        is Option.Nothing { <- Option.Nothing }
+        or { raise `filter: Not an Option` }
+    }
+}
+
+/!
+    Converts an Option into a Result, using the provided error message if Nothing.
+    @param option The Option to convert.
+    @param error_message The error message to use if option is Nothing.
+    @return Result.Ok(value) if present, or Result.Error(error_message).
+!/
+function to_result(option, error_message) {
+    when option {
+        is Option.Something(value) { <- Result.Ok(value) }
+        is Option.Nothing { <- Result.Error(error_message) }
+        or { raise `to_result: Not an Option` }
+    }
+}
+
+/!
+    Converts a Result into an Option, discarding the error message if Error.
+    @param result The Result to convert.
+    @return Option.Something(value) if Ok, or Option.Nothing if Error.
+!/
+function to_option(result) {
+    when result {
+        is Result.Ok(value) { <- Option.Something(value) }
+        is Result.Error(_) { <- Option.Nothing }
+        or { raise `to_option: Not a Result` }
+    }
+}
+
+/!
+    Wraps a raw value into an Option: Option.Nothing if value is Nothing,
+    otherwise Option.Something(value).
+    @param value The value to wrap.
+    @return Option.Nothing if value == Nothing, else Option.Something(value).
+!/
+function from_value(value) {
+    when value == Nothing { <- Option.Nothing }
+    or { <- Option.Something(value) }
+}
+
+/!
+    Unwraps an Option into a raw value or Nothing.
+    @param option The Option to unwrap.
+    @return The internal value if Option.Something, or Nothing if Option.Nothing.
+!/
+function to_value(option) {
+    when option is Option.Something(value) { <- value }
+    or { <- Nothing }
+}
+
+/!
+    Compares two values and returns an Ordering variant.
+    @param a The first value.
+    @param b The second value.
+    @return Ordering.Less if a < b, Ordering.Greater if a > b, Ordering.Equal otherwise.
+!/
+function compare(a, b) {
+    when a < b { <- Ordering.Less }
+    when a > b { <- Ordering.Greater }
+    or { <- Ordering.Equal }
+}
+
+/!
+    Returns the passed argument unchanged.
+    @param x The value to return.
+    @return The value x.
+!/
+function identity(x) {
+    <- x
+}

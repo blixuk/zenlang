@@ -1,0 +1,189 @@
+/!
+    Zenlang Code Formatter (zenfmt).
+    Enforces canonical Zenlang code style, indentation, and data flow formatting.
+!/
+
+use zen.io.io as io
+use zen.io.file as file
+use zen.io.path as path
+use zen.sys.sys as sys
+use zen.text.string as Str
+
+function s_len(s) {
+    when s == Nothing { <- 0 }
+    <- Str.length(s)
+}
+
+function s_spaces(count) {
+    when count <= 0 { <- `` }
+    <- Str.repeat(` `, count)
+}
+
+function s_slice(s, start, end) {
+    let n -> s_len(s)
+    when start < 0 { start -> 0 }
+    when end > n { end -> n }
+    when start >= end { <- `` }
+    <- Str.substring(s, start, end)
+}
+
+function format_line(raw_line, indent_level) {
+    let trimmed -> Str.trim(raw_line)
+    when trimmed == `` { <- `` }
+
+    // Preserve comments and docblocks
+    when Str.starts_with(trimmed, `//`) or Str.starts_with(trimmed, `/!`) or Str.starts_with(trimmed, `!/`) or Str.starts_with(trimmed, `*`) {
+        <- s_spaces(indent_level * 4) + trimmed
+    }
+
+    let out -> s_spaces(indent_level * 4) + trimmed
+    <- out
+}
+
+function format_source(source_text) {
+    when source_text == Nothing { <- `` }
+    let raw_lines -> Str.split(source_text, `\n`)
+    let formatted_lines -> []
+    let indent -> 0
+    let in_docblock -> false
+    let consecutive_empty -> 0
+
+    let i -> 0
+    do while i < raw_lines.length {
+        let line -> raw_lines[i]
+        let trimmed -> Str.trim(line)
+
+        when trimmed == `` {
+            when consecutive_empty < 1 and not in_docblock {
+                formatted_lines.append(``)
+                consecutive_empty -> 0 + consecutive_empty + 1
+            }
+            i -> 0 + i + 1
+            continue
+        }
+        consecutive_empty -> 0
+
+        // Handle docblocks /! ... !/
+        when Str.starts_with(trimmed, `/!`) {
+            in_docblock -> true
+            formatted_lines.append(s_spaces(indent * 4) + trimmed)
+            i -> 0 + i + 1
+            continue
+        }
+        when Str.ends_with(trimmed, `!/`) or trimmed == `!/` {
+            in_docblock -> false
+            formatted_lines.append(s_spaces(indent * 4) + trimmed)
+            i -> 0 + i + 1
+            continue
+        }
+        when in_docblock {
+            formatted_lines.append(s_spaces((indent * 4) + 2) + trimmed)
+            i -> 0 + i + 1
+            continue
+        }
+
+        // Adjust indent for closing braces
+        let starts_with_close -> Str.starts_with(trimmed, `}`) or Str.starts_with(trimmed, `)`) or Str.starts_with(trimmed, `]`)
+        when starts_with_close and indent > 0 {
+            indent -> 0 + indent - 1
+        }
+
+        // Format line
+        let f_line -> s_spaces(indent * 4) + trimmed
+        formatted_lines.append(f_line)
+
+        // Adjust indent for opening braces
+        let ends_with_open -> Str.ends_with(trimmed, `{`) or Str.ends_with(trimmed, `(`) or Str.ends_with(trimmed, `[`)
+        when ends_with_open {
+            indent -> 0 + indent + 1
+        }
+
+        i -> 0 + i + 1
+    }
+
+    <- Str.join(formatted_lines, `\n`) + `\n`
+}
+
+function format_file_path(file_path, write_mode, check_mode) {
+    let content -> file.read(file_path)
+    when content == Nothing {
+        io.error(`Error reading file: ` + file_path)
+        <- 1
+    }
+
+    let formatted -> format_source(content)
+
+    when check_mode {
+        when content != formatted {
+            io.writeln(`[UNFORMATTED] ` + file_path)
+            <- 1
+        }
+        <- 0
+    }
+
+    when write_mode {
+        when content != formatted {
+            file.write(file_path, formatted)
+            io.writeln(`[FORMATTED] ` + file_path)
+        }
+        <- 0
+    }
+
+    // Default: print to stdout
+    io.write(formatted)
+    <- 0
+}
+
+function print_usage() {
+    io.writeln(`Zenlang Code Formatter (zenfmt)`)
+    io.writeln(``)
+    io.writeln(`Usage:`)
+    io.writeln(`  zenfmt <file.zl>            Format and print to stdout`)
+    io.writeln(`  zenfmt -w <file.zl...>      Format files in-place`)
+    io.writeln(`  zenfmt --check <file.zl...> Check formatting (exits 1 if unformatted)`)
+    io.writeln(`  zenfmt -h, --help           Show this help message`)
+}
+
+function main(args) {
+    when args == Nothing or args.length == 0 {
+        print_usage()
+        <- 0
+    }
+
+    let write_mode -> false
+    let check_mode -> false
+    let files -> []
+
+    let i -> 0
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `-w` or arg == `--write` {
+            write_mode -> true
+        } or when arg == `--check` {
+            check_mode -> true
+        } or when arg == `-h` or arg == `--help` {
+            print_usage()
+            <- 0
+        } or {
+            files.append(arg)
+        }
+        i -> 0 + i + 1
+    }
+
+    when files.length == 0 {
+        print_usage()
+        <- 0
+    }
+
+    let exit_code -> 0
+    i -> 0
+    do while i < files.length {
+        let res -> format_file_path(files[i], write_mode, check_mode)
+        when res != 0 {
+            exit_code -> res
+        }
+        i -> 0 + i + 1
+    }
+
+    <- exit_code
+}

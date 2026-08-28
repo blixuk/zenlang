@@ -1,0 +1,181 @@
+import zen.test.test as test
+import zen.util.profile as profile
+import zen.tooling.profiler as profiler
+import zen.io.file as file
+import zen.text.string as Str
+
+function test_profiler_basic_start_stop() {
+    let p -> profile.create_profiler()
+    test.assert_true(p[`is_active`], `profiler active initially`)
+    test.assert_equal(p[`total_calls`], 0, `initial call count is 0`)
+
+    profile.profile_start(p, `compute_task_a`)
+    let sum -> 0
+    do for i in 0..100 {
+        sum -> sum + i
+    }
+    let elapsed -> profile.profile_stop(p, `compute_task_a`)
+
+    test.assert_true(elapsed >= 0.0, `elapsed time non-negative`)
+    test.assert_equal(p[`total_calls`], 1, `1 call recorded`)
+    test.assert_true(p[`entries`].has(`compute_task_a`), `entry compute_task_a exists`)
+    test.assert_equal(p[`entries`][`compute_task_a`][`call_count`], 1, `call count for task_a is 1`)
+
+    <- true
+}
+
+function test_profiler_scoped_and_wrap() {
+    let p -> profile.create_profiler()
+
+    // 1. profile_scoped
+    let calc_fn -> function() { <- 84 }
+    let res -> profile.profile_scoped(p, `scoped_calc`, calc_fn)
+    test.assert_equal(res, 84, `scoped returns computation result`)
+    test.assert_equal(p[`entries`][`scoped_calc`][`call_count`], 1, `scoped_calc called once`)
+
+    // 2. Multiple scoped calls
+    let add_fn -> function() { <- 30 }
+    let r1 -> profile.profile_scoped(p, `wrapped_add_fn`, add_fn)
+    let r2 -> profile.profile_scoped(p, `wrapped_add_fn`, add_fn)
+    test.assert_equal(r1, 30, `call 1 result`)
+    test.assert_equal(r2, 30, `call 2 result`)
+    test.assert_equal(p[`entries`][`wrapped_add_fn`][`call_count`], 2, `wrapped_add called twice`)
+
+    <- true
+}
+
+function test_profiler_nested_self_time() {
+    let p -> profile.create_profiler()
+
+    let child1_fn -> function() {
+        let x -> 0
+        let i -> 0
+        do while i < 50 {
+            x -> x + 1
+            i -> i + 1
+        }
+        <- x
+    }
+    let child2_fn -> function() {
+        let y -> 0
+        let j -> 0
+        do while j < 50 {
+            y -> y + 1
+            j -> j + 1
+        }
+        <- y
+    }
+
+    profile.profile_start(p, `outer_function`)
+    profile.profile_scoped(p, `inner_child_1`, child1_fn)
+    profile.profile_scoped(p, `inner_child_2`, child2_fn)
+    profile.profile_stop(p, `outer_function`)
+
+    let summary -> profile.profile_summary(p)
+    test.assert_equal(summary[`total_calls`], 3, `3 total calls recorded`)
+
+    let outer_stat -> p[`entries`][`outer_function`]
+    let child1_stat -> p[`entries`][`inner_child_1`]
+    let child2_stat -> p[`entries`][`inner_child_2`]
+
+    test.assert_true(outer_stat[`total_time_ms`] >= (child1_stat[`total_time_ms`] + child2_stat[`total_time_ms`]), `outer total time includes child times`)
+    test.assert_true(outer_stat[`self_time_ms`] >= 0.0, `outer self time non-negative`)
+
+    <- true
+}
+
+function test_profiler_summary_and_tree() {
+    let p -> profile.create_profiler()
+
+    let sub_a -> function() { <- 1 }
+    let sub_b -> function() { <- 2 }
+
+    profile.profile_start(p, `root_task`)
+    profile.profile_scoped(p, `sub_task_a`, sub_a)
+    profile.profile_scoped(p, `sub_task_b`, sub_b)
+    profile.profile_stop(p, `root_task`)
+
+    let summary -> profile.profile_summary(p)
+    test.assert_true(summary[`total_duration_ms`] >= 0.0, `summary total duration valid`)
+    test.assert_equal(summary[`entries`].length, 3, `3 entries in summary`)
+
+    // Verify tree structure
+    let root_node -> profile.profile_tree(p)
+    test.assert_equal(root_node[`label`], `root`, `root node label`)
+    test.assert_true(root_node[`children`].length > 0, `root node has children`)
+
+    let first_child -> root_node[`children`][0]
+    test.assert_equal(first_child[`label`], `root_task`, `first child is root_task`)
+    test.assert_equal(first_child[`children`].length, 2, `root_task has 2 sub-tasks`)
+    test.assert_equal(first_child[`children`][0][`label`], `sub_task_a`, `sub_task_a child`)
+    test.assert_equal(first_child[`children`][1][`label`], `sub_task_b`, `sub_task_b child`)
+
+    <- true
+}
+
+function test_profiler_visualizers() {
+    let p -> profile.create_profiler()
+
+    let mat_fn -> function() {
+        let acc -> 0
+        let k -> 0
+        do while k < 100 {
+            acc -> acc + (k * k)
+            k -> k + 1
+        }
+        <- acc
+    }
+    let vec_fn -> function() {
+        let acc -> 0
+        let m -> 0
+        do while m < 50 {
+            acc -> acc + m
+            m -> m + 1
+        }
+        <- acc
+    }
+
+    profile.profile_scoped(p, `matrix_multiply`, mat_fn)
+    profile.profile_scoped(p, `vector_normalize`, vec_fn)
+
+    let summary -> profile.profile_summary(p)
+
+    // 1. Table Formatter
+    let table_output -> profiler.format_hotspots_table(summary, 10)
+    test.assert_true(Str.contains(table_output, `HOT SPOTS`), `table contains header`)
+    test.assert_true(Str.contains(table_output, `matrix_multiply`), `table contains matrix_multiply`)
+    test.assert_true(Str.contains(table_output, `vector_normalize`), `table contains vector_normalize`)
+
+    // 2. Flame Tree Formatter
+    let tree_root -> profile.profile_tree(p)
+    let tree_output -> profiler.format_flame_tree(tree_root, 5)
+    test.assert_true(Str.contains(tree_output, `FLAME HIERARCHY`), `tree contains header`)
+    test.assert_true(Str.contains(tree_output, `matrix_multiply`), `tree contains matrix_multiply`)
+
+    // 3. HTML Flame Graph Generator
+    let temp_html -> `/tmp/zen_test_profile_report.html`
+    let generated_path -> profiler.generate_html_report(summary, `Zen Test Profile`, temp_html)
+    test.assert_equal(generated_path, temp_html, `generated path matches`)
+    test.assert_true(file.exists(temp_html), `HTML report file created on disk`)
+
+    let html_content -> file.read(temp_html)
+    test.assert_true(Str.contains(html_content, `Interactive Flame Graph`), `HTML contains flame graph title`)
+    test.assert_true(Str.contains(html_content, `matrix_multiply`), `HTML contains matrix_multiply entry`)
+    test.assert_true(Str.contains(html_content, `flameCanvas`), `HTML contains canvas element`)
+
+    <- true
+}
+
+function main() {
+    let suite -> [
+        { `name` -> `test_profiler_basic_start_stop`, `fn` -> test_profiler_basic_start_stop },
+        { `name` -> `test_profiler_scoped_and_wrap`, `fn` -> test_profiler_scoped_and_wrap },
+        { `name` -> `test_profiler_nested_self_time`, `fn` -> test_profiler_nested_self_time },
+        { `name` -> `test_profiler_summary_and_tree`, `fn` -> test_profiler_summary_and_tree },
+        { `name` -> `test_profiler_visualizers`, `fn` -> test_profiler_visualizers }
+    ]
+
+    let ok -> test.run_suite(`Zenlang Profiler & Performance Visualizer Suite`, suite)
+    when ok { <- 0 }
+    <- 1
+}

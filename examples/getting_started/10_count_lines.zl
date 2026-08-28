@@ -1,0 +1,45 @@
+/!
+  10 — Count lines in a file (mini CLI)
+
+  Run:
+    ./bin/zen examples/getting_started/10_count_lines.zl examples/getting_started/README.md
+    ./bin/zen -g examples/getting_started/10_count_lines.zl README.md
+
+  Learn: file.exists / file.read, pure helper + main, usage + exit codes.
+!/
+
+import zen.sys.sys as Sys
+import zen.io.io as io
+import zen.io.file as file
+import zen.text.string as Str
+
+function count_lines(text) {
+    when text == `` {
+        <- 0
+    }
+    let lines -> Str.split(text, `\n`)
+    <- lines.length
+}
+
+function usage() {
+    io.writeln(`usage: 10_count_lines.zl <file>`)
+}
+
+function main() {
+    let args -> Sys.get_args()
+    when args.length < 2 {
+        usage()
+        <- 1
+    }
+
+    let path -> Str.to_string(args[1])
+    when not file.exists(path) {
+        io.writeln(`not found: ` + path)
+        <- 1
+    }
+
+    let text -> file.read(path)
+    let n -> count_lines(text)
+    io.writeln(path + `: ` + Str.to_string(n) + ` lines`)
+    <- 0
+}

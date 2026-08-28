@@ -1,0 +1,65 @@
+import zen.data.csv as csv
+import zen.test as test
+
+function test_parse_basic() {
+    let data -> `name,age,city\nAlice,30,New York\nBob,25,London`
+    let rows -> csv.parse(data, `,`)
+    
+    let pass -> test.assert_equal(rows.length, 3, `parse should return 3 rows`)
+    pass -> pass and test.assert_equal(rows[0][0], `name`, `first header should be name`)
+    pass -> pass and test.assert_equal(rows[1][1], `30`, `Alice's age should be 30`)
+    pass -> pass and test.assert_equal(rows[2][2], `London`, `Bob's city should be London`)
+    <- pass
+}
+
+function test_parse_with_quotes() {
+    let data -> `id,description\n1,"Hello, World!"\n2,"She said ""Hi"" to him"`
+    let rows -> csv.parse(data, `,`)
+    
+    let pass -> test.assert_equal(rows.length, 3, `parse with quotes should return 3 rows`)
+    pass -> pass and test.assert_equal(rows[1][1], `Hello, World!`, `comma inside quotes should not split field`)
+    pass -> pass and test.assert_equal(rows[2][1], `She said "Hi" to him`, `double quotes should be unescaped`)
+    <- pass
+}
+
+function test_parse_with_headers() {
+    let data -> `name,age\nAlice,30\nBob,25`
+    let rows -> csv.parse_with_headers(data, `,`)
+    
+    let pass -> test.assert_equal(rows.length, 2, `parse_with_headers should return 2 map rows`)
+    pass -> pass and test.assert_equal(rows[0][`name`], `Alice`, `map should have Alice`)
+    pass -> pass and test.assert_equal(rows[0][`age`], `30`, `map should have 30`)
+    pass -> pass and test.assert_equal(rows[1][`name`], `Bob`, `map should have Bob`)
+    <- pass
+}
+
+function test_stringify() {
+    let rows -> [
+        [`name`, `status`],
+        [`Alice`, `active`],
+        [`Bob`, `inactive, pending`]
+    ]
+    let str -> csv.stringify(rows, `,`)
+    
+    let expected -> `name,status\nAlice,active\nBob,"inactive, pending"`
+    <- test.assert_equal(str, expected, `stringify should quote fields containing delimiter`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Csv.parse_basic`, `fn` -> test_parse_basic},
+        {`name` -> `Csv.parse_with_quotes`, `fn` -> test_parse_with_quotes},
+        {`name` -> `Csv.parse_with_headers`, `fn` -> test_parse_with_headers},
+        {`name` -> `Csv.stringify`, `fn` -> test_stringify}
+    ]
+
+    <- test.run_suite(`CSV Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

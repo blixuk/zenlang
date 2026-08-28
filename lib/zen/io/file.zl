@@ -1,0 +1,519 @@
+/!
+ File operations module.
+ Provides functions for interacting with the file system.
+ !/
+
+import zen.text.string as Str
+import zen.io.path as path
+
+/!
+ Represents an open file stream.
+ !/
+class File {
+    let _instance
+    let _path
+    let _mode
+
+    /!
+     Initializes a file reference.
+     @param path The path to the file.
+     @param mode The open mode ('r', 'w', 'a').
+     !/
+    function init(path, mode) {
+        self._path -> path
+        self._mode -> mode
+        self._instance -> Nothing
+    }
+
+    /!
+     Opens the file.
+     !/
+    function open() {
+        self._instance -> __builtin_file.open(self._path, self._mode)
+    }
+
+    /!
+     Reads the content of the file.
+     @return The file content as a string.
+     !/
+    function read() {
+        when self._instance == Nothing { raise `FileNotOpen` }
+        <- self._instance.read()
+    }
+
+    /!
+     Writes content to the file.
+     @param content The content to write.
+     !/
+    function write(content) {
+        when self._instance == Nothing { raise `FileNotOpen` }
+        self._instance.write(content)
+    }
+
+    /!
+     Closes the file.
+     !/
+    function close() {
+        when self._instance == Nothing { raise `FileNotOpen` }
+        self._instance.close()
+        self._instance -> Nothing
+    }
+}
+
+/!
+ Reads the entire content of a file.
+ @param path The path to the file.
+ @return The content of the file as a string.
+ @example
+ let text -> file.read(`config.json`)
+ !/
+function read(path) {
+    <- __builtin_file.read(path)
+}
+
+/!
+ Reads a file and returns its content as a list of lines.
+ @param path The path to the file.
+ @return A list of strings representing the lines.
+ !/
+function read_lines(path) {
+    // Call the builtin directly so native codegen cannot bind bare `read`
+    // to zen.io's stdin reader when modules are merged.
+    let content -> __builtin_file.read(path)
+    <- Str.split(content, `\n`)
+}
+
+/!
+ Writes content to a file, overwriting its current content.
+ @param path The path to the file.
+ @param content The content to write.
+!/
+function write(path, content) {
+    <- __builtin_file.write(path, content)
+}
+
+/!
+ Writes raw bytes (list of integers 0-255) to a file.
+ @param path The path to the file.
+ @param bytes The list of integers to write.
+ !/
+function write_bytes(path, bytes) {
+    <- __builtin_file.write_bytes(path, bytes)
+}
+
+/!
+ Writes a list of strings to a file as separate lines.
+ @param path The path to the file.
+ @param lines The list of strings to write.
+ !/
+function write_lines(path, lines) {
+    let content -> Str.join(lines, `\n`)
+    // Prefer builtin to avoid `write` → io_write mangling under -g
+    __builtin_file.write(path, content)
+}
+
+/!
+ Appends content to the end of a file.
+ @param path The path to the file.
+ @param content The content to append.
+!/
+function append(path, content) {
+    <- __builtin_file.append(path, content)
+}
+
+/!
+ Checks if a file or directory exists at the given path.
+ @param path The path to check.
+ @return True if it exists, False otherwise.
+!/
+function exists(path) {
+    <- __builtin_file.exists(path)
+}
+
+/!
+ Removes a file or directory.
+ @param path The path to remove.
+!/
+function remove(path) {
+    <- __builtin_file.remove(path)
+}
+
+/!
+ Checks if the given path is a file.
+ @param path The path to check.
+ @return True if it's a file, False otherwise.
+!/
+function is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+/!
+ Checks if the given path is a directory.
+ @param path The path to check.
+ @return True if it's a directory, False otherwise.
+!/
+function is_dir(path) {
+    <- __builtin_file.is_dir(path)
+}
+
+/!
+ Sort a list of strings ascending (insertion sort; dual-path safe).
+ @param names List of strings.
+ @return New sorted list.
+ !/
+function sort_names(names) {
+    let out -> []
+    let i -> 0
+    do while i < names.length {
+        out.append(names[i])
+        i -> i + 1
+    }
+    let n -> out.length
+    let a -> 1
+    do while a < n {
+        let key -> out[a]
+        let b -> a - 1
+        do while b >= 0 {
+            // string compare via inequality (works dual-path)
+            when out[b] > key {
+                out[b + 1] -> out[b]
+                b -> b - 1
+            } or {
+                break
+            }
+        }
+        out[b + 1] -> key
+        a -> a + 1
+    }
+    <- out
+}
+
+/!
+ Lists the contents of a directory (names only; no `.` / `..`).
+ Returns `[]` if the path is missing or not a directory.
+ Order is sorted ascending for dual-path stability.
+ @param dir_path The path to the directory.
+ @return A list of entry name strings.
+ @example
+ let items -> file.list_dir(`.`)
+ do for item in items {
+     io.writeln(item)
+ }
+ !/
+function list_dir(dir_path) {
+    let names -> __builtin_file.list_dir(dir_path)
+    when names == Nothing { <- [] }
+    // Defensive: native always returns List; empty on failure
+    when names.length == 0 { <- names }
+    <- sort_names(names)
+}
+
+/!
+ Create a single directory (not parents). Idempotent if path is already a dir.
+ @param dir_path Directory path.
+ @return True on success.
+ !/
+function mkdir(dir_path) {
+    <- __builtin_file.mkdir(dir_path)
+}
+
+/!
+ Create a directory and any missing parents (`mkdir -p`).
+ @param dir_path Directory path.
+ @return True on success.
+ !/
+function mkdir_p(dir_path) {
+    <- __builtin_file.mkdir_p(dir_path)
+}
+
+/!
+  Create a directory and any missing parents (alias for mkdir_p).
+  @param dir_path Directory path.
+  @return True on success.
+!/
+function make_dirs(dir_path) {
+    <- mkdir_p(dir_path)
+}
+
+/!
+ Copy a regular file (read + write). Overwrites destination.
+ @param src Source path.
+ @param dst Destination path.
+ @return True when source was a file and destination exists as a file.
+ !/
+function copy(src, dst) {
+    // Use __builtin_file.* for read/write — bare `read`/`write` can mangle to
+    // zen.io stdin helpers when both modules are linked under -g.
+    when __builtin_file.exists(src) == false { <- false }
+    when __builtin_file.is_dir(src) { <- false }
+    let content -> __builtin_file.read(src)
+    __builtin_file.write(dst, content)
+    <- __builtin_file.is_file(dst)
+}
+
+/!
+ List immediate subdirectory names under `dir_path` (not recursive).
+ @param dir_path Directory path.
+ @return Sorted list of subdirectory names.
+ !/
+function list_dirs(dir_path) {
+    let out -> []
+    when is_dir(dir_path) == false { <- out }
+    let names -> list_dir(dir_path)
+    let i -> 0
+    do while i < names.length {
+        let name -> names[i]
+        i -> i + 1
+        let full -> path.join(dir_path, name)
+        when is_dir(full) {
+            out.append(name)
+        }
+    }
+    <- out
+}
+
+/!
+ List immediate regular file names under `dir_path` (not recursive).
+ @param dir_path Directory path.
+ @return Sorted list of file names.
+ !/
+function list_file_names(dir_path) {
+    let out -> []
+    when is_dir(dir_path) == false { <- out }
+    let names -> list_dir(dir_path)
+    let i -> 0
+    do while i < names.length {
+        let name -> names[i]
+        i -> i + 1
+        let full -> path.join(dir_path, name)
+        when is_file(full) {
+            out.append(name)
+        }
+    }
+    <- out
+}
+
+/!
+ Recursively walk a directory tree (iterative; native-safe).
+
+ For each entry under `root` (not including `root` itself), calls
+ `fn(full_path, is_directory)`. Directories are visited before their children.
+
+ Skips `.` and `..`. Does Nothing if `root` does not exist or is not a directory.
+
+ @param root Starting directory path.
+ @param fn Callback `function(path, is_dir)`.
+ @example
+ file.walk(`lib/zen`, function(p, is_dir) {
+     when is_dir == false { io.writeln(p) }
+ })
+ !/
+function walk(root, fn) {
+    when exists(root) == false { <- Nothing }
+    when is_dir(root) == false { <- Nothing }
+
+    // Explicit stack of directories still to expand
+    let stack -> [root]
+    do while stack.length > 0 {
+        let dir -> stack[stack.length - 1]
+        // pop last
+        let next_stack -> []
+        let si -> 0
+        do while si < stack.length - 1 {
+            next_stack.append(stack[si])
+            si -> si + 1
+        }
+        stack -> next_stack
+
+        let names -> list_dir(dir)
+        let i -> 0
+        do while i < names.length {
+            let name -> names[i]
+            i -> i + 1
+            when name != `.` and name != `..` {
+                let full -> path.join(dir, name)
+                let dir_flag -> is_dir(full)
+                fn(full, dir_flag)
+                when dir_flag {
+                    stack.append(full)
+                }
+            }
+        }
+    }
+}
+
+/!
+ Walk with a maximum depth. Depth 0 is only the immediate children of `root`.
+ Depth 1 includes grandchildren, etc. Negative depth means unlimited (same as walk).
+ @param root Starting directory.
+ @param max_depth Non-negative depth limit, or -1 for unlimited.
+ @param fn Callback `function(path, is_dir)`.
+ !/
+function walk_depth(root, max_depth, fn) {
+    when exists(root) == false { <- Nothing }
+    when is_dir(root) == false { <- Nothing }
+    when max_depth < 0 {
+        walk(root, fn)
+        <- Nothing
+    }
+
+    // Stack of {path, depth}
+    let stack -> [{`path` -> root, `depth` -> -1}]
+    do while stack.length > 0 {
+        let frame -> stack[stack.length - 1]
+        let next_stack -> []
+        let si -> 0
+        do while si < stack.length - 1 {
+            next_stack.append(stack[si])
+            si -> si + 1
+        }
+        stack -> next_stack
+
+        let dir -> frame[`path`]
+        let depth -> frame[`depth`]
+        let names -> list_dir(dir)
+        let i -> 0
+        do while i < names.length {
+            let name -> names[i]
+            i -> i + 1
+            let full -> path.join(dir, name)
+            let dir_flag -> is_dir(full)
+            let child_depth -> depth + 1
+            when child_depth <= max_depth {
+                fn(full, dir_flag)
+                when dir_flag and child_depth < max_depth {
+                    stack.append({`path` -> full, `depth` -> child_depth})
+                }
+            }
+        }
+    }
+}
+
+/!
+ Recursively collect all file paths under `root` (directories excluded).
+ Implemented without nested closures so native (`-g`) works reliably.
+
+ @param root Starting directory path.
+ @return List of path strings for regular files.
+ @example
+ let files -> file.list_files(`lib/zen/sys`)
+ !/
+function list_files(root) {
+    let out -> []
+    when exists(root) == false { <- out }
+    when is_dir(root) == false {
+        when is_file(root) {
+            out.append(root)
+        }
+        <- out
+    }
+
+    let stack -> [root]
+    do while stack.length > 0 {
+        let dir -> stack[stack.length - 1]
+        let next_stack -> []
+        let si -> 0
+        do while si < stack.length - 1 {
+            next_stack.append(stack[si])
+            si -> si + 1
+        }
+        stack -> next_stack
+
+        let names -> list_dir(dir)
+        let i -> 0
+        do while i < names.length {
+            let name -> names[i]
+            i -> i + 1
+            when name != `.` and name != `..` {
+                let full -> path.join(dir, name)
+                when is_dir(full) {
+                    stack.append(full)
+                } or {
+                    when is_file(full) {
+                        out.append(full)
+                    }
+                }
+            }
+        }
+    }
+    <- out
+}
+
+/!
+ Collect files under `root` whose path ends with `suffix` (e.g. `.zl`).
+ @param root Starting directory.
+ @param suffix Suffix string (often an extension including the dot).
+ @return List of matching file paths.
+ !/
+function find_files(root, suffix) {
+    let all -> list_files(root)
+    let out -> []
+    let i -> 0
+    do while i < all.length {
+        let p -> all[i]
+        i -> i + 1
+        when Str.ends_with(p, suffix) {
+            out.append(p)
+        }
+    }
+    <- out
+}
+
+/!
+ Recursively remove a file or directory tree (files first, then dirs).
+ @param root Path to remove.
+ @return True if path is gone (or never existed).
+ !/
+function remove_tree(root) {
+    when exists(root) == false { <- true }
+    when is_file(root) {
+        remove(root)
+        <- exists(root) == false
+    }
+    when is_dir(root) == false {
+        // special file / unreadable
+        remove(root)
+        <- exists(root) == false
+    }
+
+    // Collect paths first (do not mutate while walking)
+    let files -> list_files(root)
+    let i -> 0
+    do while i < files.length {
+        remove(files[i])
+        i -> i + 1
+    }
+
+    let dirs -> []
+    // walk visits dirs before children; collect all dirs under root
+    let stack -> [root]
+    do while stack.length > 0 {
+        let dir -> stack[stack.length - 1]
+        let next_stack -> []
+        let si -> 0
+        do while si < stack.length - 1 {
+            next_stack.append(stack[si])
+            si -> si + 1
+        }
+        stack -> next_stack
+        let names -> list_dir(dir)
+        let ni -> 0
+        do while ni < names.length {
+            let name -> names[ni]
+            ni -> ni + 1
+            let full -> path.join(dir, name)
+            when is_dir(full) {
+                dirs.append(full)
+                stack.append(full)
+            }
+        }
+    }
+    // remove deepest directories first (end of list is deeper when DFS append)
+    let di -> dirs.length
+    do while di > 0 {
+        di -> di - 1
+        remove(dirs[di])
+    }
+    remove(root)
+    <- exists(root) == false
+}

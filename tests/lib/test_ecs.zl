@@ -1,0 +1,65 @@
+import zen.patterns.ecs as ecs
+import zen.test as test
+
+structure Position {
+    let x: Integer
+    let y: Integer
+}
+
+structure Velocity {
+    let dx: Integer
+    let dy: Integer
+}
+
+function test_ecs_basic() {
+    let registry -> ecs.ECS()
+    
+    let e1 -> registry.create_entity()
+    registry.add_component(e1, Position(10, 20))
+    registry.add_component(e1, Velocity(1, 0))
+    
+    let e2 -> registry.create_entity()
+    registry.add_component(e2, Position(5, 5))
+    
+    // Test has_entity
+    let pass -> test.assert_equal(registry.has_entity(e1), True, `e1 should exist`)
+    pass -> pass and test.assert_equal(registry.has_entity(999), False, `999 should not exist`)
+    
+    // Test list_entities
+    let entities -> registry.list_entities()
+    pass -> pass and test.assert_equal(entities.length, 2, `should have 2 entities`)
+    
+    // Test list_components
+    let comps -> registry.list_components(e1)
+    pass -> pass and test.assert_equal(comps.length, 2, `e1 should have 2 components`)
+    
+    // Test query
+    let moving -> registry.query([`Position`, `Velocity`])
+    pass -> pass and test.assert_equal(moving.length, 1, `should have 1 moving entity`)
+    
+    // Test destroy_component
+    registry.destroy_component(e1, `Velocity`)
+    pass -> pass and test.assert_equal(registry.has_component(e1, `Velocity`), False, `e1 should no longer have velocity`)
+    
+    // Test destroy_entity
+    registry.destroy_entity(e1)
+    pass -> pass and test.assert_equal(registry.has_entity(e1), False, `e1 should be destroyed`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `ECS.basic`, `fn` -> test_ecs_basic}
+    ]
+
+    <- test.run_suite(`Patterns.ECS Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

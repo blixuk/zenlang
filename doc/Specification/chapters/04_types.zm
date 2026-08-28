@@ -1,0 +1,59 @@
+// Chapter 4: Types, Literals & Sentinels
+
+Heading { text -> `Types, Literals & Sentinels`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang is optionally typed. You may declare types explicitly or allow the bidirectional type inference engine to resolve types at compile time.`
+},
+
+Heading { text -> `First-Class Capital Sentinels`, size -> 2 },
+
+Paragraph {
+    text -> `Zenlang defines four foundational sentinels with capitalized canonical spellings:\n- Nothing: Represents the complete absence of a value (assignable and comparable: val == Nothing).\n- Default: Represents the zero-state of a type (0 for integers, 0.0 for decimals, false for booleans, empty string for strings, and empty list/map for collections).\n- True / False: Standard boolean truth values.`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        let optional_user -> Nothing   // Explicit absent value
+        let empty_buffer  -> Default   // Type zero-state
+        let is_ready      -> True      // Boolean True
+        let is_disabled   -> False     // Boolean False
+        
+        // Sentinel comparisons
+        when optional_user == Nothing {
+            // Handle absent case
+        }
+    ```
+},
+
+Heading { text -> `Primitive & Collection Literals`, size -> 2 },
+
+Paragraph {
+    text -> `Zenlang provides expressive literal syntax for numbers, strings, lists, and flow maps:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        // Numeric Literals
+        let decimal_int -> 42
+        let hex_val     -> 0x2A
+        let binary_val  -> 0b101010
+        let float_val   -> 3.14159
+        
+        // String Literals
+        let simple_str  -> "Standard double-quoted string with \n escapes"
+        let raw_str     -> `Raw backtick string with no escaping needed`
+        
+        // Collections
+        let numbers_list -> [1, 2, 3, 4, 5]
+        let config_map   -> {
+            `host` -> `127.0.0.1`,
+            `port` -> 8080,
+            `active` -> True
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

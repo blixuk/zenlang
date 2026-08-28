@@ -1,0 +1,39 @@
+#ifndef ZEN_DISPATCH_H
+#define ZEN_DISPATCH_H
+
+#include "zen_value.h"
+
+ZenValue ZenValue_call(ZenValue value);
+// Apply a function value with 0..N ZenValue arguments (varargs after argc).
+ZenValue ZenValue_apply(ZenValue value, int argc, ...);
+
+// Dynamic field access for Map records (and similar) e.g. size.width
+ZenValue ZenValue_get_field(ZenValue obj, const char* name);
+
+// Dynamic dispatch helpers
+ZenValue ZenValue_get_length(ZenValue self);
+ZenValue ZenValue_get_at(ZenValue self, ZenValue index);
+ZenValue ZenValue_set_at(ZenValue self, ZenValue index, ZenValue value);
+ZenValue ZenValue_append(ZenValue self, ZenValue value);
+ZenValue ZenValue_pop_dispatch(ZenValue self);
+ZenValue ZenValue_peek(ZenValue self);
+ZenValue ZenValue_remove(ZenValue self, ZenValue value);
+ZenValue ZenValue_remove_at(ZenValue self, ZenValue index);
+ZenValue ZenValue_contains(ZenValue self, ZenValue value);
+ZenValue ZenValue_get_keys(ZenValue self);
+ZenValue ZenValue_get_values(ZenValue self);
+
+ZenValue ZenValue_get_substring(ZenValue self, ZenValue start, ZenValue end);
+ZenValue ZenValue_starts_with(ZenValue self, ZenValue prefix);
+ZenValue ZenValue_ends_with(ZenValue self, ZenValue suffix);
+ZenValue ZenValue_join(ZenValue self, ZenValue separator);
+
+ZenValue ZenValue_write(ZenValue self, ZenValue value);
+ZenValue ZenValue_writeln(ZenValue self, ZenValue value);
+ZenValue ZenValue_read(ZenValue self);
+
+ZenValue ZenValue_info(ZenValue self, ZenValue value);
+ZenValue ZenValue_warn(ZenValue self, ZenValue value);
+ZenValue ZenValue_error(ZenValue self, ZenValue value);
+
+#endif // ZEN_DISPATCH_H

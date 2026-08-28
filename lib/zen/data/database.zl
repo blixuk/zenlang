@@ -1,0 +1,90 @@
+import zen.data.json as json
+import zen.io.file as file
+import zen.text.string as str
+
+/!
+ Simple Persistent Key-Value Database.
+ Uses JSON for storage.
+ !/
+class Database {
+    let path: String
+    let data: Map
+
+    /!
+     Initializes a database at the given file path.
+     @param path The file path for storage.
+     @example
+     let db -> Database(`data.json`)
+     db.set(`user`, `admin`)
+     !/
+    function init(path) {
+        self.path -> path
+        self.data -> {}
+        self.load()
+    }
+
+    /!
+     Sets a value for a key.
+     @param key The key string.
+     @param value The value.
+     !/
+    function set(key, value) {
+        self.data[key] -> value
+        self.save()
+    }
+
+    /!
+     Retrieves a value for a key.
+     @param key The key string.
+     @return The value or Nothing.
+     !/
+    function get(key) {
+        <- self.data[key]
+    }
+
+    /!
+     Checks if a key exists in the database.
+     @param key The key string.
+     @return True if the key exists.
+     !/
+    function has(key) {
+        <- self.data.has(key)
+    }
+
+    /!
+     Removes a key and its value from the database.
+     @param key The key string.
+     !/
+    function remove(key) {
+        self.data.remove(key)
+        self.save()
+    }
+
+    /!
+     Loads the database from the file.
+     !/
+    function load() {
+        when file.exists(self.path) {
+            let content -> file.read(self.path)
+            when content.length > 0 {
+                self.data -> json.parse(content)
+            }
+        }
+    }
+
+    /!
+     Saves the database to the file.
+     !/
+    function save() {
+        let content -> json.stringify(self.data)
+        file.write(self.path, content)
+    }
+
+    /!
+     Clears all data from the database.
+     !/
+    function clear() {
+        self.data -> {}
+        self.save()
+    }
+}

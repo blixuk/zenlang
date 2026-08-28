@@ -1,0 +1,174 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Zen Mark",
+  "scopeName": "source.zenmark",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#dom_elements" },
+    { "include": "#keys" },
+    { "include": "#operators" },
+    { "include": "#strings_with_spans" },
+    { "include": "#numbers" },
+    { "include": "#sentinels" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.zenmark",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.zenmark",
+          "begin": "/!",
+          "end": "!/"
+        }
+      ]
+    },
+    "dom_elements": {
+      "patterns": [
+        {
+          "name": "entity.name.tag.zenmark",
+          "match": "\\b(Entry|Document|Heading|Paragraph|CodeBlock|Table|HorizontalRule|Divider|List|Callout|Diagram|Link|TableOfContents|Grid|Figure|Image|Math|Lorem|Spacer|PageBreak|Include)(?=\\s*\\{)"
+        }
+      ]
+    },
+    "keys": {
+      "patterns": [
+        {
+          "name": "variable.parameter.key.zenmark",
+          "match": "\\b(path|title|author|date|version|theme|archetype|tags|metadata|text|size|align|style|padding|indent|line_spacing|language|line_numbers|evaluate|code|type|thickness|symbol|prefix|marker|items|headers|rows|borders|columns|gap|cells|source|alt|caption|width|display|equation|count|height|nodes|edges|flow|direction|target|url|numbered|id|max_depth)(?=\\s*->|\\s*:)"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.flow.zenmark",
+          "match": "->"
+        }
+      ]
+    },
+    "sentinels": {
+      "patterns": [
+        {
+          "name": "constant.language.sentinel.zenmark",
+          "match": "\\b(Nothing|Default|True|False|nothing|default|true|false)\\b"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.decimal.zenmark",
+          "match": "\\b-?[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.zenmark",
+          "match": "\\b-?[0-9]+\\b"
+        }
+      ]
+    },
+    "strings_with_spans": {
+      "patterns": [
+        {
+          "name": "string.quoted.raw.multiline.zenmark",
+          "begin": "```",
+          "end": "```",
+          "patterns": [
+            { "include": "#inline_spans" }
+          ]
+        },
+        {
+          "name": "string.quoted.raw.backtick.zenmark",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            { "include": "#inline_spans" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.zenmark",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.zenmark",
+              "match": "\\\\."
+            },
+            { "include": "#inline_spans" }
+          ]
+        }
+      ]
+    },
+    "inline_spans": {
+      "patterns": [
+        {
+          "name": "markup.bold.zenmark",
+          "match": "\\*\\*([^\\*]+)\\*\\*"
+        },
+        {
+          "name": "markup.italic.zenmark",
+          "match": "\\^\\^([^\\^]+)\\^\\^"
+        },
+        {
+          "name": "markup.underline.zenmark",
+          "match": "__([^_]+)__"
+        },
+        {
+          "name": "markup.strikethrough.zenmark",
+          "match": "~~([^~]+)~~"
+        },
+        {
+          "name": "markup.kbd.zenmark",
+          "match": "!!([^!]+)!!"
+        },
+        {
+          "name": "markup.raw.inline.code.zenmark",
+          "match": "\\{\\{([^\\}]+)\\}\\}"
+        },
+        {
+          "name": "markup.raw.inline.monospace.zenmark",
+          "match": "\\[\\[([^\\]]+)\\]\\]"
+        },
+        {
+          "name": "markup.superscript.zenmark",
+          "match": "\\+\\+([^\\+]+)\\+\\+"
+        },
+        {
+          "name": "markup.subscript.zenmark",
+          "match": "--([^-]+)--"
+        },
+        {
+          "name": "markup.math.zenmark",
+          "match": "\\$\\$([^\\$]+)\\$\\$"
+        },
+        {
+          "name": "markup.datetime.zenmark",
+          "match": "%%([^%]+)%%"
+        },
+        {
+          "name": "markup.underline.link.zenmark",
+          "match": "\\[([^\\]]+)\\]\\(([^\\)]+)\\)"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.definition.block.zenmark",
+          "match": "[\\{\\}]"
+        },
+        {
+          "name": "punctuation.definition.list.zenmark",
+          "match": "[\\[\\]]"
+        },
+        {
+          "name": "punctuation.separator.delimiter.zenmark",
+          "match": ","
+        }
+      ]
+    }
+  }
+}

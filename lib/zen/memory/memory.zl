@@ -1,0 +1,167 @@
+/!
+ Memory management — automatic Default + opt-in arenas.
+
+ Product model (see selfhost/PARITY.md):
+   - Default: ordinary values live on the process heap (no user free).
+   - Opt-in: create/push/pop/free arenas for bulk reclaim of arena-allocated
+     objects (class instances under native -g use ZenRuntime_allocate).
+
+ Escape rule: do not use arena-allocated values after free_arena / after the
+ arena is destroyed. Pop alone does not free; free does.
+!/
+
+import zen.text.string as Str
+
+/!
+ Create a memory arena (opt-in bulk region).
+ @param size Bytes of capacity (0 → runtime Default, typically 1MB).
+!/
+function create_arena(size) {
+    <- __builtin_memory.create_arena(size)
+}
+
+function free_arena(arena) {
+    __builtin_memory.free_arena(arena)
+    <- Nothing
+}
+
+function reset_arena(arena) {
+    __builtin_memory.reset_arena(arena)
+    <- Nothing
+}
+
+/!
+ Push arena so subsequent ZenRuntime_allocate (class instances under -g)
+ go into this arena until pop.
+!/
+function push_arena(arena) {
+    __builtin_memory.push_arena(arena)
+    <- Nothing
+}
+
+function pop_arena() {
+    __builtin_memory.pop_arena()
+    <- Nothing
+}
+
+/!
+ True when an arena is currently pushed (opt-in path active).
+!/
+function using_arena() {
+    <- __builtin_memory.using_arena()
+}
+
+/!
+ Depth of the arena push stack (0 = automatic process-heap path).
+!/
+function arena_depth() {
+    <- __builtin_memory.arena_depth()
+}
+
+/!
+ Run body while arena is pushed; always pop (even if body fails via when).
+ Prefer free functions + maps for dual-path. body is a zero-arg function.
+!/
+function with_arena(arena, body) {
+    push_arena(arena)
+    let result -> body()
+    pop_arena()
+    <- result
+}
+
+/!
+ Create arena, run body under push, then free. Values must not escape body.
+ body is a zero-arg function.
+!/
+function region_run(size, body) {
+    let a -> create_arena(size)
+    push_arena(a)
+    let result -> body()
+    pop_arena()
+    free_arena(a)
+    <- result
+}
+
+/!
+ Optional size → new arena handle (alias for create_arena).
+!/
+function Region(size) {
+    when size == Nothing {
+        <- create_arena(1024 * 1024)
+    }
+    <- create_arena(size)
+}
+
+/!
+ Map-style arena handle (dual-path friendly vs class field mutation).
+ Methods: free, reset, push, pop on the handle map via free functions.
+!/
+function make_arena(size) {
+    let h -> create_arena(size)
+    <- {
+        `handle` -> h,
+        `kind` -> `Arena`
+    }
+}
+
+function arena_free(a) {
+    when a == Nothing {
+        <- Nothing
+    }
+    when a[`handle`] != Nothing {
+        free_arena(a[`handle`])
+        <- Nothing
+    }
+    free_arena(a)
+    <- Nothing
+}
+
+function arena_push(a) {
+    when a[`handle`] != Nothing {
+        push_arena(a[`handle`])
+        <- Nothing
+    }
+    push_arena(a)
+    <- Nothing
+}
+
+function arena_pop(_a) {
+    pop_arena()
+    <- Nothing
+}
+
+function arena_reset(a) {
+    when a[`handle`] != Nothing {
+        reset_arena(a[`handle`])
+        <- Nothing
+    }
+    reset_arena(a)
+    <- Nothing
+}
+
+/!
+ Class wrapper (bootstrap -g). Prefer make_arena + free functions under selfhost dual-path.
+!/
+class Arena {
+    let _handle
+
+    function init(size) {
+        self._handle -> create_arena(size)
+    }
+
+    function free() {
+        free_arena(self._handle)
+    }
+
+    function reset() {
+        reset_arena(self._handle)
+    }
+
+    function push() {
+        push_arena(self._handle)
+    }
+
+    function pop() {
+        pop_arena()
+    }
+}

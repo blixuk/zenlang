@@ -1,0 +1,135 @@
+/!
+    Terminal Tree Renderer.
+    Formats hierarchical trees and filesystem directory structures with Unicode or ASCII branch glyphs.
+!/
+
+import zen.text.string as Str
+import zen.io.file as file
+import zen.io.path as path
+
+/!
+    Internal recursive tree formatter.
+!/
+function format_tree_node(node, prefix, is_last, is_root, style) {
+    let branch -> `├── `
+    let last_branch -> `└── `
+    let vertical -> `│   `
+    let indent -> `    `
+
+    when style == `ascii` {
+        branch -> `|-- `
+        last_branch -> `\-- `
+        vertical -> `|   `
+        indent -> `    `
+    }
+
+    let label -> `(node)`
+    when node.has(`label`) {
+        label -> node[`label`]
+    }
+
+    let out -> ``
+    when is_root {
+        out -> label + `\n`
+    } or {
+        let connector -> branch
+        when is_last { connector -> last_branch }
+        out -> prefix + connector + label + `\n`
+    }
+
+    let children -> []
+    when node.has(`children`) and node[`children`] != Nothing {
+        children -> node[`children`]
+    }
+
+    when children.length > 0 {
+        let next_prefix -> prefix
+        when not is_root {
+            when is_last {
+                next_prefix -> prefix + indent
+            } or {
+                next_prefix -> prefix + vertical
+            }
+        }
+
+        let count -> children.length
+        let i -> 0
+        do while i < count {
+            let child -> children[i]
+            let child_is_last -> (i == count - 1)
+            out -> out + format_tree_node(child, next_prefix, child_is_last, False, style)
+            i -> i + 1
+        }
+    }
+    <- out
+}
+
+/!
+    Renders a tree node structure to a formatted string.
+    @param node Map containing "label" (string) and optional "children" (list of maps).
+    @param options Map with optional "style" -> "unicode" | "ascii".
+    @return Formatted tree string.
+!/
+function render_tree(node, options) {
+    let style -> `unicode`
+    when options != Nothing and options.has(`style`) {
+        style -> options[`style`]
+    }
+    let rendered -> format_tree_node(node, ``, True, True, style)
+    when Str.ends_with(rendered, `\n`) {
+        rendered -> Str.substring(rendered, 0, Str.length(rendered) - 1)
+    }
+    <- rendered
+}
+
+/!
+    Builds a tree map node recursively from a directory path.
+!/
+function build_dir_tree(dir_path, current_depth, max_depth) {
+    let base -> path.base_name(dir_path)
+    when Str.length(base) == 0 { base -> dir_path }
+    let node -> {
+        `label` -> base,
+        `children` -> []
+    }
+
+    when max_depth > 0 and current_depth >= max_depth {
+        <- node
+    }
+
+    when not file.is_dir(dir_path) {
+        <- node
+    }
+
+    let entries -> file.list_dir(dir_path)
+    when entries == Nothing { <- node }
+
+    let children -> []
+    let i -> 0
+    let len -> entries.length
+    do while i < len {
+        let entry_name -> entries[i]
+        let full_path -> path.join(dir_path, entry_name)
+        when file.is_dir(full_path) {
+            let sub -> build_dir_tree(full_path, current_depth + 1, max_depth)
+            children.append(sub)
+        } or {
+            children.append({ `label` -> entry_name, `children` -> [] })
+        }
+        i -> i + 1
+    }
+    node[`children`] -> children
+    <- node
+}
+
+/!
+    Renders a directory tree from filesystem path.
+    @param root_path Directory path.
+    @param max_depth Maximum depth (0 for unlimited).
+    @param options Formatting options (e.g. style -> "unicode").
+    @return Formatted tree string.
+!/
+function render_file_tree(root_path, max_depth, options) {
+    let tree_map -> build_dir_tree(root_path, 0, max_depth)
+    <- render_tree(tree_map, options)
+}

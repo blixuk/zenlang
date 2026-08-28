@@ -1,0 +1,29 @@
+import zen.io.io as IO
+import zen.time as Time
+import zen.text.string as Str
+
+function test_timer() {
+    IO.info(`--- Testing Timer Class ---`)
+    
+    let t -> Time.Timer()
+    t.start()
+    IO.info(`  Timer started. Sleeping for 100ms...`)
+    
+    Time.sleep(0.1) // 100ms
+    
+    let elapsed -> t.elapsed()
+    let elapsed_ms -> t.elapsed_ms()
+    
+    IO.info(`  Elapsed: ` + Str.to_string(elapsed) + ` seconds`)
+    IO.info(`  Elapsed: ` + Str.to_string(elapsed_ms) + ` ms`)
+    
+    when elapsed_ms >= 100 {
+        IO.info(`  Timer test PASSED.`)
+    } or {
+        IO.error(`  Timer test FAILED (too fast?).`)
+    }
+}
+
+function zen_entry() {
+    test_timer()
+}

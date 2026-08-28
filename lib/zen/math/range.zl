@@ -1,0 +1,27 @@
+/!
+  Range utility module.
+  Prefer the operators `start..end` (exclusive) and `start..=end` (inclusive)
+  when writing new code; these helpers remain for call-style APIs.
+!/
+
+/!
+  Creates a list of integers from start (inclusive) to end (exclusive).
+  Same as `start..end`.
+  @param start The start value.
+  @param end The end value.
+  @return A list of integers.
+!/
+function range(start, end) {
+    <- start..end
+}
+
+/!
+  Creates a list of integers from start to end inclusive.
+  Same as `start..=end`.
+  @param start The start value.
+  @param end The end value.
+  @return A list of integers.
+!/
+function range_inclusive(start, end) {
+    <- start..=end
+}

@@ -1,170 +1,60 @@
 #import "template.typ": *
 
-== Structrues
+= Structures, Maps & Collections
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Structure
-        #v(0.5em)
+Zenlang provides lightweight composite data structures, key-value maps, and dynamic lists.
 
-        Syntax:
-        ```zl
-        structure Identifier { Identifier ... }
+== Structures (`structure`)
 
-        structure Identifier { Identifier -> Value ... }
+Structures define typed record schemas with named fields:
 
-        structure Identifier { Identifier : Type ... }
-
-        structure Identifier { Identifier : Type -> Value ... }
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        structure Point { 
-          x
-          y
-
-          sum -> function <- x + y
-        }
-
-        structure Point { 
-          x -> 0
-          y -> 0 
-
-          sum : Function -> function <- x + y
-        }
-
-        structure Point { 
-          x : Integer
-          y : Integer
-
-          sum : Function<Integer> -> function <- x + y
-        }
-
-        structure Point { 
-          x : Integer -> 0
-          y : Integer -> 0
-
-          sum : Function<Integer> -> function {
-            <- x + y
-          }
-        }
-        ```
-    ]
+#feature(
+    "Structure Declaration",
+    "structure Identifier {\n    field : Type\n    field : Type -> DefaultValue\n}",
+    "structure Point {\n    x : Integer -> 0\n    y : Integer -> 0\n}\n\nlet origin -> Point()\nlet target -> Point(10, 25)\nlet dist_x -> target.x - origin.x"
 )
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Structure Inline
-        #v(0.5em)
+=== Inline Structure Declaration
 
-        Syntax:
-        ```zl
-        structure Identifier Identifier, ... 
+For compact records:
 
-        structure Identifier Identifier -> Value, ... 
+```zl
+structure Vector2D x: Decimal, y: Decimal
+let velocity -> Vector2D(1.5, -3.2)
+```
 
-        structure Identifier Identifier : Type, ... 
+== Associative Maps (`Map`)
 
-        structure Identifier Identifier : Type -> Value, ...
-        ```
-        #v(0.5em)
+Maps represent key-value dictionaries. Keys and values are bound using the `->` flow arrow:
 
-        Example:
-        ```zl
-        structure Point x, y
-
-        structure Point x -> 0, y -> 0
-
-        structure Point x : Integer, y : Integer
-
-        structure Point x : Integer -> 0, y : Integer -> 0
-        ```
-    ]
+#feature(
+    "Map Literal Definition",
+    "{ `key` -> value, `key2` -> value2 }",
+    "let config -> {\n    `host` -> `127.0.0.1`,\n    `port` -> 8080,\n    `debug` -> True\n}\n\n// Key lookup\nlet current_port -> config[`port`]\n\n// Field assignment\nconfig[`timeout`] -> 30"
 )
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Structure Instantiation & Unpacking
-        #v(0.5em)
+#tip[
+  Map keys are canonical UTF-8 strings enclosed in backticks. Both bracket indexing (`m["key"]`) and dot-syntax (`m.key`) are supported for valid identifiers.
+]
 
-        Syntax:
-        ```zl
-        let Identifier -> Identifier()
-        
-        let Identifier : Structure -> Identifier ( parameters )
+== Dynamic Lists (`List`)
 
-        Identifier.Member
-        ```
-        #v(0.5em)
+Lists are ordered, growable sequences of values:
 
-        Example:
-        ```zl
-        let point -> Point()
+```zl
+let tasks -> [`Compile`, `Link`, `Test`]
 
-        let point : Point -> Point ( 0, 0 )
+// Indexing (0-based)
+let first_step -> tasks[0]
 
-        let point : Point -> Point ( x -> 0, y -> 0 )
+// Length
+let count -> tasks.length
 
-        point.x -> 10
-        point.y -> 100
+// Appending
+tasks.append(`Package`)
 
-        write( point.x )
-        write( point.sum() )
-
-        let x, y -> point
-
-        write(x)
-        write(y)
-        ```
-    ]
-)
-
-== Objects
-
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Object
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        object Identifier { ... }
-
-        object Identifier { Identifier -> Value, ... }
-
-        object Identifier { Identifier : Type -> Value, ... }
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        object test {
-          attack -> 100,
-          defence -> 50
-        }
-
-        object test {
-          attack : Integer -> 100,
-          defence : Integer -> 50
-        }
-        ```
-    ]
-)
+// Iteration
+do for task in tasks {
+    io.writeln(`Executing: ` + task)
+}
+```

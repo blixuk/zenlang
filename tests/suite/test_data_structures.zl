@@ -1,0 +1,32 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+function test_lists() {
+    io.write(`  - Lists... `)
+    let l -> [1, 2, 3]
+    when l is [a, b, c] {
+        utils.assert_eq(a, 1, `pattern match a`)
+        utils.assert_eq(b, 2, `pattern match b`)
+        utils.assert_eq(c, 3, `pattern match c`)
+    } or {
+        raise `PatternMatchFailed`
+    }
+    io.write(`PASS\n`)
+}
+
+function test_maps() {
+    io.write(`  - Maps... `)
+    let m -> { `a` -> 1, `b` -> 2 }
+    when m is { `a` -> val } {
+        utils.assert_eq(val, 1, `map pattern match`)
+    } or {
+        raise `PatternMatchFailed`
+    }
+    io.write(`PASS\n`)
+}
+
+function run_data_structures_tests() {
+    io.write(`Running Data Structures Tests:\n`)
+    test_lists()
+    test_maps()
+}

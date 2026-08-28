@@ -1,0 +1,162 @@
+/!
+  Zen Mark Archetypes Module — Standardized document templates, layout rules, and preset CSS.
+  Canonical path: `zen.text.zenmark.archetypes`.
+!/
+
+/!
+  Retrieves configuration parameters for a given document archetype.
+!/
+function get_archetype(name) {
+    when name == `specification` {
+        <- {
+            `name` -> `specification`,
+            `badge` -> `CANONICAL SPECIFICATION`,
+            `numbered_sections` -> True,
+            `max_width` -> `900px`,
+            `show_toc` -> True
+        }
+    } or when name == `tutorial` {
+        <- {
+            `name` -> `tutorial`,
+            `badge` -> `TUTORIAL & LEARNER LADDER`,
+            `numbered_sections` -> False,
+            `max_width` -> `840px`,
+            `show_toc` -> False
+        }
+    } or when name == `release_notes` {
+        <- {
+            `name` -> `release_notes`,
+            `badge` -> `RELEASE CHANGELOG`,
+            `numbered_sections` -> False,
+            `max_width` -> `800px`,
+            `show_toc` -> False
+        }
+    } or when name == `manual` {
+        <- {
+            `name` -> `manual`,
+            `badge` -> `API & STDLIB MANUAL`,
+            `numbered_sections` -> False,
+            `max_width` -> `880px`,
+            `show_toc` -> True
+        }
+    } or when name == `cheatsheet` {
+        <- {
+            `name` -> `cheatsheet`,
+            `badge` -> `QUICK REFERENCE`,
+            `numbered_sections` -> False,
+            `max_width` -> `1100px`,
+            `show_toc` -> False
+        }
+    } or when name == `book` {
+        <- {
+            `name` -> `book`,
+            `badge` -> `ZEN MONOGRAPH`,
+            `numbered_sections` -> True,
+            `max_width` -> `760px`,
+            `show_toc` -> True
+        }
+    } or {
+        // Default standard document
+        <- {
+            `name` -> `document`,
+            `badge` -> `TECHNICAL DOCUMENT`,
+            `numbered_sections` -> False,
+            `max_width` -> `840px`,
+            `show_toc` -> False
+        }
+    }
+}
+
+/!
+  Generates responsive CSS stylesheet incorporating archetype layout rules and core Zen styling.
+!/
+function get_archetype_css(archetype_name) {
+    let arch -> get_archetype(archetype_name)
+    let css -> `
+body {
+  margin: 0;
+  padding: 40px 20px;
+  background-color: var(--zm-bg);
+  color: var(--zm-fg);
+  font-family: var(--zm-font-body);
+  line-height: 1.6;
+}
+.zen-document {
+  max-width: ` + arch[`max_width`] + `;
+  margin: 0 auto;
+}
+.zen-archetype-badge {
+  display: inline-block;
+  font-family: var(--zm-font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background-color: var(--zm-accent);
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+h1, h2, h3, h4, h5, h6 {
+  color: var(--zm-accent);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+h1 { font-size: 2.2rem; border-bottom: 1px solid var(--zm-border); padding-bottom: 8px; }
+h2 { font-size: 1.6rem; }
+h3 { font-size: 1.25rem; }
+p {
+  margin: 1em 0;
+}
+kbd.zen-key {
+  font-family: var(--zm-font-mono);
+  font-size: 0.85em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background-color: var(--zm-border);
+  color: var(--zm-fg);
+  border: 1px solid var(--zm-border);
+  box-shadow: 0 2px 0 var(--zm-border);
+}
+code.zen-code {
+  font-family: var(--zm-font-mono);
+  font-size: 0.9em;
+  background-color: var(--zm-code-bg);
+  color: var(--zm-code-fg);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+pre.zen-code-block {
+  background-color: var(--zm-code-bg);
+  color: var(--zm-code-fg);
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--zm-border);
+}
+table.zen-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+}
+table.zen-table th, table.zen-table td {
+  border: 1px solid var(--zm-border);
+  padding: 10px 14px;
+  text-align: left;
+}
+table.zen-table th {
+  background-color: var(--zm-code-bg);
+  color: var(--zm-accent);
+  font-weight: 600;
+}
+hr.zen-hr {
+  border: 0;
+  height: 1px;
+  background-color: var(--zm-border);
+  margin: 2em 0;
+}
+`
+    <- css
+}

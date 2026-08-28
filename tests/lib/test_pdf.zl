@@ -1,0 +1,79 @@
+import zen.test as test
+import zen.zenmark as zm
+import zen.text.string as Str
+import zen.io.file as file
+
+function test_pdf_generation() {
+    let entry -> zm.Entry({
+        `title` -> `Zenlang Architecture Spec`,
+        `archetype` -> `specification`,
+        `theme` -> `antiquarian`
+    })
+    
+    let doc -> zm.Document([
+        zm.Heading({ `text` -> `1. System Architecture`, `size` -> 1 }),
+        zm.Paragraph({ `text` -> `Zenlang is a modern Unix-native language emphasizing directional visual data flow.` }),
+        zm.CodeBlock({ `language` -> `zen`, `code` -> `use zen.io\n\nfunction main() {\n    io.writeln("Hello, Vector PDF!")\n    <- 0\n}` }),
+        zm.Table({
+            `headers` -> [`Component`, `Technology`, `Status`],
+            `rows` -> [
+                [`Compiler`, `Self-hosted C AOT & VM`, `Active`],
+                [`Data Engine`, `Zen Data (.zd)`, `Verified`],
+                [`Document DOM`, `Zen Mark (.zm)`, `Verified`]
+            ]
+        })
+    ], entry)
+    
+    let pdf_bytes -> zm.render_pdf(doc, `output/test_spec.pdf`)
+    
+    let pass -> test.assert_true(Str.starts_with(pdf_bytes, `%PDF-1.4`), `starts with %PDF-1.4`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `/Type /Catalog`), `contains PDF Catalog`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `/Type /Pages`), `contains PDF Pages tree`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `/Type /Font`), `contains Font resources`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `xref\n0 `), `contains xref table`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `trailer`), `contains trailer dictionary`)
+    pass -> pass and test.assert_true(Str.contains(pdf_bytes, `%%EOF`), `ends with %%EOF`)
+    pass -> pass and test.assert_true(file.exists(`output/test_spec.pdf`), `output file written successfully`)
+    
+    <- pass
+}
+
+function test_multipage_pdf() {
+    let entry -> zm.Entry({
+        `title` -> `Multi-Page Manual`,
+        `archetype` -> `manual`,
+        `theme` -> `modernist_dark`
+    })
+    
+    let elements -> []
+    let i -> 1
+    do while i <= 20 {
+        elements.append(zm.Heading({ `text` -> `Section ` + Str.to_string(i), `size` -> 2 }))
+        elements.append(zm.Paragraph({ `text` -> `This is an extended paragraph with documentation content in section ` + Str.to_string(i) + `. It provides detailed insights into runtime behavior, memory management, and compiler architecture.` }))
+        i -> i + 1
+    }
+    
+    let doc -> zm.Document(elements, entry)
+    let pdf_out -> zm.render_pdf(doc, `output/test_multipage.pdf`)
+    
+    let pass -> test.assert_true(Str.contains(pdf_out, `/Count `), `pages count emitted`)
+    pass -> pass and test.assert_true(file.exists(`output/test_multipage.pdf`), `multipage file exists`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `PDF.single_page_generation`, `fn` -> test_pdf_generation},
+        {`name` -> `PDF.multipage_generation`, `fn` -> test_multipage_pdf}
+    ]
+
+    <- test.run_suite(`Zen Mark PDF Renderer Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

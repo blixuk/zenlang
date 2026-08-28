@@ -1,0 +1,126 @@
+/!
+    MIME type resolution and file extension mapping.
+    Pure Zenlang implementation compatible with interpreter and native backend.
+!/
+
+import zen.text.string as Str
+
+let _MIME_MAP -> {
+    `html` -> `text/html`,
+    `htm` -> `text/html`,
+    `css` -> `text/css`,
+    `js` -> `application/javascript`,
+    `json` -> `application/json`,
+    `xml` -> `application/xml`,
+    `txt` -> `text/plain`,
+    `md` -> `text/markdown`,
+    `csv` -> `text/csv`,
+    `png` -> `image/png`,
+    `jpg` -> `image/jpeg`,
+    `jpeg` -> `image/jpeg`,
+    `gif` -> `image/gif`,
+    `svg` -> `image/svg+xml`,
+    `webp` -> `image/webp`,
+    `ico` -> `image/x-icon`,
+    `mp3` -> `audio/mpeg`,
+    `wav` -> `audio/wav`,
+    `ogg` -> `audio/ogg`,
+    `mp4` -> `video/mp4`,
+    `webm` -> `video/webm`,
+    `pdf` -> `application/pdf`,
+    `zip` -> `application/zip`,
+    `tar` -> `application/x-tar`,
+    `gz` -> `application/gzip`,
+    `wasm` -> `application/wasm`,
+    `zl` -> `text/x-zenlang`
+}
+
+let _EXT_MAP -> {
+    `text/html` -> `.html`,
+    `text/css` -> `.css`,
+    `application/javascript` -> `.js`,
+    `application/json` -> `.json`,
+    `application/xml` -> `.xml`,
+    `text/plain` -> `.txt`,
+    `text/markdown` -> `.md`,
+    `text/csv` -> `.csv`,
+    `image/png` -> `.png`,
+    `image/jpeg` -> `.jpg`,
+    `image/gif` -> `.gif`,
+    `image/svg+xml` -> `.svg`,
+    `image/webp` -> `.webp`,
+    `image/x-icon` -> `.ico`,
+    `audio/mpeg` -> `.mp3`,
+    `audio/wav` -> `.wav`,
+    `audio/ogg` -> `.ogg`,
+    `video/mp4` -> `.mp4`,
+    `video/webm` -> `.webm`,
+    `application/pdf` -> `.pdf`,
+    `application/zip` -> `.zip`,
+    `application/x-tar` -> `.tar`,
+    `application/gzip` -> `.gz`,
+    `application/wasm` -> `.wasm`,
+    `text/x-zenlang` -> `.zl`
+}
+
+function _extract_ext(path) {
+    let clean -> Str.trim(path)
+    let len -> Str.length(clean)
+    let last_dot -> -1
+    let i -> 0
+    do while i < len {
+        when Str.at(clean, i) == `.` {
+            last_dot -> 0 + i
+        }
+        i -> i + 1
+    }
+
+    when last_dot == -1 {
+        <- Str.to_lower(clean)
+    }
+
+    let ext -> Str.substring(clean, last_dot + 1, len)
+    <- Str.to_lower(ext)
+}
+
+/!
+    Resolves MIME type with a custom fallback value.
+    @param filename_or_ext Path, filename, or bare extension.
+    @param fallback Fallback MIME string if extension is unrecognized.
+    @return MIME type string or fallback.
+!/
+function lookup_with_fallback(filename_or_ext, fallback) {
+    when filename_or_ext == Nothing or filename_or_ext == `` {
+        <- fallback
+    }
+
+    let ext -> _extract_ext(filename_or_ext)
+    when _MIME_MAP.has(ext) {
+        <- _MIME_MAP[ext]
+    }
+
+    <- fallback
+}
+
+/!
+    Resolves the MIME type for a given filename or file extension.
+    @param filename_or_ext Path, filename, or bare extension (e.g. "style.css", "json").
+    @return MIME type string or "application/octet-stream" if unknown.
+!/
+function lookup(filename_or_ext) {
+    <- lookup_with_fallback(filename_or_ext, `application/octet-stream`)
+}
+
+/!
+    Resolves the canonical file extension for a given MIME type.
+    @param mime_type MIME type string (e.g. "application/json").
+    @return File extension with leading dot (e.g. ".json") or empty string if unknown.
+!/
+function extension(mime_type) {
+    when mime_type == Nothing { <- `` }
+    let clean -> Str.to_lower(Str.trim(mime_type))
+    when _EXT_MAP.has(clean) {
+        <- _EXT_MAP[clean]
+    }
+    <- ``
+}

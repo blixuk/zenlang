@@ -1,0 +1,94 @@
+import zen.sys.term as term
+import zen.test as test
+
+function test_get_size() {
+    let size -> term.get_size()
+    let pass -> test.assert_true(size.width > 0, `get_size should report a positive terminal width`)
+    pass -> pass and test.assert_true(size.height > 0, `get_size should report a positive terminal height`)
+    <- pass
+}
+
+function test_control_helpers() {
+    // Callback returns a flag (by-value closures cannot rebind outer locals).
+    let ran -> term.alt_screen(function() {
+        term.clear()
+        term.move(1, 1)
+        term.color(`green`, `black`)
+        term.reset()
+        <- true
+    })
+    <- test.assert_true(ran, `alt_screen should execute the provided callback`)
+}
+
+function test_display_write() {
+    term.move(1, 1)
+    term.write(`x`)
+    term.clear_eol()
+    term.hide_cursor()
+    term.show_cursor()
+    term.flush()
+    term.reset()
+    <- test.assert_true(true, `display write helpers should not crash`)
+}
+
+function test_raw_enter_exit() {
+    // On non-TTY, raw_enter returns false; on TTY true. Either is fine.
+    let ok -> term.raw_enter()
+    term.raw_exit()
+    let pass -> test.assert_true(ok == true or ok == false, `raw_enter returns boolean`)
+    <- pass
+}
+
+function test_poll_key_none() {
+    // Non-blocking: without input should report kind none
+    let k -> term.poll_key(0)
+    let pass -> test.assert_true(k.kind == `none` or k.kind == `char` or k.kind == `special` or k.kind == `resize`, `poll_key returns key map`)
+    pass -> pass and test.assert_true(k.name != Nothing, `poll_key has name field`)
+    <- pass
+}
+
+function test_key_map_kind_field() {
+    // Map field `.kind` must not collide with type introspection (editor depends on this)
+    let k -> {`kind` -> `char`, `name` -> ``, `ch` -> `a`, `ctrl` -> false, `code` -> 97}
+    let pass -> test.assert_true(k.kind == `char`, `map.kind is data field`)
+    pass -> pass and test.assert_true(k.ch == `a`, `map.ch accessible`)
+    <- pass
+}
+
+function test_is_tty_and_style() {
+    let tty -> term.is_tty()
+    let pass -> test.assert_true(tty == true or tty == false, `is_tty boolean`)
+    // style helpers should not crash (may emit ANSI)
+    term.style(`green`, `black`, ``)
+    term.reset()
+    let spin -> term.spinner_frame(0)
+    pass -> pass and test.assert_equal(spin, `|`, `spinner 0`)
+    pass -> pass and test.assert_equal(term.spinner_frame(1), `/`, `spinner 1`)
+    pass -> pass and test.assert_equal(term.spinner_frame(5), `/`, `spinner wrap`)
+    // mouse enable/disable are no-ops for compile/link under -g
+    term.enable_mouse()
+    term.disable_mouse()
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Term.get_size`, `fn` -> test_get_size},
+        {`name` -> `Term.control_helpers`, `fn` -> test_control_helpers},
+        {`name` -> `Term.display_write`, `fn` -> test_display_write},
+        {`name` -> `Term.raw_enter_exit`, `fn` -> test_raw_enter_exit},
+        {`name` -> `Term.poll_key_none`, `fn` -> test_poll_key_none},
+        {`name` -> `Term.key_map_kind_field`, `fn` -> test_key_map_kind_field},
+        {`name` -> `Term.is_tty_style`, `fn` -> test_is_tty_and_style}
+    ]
+
+    <- test.run_suite(`Term Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

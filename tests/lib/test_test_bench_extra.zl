@@ -1,0 +1,71 @@
+import zen.test as test
+import zen.test.mock as mock
+import zen.util.bench as bench
+import zen.util.inspect as inspect
+
+function test_mock_spy() {
+    let spy -> mock.create(42)
+    let pass -> test.assert_false(mock.was_called(spy), `mock initially not called`)
+
+    let r1 -> mock.record_call(spy, [`hello`, 100])
+    pass -> pass and test.assert_equal(r1, 42, `mock returns default`)
+    pass -> pass and test.assert_true(mock.was_called(spy), `mock was called`)
+    pass -> pass and test.assert_true(mock.called_times(spy, 1), `mock called 1 time`)
+    pass -> pass and test.assert_true(mock.last_called_with(spy, [`hello`, 100]), `mock last called with args`)
+
+    mock.returns(spy, `updated-return`)
+    let r2 -> mock.record_call(spy, [`second-call`])
+    pass -> pass and test.assert_equal(r2, `updated-return`, `mock returns updated value`)
+    pass -> pass and test.assert_true(mock.called_times(spy, 2), `mock called 2 times`)
+
+    <- pass
+}
+
+function dummy_workload() {
+    let sum -> 0
+    let i -> 0
+    do while i < 100 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    <- sum
+}
+
+function test_benchmarking() {
+    let res -> bench.benchmark(`dummy_sum`, dummy_workload, 50)
+    let pass -> test.assert_equal(res[`name`], `dummy_sum`, `bench name`)
+    pass -> pass and test.assert_equal(res[`iterations`], 50, `bench iterations`)
+    pass -> pass and test.assert_true(res[`elapsed_ms`] >= 0.0, `bench elapsed ms non-negative`)
+    pass -> pass and test.assert_true(res[`ops_per_sec`] > 0.0, `bench ops per sec positive`)
+
+    let formatted -> bench.format(res)
+    pass -> pass and test.assert_true(formatted != Nothing, `bench format non-empty`)
+
+    <- pass
+}
+
+function test_inspection() {
+    let s_insp -> inspect.inspect(`zenlang`)
+    let pass -> test.assert_true(s_insp != Nothing, `inspect string`)
+
+    let l_insp -> inspect.inspect([1, 2, 3])
+    pass -> pass and test.assert_true(l_insp != Nothing, `inspect list`)
+
+    let t_int -> inspect.type_of(100)
+    pass -> pass and test.assert_true(t_int != Nothing, `type_of int`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Test.Mock`, `fn` -> test_mock_spy },
+        { `name` -> `Util.Bench`, `fn` -> test_benchmarking },
+        { `name` -> `Util.Inspect`, `fn` -> test_inspection }
+    ]
+    <- test.run_suite(`Mock, Bench & Inspect Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

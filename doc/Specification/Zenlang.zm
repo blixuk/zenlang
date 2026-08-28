@@ -1,0 +1,27 @@
+Entry {
+    `title` -> `The Zenlang Language Specification`,
+    `author` -> `Zenlang Core Development Team`,
+    `date` -> `2026-08-24`,
+    `version` -> `1.0.0`,
+    `archetype` -> `specification`,
+    `theme` -> `antiquarian`,
+    `tags` -> [`specification`, `zenlang`, `language-reference`, `zen-trinity`]
+}
+
+Document {
+    TableOfContents { title -> `Table of Contents`, max_depth -> 2 },
+    Include { path -> `doc/Specification/chapters/01_introduction.zm` },
+    Include { path -> `doc/Specification/chapters/02_lexical.zm` },
+    Include { path -> `doc/Specification/chapters/03_trinity.zm` },
+    Include { path -> `doc/Specification/chapters/04_types.zm` },
+    Include { path -> `doc/Specification/chapters/05_variables.zm` },
+    Include { path -> `doc/Specification/chapters/06_operators.zm` },
+    Include { path -> `doc/Specification/chapters/07_control_flow.zm` },
+    Include { path -> `doc/Specification/chapters/08_functions.zm` },
+    Include { path -> `doc/Specification/chapters/09_structs.zm` },
+    Include { path -> `doc/Specification/chapters/10_oop.zm` },
+    Include { path -> `doc/Specification/chapters/11_error_handling.zm` },
+    Include { path -> `doc/Specification/chapters/12_modules.zm` },
+    Include { path -> `doc/Specification/chapters/13_concurrency.zm` },
+    Include { path -> `doc/Specification/chapters/14_runtime.zm` }
+}

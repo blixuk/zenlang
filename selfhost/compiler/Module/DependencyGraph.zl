@@ -1,0 +1,126 @@
+/!
+ Dependency graph — Stage 3.
+ Dual-path: mutators return the graph map (native moves args; must rebind).
+ !/
+
+function create() {
+    <- {
+        `nodes` -> [],
+        `edges` -> {}
+    }
+}
+
+function list_contains(lst, item) {
+    when lst == Nothing {
+        <- false
+    }
+    <- dg_list_has_at(lst, item, 0, lst.length)
+}
+
+function dg_list_has_at(lst, item, i, n) {
+    when i >= n {
+        <- false
+    }
+    when lst[i] == item {
+        <- true
+    }
+    <- dg_list_has_at(lst, item, i + 1, n)
+}
+
+function dg_list_push(lst, item) {
+    when lst == Nothing {
+        lst -> []
+    }
+    let grown -> lst.append(item)
+    when grown != Nothing {
+        <- grown
+    }
+    <- lst
+}
+
+function add_node(graph, path) {
+    when path == Nothing or path == `` {
+        <- graph
+    }
+    let nodes -> graph[`nodes`]
+    when not list_contains(nodes, path) {
+        graph[`nodes`] -> dg_list_push(nodes, path)
+    }
+    let edges -> graph[`edges`]
+    when not edges.has(path) {
+        edges[path] -> []
+        graph[`edges`] -> edges
+    }
+    <- graph
+}
+
+function add_edge(graph, from_path, to_path) {
+    graph -> add_node(graph, from_path)
+    graph -> add_node(graph, to_path)
+    let edges -> graph[`edges`]
+    let deps -> []
+    when edges.has(from_path) {
+        deps -> edges[from_path]
+    }
+    when not list_contains(deps, to_path) {
+        deps -> dg_list_push(deps, to_path)
+    }
+    edges[from_path] -> deps
+    graph[`edges`] -> edges
+    <- graph
+}
+
+function has_node(graph, path) {
+    <- list_contains(graph[`nodes`], path)
+}
+
+function dependencies_of(graph, path) {
+    let edges -> graph[`edges`]
+    when not edges.has(path) {
+        <- []
+    }
+    <- edges[path]
+}
+
+let DG -> {
+    `visited` -> [],
+    `order` -> []
+}
+
+function get_compilation_order(graph) {
+    DG[`visited`] -> []
+    DG[`order`] -> []
+    let nodes -> graph[`nodes`]
+    when nodes == Nothing {
+        <- DG[`order`]
+    }
+    let n -> nodes.length
+    let i -> 0
+    do while i < n {
+        let node -> nodes[i]
+        when node != Nothing and node != `` {
+            visit(graph, node)
+        }
+        i -> i + 1
+    }
+    <- DG[`order`]
+}
+
+function visit(graph, path) {
+    let visited -> DG[`visited`]
+    when list_contains(visited, path) {
+        <- Nothing
+    }
+    DG[`visited`] -> dg_list_push(visited, path)
+
+    let deps -> dependencies_of(graph, path)
+    when deps != Nothing {
+        let dn -> deps.length
+        let j -> 0
+        do while j < dn {
+            visit(graph, deps[j])
+            j -> j + 1
+        }
+    }
+    DG[`order`] -> dg_list_push(DG[`order`], path)
+}

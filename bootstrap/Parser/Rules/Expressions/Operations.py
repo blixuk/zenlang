@@ -5,7 +5,17 @@ class OperationsParserMixin:
     def logical(self, allow_instantiation: bool = True) -> ASTNode:
         node: ASTNode = self.logical_xor(allow_instantiation=allow_instantiation)
 
-        while self.token_handler.match_types([TokenType.OR, TokenType.NOR]):
+        while self.token_handler.check_types([TokenType.OR, TokenType.NOR]):
+            next_t = self.token_handler.peek(1)
+            if next_t:
+                if next_t.type == TokenType.LEFT_BRACE:
+                    break
+                if next_t.type == TokenType.RETURN:
+                    break
+                if next_t.type == TokenType.KEYWORD and next_t.value in ("when", "return"):
+                    break
+
+            self.token_handler.advance()
             operator = self.token_handler.previous()
             right = self.logical_xor(allow_instantiation=allow_instantiation)
             node = BinaryOperation(getattr(operator, "line"), getattr(operator, "column"), getattr(operator, "value"), node, right)
@@ -151,7 +161,7 @@ class OperationsParserMixin:
         node: ASTNode = self.factor(allow_instantiation=allow_instantiation)
 
         while self.token_handler.match_types(
-            [TokenType.ADDITION, TokenType.SUBTRACTION]
+            [TokenType.ADDITION, TokenType.SUBTRACTION, TokenType.INCREMENT, TokenType.DECREMENT]
         ):
             operator: Token | None = self.token_handler.previous()
             right: ASTNode | None = self.factor(allow_instantiation=allow_instantiation)

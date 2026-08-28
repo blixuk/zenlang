@@ -1,0 +1,151 @@
+import zen.test.test as test
+import zen.text.string as Str
+
+function test_string_append_and_concat() {
+    // 1. Expression concat / append
+    let s1 -> `Zen` ++ `lang`
+    test.assert_equal(s1, `Zenlang`, `string expression concat`)
+
+    let s2 -> `░` ++ `█`
+    test.assert_equal(s2, `░█`, `string prepend expression`)
+
+    // 2. Statement in-place update
+    let bar -> `█`
+    bar ++ `░`
+    test.assert_equal(bar, `█░`, `string statement append`)
+
+    bar ++ `█`
+    test.assert_equal(bar, `█░█`, `string statement append second time`)
+
+    <- true
+}
+
+function test_string_drop_end_and_start() {
+    // 1. Drop from end (test -- n)
+    let s -> `test.txt`
+    let s_end1 -> s -- 1
+    test.assert_equal(s_end1, `test.tx`, `drop 1 from end expression`)
+
+    let s_end4 -> s -- 4
+    test.assert_equal(s_end4, `test`, `drop 4 from end expression`)
+
+    // 2. Drop from start (n -- test)
+    let s_start1 -> 1 -- s
+    test.assert_equal(s_start1, `est.txt`, `drop 1 from start expression`)
+
+    let s_start4 -> 4 -- s
+    test.assert_equal(s_start4, `.txt`, `drop 4 from start expression`)
+
+    // 3. Statement update
+    let doc -> `document.pdf`
+    doc -- 4
+    test.assert_equal(doc, `document`, `string statement drop end`)
+
+    let prefix -> `prefix_data`
+    7 -- prefix
+    test.assert_equal(prefix, `data`, `string statement drop start`)
+
+    // 4. Edge cases
+    test.assert_equal(`abc` -- 0, `abc`, `drop 0 from end`)
+    test.assert_equal(`abc` -- 5, ``, `drop more than length from end`)
+    test.assert_equal(0 -- `abc`, `abc`, `drop 0 from start`)
+    test.assert_equal(5 -- `abc`, ``, `drop more than length from start`)
+
+    <- true
+}
+
+function test_list_append_and_prepend() {
+    // 1. Append item to list expression
+    let l1 -> [`this`, `is`, `a`] ++ `test`
+    test.assert_equal(l1.length, 4, `list append item length`)
+    test.assert_equal(l1[3], `test`, `list append item value`)
+
+    // 2. Prepend item to list expression
+    let l2 -> `test` ++ [`this`, `is`, `a`]
+    test.assert_equal(l2.length, 4, `list prepend item length`)
+    test.assert_equal(l2[0], `test`, `list prepend item value`)
+
+    // 3. Concat two lists
+    let l3 -> [1, 2] ++ [3, 4]
+    test.assert_equal(l3.length, 4, `list concat length`)
+    test.assert_equal(l3[2], 3, `list concat value`)
+
+    // 4. Statement in-place update
+    let items -> [`alpha`, `beta`]
+    items ++ `gamma`
+    test.assert_equal(items.length, 3, `list statement append length`)
+    test.assert_equal(items[2], `gamma`, `list statement append value`)
+
+    <- true
+}
+
+function test_list_drop_end_and_start() {
+    // 1. Drop from end (list -- n)
+    let list1 -> [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    let dropped1 -> list1 -- 1
+    test.assert_equal(dropped1.length, 8, `drop 1 item from end length`)
+    test.assert_equal(dropped1[7], 8, `drop 1 item from end last val`)
+
+    let dropped3 -> list1 -- 3
+    test.assert_equal(dropped3.length, 6, `drop 3 items from end length`)
+    test.assert_equal(dropped3[5], 6, `drop 3 items from end last val`)
+
+    // 2. Drop from start (n -- list)
+    let start1 -> 1 -- list1
+    test.assert_equal(start1.length, 8, `drop 1 item from start length`)
+    test.assert_equal(start1[0], 2, `drop 1 item from start first val`)
+
+    let start3 -> 3 -- list1
+    test.assert_equal(start3.length, 6, `drop 3 items from start length`)
+    test.assert_equal(start3[0], 4, `drop 3 items from start first val`)
+
+    // 3. Statement update
+    let queue -> [10, 20, 30, 40, 50]
+    queue -- 2
+    test.assert_equal(queue.length, 3, `list statement drop end length`)
+    test.assert_equal(queue[2], 30, `list statement drop end last val`)
+
+    1 -- queue
+    test.assert_equal(queue.length, 2, `list statement drop start length`)
+    test.assert_equal(queue[0], 20, `list statement drop start first val`)
+
+    // 4. Edge cases
+    let small -> [100, 200]
+    test.assert_equal((small -- 0).length, 2, `drop 0 from end`)
+    test.assert_equal((small -- 5).length, 0, `drop more than length from end`)
+    test.assert_equal((0 -- small).length, 2, `drop 0 from start`)
+    test.assert_equal((5 -- small).length, 0, `drop more than length from start`)
+
+    <- true
+}
+
+function test_numeric_increment_and_decrement() {
+    let a -> 10 ++ 5
+    test.assert_equal(a, 15, `numeric ++ expression`)
+
+    let b -> 20 -- 8
+    test.assert_equal(b, 12, `numeric -- expression`)
+
+    let count -> 0
+    count ++ 10
+    test.assert_equal(count, 10, `numeric statement increment`)
+
+    count -- 4
+    test.assert_equal(count, 6, `numeric statement decrement`)
+
+    <- true
+}
+
+function main() {
+    let suite -> [
+        { `name` -> `test_string_append_and_concat`, `fn` -> test_string_append_and_concat },
+        { `name` -> `test_string_drop_end_and_start`, `fn` -> test_string_drop_end_and_start },
+        { `name` -> `test_list_append_and_prepend`, `fn` -> test_list_append_and_prepend },
+        { `name` -> `test_list_drop_end_and_start`, `fn` -> test_list_drop_end_and_start },
+        { `name` -> `test_numeric_increment_and_decrement`, `fn` -> test_numeric_increment_and_decrement }
+    ]
+
+    let ok -> test.run_suite(`Zenlang Extended ++ and -- Operators Suite`, suite)
+    when ok { <- 0 }
+    <- 1
+}

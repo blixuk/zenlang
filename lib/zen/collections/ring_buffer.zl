@@ -1,0 +1,114 @@
+/!
+    Ring Buffer (Circular Buffer) implementation.
+    Maintains a fixed-size sliding window of items in FIFO insertion order.
+!/
+
+/!
+    Creates a new Ring Buffer with a fixed maximum capacity.
+!/
+function create(capacity) {
+    let cap -> 0 + capacity
+    when (cap <= 0) { cap -> 16 }
+    <- {
+        `capacity` -> cap,
+        `items` -> []
+    }
+}
+
+/!
+    Returns current count of items in the buffer.
+!/
+function size(rb) {
+    when (rb == Nothing) { <- 0 }
+    let items -> rb[`items`]
+    when (items == Nothing) { <- 0 }
+    <- items.length
+}
+
+/!
+    Checks if buffer is full.
+!/
+function is_full(rb) {
+    when (rb == Nothing) { <- False }
+    let items -> rb[`items`]
+    when (items == Nothing) { <- False }
+    let cap -> 0 + rb[`capacity`]
+    let count -> items.length
+    let full -> when (count >= cap) { True } or { False }
+    <- full
+}
+
+/!
+    Pushes an item into the ring buffer. Evicts oldest item if buffer is full.
+    @return Updated ring buffer map.
+!/
+function push(rb, item) {
+    when (rb == Nothing) { <- rb }
+    let items -> rb[`items`]
+    let cap -> 0 + rb[`capacity`]
+    let count -> items.length
+
+    when (count < cap) {
+        let new_items -> []
+        let i -> 0
+        do while i < count {
+            new_items.append(items[i])
+            i -> i + 1
+        }
+        new_items.append(item)
+        rb[`items`] -> new_items
+        <- rb
+    }
+
+    // Shift items left by 1 and place new item at end
+    let new_items -> []
+    let i -> 1
+    do while i < count {
+        new_items.append(items[i])
+        i -> i + 1
+    }
+    new_items.append(item)
+    rb[`items`] -> new_items
+    <- rb
+}
+
+/!
+    Returns the items in the ring buffer in chronological order (oldest to newest).
+!/
+function to_list(rb) {
+    when (rb == Nothing) { <- [] }
+    let items -> rb[`items`]
+    when (items == Nothing) { <- [] }
+    let result -> []
+    let i -> 0
+    let count -> items.length
+    do while i < count {
+        result.append(items[i])
+        i -> i + 1
+    }
+    <- result
+}
+
+/!
+    Peeks at the newest (most recently pushed) item in the buffer.
+!/
+function peek_latest(rb) {
+    when (rb == Nothing) { <- Nothing }
+    let items -> rb[`items`]
+    when (items == Nothing) { <- Nothing }
+    let sz -> items.length
+    when (sz == 0) { <- Nothing }
+    <- items[sz - 1]
+}
+
+/!
+    Peeks at the oldest item in the buffer.
+!/
+function peek_oldest(rb) {
+    when (rb == Nothing) { <- Nothing }
+    let items -> rb[`items`]
+    when (items == Nothing) { <- Nothing }
+    let sz -> items.length
+    when (sz == 0) { <- Nothing }
+    <- items[0]
+}

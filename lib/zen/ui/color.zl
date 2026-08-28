@@ -1,0 +1,39 @@
+/!
+  UI Color module — alias and terminal styling bridge for zen.color.
+  Enables importing via `use zen.ui.color`.
+!/
+
+use zen.color as core_color
+
+// Re-export core constructors
+function rgb(r, g, b) { <- core_color.rgb(r, g, b) }
+function rgba(r, g, b, a) { <- core_color.rgba(r, g, b, a) }
+function hex(str) { <- core_color.hex(str) }
+function hsl(h, s, l) { <- core_color.hsl(h, s, l) }
+function named(name) { <- core_color.named(name) }
+function to_hex(c) { <- core_color.to_hex(c) }
+
+// Re-export terminal styling
+function fg(c) { <- core_color.fg(c) }
+function bg(c) { <- core_color.bg(c) }
+function fg_16(name_or_code) { <- core_color.fg_16(name_or_code) }
+function bg_16(name_or_code) { <- core_color.bg_16(name_or_code) }
+function fg_256(index) { <- core_color.fg_256(index) }
+function bg_256(index) { <- core_color.bg_256(index) }
+function reset() { <- core_color.reset() }
+function paint(text, fg_col, bg_col) { <- core_color.paint(text, fg_col, bg_col) }
+
+// Text modifiers
+function bold(text) { <- core_color.bold(text) }
+function dim(text) { <- core_color.dim(text) }
+function italic(text) { <- core_color.italic(text) }
+function underline(text) { <- core_color.underline(text) }
+function inverse(text) { <- core_color.inverse(text) }
+function strikethrough(text) { <- core_color.strikethrough(text) }
+
+// Color math
+function blend(c1, c2, t) { <- core_color.blend(c1, c2, t) }
+function lighten(c, pct) { <- core_color.lighten(c, pct) }
+function darken(c, pct) { <- core_color.darken(c, pct) }
+function luminance(c) { <- core_color.luminance(c) }
+function contrast_ratio(c1, c2) { <- core_color.contrast_ratio(c1, c2) }

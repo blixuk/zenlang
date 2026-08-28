@@ -1,0 +1,83 @@
+/!
+ Stage 1: selfhost Token + Lexer dual-path smoke.
+ Prefer lexeme checks over enum identity (more stable under -g).
+ !/
+
+import compiler.Lexer as Lexer
+import compiler.Token as Tok
+import zen.test as test
+import zen.text.string as Str
+
+function test_basic_assign() {
+    let src -> `let x -> 10`
+    let tokens -> Lexer.tokenize_source(src)
+    let pass -> test.assert_equal(tokens.length, 5, `basic token count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[0]), `let`, `let lexeme`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `x`, `ident`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[2]), `->`, `arrow`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[3]), `10`, `int`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[4]), ``, `eof empty`)
+    <- pass
+}
+
+function test_ranges() {
+    let src -> `0..5 1..=9 ...`
+    let tokens -> Lexer.tokenize_source(src)
+    // 0 .. 5 1 ..= 9 ... EOF
+    let pass -> test.assert_equal(tokens.length, 8, `range token count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `..`, `exclusive range`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[4]), `..=`, `inclusive range`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[6]), `...`, `ellipsis`)
+    <- pass
+}
+
+function test_logicals() {
+    // Free-function API is the dual-path surface (class method field reads are -g fragile).
+    let src -> `and or not`
+    let tokens -> Lexer.tokenize_source(src)
+    let pass -> test.assert_equal(tokens.length, 4, `logical count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[0]), `and`, `and`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `or`, `or`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[2]), `not`, `not`)
+    <- pass
+}
+
+function test_comments_skipped() {
+    let src -> `let /*b*/ x`
+    let tokens -> Lexer.tokenize_source(src)
+    // let x EOF
+    let pass -> test.assert_equal(tokens.length, 3, `comment skip count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[0]), `let`, `after comments`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `x`, `ident after block`)
+    <- pass
+}
+
+function test_ops() {
+    let src -> `a + b * c <- d`
+    let tokens -> Lexer.tokenize_source(src)
+    // a + b * c <- d EOF
+    let pass -> test.assert_equal(tokens.length, 8, `ops count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `+`, `plus`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[3]), `*`, `star`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[5]), `<-`, `return arrow`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Lexer.basic_assign`, `fn` -> test_basic_assign},
+        {`name` -> `Lexer.ranges`, `fn` -> test_ranges},
+        {`name` -> `Lexer.logicals`, `fn` -> test_logicals},
+        {`name` -> `Lexer.comments_skipped`, `fn` -> test_comments_skipped},
+        {`name` -> `Lexer.ops`, `fn` -> test_ops}
+    ]
+    <- test.run_suite(`Selfhost Stage1 Lexer`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

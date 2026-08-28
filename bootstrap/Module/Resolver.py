@@ -30,6 +30,23 @@ class Resolver:
         "lib/zen/list": "lib/zen/collections/list",
         "zen.json": "zen.data.json",
         "lib/zen/json": "lib/zen/data/json",
+        "zen.html": "zen.text.html",
+        "lib/zen/html": "lib/zen/text/html",
+        "zen.lorem": "zen.text.lorem",
+        "lib/zen/lorem": "lib/zen/text/lorem",
+        "zen/lorem": "lib/zen/text/lorem",
+        "zen.color": "zen.color.color",
+        "lib/zen/color": "lib/zen/color/color",
+        "zen/color": "lib/zen/color/color",
+        "zen.zendata": "zen.data.zendata.zendata",
+        "lib/zen/zendata": "lib/zen/data/zendata/zendata",
+        "zen/zendata": "lib/zen/data/zendata/zendata",
+        "zen.zencode": "zen.tooling.zencode.zencode",
+        "lib/zen/zencode": "lib/zen/tooling/zencode/zencode",
+        "zen/zencode": "lib/zen/tooling/zencode/zencode",
+        "zen.zenmark": "zen.text.zenmark.zenmark",
+        "lib/zen/zenmark": "lib/zen/text/zenmark/zenmark",
+        "zen/zenmark": "lib/zen/text/zenmark/zenmark",
     }
 
     def resolve(self, import_path: str, base_dir: str = None) -> str:

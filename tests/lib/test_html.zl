@@ -1,0 +1,118 @@
+import zen.test as test
+import zen.text.html as html
+import zen.text.string as Str
+
+function test_escaping_and_unescaping() {
+    let raw -> `<script>alert("hello & welcome");</script>`
+    let esc -> html.escape(raw)
+    let pass -> test.assert_true(Str.contains(esc, `&lt;script&gt;`), `escaped tag`)
+    pass -> pass and test.assert_true(Str.contains(esc, `&amp;`), `escaped ampersand`)
+    pass -> pass and test.assert_true(Str.contains(esc, `&quot;`), `escaped quote`)
+
+    let unesc -> html.unescape(esc)
+    pass -> pass and test.assert_equal(unesc, raw, `unescaped roundtrip`)
+
+    pass -> pass and test.assert_equal(html.escape(Nothing), ``, `escape nothing`)
+    pass -> pass and test.assert_equal(html.unescape(Nothing), ``, `unescape nothing`)
+
+    <- pass
+}
+
+function test_strip_tags() {
+    let markup -> `<div class="content"><p>Hello <b>World</b>! <a href="#">Click</a></p></div>`
+    let plain -> html.strip_tags(markup)
+    let pass -> test.assert_equal(plain, `Hello World! Click`, `strip tags`)
+    <- pass
+}
+
+function test_tag_builders() {
+    // Basic element
+    let p_elem -> html.p(`Hello World`, {`class` -> `intro`})
+    let pass -> test.assert_equal(p_elem, `<p class="intro">Hello World</p>`, `p tag`)
+
+    // Void element
+    let img_elem -> html.img(`avatar.png`, `User Avatar`, {`class` -> `rounded`})
+    pass -> pass and test.assert_true(Str.starts_with(img_elem, `<img`), `img start`)
+    pass -> pass and test.assert_true(Str.contains(img_elem, `src="avatar.png"`), `img src`)
+    pass -> pass and test.assert_true(Str.contains(img_elem, `alt="User Avatar"`), `img alt`)
+    pass -> pass and test.assert_true(Str.ends_with(img_elem, `/>`), `img void close`)
+
+    // Anchor link
+    let a_elem -> html.a(`https://zenlang.org`, `Zenlang`, {`target` -> `_blank`})
+    pass -> pass and test.assert_true(Str.contains(a_elem, `href="https://zenlang.org"`), `a href`)
+    pass -> pass and test.assert_true(Str.contains(a_elem, `>Zenlang</a>`), `a text`)
+
+    // Input tag
+    let in_elem -> html.input_tag(`text`, `username`, `admin`, {`disabled` -> true})
+    pass -> pass and test.assert_true(Str.contains(in_elem, `type="text"`), `input type`)
+    pass -> pass and test.assert_true(Str.contains(in_elem, `name="username"`), `input name`)
+    pass -> pass and test.assert_true(Str.contains(in_elem, `disabled`), `input disabled flag`)
+
+    <- pass
+}
+
+function test_list_and_table_builders() {
+    let list_out -> html.ul([`Item A`, `Item B`], {`id` -> `nav`})
+    let pass -> test.assert_true(Str.contains(list_out, `<ul id="nav">`), `ul id`)
+    pass -> pass and test.assert_true(Str.contains(list_out, `<li>Item A</li>`), `li A`)
+    pass -> pass and test.assert_true(Str.contains(list_out, `<li>Item B</li>`), `li B`)
+
+    let tbl_out -> html.table([`Name`, `Age`], [[`Alice`, `30`], [`Bob`, `25`]], {`class` -> `data-table`})
+    pass -> pass and test.assert_true(Str.contains(tbl_out, `<th>Name</th>`), `table th`)
+    pass -> pass and test.assert_true(Str.contains(tbl_out, `<td>Alice</td>`), `table td Alice`)
+    pass -> pass and test.assert_true(Str.contains(tbl_out, `<td>Bob</td>`), `table td Bob`)
+
+    <- pass
+}
+
+function test_document_template() {
+    let body -> html.div(`Page Content`, {`id` -> `app`})
+    let doc -> html.document(`My Page`, body, {`lang` -> `en`})
+    let pass -> test.assert_true(Str.starts_with(doc, `<!DOCTYPE html>`), `doc doctype`)
+    pass -> pass and test.assert_true(Str.contains(doc, `<title>My Page</title>`), `doc title`)
+    pass -> pass and test.assert_true(Str.contains(doc, `<div id="app">Page Content</div>`), `doc body`)
+    <- pass
+}
+
+function test_parsing_and_tag_finder() {
+    let attrs -> html.parse_attributes(`id="test" class="box active" disabled data-score="100"`)
+    let pass -> test.assert_equal(attrs[`id`], `test`, `attr id`)
+    pass -> pass and test.assert_equal(attrs[`class`], `box active`, `attr class`)
+    pass -> pass and test.assert_equal(attrs[`disabled`], true, `attr disabled`)
+    pass -> pass and test.assert_equal(attrs[`data-score`], `100`, `attr data-score`)
+
+    let html_code -> `<section><a href="/home">Home</a><span>Text</span><a href="/about" target="_blank">About</a></section>`
+    let links -> html.find_tags(html_code, `a`)
+    pass -> pass and test.assert_equal(links.length, 2, `find_tags count`)
+    pass -> pass and test.assert_equal(links[0][`content`], `Home`, `find_tags[0] content`)
+    pass -> pass and test.assert_equal(links[0][`attrs`][`href`], `/home`, `find_tags[0] href`)
+    pass -> pass and test.assert_equal(links[1][`content`], `About`, `find_tags[1] content`)
+    pass -> pass and test.assert_equal(links[1][`attrs`][`href`], `/about`, `find_tags[1] href`)
+
+    let first_a -> html.find_tag(html_code, `a`)
+    pass -> pass and test.assert_true(first_a != Nothing, `find_tag not nothing`)
+    pass -> pass and test.assert_equal(first_a[`content`], `Home`, `find_tag content`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `HTML.escaping_and_unescaping`, `fn` -> test_escaping_and_unescaping},
+        {`name` -> `HTML.strip_tags`, `fn` -> test_strip_tags},
+        {`name` -> `HTML.tag_builders`, `fn` -> test_tag_builders},
+        {`name` -> `HTML.list_and_table_builders`, `fn` -> test_list_and_table_builders},
+        {`name` -> `HTML.document_template`, `fn` -> test_document_template},
+        {`name` -> `HTML.parsing_and_tag_finder`, `fn` -> test_parsing_and_tag_finder}
+    ]
+
+    <- test.run_suite(`HTML Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

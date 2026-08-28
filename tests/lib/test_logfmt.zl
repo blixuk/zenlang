@@ -1,0 +1,55 @@
+import zen.data.logfmt as logfmt
+import zen.test as test
+
+function test_logfmt_basic() {
+    let line -> `at=info method=GET path=/host status=200`
+    let data -> logfmt.parse(line)
+    
+    let pass -> test.assert_equal(data.get(`at`), `info`, `at check`)
+    pass -> pass and test.assert_equal(data.get(`status`), `200`, `status check`)
+    
+    <- pass
+}
+
+function test_logfmt_quoted() {
+    let line -> `msg="hello world" user=42`
+    let data -> logfmt.parse(line)
+    
+    let pass -> test.assert_equal(data.get(`msg`), `hello world`, `quoted msg check`)
+    pass -> pass and test.assert_equal(data.get(`user`), `42`, `user check`)
+    
+    <- pass
+}
+
+function test_logfmt_stringify() {
+    let data -> {
+        `level` -> `info`,
+        `msg` -> `Process started`,
+        `pid` -> 1234
+    }
+    let line -> logfmt.stringify(data)
+    
+    // Note: order might vary but we check contents
+    let pass -> test.assert_true(line.contains(`level=info`), `level check`)
+    pass -> pass and test.assert_true(line.contains(`msg="Process started"`), `quoted msg check`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Logfmt.basic`, `fn` -> test_logfmt_basic},
+        {`name` -> `Logfmt.quoted`, `fn` -> test_logfmt_quoted},
+        {`name` -> `Logfmt.stringify`, `fn` -> test_logfmt_stringify}
+    ]
+
+    <- test.run_suite(`Logfmt Data Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

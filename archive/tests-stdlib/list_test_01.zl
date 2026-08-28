@@ -1,0 +1,41 @@
+import zen.io.io as IO
+import zen.text.string as Str
+import zen.collections.list as L
+
+function test_list_functions() {
+    IO.info(`--- Testing zen.list module ---`)
+    
+    let numbers -> [1, 2, 3, 4, 5]
+    
+    // Test map
+    let doubled -> L.map(numbers, function(x) { <- x * 2 })
+    IO.info(`  Map (doubled): ` + Str.to_string(doubled))
+    
+    // Test filter
+    let even -> L.filter(numbers, function(x) { <- x % 2 == 0 })
+    IO.info(`  Filter (even): ` + Str.to_string(even))
+    
+    // Test reduce
+    let sum -> L.reduce(numbers, 0, function(acc, x) { <- acc + x })
+    IO.info(`  Reduce (sum): ` + Str.to_string(sum))
+    
+    // Test find
+    let found -> L.find(numbers, function(x) { <- x > 3 })
+    IO.info(`  Find (>3): ` + Str.to_string(found))
+    
+    let not_found -> L.find(numbers, function(x) { <- x > 10 })
+    IO.info(`  Find (>10): ` + Str.to_string(not_found))
+    
+    // Test contains
+    let has_three -> L.contains(numbers, 3)
+    IO.info(`  Contains 3: ` + Str.to_string(has_three))
+    
+    let has_ten -> L.contains(numbers, 10)
+    IO.info(`  Contains 10: ` + Str.to_string(has_ten))
+    
+    IO.info(`--- zen.collections.list tests complete ---`)
+}
+
+function zen_entry() {
+    test_list_functions()
+}

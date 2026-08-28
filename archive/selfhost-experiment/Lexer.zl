@@ -1,0 +1,416 @@
+from `selfhost/Token` import TokenType
+import `lib/zen/string` as Str
+import `lib/zen/io` as IO
+
+class Lexer {
+    let src: String
+    let tokens: List
+    let current: Integer
+    let line: Integer
+    let column: Integer
+
+    function init(src: String) {
+        self.src -> src
+        self.tokens -> []
+        self.current -> 0
+        self.line -> 1
+        self.column -> 1
+    }
+
+    function peek(offset: Integer) : String {
+        let pos -> self.current + offset
+        when pos >= Str.length(self.src) {
+            <- ``
+        }
+        <- Str.at(self.src, pos)
+    }
+
+    function advance() : String {
+        let ch : String -> self.peek(0)
+        self.current -> self.current + 1
+        
+        check ch {
+            case `\n` {
+                self.line -> self.line + 1
+                self.column -> 1
+            }
+        } or {
+            self.column -> self.column + 1
+        }
+        
+        <- ch
+    }
+
+    function is_at_end() : Boolean {
+        <- self.current >= Str.length(self.src)
+    }
+
+    function is_digit(c: String) : Boolean {
+        when c = `` { <- False }
+        <- Str.index_of(`0123456789`, c) != -1
+    }
+
+    function is_alpha(c: String) : Boolean {
+        when c = `` { <- False }
+        let alpha : String -> `abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_`
+        let j : Integer -> 0
+        while j < alpha.length {
+            when Str.at(alpha, j) = c { <- True }
+            j -> j + 1
+        }
+        <- False
+    }
+
+    function is_alphanumeric(c: String) : Boolean {
+        <- self.is_alpha(c) or self.is_digit(c)
+    }
+
+    function tokenize() : List {
+        while not self.is_at_end() {
+            self.scan_token()
+        }
+        
+        let eof_token : Token -> Token {
+            kind: TokenType.TK_EOF,
+            value: ``,
+            line: self.line,
+            column: self.column,
+            end_line: self.line,
+            end_column: self.column
+        }
+        let toks : List -> self.tokens
+        toks.append(eof_token)
+        <- self.tokens
+    }
+
+    function scan_token() {
+        let ch : String -> self.advance()
+        
+        check ch {
+            case ` ` {}
+            case `\r` {}
+            case `\t` {}
+            case `\n` {}
+            case `(` { self.add_token(TokenType.LEFT_PAREN, `(`) }
+            case `)` { self.add_token(TokenType.RIGHT_PAREN, `)`) }
+            case `{` { self.add_token(TokenType.LEFT_BRACE, `{`) }
+            case `}` { self.add_token(TokenType.RIGHT_BRACE, `}`) }
+            case `[` { self.add_token(TokenType.LEFT_BRACKET, `[`) }
+            case `]` { self.add_token(TokenType.RIGHT_BRACKET, `]`) }
+            case `,` { self.add_token(TokenType.COMMA, `,`) }
+            case `.` { self.add_token(TokenType.DOT, `.`) }
+            case `-` {
+                check self.peek(0) {
+                    case `>` { 
+                        self.advance()
+                        self.add_token(TokenType.ASSIGNMENT, `->`) 
+                    }
+                    case `-` { 
+                        self.advance()
+                        self.add_token(TokenType.DECREMENT, `--`) 
+                    }
+                } or {
+                    self.add_token(TokenType.SUBTRACTION, `-`)
+                }
+            }
+            case `+` {
+                check self.peek(0) {
+                    case `+` { 
+                        self.advance()
+                        self.add_token(TokenType.INCREMENT, `++`) 
+                    }
+                } or {
+                    self.add_token(TokenType.ADDITION, `+`)
+                }
+            }
+            case `*` {
+                check self.peek(0) {
+                    case `*` { 
+                        self.advance()
+                        self.add_token(TokenType.POWER, `**`) 
+                    }
+                } or {
+                    self.add_token(TokenType.MULTIPLICATION, `*`)
+                }
+            }
+            case `/` {
+                check self.peek(0) {
+                    case `/` {
+                        while self.peek(0) != `\n` and not self.is_at_end() {
+                            self.advance()
+                        }
+                    }
+                    case `*` {
+                        self.advance()
+                        while not self.is_at_end() {
+                            when self.peek(0) = `*` and self.peek(1) = `/` {
+                                self.advance()
+                                self.advance()
+                                break
+                            }
+                            self.advance()
+                        }
+                    }
+                    case `!` {
+                        self.advance()
+                        let value : String -> ``
+                        while not self.is_at_end() {
+                            when self.peek(0) = `!` and self.peek(1) = `/` {
+                                self.advance()
+                                self.advance()
+                                break
+                            }
+                            value -> value + self.advance()
+                        }
+                        self.add_token(TokenType.DOC_COMMENT, value)
+                    }
+                } or {
+                    self.add_token(TokenType.DIVISION, `/`)
+                }
+            }
+            case `=` {
+                check self.peek(0) {
+                    case `=` { 
+                        self.advance()
+                        self.add_token(TokenType.EQUAL_EQUAL, `==`) 
+                    }
+                } or {
+                    self.add_token(TokenType.EQUAL, `=`)
+                }
+            }
+            case `!` {
+                check self.peek(0) {
+                    case `=` { 
+                        self.advance()
+                        self.add_token(TokenType.NOT_EQUAL, `!=`) 
+                    }
+                    case `!` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_NOT, `!!`) 
+                    }
+                    case `|` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_NOR, `!|`) 
+                    }
+                    case `&` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_NAND, `!&`) 
+                    }
+                    case `^` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_XNOR, `!^`) 
+                    }
+                } or {
+                    self.add_token(TokenType.ASSERT, `!`)
+                }
+            }
+            case `<` {
+                check self.peek(0) {
+                    case `=` { 
+                        self.advance()
+                        self.add_token(TokenType.LESS_THAN_OR_EQUAL, `<=`) 
+                    }
+                    case `-` { 
+                        self.advance()
+                        self.add_token(TokenType.RETURN, `<-`) 
+                    }
+                    case `<` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_LSHIFT, `<<`) 
+                    }
+                } or {
+                    self.add_token(TokenType.LESS_THAN, `<`)
+                }
+            }
+            case `>` {
+                check self.peek(0) {
+                    case `=` { 
+                        self.advance()
+                        self.add_token(TokenType.GREATER_THAN_OR_EQUAL, `>=`) 
+                    }
+                    case `>` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_RSHIFT, `>>`) 
+                    }
+                } or {
+                    self.add_token(TokenType.GREATER_THAN, `>`)
+                }
+            }
+            case `:` {
+                check self.peek(0) {
+                    case `>` { 
+                        self.advance()
+                        self.add_token(TokenType.TYPE_LET, `:>`) 
+                    }
+                } or {
+                    self.add_token(TokenType.TYPE_SET, `:`)
+                }
+            }
+            case `%` {
+                check self.peek(0) {
+                    case `%` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_MOD, `%%`) 
+                    }
+                } or {
+                    self.add_token(TokenType.MODULO, `%`)
+                }
+            }
+            case `^` {
+                check self.peek(0) {
+                    case `^` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_XOR, `^^`) 
+                    }
+                } or {
+                    self.add_token(TokenType.RAISE, `^`)
+                }
+            }
+            case `?` { self.add_token(TokenType.CHECK, `?`) }
+            case `&` {
+                check self.peek(0) {
+                    case `&` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_AND, `&&`) 
+                    }
+                }
+            }
+            case `|` {
+                check self.peek(0) {
+                    case `|` { 
+                        self.advance()
+                        self.add_token(TokenType.BITWISE_OR, `||`) 
+                    }
+                }
+            }
+            case `;` { self.add_token(TokenType.SEMICOLON, `;`) }
+            case `\`` { self.string(`\``) }
+            case `"` { self.string(`"`) }
+            case `'` { self.rune() }
+        } or {
+            when self.is_digit(ch) {
+                self.number(ch)
+            } or when self.is_alpha(ch) {
+                self.identifier(ch)
+            } or {
+                IO.write(`[DEBUG Lexer] Unexpected character: ` + ch + ` at line ` + Str.to_string(self.line) + `\n`)
+                self.add_token(TokenType.ERROR, `Unexpected character: ` + ch)
+            }
+        }
+    }
+
+    function add_token(kind: TokenType, value: Variant) {
+        let toks : List -> self.tokens
+        let token : Token -> Token {
+            kind: kind,
+            value: value,
+            line: self.line,
+            column: self.column,
+            end_line: self.line,
+            end_column: self.column
+        }
+        toks.append(token)
+    }
+
+    function string(quote: String) {
+        let value : String -> ``
+        while self.peek(0) != quote and not self.is_at_end() {
+            let ch : String -> self.advance()
+            when ch = `\\` {
+                let escape : String -> self.advance()
+                check escape {
+                    case `n` { value -> value + `\n` }
+                    case `r` { value -> value + `\r` }
+                    case `t` { value -> value + `\t` }
+                    case `\\` { value -> value + `\\` }
+                    case `\`` { value -> value + `\`` }
+                } or {
+                    value -> value + `\\` + escape
+                }
+            } or {
+                value -> value + ch
+            }
+        }
+        
+        when self.is_at_end() {
+            self.add_token(TokenType.ERROR, `Unterminated string`)
+        } or {
+            self.advance() // closing quote
+            self.add_token(TokenType.STRING, value)
+        }
+    }
+
+    function rune() {
+        let value : String -> self.advance()
+        when value = `\\` {
+            let escape : String -> self.advance()
+            check escape {
+                case `n` { value -> `\n` }
+                case `r` { value -> `\r` }
+                case `t` { value -> `\t` }
+                case `\\` { value -> `\\` }
+                case `'` { value -> `'` }
+            } or {
+                value -> `\\` + escape
+            }
+        }
+        
+        when self.peek(0) = `'` {
+            self.advance() // closing '
+            self.add_token(TokenType.RUNE, value)
+        } or {
+            self.add_token(TokenType.ERROR, `Unterminated character`)
+        }
+    }
+
+    function number(first: String) {
+        let value : String -> first
+        while self.is_digit(self.peek(0)) {
+            value -> value + self.advance()
+        }
+        
+        when self.peek(0) = `.` and self.is_digit(self.peek(1)) {
+            value -> value + self.advance()
+            while self.is_digit(self.peek(0)) {
+                value -> value + self.advance()
+            }
+            self.add_token(TokenType.DECIMAL, value)
+        } or {
+            self.add_token(TokenType.INTEGER, value)
+        }
+    }
+
+    function identifier(first: String) {
+        let value : String -> first
+        while self.is_alphanumeric(self.peek(0)) {
+            value -> value + self.advance()
+        }
+        
+        let kind -> TokenType.IDENTIFIER
+        when value = `function` { 
+            kind -> TokenType.KEYWORD 
+        }
+        when value = `class` { kind -> TokenType.KEYWORD }
+        when value = `structure` { kind -> TokenType.KEYWORD }
+        when value = `enumerator` { kind -> TokenType.KEYWORD }
+        when value = `let` { kind -> TokenType.KEYWORD }
+        when value = `set` { kind -> TokenType.KEYWORD }
+        when value = `return` { kind -> TokenType.KEYWORD }
+        when value = `when` { kind -> TokenType.KEYWORD }
+        when value = `while` { kind -> TokenType.KEYWORD }
+        when value = `do` { kind -> TokenType.KEYWORD }
+        when value = `for` { kind -> TokenType.KEYWORD }
+        when value = `in` { kind -> TokenType.KEYWORD }
+        when value = `import` { kind -> TokenType.KEYWORD }
+        when value = `from` { kind -> TokenType.KEYWORD }
+        when value = `as` { kind -> TokenType.KEYWORD }
+        when value = `true` or value = `false` or value = `Nothing` { kind -> TokenType.KEYWORD }
+        when value = `and` { kind -> TokenType.AND }
+        when value = `or` { kind -> TokenType.OR }
+        when value = `not` { kind -> TokenType.NOT }
+        when value = `Integer` or value = `String` or value = `Boolean` or value = `List` { kind -> TokenType.TYPE }
+        // add more as needed
+        
+        self.add_token(kind, value)
+    }
+}

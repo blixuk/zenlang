@@ -1,0 +1,18 @@
+from zen.io.io import write_line
+
+task async_add(a: Integer, b: Integer) : Integer {
+    <- a + b
+}
+
+function zen_entry() {
+    write_line("Starting concurrency test...")
+    
+    let handle -> async_add(10, 20)
+    write_line("Task started.")
+    
+    let result -> await handle
+    write_line("Task result: " + result)
+    
+    assert result = 30
+    write_line("[SUCCESS] Concurrency test passed.")
+}

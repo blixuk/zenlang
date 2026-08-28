@@ -1,0 +1,33 @@
+/!
+  07 — Structures
+
+  Run:
+    ./bin/zen examples/getting_started/07_structures.zl
+
+  Learn: structure types, field init with ->, field rebind.
+!/
+
+import zen.io.io as io
+import zen.text.string as Str
+
+structure Point {
+    x: Integer
+    y: Integer
+}
+
+structure Rect {
+    origin: Point
+    width: Integer
+    height: Integer
+}
+
+function main() {
+    let p -> Point { x -> 10, y -> 20 }
+    io.writeln(`Point(` + Str.to_string(p.x) + `, ` + Str.to_string(p.y) + `)`)
+
+    p.x -> 30
+    let r -> Rect { origin -> p, width -> 100, height -> 50 }
+    io.writeln(`Rect origin.x=` + Str.to_string(r.origin.x) + ` w=` + Str.to_string(r.width))
+
+    <- 0
+}

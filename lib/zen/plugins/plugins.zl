@@ -1,0 +1,98 @@
+/!
+  zen.plugins — thin helpers for map-based plugin tables.
+
+  Convention: a plugin table is a Map from command name (string) to function.
+  Use with zen.reflect.call for dispatch.
+
+  Example:
+    use zen.plugins as P
+    use zen.reflect as reflect
+    let cmds -> P.create()
+    cmds -> P.add(cmds, `hello`, function(n) { <- n })
+    <- P.dispatch(cmds, `hello`, [`world`])
+!/
+
+use zen.reflect as reflect
+
+/!
+  Create an empty plugin table.
+!/
+export function create() {
+    <- {}
+}
+
+/!
+  Register (or replace) a command handler.
+  Returns the table (rebind under -g: t -> P.register(t, name, fn)).
+!/
+export function add(table, name, fn) {
+    table[name] -> fn
+    <- table
+}
+
+// Alias: avoid C keyword clash when mangling `register`
+export function register_cmd(table, name, fn) {
+    <- add(table, name, fn)
+}
+
+/!
+  True if a command is registered.
+!/
+export function has(table, name) {
+    when table == Nothing {
+        <- false
+    }
+    <- table.has(name)
+}
+
+/!
+  List of command names.
+!/
+export function list(table) {
+    when table == Nothing {
+        <- []
+    }
+    <- table.keys()
+}
+
+/!
+  Dispatch: reflect.call(table, name, args).
+  args must be a list.
+!/
+export function dispatch(table, name, args) {
+    when not has(table, name) {
+        <- Nothing
+    }
+    when args == Nothing {
+        <- reflect.call(table, name, [])
+    }
+    <- reflect.call(table, name, args)
+}
+
+/!
+  Merge overlay commands into base (overlay wins). Returns new map.
+!/
+export function merge(base, overlay) {
+    let out -> {}
+    when base != Nothing {
+        let items -> base.items()
+        let n -> items.length
+        let i -> 0
+        do while i < n {
+            let p -> items[i]
+            out[p[`key`]] -> p[`value`]
+            i -> i + 1
+        }
+    }
+    when overlay != Nothing {
+        let items2 -> overlay.items()
+        let n2 -> items2.length
+        let j -> 0
+        do while j < n2 {
+            let p2 -> items2[j]
+            out[p2[`key`]] -> p2[`value`]
+            j -> j + 1
+        }
+    }
+    <- out
+}

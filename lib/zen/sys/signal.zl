@@ -1,0 +1,24 @@
+// lib/zen/sys/signal.zl
+// Signal handling capabilities for Zenlang.
+
+export let SIGINT = 2
+export let SIGTERM = 15
+export let SIGHUP = 1
+export let SIGQUIT = 3
+export let SIGKILL = 9
+
+// handle registers a callback for the given signal number.
+// The callback should accept a single integer argument (the signal number).
+export function handle(signum, callback) {
+    <- __builtin_signal.handle(signum, callback)
+}
+
+// ignore instructs the system to ignore the given signal.
+export function ignore(signum) {
+    <- __builtin_signal.ignore(signum)
+}
+
+// restore_default restores the Default system behavior for the given signal.
+export function restore_default(signum) {
+    <- __builtin_signal.restore_default(signum)
+}

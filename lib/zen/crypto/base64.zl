@@ -1,0 +1,127 @@
+/!
+    Base64 and Base64URL Encoding / Decoding Module.
+    Pure Zenlang implementation compatible with both interpreter and native backend.
+!/
+
+import zen.text.string as Str
+
+function _b64_char_to_val(c) {
+    let digits -> `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`
+    let idx -> Str.index_of(digits, c)
+    when (idx != -1) { <- idx }
+    when (c == `-`) { <- 62 }
+    when (c == `_`) { <- 63 }
+    <- -1
+}
+
+/!
+    Encodes a string or byte list into standard Base64 format.
+!/
+function encode(data) {
+    let bytes -> []
+    when (data == Nothing) {
+        bytes -> []
+    } or when (data.kind == `String`) {
+        bytes -> __builtin.string_to_bytes(data)
+    } or {
+        bytes -> data
+    }
+
+    let len -> bytes.length
+    when (len == 0) { <- `` }
+
+    let chars -> `ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/`
+    let out -> ``
+    let i -> 0
+
+    do while i < len {
+        let b0 -> bytes[i]
+        let b1 -> when (i + 1 < len) { bytes[i + 1] } or { 0 }
+        let b2 -> when (i + 2 < len) { bytes[i + 2] } or { 0 }
+
+        when (b0 < 0) { b0 -> b0 + 256 }
+        when (b1 < 0) { b1 -> b1 + 256 }
+        when (b2 < 0) { b2 -> b2 + 256 }
+
+        let n -> (b0 << 16) | (b1 << 8) | b2
+
+        let c0 -> Str.at(chars, (n >> 18) & 0x3f)
+        let c1 -> Str.at(chars, (n >> 12) & 0x3f)
+        let c2 -> when (i + 1 < len) { Str.at(chars, (n >> 6) & 0x3f) } or { `=` }
+        let c3 -> when (i + 2 < len) { Str.at(chars, n & 0x3f) } or { `=` }
+
+        out -> out + c0 + c1 + c2 + c3
+        i -> i + 3
+    }
+
+    <- out
+}
+
+/!
+    Encodes a string into URL-safe Base64 format (no padding, '-' and '_').
+!/
+function encode_url_safe(data) {
+    let b64 -> encode(data)
+    let out -> ``
+    let len -> Str.length(b64)
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(b64, i)
+        when (ch == `+`) {
+            out -> out + `-`
+        } or when (ch == `/`) {
+            out -> out + `_`
+        } or when (ch != `=`) {
+            out -> out + ch
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Decodes a Base64 or Base64URL string into original text string.
+!/
+function decode(encoded) {
+    let s -> Str.to_string(encoded)
+    let len -> Str.length(s)
+    when (len == 0) { <- `` }
+
+    let bytes -> []
+    let i -> 0
+
+    do while i < len {
+        let c0 -> Str.at(s, i)
+        let c1 -> when (i + 1 < len) { Str.at(s, i + 1) } or { `A` }
+        let c2 -> when (i + 2 < len) { Str.at(s, i + 2) } or { `A` }
+        let c3 -> when (i + 3 < len) { Str.at(s, i + 3) } or { `A` }
+
+        let v0 -> _b64_char_to_val(c0)
+        let v1 -> _b64_char_to_val(c1)
+        let v2 -> _b64_char_to_val(c2)
+        let v3 -> _b64_char_to_val(c3)
+
+        when (v0 == -1 or v1 == -1) { break }
+
+        let v2_val -> when (v2 >= 0) { v2 } or { 0 }
+        let v3_val -> when (v3 >= 0) { v3 } or { 0 }
+        let n -> (v0 << 18) | (v1 << 12) | (v2_val << 6) | v3_val
+
+        let b0 -> (n >> 16) & 0xff
+        bytes.append(b0)
+
+        when (c2 != `=` and v2 >= 0) {
+            let b1 -> (n >> 8) & 0xff
+            bytes.append(b1)
+        }
+
+        when (c3 != `=` and v3 >= 0) {
+            let b2 -> n & 0xff
+            bytes.append(b2)
+        }
+
+        i -> i + 4
+    }
+
+    <- __builtin.bytes_to_string(bytes)
+}

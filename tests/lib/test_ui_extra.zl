@@ -1,0 +1,78 @@
+import zen.test as test
+import zen.text.string as Str
+import zen.ui.prompt as prompt
+import zen.ui.tree as tree
+import zen.ui.chart as chart
+
+function test_prompt_parsing_and_formatting() {
+    let p1 -> prompt.parse_confirm_input(`y`, False)
+    let pass -> test.assert_true(p1, `parse_confirm 'y'`)
+
+    let p2 -> prompt.parse_confirm_input(`n`, True)
+    pass -> pass and test.assert_false(p2, `parse_confirm 'n'`)
+
+    let p3 -> prompt.parse_confirm_input(``, True)
+    pass -> pass and test.assert_true(p3, `parse_confirm empty default True`)
+
+    let menu -> prompt.format_select_menu(`Pick one:`, [`A`, `B`], 1)
+    pass -> pass and test.assert_true(Str.contains(menu, `Pick one:`), `select menu title`)
+    pass -> pass and test.assert_true(Str.contains(menu, `> B`), `select menu cursor on B`)
+
+    let multi -> prompt.format_multiselect_menu(`Choose:`, [`Alpha`, `Beta`], 0, [True, False])
+    pass -> pass and test.assert_true(Str.contains(multi, `[x] Alpha`), `multiselect checked Alpha`)
+    pass -> pass and test.assert_true(Str.contains(multi, `[ ] Beta`), `multiselect unchecked Beta`)
+
+    <- pass
+}
+
+function test_tree_rendering() {
+    let tree_data -> {
+        `label` -> `project`,
+        `children` -> [
+            { `label` -> `src`, `children` -> [{ `label` -> `main.zl` }] },
+            { `label` -> `README.md` }
+        ]
+    }
+
+    let unicode_tree -> tree.render_tree(tree_data, { `style` -> `unicode` })
+    let pass -> test.assert_true(Str.contains(unicode_tree, `project`), `tree root`)
+    pass -> pass and test.assert_true(Str.contains(unicode_tree, `├── src`), `tree unicode branch`)
+    pass -> pass and test.assert_true(Str.contains(unicode_tree, `└── README.md`), `tree unicode last branch`)
+
+    let ascii_tree -> tree.render_tree(tree_data, { `style` -> `ascii` })
+    pass -> pass and test.assert_true(Str.contains(ascii_tree, `|-- src`), `tree ascii branch`)
+    pass -> pass and test.assert_true(Str.contains(ascii_tree, `\-- README.md`), `tree ascii last branch`)
+
+    <- pass
+}
+
+function test_chart_rendering() {
+    let spark -> chart.sparkline([1, 3, 5, 2, 8, 4])
+    let pass -> test.assert_true(Str.length(spark) > 0, `sparkline not empty`)
+
+    let bar_data -> [
+        { `label` -> `Rust`, `value` -> 80 },
+        { `label` -> `Zen`, `value` -> 100 }
+    ]
+    let h_chart -> chart.bar_chart_h(bar_data, { `max_width` -> 10 })
+    pass -> pass and test.assert_true(Str.contains(h_chart, `Zen`), `bar chart contains label`)
+    pass -> pass and test.assert_true(Str.contains(h_chart, `█`), `bar chart contains block character`)
+
+    let v_chart -> chart.bar_chart_v([2, 5, 8], 4)
+    pass -> pass and test.assert_true(Str.contains(v_chart, `█`), `vertical chart contains blocks`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `UI.Prompt`, `fn` -> test_prompt_parsing_and_formatting },
+        { `name` -> `UI.Tree`, `fn` -> test_tree_rendering },
+        { `name` -> `UI.Chart`, `fn` -> test_chart_rendering }
+    ]
+    <- test.run_suite(`UI Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

@@ -1,0 +1,207 @@
+/!
+    String Inflection and Case Transformations.
+    Provides slugification, casing conversions (camel, snake, kebab, pascal, title), and pluralization.
+!/
+
+import zen.text.string as Str
+
+/!
+    Internal helper: checks if a single character is uppercase A-Z.
+!/
+function is_upper_char(ch) {
+    let lower -> Str.to_lower(ch)
+    <- (ch != lower) and (Str.to_upper(ch) == ch)
+}
+
+/!
+    Internal helper: checks if a single character is alphanumeric or dash.
+!/
+function is_alnum_char(ch) {
+    let l -> Str.to_lower(ch)
+    when l == `0` or l == `1` or l == `2` or l == `3` or l == `4` or l == `5` or l == `6` or l == `7` or l == `8` or l == `9` {
+        <- True
+    }
+    when l == `a` or l == `b` or l == `c` or l == `d` or l == `e` or l == `f` or l == `g` or l == `h` or l == `i` or l == `j` {
+        <- True
+    }
+    when l == `k` or l == `l` or l == `m` or l == `n` or l == `o` or l == `p` or l == `q` or l == `r` or l == `s` or l == `t` {
+        <- True
+    }
+    when l == `u` or l == `v` or l == `w` or l == `x` or l == `y` or l == `z` {
+        <- True
+    }
+    <- False
+}
+
+/!
+    Splits an arbitrary formatted identifier or sentence into constituent words.
+    Handles snake_case, kebab-case, camelCase, PascalCase, and space separation.
+!/
+function split_words(s) {
+    let str_val -> Str.to_string(s)
+    let len -> Str.length(str_val)
+    when len == 0 { <- [] }
+
+    let words -> []
+    let cur -> ``
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(str_val, i)
+        when ch == ` ` or ch == `_` or ch == `-` or ch == `/` or ch == `.` {
+            when Str.length(cur) > 0 {
+                words.append(cur)
+                cur -> ``
+            }
+        } or when is_upper_char(ch) {
+            when Str.length(cur) > 0 {
+                words.append(cur)
+                cur -> ``
+            }
+            cur -> cur + Str.to_lower(ch)
+        } or {
+            cur -> cur + Str.to_lower(ch)
+        }
+        i -> i + 1
+    }
+    when Str.length(cur) > 0 {
+        words.append(cur)
+    }
+    <- words
+}
+
+/!
+    Converts string to camelCase (e.g. "hello_world" -> "helloWorld").
+!/
+function camel_case(s) {
+    let words -> split_words(s)
+    let count -> words.length
+    when count == 0 { <- `` }
+
+    let out -> words[0]
+    let i -> 1
+    do while i < count {
+        let w -> words[i]
+        when Str.length(w) > 0 {
+            let first -> Str.to_upper(Str.at(w, 0))
+            let rest -> Str.substring(w, 1, Str.length(w))
+            out -> out + first + rest
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Converts string to PascalCase (e.g. "hello_world" -> "HelloWorld").
+!/
+function pascal_case(s) {
+    let words -> split_words(s)
+    let count -> words.length
+    when count == 0 { <- `` }
+
+    let out -> ``
+    let i -> 0
+    do while i < count {
+        let w -> words[i]
+        when Str.length(w) > 0 {
+            let first -> Str.to_upper(Str.at(w, 0))
+            let rest -> Str.substring(w, 1, Str.length(w))
+            out -> out + first + rest
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Converts string to snake_case (e.g. "HelloWorld" -> "hello_world").
+!/
+function snake_case(s) {
+    let words -> split_words(s)
+    <- Str.join(words, `_`)
+}
+
+/!
+    Converts string to kebab-case (e.g. "HelloWorld" -> "hello-world").
+!/
+function kebab_case(s) {
+    let words -> split_words(s)
+    <- Str.join(words, `-`)
+}
+
+/!
+    Converts string to Title Case (e.g. "hello world" -> "Hello World").
+!/
+function title_case(s) {
+    let words -> split_words(s)
+    let count -> words.length
+    when count == 0 { <- `` }
+
+    let capitalized -> []
+    let i -> 0
+    do while i < count {
+        let w -> words[i]
+        when Str.length(w) > 0 {
+            let first -> Str.to_upper(Str.at(w, 0))
+            let rest -> Str.substring(w, 1, Str.length(w))
+            capitalized.append(first + rest)
+        }
+        i -> i + 1
+    }
+    <- Str.join(capitalized, ` `)
+}
+
+/!
+    Converts a string into a clean, URL-safe slug.
+    (e.g. "Hello World! 2026" -> "hello-world-2026").
+!/
+function slugify(s) {
+    let str_val -> Str.to_string(s)
+    let len -> Str.length(str_val)
+    when len == 0 { <- `` }
+
+    let buf -> ``
+    let last_was_dash -> False
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(str_val, i)
+        let lower -> Str.to_lower(ch)
+        when is_alnum_char(lower) {
+            buf -> buf + lower
+            last_was_dash -> False
+        } or {
+            when not last_was_dash and Str.length(buf) > 0 {
+                buf -> buf + `-`
+                last_was_dash -> True
+            }
+        }
+        i -> i + 1
+    }
+
+    when Str.ends_with(buf, `-`) {
+        buf -> Str.substring(buf, 0, Str.length(buf) - 1)
+    }
+    <- buf
+}
+
+/!
+    Pluralizes a singular English word.
+    If count is provided and equals 1, returns the singular word.
+!/
+function pluralize(word, count) {
+    let s -> Str.to_string(word)
+    when count != Nothing and count == 1 {
+        <- s
+    }
+    let len -> Str.length(s)
+    when len == 0 { <- `` }
+
+    // Irregular / common rules
+    when Str.ends_with(s, `y`) and not Str.ends_with(s, `ay`) and not Str.ends_with(s, `ey`) and not Str.ends_with(s, `oy`) and not Str.ends_with(s, `uy`) {
+        <- Str.substring(s, 0, len - 1) + `ies`
+    }
+    when Str.ends_with(s, `s`) or Str.ends_with(s, `sh`) or Str.ends_with(s, `ch`) or Str.ends_with(s, `x`) or Str.ends_with(s, `z`) {
+        <- s + `es`
+    }
+    <- s + `s`
+}

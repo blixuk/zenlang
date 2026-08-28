@@ -1,0 +1,26 @@
+/!
+ Selfhost driver entry — path to full Zen host (no Python).
+ Invoked as:
+   python3 bootstrap/Zen.py selfhost/zen.zl <command> ...
+   ./bin/zen-selfhost <command> ...   (after ./scripts/zen install-selfhost)
+ Commands: compile | build | run|-g | interpret | check | deps | help
+ !/
+
+import compiler.Driver as Driver
+import zen.io.io as io
+import zen.sys.sys as Sys
+
+function main() {
+    let args -> Sys.get_args()
+    let r -> Driver.run_args(args)
+    let msg -> r[`message`]
+    when msg != Nothing and msg != `` {
+        io.writeln(msg)
+    }
+    let code -> r[`code`]
+    when code == Nothing {
+        <- 0
+    }
+    // Pass through integer program/CLI codes (bootstrap -g parity).
+    <- code
+}

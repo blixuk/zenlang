@@ -1,0 +1,56 @@
+/!
+    Micro-benchmarking and Performance Profiling Module.
+    Measures execution time and throughput of Zenlang functions.
+!/
+
+import zen.time.time as time
+import zen.text.string as Str
+
+/!
+    Runs a benchmark on a target function for a given number of iterations.
+    @param name Benchmark label.
+    @param fn Function with no arguments () to measure.
+    @param iterations Number of times to execute fn.
+    @return Benchmark summary map with timing and throughput stats.
+!/
+function benchmark(name, fn, iterations) {
+    let count -> 0 + iterations
+    when (count <= 0) { count -> 1 }
+
+    let start_t -> time.monotonic()
+
+    let i -> 0
+    do while i < count {
+        fn()
+        i -> i + 1
+    }
+
+    let end_t -> time.monotonic()
+    let elapsed_sec -> end_t - start_t
+    when (elapsed_sec <= 0.0) { elapsed_sec -> 0.000001 }
+
+    let elapsed_ms -> elapsed_sec * 1000.0
+    let avg_ms -> elapsed_ms / count
+    let ops_per_sec -> count / elapsed_sec
+
+    <- {
+        `name` -> Str.to_string(name),
+        `iterations` -> count,
+        `elapsed_sec` -> elapsed_sec,
+        `elapsed_ms` -> elapsed_ms,
+        `avg_ms` -> avg_ms,
+        `ops_per_sec` -> ops_per_sec
+    }
+}
+
+/!
+    Formats a benchmark result map into a readable string.
+!/
+function format(result) {
+    when (result == Nothing) { <- `` }
+    let n -> result[`name`]
+    let iters -> Str.to_string(result[`iterations`])
+    let ms -> Str.to_string(result[`elapsed_ms`])
+    let ops -> Str.to_string(result[`ops_per_sec`])
+    <- `Benchmark: ` + n + ` | ` + iters + ` iters in ` + ms + `ms (` + ops + ` ops/sec)`
+}

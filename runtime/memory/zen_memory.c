@@ -76,10 +76,16 @@ static int ZenFrame_sp = 0;
 static ZenArena* ZenUser_stack[MAX_ARENAS];
 static int ZenUser_sp = 0;
 
-struct ZenArena {
-    void* buffer;
+typedef struct ZenArenaChunk {
+    struct ZenArenaChunk* next;
     size_t size;
     size_t offset;
+} ZenArenaChunk;
+
+struct ZenArena {
+    ZenArenaChunk* head;
+    ZenArenaChunk* current;
+    size_t default_chunk_size;
 };
 
 /* --- Frame stack (SMIR) --- */
@@ -153,18 +159,6 @@ static void ZenFrame_remove(ZenArena* arena) {
     }
 }
 
-static int ZenArena_grow(ZenArena* arena, size_t need) {
-    if (!arena) return 0;
-    size_t want = arena->size * 2;
-    if (want < arena->offset + need) want = arena->offset + need;
-    if (want < 4096) want = 4096;
-    void* nb = realloc(arena->buffer, want);
-    if (!nb) return 0;
-    arena->buffer = nb;
-    arena->size = want;
-    return 1;
-}
-
 void* ZenRuntime_allocate(size_t size) {
     ZenArena* cur = ZenArena_current();
     if (cur) {
@@ -177,40 +171,62 @@ ZenArena* ZenArena_create(size_t size) {
     if (size == 0) size = 1024 * 1024;
     ZenArena* arena = (ZenArena*)malloc(sizeof(ZenArena));
     if (!arena) return NULL;
-    arena->buffer = malloc(size);
-    if (!arena->buffer) {
+
+    ZenArenaChunk* chunk = (ZenArenaChunk*)malloc(sizeof(ZenArenaChunk) + size);
+    if (!chunk) {
         free(arena);
         return NULL;
     }
-    arena->size = size;
-    arena->offset = 0;
+    chunk->next = NULL;
+    chunk->size = size;
+    chunk->offset = 0;
+
+    arena->head = chunk;
+    arena->current = chunk;
+    arena->default_chunk_size = size;
     return arena;
 }
 
 void* ZenArena_allocate(ZenArena* arena, size_t size) {
     if (!arena) return malloc(size);
     size = (size + 7) & ~7;
-    if (arena->offset + size > arena->size) {
-        if (!ZenArena_grow(arena, size)) {
-            return malloc(size);
-        }
+    ZenArenaChunk* cur = arena->current;
+    if (!cur || cur->offset + size > cur->size) {
+        size_t chunk_size = arena->default_chunk_size;
+        if (size > chunk_size) chunk_size = size;
+        ZenArenaChunk* next = (ZenArenaChunk*)malloc(sizeof(ZenArenaChunk) + chunk_size);
+        if (!next) return malloc(size);
+        next->next = NULL;
+        next->size = chunk_size;
+        next->offset = 0;
+        if (cur) cur->next = next;
+        if (!arena->head) arena->head = next;
+        arena->current = next;
+        cur = next;
     }
-    void* ptr = (char*)arena->buffer + arena->offset;
-    arena->offset += size;
+    char* buf = (char*)(cur + 1);
+    void* ptr = (void*)(buf + cur->offset);
+    cur->offset += size;
     return ptr;
 }
 
 void ZenArena_reset(ZenArena* arena) {
-    if (arena) arena->offset = 0;
+    if (!arena) return;
+    for (ZenArenaChunk* ch = arena->head; ch; ch = ch->next) {
+        ch->offset = 0;
+    }
+    arena->current = arena->head;
 }
 
 void ZenArena_free(ZenArena* arena) {
     if (!arena) return;
     ZenUser_remove(arena);
     ZenFrame_remove(arena);
-    if (arena->buffer) {
-        memset(arena->buffer, 0xCC, arena->size);
-        free(arena->buffer);
+    ZenArenaChunk* ch = arena->head;
+    while (ch) {
+        ZenArenaChunk* next = ch->next;
+        free(ch);
+        ch = next;
     }
     free(arena);
 }

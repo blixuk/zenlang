@@ -1,0 +1,32 @@
+// Chapter 9: Structs & Pattern Matching
+
+Heading { text -> `9. Data Structures & Pattern Matching`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang provides lightweight tagged data structures with the structure keyword and exhaustive pattern matching on variants:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        structure Point {
+            x,
+            y
+        }
+        
+        structure Rect {
+            origin,
+            width,
+            height
+        }
+        
+        // Instantiation
+        let p -> Point { x -> 10, y -> 20 }
+        let r -> Rect { origin -> p, width -> 100, height -> 50 }
+        
+        // Accessing fields
+        let area -> r.width * r.height
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

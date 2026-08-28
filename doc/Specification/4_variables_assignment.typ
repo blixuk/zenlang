@@ -1,68 +1,60 @@
 #import "template.typ": *
 
-== Variables & Assignment
+= Variables, Constants & Assignment
 
-=== Variable (mutable)
+In Zenlang, data movement is visually explicit. Variables and constants are initialized and updated using the left-to-right flow arrow `->`.
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Let Assignment Expression
-        #v(0.5em)
+== Mutable Variables (`let`)
 
-        Syntax:
-        ```zl
-        let Identifier -> Expression
-        let Identifier : Type -> Expression
-        let Identifier :> Expression
-        ```
-        #v(0.5em)
+Variables are declared with `let`. They can be freely reassigned or mutated throughout their scope.
 
-        Example:
-        ```zl
-        let a -> 10
-        let b : Integer -> 100
-        let c :> `Hello World`
-        ```
-    ]
+#feature(
+    "Variable Declaration & Binding",
+    "let Identifier -> Expression\nlet Identifier : Type -> Expression\nlet Identifier : Type -> Default",
+    "let count -> 0\nlet name : String -> `Zen`\nlet buffer : List -> Default"
 )
 
-=== Constant (immutable)
+=== Variable Reassignment
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Set Assignment Expression
-        #v(0.5em)
-
-        Trying to reassign a constant raises an error.
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        set Identifier : Type -> Expression
-        set Identifier :> Expression
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        set PI : Decimal -> 3.14159
-        set FPS :> 60
-        ```
-    ]
-)
-
-=== Assignment typing
+Once declared, a variable is reassigned by binding a new value using the arrow `->`:
 
 ```zl
-let x -> 1            // Type will be resolved to Variant and inferred as Integer
-let y : Integer -> 2  // Type will be resolved as Integer
-let z :> 3            // Type will be resolved to Integer and inferred as Integer
+let x -> 10
+x -> x + 5 // x is now 15
+```
+
+== Immutable Constants (`set`)
+
+Constants are declared with `set`. Once bound, attempting to reassign or mutate a constant raises a compile-time or runtime error.
+
+#feature(
+    "Constant Declaration",
+    "set Identifier -> Expression\nset Identifier : Type -> Expression",
+    "set MAX_CONNECTIONS -> 1024\nset PI : Decimal -> 3.1415926535"
+)
+
+#warning[
+  Constants cannot be rebound. The statement `set PI -> 3.14` followed by `PI -> 3.0` will halt execution with an error.
+]
+
+== Sentinel Zero-State Initialization (`Default`)
+
+Variables can be explicitly initialized to their type's natural zero-state using `Default`:
+
+```zl
+let counter : Integer -> Default  // Materializes as 0
+let flags : Boolean -> Default    // Materializes as False
+let items : List -> Default       // Materializes as []
+let metadata : Map -> Default     // Materializes as {}
+```
+
+== Unassigned Sentinels (`Nothing`)
+
+When a variable represents the absence of a value, it is bound to `Nothing`:
+
+```zl
+let active_session -> Nothing
+when active_session == Nothing {
+    // Session is not established
+}
 ```

@@ -1,0 +1,47 @@
+import zen.text.regex as re
+import zen.text.string as str
+
+/!
+ Simple XML Parser Module.
+ !/
+
+/!
+ Parses a simple XML string into a Map.
+ Note: Only supports single-level tags with content.
+ @param xml The XML string.
+ @return A map of tag names to content.
+ !/
+function parse(xml) {
+    let result -> {}
+    let pattern -> `<([^>]+)>([^<]*)<\/([^>]+)>`
+    let matches -> re.find_all(pattern, xml)
+    
+    // In our interpreter, re.findall returns a list of tuples (as lists)
+    do for match in matches {
+        when match.length = 3 {
+            let opening -> match[0]
+            let content -> match[1]
+            let closing -> match[2]
+            
+            when opening = closing {
+                result[opening] -> content
+            }
+        }
+    }
+    
+    <- result
+}
+
+/!
+ Converts a Map to a simple XML string.
+ @param data The map of tag names to content.
+ @return The XML string.
+ !/
+function stringify(data) {
+    let xml -> ``
+    let keys -> data.keys()
+    do for k in keys {
+        xml -> xml + `<` + k + `>` + str.to_string(data[k]) + `</` + k + `>\n`
+    }
+    <- xml
+}

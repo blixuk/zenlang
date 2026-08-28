@@ -1,0 +1,234 @@
+/!
+  Cooperative Fiber and Coroutine Engine for Zenlang concurrency.
+  Provides lightweight, resumable execution units, generator context,
+  and a round-robin cooperative scheduler.
+!/
+
+import zen.time.time as time
+import zen.text.string as Str
+import zen.reflect.reflect as reflect
+
+// =========================================================================
+// 1. Fiber Lifecycle
+// =========================================================================
+
+/!
+  Creates a new cooperative Fiber.
+  @param fn Execution function (signature: fn(fiber_ctx, input_val) -> map).
+  @param name Optional human-readable debug name.
+!/
+export function create_fiber(fn, name) {
+    let f_name -> name
+    when f_name == Nothing or f_name == `` {
+        f_name -> `fiber_` + Str.to_string(time.now())
+    }
+    <- {
+        `kind` -> `FIBER`,
+        `name` -> f_name,
+        `status` -> `CREATED`, // CREATED, RUNNING, SUSPENDED, DEAD
+        `fn` -> fn,
+        `context` -> {},
+        `yield_value` -> Nothing,
+        `return_value` -> Nothing,
+        `error` -> Nothing,
+        `step_count` -> 0,
+        `created_at` -> time.now(),
+        `last_run_at` -> 0
+    }
+}
+
+/!
+  Checks if the fiber has terminated.
+!/
+export function fiber_is_dead(fiber) {
+    when fiber == Nothing { <- true }
+    <- fiber[`status`] == `DEAD`
+}
+
+/!
+  Checks if the fiber is currently suspended.
+!/
+export function fiber_is_suspended(fiber) {
+    when fiber == Nothing { <- false }
+    <- fiber[`status`] == `SUSPENDED`
+}
+
+/!
+  Yields a value from within a fiber step.
+!/
+export function fiber_yield(value) {
+    <- {
+        `done` -> false,
+        `yield` -> true,
+        `value` -> value
+    }
+}
+
+/!
+  Signals normal completion of a fiber.
+!/
+export function fiber_done(value) {
+    <- {
+        `done` -> true,
+        `yield` -> false,
+        `value` -> value
+    }
+}
+
+/!
+  Resumes execution of a fiber with an optional input value.
+  @return Map { done: bool, value: Any, status: String, error: Any }
+!/
+export function resume(fiber, input_val) {
+    when fiber == Nothing {
+        <- { `done` -> true, `value` -> Nothing, `status` -> `DEAD`, `error` -> `Null fiber` }
+    }
+    when fiber[`status`] == `DEAD` {
+        <- {
+            `done` -> true,
+            `value` -> fiber[`return_value`],
+            `status` -> `DEAD`,
+            `error` -> `Cannot resume dead fiber`
+        }
+    }
+
+    fiber[`status`] -> `RUNNING`
+    fiber[`last_run_at`] -> time.now()
+    fiber[`step_count`] -> fiber[`step_count`] + 1
+
+    let fn -> fiber[`fn`]
+    when fn == Nothing {
+        fiber[`status`] -> `DEAD`
+        <- { `done` -> true, `value` -> Nothing, `status` -> `DEAD`, `error` -> `No function attached` }
+    }
+
+    let step_res -> fn(fiber, input_val)
+
+    // Handle return shape
+    when reflect.is_map(step_res) {
+        when step_res.has(`yield`) and step_res[`yield`] == true {
+            fiber[`status`] -> `SUSPENDED`
+            fiber[`yield_value`] -> step_res[`value`]
+            <- {
+                `done` -> false,
+                `value` -> step_res[`value`],
+                `status` -> `SUSPENDED`,
+                `error` -> Nothing
+            }
+        } or when step_res.has(`done`) and step_res[`done`] == true {
+            fiber[`status`] -> `DEAD`
+            fiber[`return_value`] -> step_res[`value`]
+            <- {
+                `done` -> true,
+                `value` -> step_res[`value`],
+                `status` -> `DEAD`,
+                `error` -> Nothing
+            }
+        }
+    }
+
+    // Direct value return means task finished
+    fiber[`status`] -> `DEAD`
+    fiber[`return_value`] -> step_res
+    <- {
+        `done` -> true,
+        `value` -> step_res,
+        `status` -> `DEAD`,
+        `error` -> Nothing
+    }
+}
+
+// =========================================================================
+// 2. Cooperative Round-Robin Scheduler
+// =========================================================================
+
+/!
+  Creates a cooperative Fiber Scheduler.
+!/
+export function create_scheduler() {
+    <- {
+        `kind` -> `SCHEDULER`,
+        `queue` -> [],
+        `completed` -> [],
+        `tick_count` -> 0,
+        `is_running` -> false
+    }
+}
+
+/!
+  Enqueues a fiber or function into the scheduler run queue.
+!/
+export function sched_spawn(scheduler, fiber_or_fn, name) {
+    when scheduler == Nothing { <- Nothing }
+    let f -> fiber_or_fn
+    when reflect.is_function(f) {
+        f -> create_fiber(f, name)
+    } or when not reflect.is_map(f) {
+        f -> create_fiber(f, name)
+    }
+    scheduler[`queue`].append(f)
+    <- f
+}
+
+/!
+  Steps the scheduler by executing one fiber from the head of the queue.
+  @return Map { ok: bool, fiber: Fiber, done: bool, remaining: Int }
+!/
+export function sched_step(scheduler) {
+    when scheduler == Nothing or scheduler[`queue`].length == 0 {
+        <- { `ok` -> false, `fiber` -> Nothing, `done` -> true, `remaining` -> 0 }
+    }
+
+    scheduler[`tick_count`] -> scheduler[`tick_count`] + 1
+    let f -> scheduler[`queue`][0]
+    scheduler[`queue`].remove_at(0)
+
+    let r -> resume(f, scheduler[`tick_count`])
+
+    when r[`done`] == false and f[`status`] == `SUSPENDED` {
+        // Requeue suspended fiber at the tail
+        scheduler[`queue`].append(f)
+        <- { `ok` -> true, `fiber` -> f, `done` -> false, `remaining` -> scheduler[`queue`].length }
+    } or {
+        // Fiber finished
+        scheduler[`completed`].append(f)
+        <- { `ok` -> true, `fiber` -> f, `done` -> true, `remaining` -> scheduler[`queue`].length }
+    }
+}
+
+/!
+  Runs all scheduled fibers to completion or until max_ticks is reached.
+  @param max_ticks Maximum scheduler cycles (0 for unlimited).
+  @return Map { completed_count: Int, total_ticks: Int, ok: bool }
+!/
+export function sched_run_all(scheduler, max_ticks) {
+    when scheduler == Nothing {
+        <- { `completed_count` -> 0, `total_ticks` -> 0, `ok` -> false }
+    }
+    let limit -> max_ticks
+    when limit == Nothing or limit <= 0 {
+        limit -> 100000
+    }
+
+    let initial_count -> scheduler[`queue`].length
+    let ticks -> 0
+
+    do while scheduler[`queue`].length > 0 and ticks < limit {
+        sched_step(scheduler)
+        ticks -> ticks + 1
+    }
+
+    <- {
+        `completed_count` -> scheduler[`completed`].length,
+        `total_ticks` -> ticks,
+        `ok` -> (scheduler[`queue`].length == 0)
+    }
+}
+
+/!
+  Returns the number of active fibers currently waiting in the scheduler.
+!/
+export function sched_active_count(scheduler) {
+    when scheduler == Nothing { <- 0 }
+    <- scheduler[`queue`].length
+}

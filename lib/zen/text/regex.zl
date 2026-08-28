@@ -1,0 +1,55 @@
+/!
+ Regular Expression Module.
+ Provides functions for pattern matching and replacement.
+ !/
+
+/!
+ Checks if a pattern matches at the beginning of a string.
+ @param pattern The regex pattern.
+ @param s The string to check.
+ @return True if it matches, False otherwise.
+ !/
+function match(pattern, s) {
+    <- __builtin_regex.match(pattern, s)
+}
+
+/!
+ Searches for a pattern anywhere in a string.
+ @param pattern The regex pattern.
+ @param s The string to search.
+ @return True if it matches, False otherwise.
+ !/
+function search(pattern, s) {
+    <- __builtin_regex.search(pattern, s)
+}
+
+/!
+ Replaces occurrences of a pattern with a replacement string.
+ @param pattern The regex pattern.
+ @param repl The replacement string.
+ @param s The string to process.
+ @return The resulting string.
+ !/
+function replace(pattern, repl, s) {
+    <- __builtin_regex.replace(pattern, repl, s)
+}
+
+/!
+ Splits a string by a regex pattern.
+ @param pattern The regex pattern.
+ @param s The string to split.
+ @return A list of substrings.
+ !/
+function split(pattern, s) {
+    <- __builtin_regex.split(pattern, s)
+}
+
+/!
+ Finds all occurrences of a pattern in a string.
+ @param pattern The regex pattern.
+ @param s The string to search.
+ @return A list of matches.
+ !/
+function find_all(pattern, s) {
+    <- __builtin_regex.find_all(pattern, s)
+}

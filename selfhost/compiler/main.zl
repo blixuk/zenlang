@@ -1,0 +1,52 @@
+/!
+ Thin CLI: compile one file to C via Stage 6 Driver.
+ Usage (via bootstrap): python3 bootstrap/Zen.py selfhost/compiler/main.zl <in.zl> [out.c]
+ !/
+
+import compiler.Driver as Driver
+import zen.io.io as io
+import zen.sys.sys as Sys
+import zen.text.string as Str
+
+function main() {
+    let args -> Sys.get_args()
+    let n -> args.length
+    // Find .zl input after this script path
+    let src -> ``
+    let out -> `out.c`
+    let do_check -> false
+    let i -> 0
+    do while i < n {
+        let a -> Str.to_string(args[i])
+        when Str.ends_with(a, `.zl`) and not Str.contains(a, `main.zl`) and not Str.contains(a, `zen.zl`) {
+            when src == `` {
+                src -> a
+            }
+        } or when a == `--typecheck` or a == `-t` {
+            do_check -> true
+        } or when Str.ends_with(a, `.c`) {
+            out -> a
+        }
+        i -> i + 1
+    }
+    when src == `` {
+        io.writeln(`Usage: main.zl <source.zl> [out.c] [--typecheck]`)
+        <- 1
+    }
+    let r -> Driver.compile_file(src, out, do_check)
+    when r[`ok`] == true {
+        io.writeln(`Wrote ` + out)
+        <- 0
+    }
+    io.writeln(`Failed`)
+    let errs -> r[`errors`]
+    when errs != Nothing {
+        let en -> errs.length
+        let j -> 0
+        do while j < en {
+            io.writeln(Str.to_string(errs[j]))
+            j -> j + 1
+        }
+    }
+    <- 1
+}

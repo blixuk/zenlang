@@ -1,14 +1,13 @@
 from typing import Any
+from Logging.Diagnostic import Diagnostic, Span, DiagnosticSeverity
 
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
+RED = "\033[1;31m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+BLUE = "\033[1;34m"
+CYAN = "\033[1;36m"
+WHITE = "\033[1;37m"
 BOLD = "\033[1m"
-UNDERLINE = "\033[4m"
 RESET = "\033[0m"
 
 
@@ -45,12 +44,11 @@ class Error(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
+        span = None
         if self.attachment:
-            return f"""[{self.name}] [{RED}Error{RESET}] {YELLOW}{self.message}{RESET}
-    {YELLOW}'{self.attachment.type}': {self.attachment.line}, {self.attachment.column}{RESET}
-{WHITE}{self.source_path}:{self.attachment.line}:{self.attachment.column}{RESET}"""
-        else:
-            return f"[{self.name}] [{RED}Error{RESET}] {YELLOW}{self.message}{RESET}"
+            span = Span.from_token(self.attachment, self.source_path)
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="LexerError", span=span)
+        return diag.render()
 
 
 class TokenError(Exception):
@@ -73,14 +71,12 @@ class TokenError(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
-        if self.snippet:
-            return f"""[{self.name}] [{RED}TokenError{RESET}] {YELLOW}{self.message}{RESET}
-    {YELLOW}'{self.snippet}' at Line: {self.line}, Column: {self.column}{RESET}
-{WHITE}{self.source_path}:{self.line}:{self.column}{RESET}"""
-        else:
-            return (
-                f"[{self.name}] [{RED}TokenError{RESET}] {YELLOW}{self.message}{RESET}"
-            )
+        span = None
+        if self.line is not None and self.column is not None:
+            snippet_len = len(str(self.snippet)) if self.snippet else 1
+            span = Span(self.source_path, self.line, self.column, snippet_len, label="syntax error here")
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="LexerTokenError", span=span)
+        return diag.render()
 
 
 class LexerLogger:

@@ -1,0 +1,5 @@
+import fixtures.mod_b as B
+
+function use_b() {
+    <- B.value()
+}

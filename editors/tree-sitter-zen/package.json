@@ -1,0 +1,20 @@
+{
+  "name": "tree-sitter-zen",
+  "version": "0.1.0",
+  "description": "Tree-sitter grammar for Zenlang",
+  "main": "bindings/node",
+  "keywords": [
+    "tree-sitter",
+    "zenlang",
+    "parser"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "tree-sitter-cli": "^0.24.7"
+  },
+  "scripts": {
+    "build": "tree-sitter generate && tree-sitter build",
+    "test": "tree-sitter test",
+    "parse": "tree-sitter parse"
+  }
+}

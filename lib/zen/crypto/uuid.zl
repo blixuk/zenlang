@@ -1,0 +1,76 @@
+/!
+    UUID (Universally Unique Identifier) v4 generator and validator.
+    Implements RFC 4122 random UUID generation in pure Zenlang.
+!/
+
+import zen.math.random as random
+import zen.crypto.hex as hex
+import zen.text.string as Str
+
+/!
+    Generates a cryptographically random RFC 4122 UUID v4 string.
+    Format: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`
+    @return UUID v4 string.
+!/
+function v4() {
+    let bytes -> []
+    let i -> 0
+    do while i < 16 {
+        bytes.append(random.integer(0, 255))
+        i -> i + 1
+    }
+
+    // Set version 4: (byte[6] & 0x0f) | 0x40
+    bytes[6] -> (bytes[6] & 15) | 64
+
+    // Set variant RFC 4122: (byte[8] & 0x3f) | 0x80
+    bytes[8] -> (bytes[8] & 63) | 128
+
+    let h -> hex.encode(bytes)
+
+    // Format: 8-4-4-4-12
+    let p1 -> Str.substring(h, 0, 8)
+    let p2 -> Str.substring(h, 8, 12)
+    let p3 -> Str.substring(h, 12, 16)
+    let p4 -> Str.substring(h, 16, 20)
+    let p5 -> Str.substring(h, 20, 32)
+
+    <- p1 + `-` + p2 + `-` + p3 + `-` + p4 + `-` + p5
+}
+
+function _is_hex_digit(c) {
+    let lower -> Str.to_lower(c)
+    when lower == `0` or lower == `1` or lower == `2` or lower == `3` or lower == `4` { <- true }
+    when lower == `5` or lower == `6` or lower == `7` or lower == `8` or lower == `9` { <- true }
+    when lower == `a` or lower == `b` or lower == `c` or lower == `d` or lower == `e` or lower == `f` { <- true }
+    <- false
+}
+
+/!
+    Validates whether a string is a properly formatted UUID string.
+    @param uuid_str The string to validate.
+    @return True if valid UUID format, False otherwise.
+!/
+function validate(uuid_str) {
+    when uuid_str == Nothing { <- false }
+    let s -> Str.trim(uuid_str)
+    when Str.length(s) != 36 { <- false }
+
+    // Hyphens at positions 8, 13, 18, 23
+    when Str.at(s, 8) != `-` or Str.at(s, 13) != `-` or Str.at(s, 18) != `-` or Str.at(s, 23) != `-` {
+        <- false
+    }
+
+    let i -> 0
+    do while i < 36 {
+        when i != 8 and i != 13 and i != 18 and i != 23 {
+            let c -> Str.at(s, i)
+            when not _is_hex_digit(c) {
+                <- false
+            }
+        }
+        i -> i + 1
+    }
+
+    <- true
+}

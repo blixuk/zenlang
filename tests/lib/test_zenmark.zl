@@ -1,0 +1,113 @@
+import zen.test as test
+import zen.zenmark as zm
+import zen.text.string as Str
+
+function test_inline_spans() {
+    let raw -> `Press !!Ctrl+B!! to build. Value is **bold**, ^^italic^^, and code {{let x -> 1}}. Math: $$E=mc^2$$. Water is H--2--O, square is x++2++. Visit [Zen](https://zenlang.org).`
+    let spans -> zm.parse_spans(raw)
+    
+    let pass -> test.assert_true(spans.length > 5, `spans parsed count > 5`)
+    
+    // Look for keyboard span
+    let found_kbd -> False
+    let found_bold -> False
+    let found_code -> False
+    let found_sub -> False
+    let found_sup -> False
+    let found_link -> False
+    
+    let i -> 0
+    do while i < spans.length {
+        let s -> spans[i]
+        let stype -> s[`type`]
+        let txt -> s[`text`]
+        when stype == `keyboard` and txt == `Ctrl+B` { found_kbd -> True }
+        or when stype == `bold` and txt == `bold` { found_bold -> True }
+        or when stype == `code` and txt == `let x -> 1` { found_code -> True }
+        or when stype == `subscript` and txt == `2` { found_sub -> True }
+        or when stype == `superscript` and txt == `2` { found_sup -> True }
+        or when stype == `link` and txt == `Zen` and s[`url`] == `https://zenlang.org` { found_link -> True }
+        i -> i + 1
+    }
+    
+    pass -> pass and test.assert_true(found_kbd, `found keyboard Ctrl+B span`)
+    pass -> pass and test.assert_true(found_bold, `found bold span`)
+    pass -> pass and test.assert_true(found_code, `found code span`)
+    pass -> pass and test.assert_true(found_sub, `found subscript 2 span`)
+    pass -> pass and test.assert_true(found_sup, `found superscript 2 span`)
+    pass -> pass and test.assert_true(found_link, `found link span`)
+    <- pass
+}
+
+function test_dom_and_render_html() {
+    let entry -> zm.Entry({
+        `title` -> `Zenmark Specification`,
+        `archetype` -> `specification`,
+        `theme` -> `antiquarian`
+    })
+    
+    let doc -> zm.Document([
+        zm.Heading({ `text` -> `Zenmark Guide`, `size` -> 1 }),
+        zm.Paragraph({ `text` -> `Welcome to **ZenMark** with !!Esc!! key.` }),
+        zm.CodeBlock({ `language` -> `zen`, `code` -> `let x -> 42` }),
+        zm.Table({
+            `headers` -> [`Key`, `Action`],
+            `rows` -> [[`Ctrl+B`, `Build`], [`Ctrl+R`, `Run`]]
+        })
+    ], entry)
+    
+    let html -> zm.render_html(doc)
+    let pass -> test.assert_true(Str.contains(html, `<div class="zen-document">`), `contains root div`)
+    pass -> pass and test.assert_true(Str.contains(html, `<title>Zenmark Specification</title>`), `contains title`)
+    pass -> pass and test.assert_true(Str.contains(html, `CANONICAL SPECIFICATION`), `contains archetype badge`)
+    pass -> pass and test.assert_true(Str.contains(html, `--zm-bg: #f6f4ee`), `contains antiquarian theme bg`)
+    pass -> pass and test.assert_true(Str.contains(html, `<h1>Zenmark Guide</h1>`), `contains h1`)
+    pass -> pass and test.assert_true(Str.contains(html, `<strong>ZenMark</strong>`), `contains strong span`)
+    pass -> pass and test.assert_true(Str.contains(html, `<kbd class="zen-key">Esc</kbd>`), `contains kbd tag`)
+    pass -> pass and test.assert_true(Str.contains(html, `<table class="zen-table">`), `contains table tag`)
+    <- pass
+}
+
+function test_render_term() {
+    let doc -> zm.Document([
+        zm.Heading({ `text` -> `Terminal Title`, `size` -> 2 }),
+        zm.Paragraph({ `text` -> `Press !!Enter!! to proceed.` })
+    ], Nothing)
+    
+    let term_out -> zm.render_term(doc)
+    let pass -> test.assert_true(Str.contains(term_out, `## Terminal Title`), `contains header text`)
+    pass -> pass and test.assert_true(Str.contains(term_out, `Enter`), `contains Enter text`)
+    <- pass
+}
+
+function test_doc_comment_compatibility() {
+    let comment -> `
+    Summary of the function.
+    @param x The input number.
+    @return The result.
+    `
+    let res -> zm.parse(comment)
+    let pass -> test.assert_true(Str.contains(res[`summary`], `Summary of the function`), `doc summary parsed`)
+    pass -> pass and test.assert_true(res[`params`].has(`x`), `doc param x found`)
+    pass -> pass and test.assert_equal(res[`returns`], `The result.`, `doc return parsed`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `ZenMark.inline_spans`, `fn` -> test_inline_spans},
+        {`name` -> `ZenMark.dom_and_render_html`, `fn` -> test_dom_and_render_html},
+        {`name` -> `ZenMark.render_term`, `fn` -> test_render_term},
+        {`name` -> `ZenMark.doc_comment_compatibility`, `fn` -> test_doc_comment_compatibility}
+    ]
+
+    <- test.run_suite(`Zen Mark Document Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

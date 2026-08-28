@@ -1,113 +1,103 @@
-# Zenlang Tooling
+# Zenlang Tooling & Developer Ecosystem
 
-## zen
+Zenlang provides a unified, Unix-native developer ecosystem covering compilation, interpretation, automated testing, documentation generation, syntax formatting, and editor language servers.
 
-- Compiler
-- REPL
-- Interpreter
-- Virtual Machine?
-- Package Manager
-- Build System (Implemented)
-    - `.zbuild` project files
-    - `zen --build` command
-- Source Mapping (Implemented)
-    - `#line` directive support for C debugging
-    - `zen --source-map` flag
+---
 
-## Test Runner
+## 1. The Zen Command-Line Interface (`zen`)
 
-The Zenlang Test Runner discovery and execution system.
+The `zen` command (`bin/zen` or `bin/zen-selfhost`) is the primary interface for running, compiling, testing, and checking Zenlang applications.
 
-### Usage
-
-To run tests in a source file:
-```bash
-zen <source_file> --test
-```
-
-### Test Discovery
-
-The runner discovers tests in two ways:
-
-1.  **Test Functions**: Any function starting with `test_` (e.g., `function test_addition()`).
-2.  **Doctests**: Any code block within a documentation comment (`/! ... !/`) that starts with `@example`.
-
-### Assertion Syntax
-
-While you can use the `zen.test` library, Zenlang also supports native assertions using the `!` operator:
-
-```zenlang
-function test_math() {
-    ! 1 + 1 == 2
-}
-```
-
-```zenlang
-/!
- Adds two values.
- @example
-   ! add(1, 2) == 3
- !/
-function add(a, b) { <- a + b }
-```
-
-## Source Mapping
-
-The Zenlang compiler supports C source mapping via `#line` directives. This allows C debuggers (like GDB) and C compiler error reports to point directly back to the original Zenlang source files.
-
-### Usage
-
-Source mapping is enabled by default. To explicitly control it:
+### Core CLI Commands
 
 ```bash
-zen <source_file> --generate --source-map    # Enable (default)
-zen <source_file> --generate --no-source-map # Disable
+# 1. Compile to Native C
+zen compile path/to/file.zl output/out.c
+zen compile path/to/file.zl output/out.c --typecheck
+
+# 2. Build Standalone Machine Binary (CLink)
+zen build path/to/file.zl -o bin/app
+zen build path/to/file.zl -o bin/app -O3
+
+# 3. Direct Native Execution (Build + Link + Run)
+zen run path/to/file.zl -- arg1 arg2
+
+# 4. Instantaneous Script Interpretation
+zen interpret path/to/file.zl
+zen path/to/file.zl
+
+# 5. Typecheck with Caret Diagnostics
+zen check path/to/file.zl
+
+# 6. Dependency Graph Inspection
+zen deps path/to/file.zl
+
+# 7. Automated Test Discovery & Execution
+zen test path/to/file.zl
 ```
 
-## Build System
+---
 
-The Build System allows managing Zenlang projects via a `.zbuild` configuration file.
+## 2. Compiler Diagnostics & Caret Reporting
 
-### .zbuild File Format
+Zenlang features Rust/Clang-style source-mapped diagnostic reporting built on zero-copy 7-tuple token spans (`[kind, start, length, line, col, end_line, end_col]`):
 
-Create a `.zbuild` file in your project root:
-
-```zenlang
-name: "MyProject"
-entry: "src/main.zl"
-output: "bin/main"
-source_map: "true"
+```
+check failed:
+error: Return type mismatch: expected Integer got String
+  --> src/main.zl:14:5
+  |
+14 |     <- result
+  |     ^
 ```
 
-### Usage
+---
 
-To build a project:
+## 3. Tooling Ecosystem
+
+### `zenmark` — Technical Document Compiler
+Compiles Zen Mark (`.zm`) structured documents into native vector PDFs and interactive HTML previews:
+```bash
+zen tools/build_spec.zl
+```
+
+### `zendoc` — API Documentation Generator
+Extracts doc-comments (`/! ... !/`) from `.zl` files and generates structured API reference manuals in markdown or Zen Mark:
+```bash
+zen tools/zendoc.zl lib/zen -o doc/api
+```
+
+### `zenfmt` — Automated Code Formatter
+Enforces the canonical [Zenlang Style Guide](Style_Guide.md) across single files or whole projects:
+```bash
+zen tools/zenfmt.zl src/
+```
+
+### `zenlsp` — Language Server Protocol Daemon
+Provides code completion, hover documentation, syntax highlighting, and live diagnostic squiggles for modern editors:
+- **VS Code / Cursor:** Extensions under `editors/vscode/`
+- **Zed:** Language configuration in `editors/zed/`
+- **Sublime Text:** Package in `editors/sublime/`
+- **Tree-sitter:** High-speed incremental parser grammar in `editors/tree-sitter/`
 
 ```bash
-zen --build
+zen tools/zenlsp.zl --stdio
 ```
 
-The build system will automatically find the `.zbuild` file in the current directory, resolve the entry point, and generate/compile the C output.
+---
 
-## Core
+## 4. Repository Verification Ladder (`scripts/zen`)
 
-- Runtime
-- Standard Library
+For language contributors and local validation, `./scripts/zen` runs comprehensive verification suites without remote CI dependencies:
 
-## Standard Library (nested packages)
-
-See [Standard_Library_Reference.md](Standard_Library_Reference.md) for the full import map.
-
-- **zen.io.io** — write/read, info/warn/error/debug  
-- **zen.io.file** / **zen.io.path** — files, `walk` / `list_files`, path join  
-- **zen.sys.sys** / **zen.sys.process** / **zen.sys.term** / **zen.sys.cli** — system, shell, TUI keys  
-- **zen.text.string** / **zen.text.text** — strings and semantic text  
-- **zen.math.math** / **zen.math.random** / **zen.math.range**  
-- **zen.collections.list** (and set/stack/queue)  
-- **zen.data.json** (and csv, xml, …)  
-- **zen.test**, **zen.time**, **zen.log**, **zen.memory**, **zen.error**  
-- **zen.ui.***, **zen.geometry.***, **zen.net.***, **zen.graphics.***
-
-## Extended
-
-- GUI
+```bash
+./scripts/zen install         # Builds and installs bin/zen router
+./scripts/zen install-selfhost# Installs standalone native compiler
+./scripts/zen test-core       # Runs core interpreter and compiler tests
+./scripts/zen test-parity     # Verifies dual-execution interpreter ↔ native parity
+./scripts/zen test-lib        # Runs full standard library test suite
+./scripts/zen test-lib-native # Runs standard library under native AOT compilation
+./scripts/zen selfhost-smoke  # 56-test native compiler self-rebuild smoke test
+./scripts/zen ci              # Fast local smoke suite
+./scripts/zen ci-soak         # Full local soak gate (smoke + hybrid + golden)
+```

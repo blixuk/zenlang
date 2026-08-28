@@ -1,0 +1,44 @@
+import zen.geometry.point as point_mod
+import zen.geometry.vector2 as vector2
+import zen.math.math as math
+
+/!
+ Class representing a 2D point.
+ !/
+class Point {
+    let x: Decimal
+    let y: Decimal
+
+    /!
+     Initializes a new Point.
+     @param x The x-coordinate.
+     @param y The y-coordinate.
+     !/
+    function init(x, y) {
+        self.x -> x
+        self.y -> y
+    }
+
+    /!
+     Calculates the distance between this point and another point.
+     !/
+    function distance(other: Point) {
+        let dx -> self.x - other.x
+        let dy -> self.y - other.y
+        <- math.sqrt(dx * dx + dy * dy)
+    }
+
+    /!
+     Converts this point to a vector.
+     !/
+    function to_vector() : Vector2 {
+        <- vector2.Vector2(self.x, self.y)
+    }
+
+    /!
+     Translates this point by a vector, returning a new point.
+     !/
+    function translate(v: Vector2) : Point {
+        <- point_mod.Point(self.x + v.x, self.y + v.y)
+    }
+}

@@ -1,0 +1,44 @@
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.ui.term as term
+import zen.ui.widgets as ui
+import zen.time as time
+
+function demo() {
+    let s -> term.size()
+    let c -> canvas.Canvas(s.width, s.height)
+    
+    // Create a main panel
+    let main_panel -> ui.Panel(geom.UIRect(5, 2, s.width - 10, s.height - 4))
+    main_panel.bg -> `bright_black`
+    
+    // Add some widgets
+    let title -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 1, `Zenlang UI Dashboard`)
+    title.fg -> `cyan`
+    main_panel.add(title)
+    
+    let btn -> ui.Button(main_panel.rect.x + 2, main_panel.rect.y + 3, `Click Me`)
+    main_panel.add(btn)
+    
+    let progress -> ui.ProgressBar(main_panel.rect.x + 2, main_panel.rect.y + 7, 30, 100)
+    main_panel.add(progress)
+    
+    do for i in 0..101 {
+        c.clear(` `, `white`, `black`)
+        
+        progress.value -> i.to_float()
+        
+        when i > 50 {
+            btn.active -> true
+        }
+        
+        main_panel.draw(c)
+        c.render()
+        
+        time.sleep(0.05)
+    }
+}
+
+function main() {
+    term.alt_screen(demo)
+}

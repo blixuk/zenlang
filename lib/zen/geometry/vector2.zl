@@ -1,0 +1,57 @@
+import zen.geometry.vector2 as vector2_mod
+import zen.math.math as math
+
+/!
+ Class representing a 2D vector.
+ !/
+class Vector2 {
+    let x: Decimal
+    let y: Decimal
+
+    /!
+     Initializes a new Vector2.
+     @param x The x-component.
+     @param y The y-component.
+     !/
+    function init(x, y) {
+        self.x -> x
+        self.y -> y
+    }
+
+    /!
+     Adds another vector to this vector.
+     !/
+    function add(other: Vector2) : Vector2 {
+        <- vector2_mod.Vector2(self.x + other.x, self.y + other.y)
+    }
+
+    /!
+     Subtracts another vector from this vector.
+     !/
+    function sub(other: Vector2) : Vector2 {
+        <- vector2_mod.Vector2(self.x - other.x, self.y - other.y)
+    }
+
+    /!
+     Scales this vector by a scalar value.
+     !/
+    function scale(s) : Vector2 {
+        <- vector2_mod.Vector2(self.x * s, self.y * s)
+    }
+
+    /!
+     Calculates the length (magnitude) of this vector.
+     !/
+    function length() {
+        <- math.sqrt(self.x * self.x + self.y * self.y)
+    }
+
+    /!
+     Normalizes this vector to a length of 1.
+     !/
+    function normalize() : Vector2 {
+        let len -> self.length()
+        when len == 0 { <- self }
+        <- self.scale(1 / len)
+    }
+}

@@ -1,0 +1,81 @@
+import zen.test as test
+import zen.net.ip as ip
+import zen.net.server as server
+
+function test_ip_address() {
+    let octets -> ip.parse_v4(`192.168.1.100`)
+    let pass -> test.assert_equal(octets.length, 4, `parse_v4 octets length`)
+    pass -> pass and test.assert_equal(octets[0], 192, `parse_v4 octet 0`)
+    pass -> pass and test.assert_equal(octets[3], 100, `parse_v4 octet 3`)
+
+    let formatted -> ip.to_string_v4(octets)
+    pass -> pass and test.assert_equal(formatted, `192.168.1.100`, `to_string_v4 format`)
+
+    pass -> pass and test.assert_true(ip.is_v4(`10.0.0.1`), `is_v4 valid`)
+    pass -> pass and test.assert_false(ip.is_v4(`999.1.1.1`), `is_v4 invalid octet`)
+    pass -> pass and test.assert_false(ip.is_v4(`10.0.1`), `is_v4 3 octets`)
+
+    pass -> pass and test.assert_true(ip.is_private_v4(`192.168.1.1`), `is_private_v4 192.168`)
+    pass -> pass and test.assert_true(ip.is_private_v4(`10.200.0.1`), `is_private_v4 10.x`)
+    pass -> pass and test.assert_true(ip.is_private_v4(`172.20.1.1`), `is_private_v4 172.20`)
+    pass -> pass and test.assert_true(ip.is_loopback_v4(`127.0.0.1`), `is_loopback_v4 127.0.0.1`)
+    pass -> pass and test.assert_false(ip.is_private_v4(`8.8.8.8`), `is_private_v4 8.8.8.8`)
+
+    // CIDR matching
+    pass -> pass and test.assert_true(ip.cidr_contains_v4(`192.168.1.0/24`, `192.168.1.42`), `cidr /24 inside`)
+    pass -> pass and test.assert_false(ip.cidr_contains_v4(`192.168.1.0/24`, `192.168.2.1`), `cidr /24 outside`)
+    pass -> pass and test.assert_true(ip.cidr_contains_v4(`10.0.0.0/8`, `10.255.4.1`), `cidr /8 inside`)
+
+    // IPv6
+    pass -> pass and test.assert_true(ip.is_v6(`::1`), `is_v6 loopback`)
+    pass -> pass and test.assert_true(ip.is_v6(`2001:0db8:85a3:0000:0000:8a2e:0370:7334`), `is_v6 full`)
+    pass -> pass and test.assert_false(ip.is_v6(`127.0.0.1`), `is_v6 not v4`)
+
+    <- pass
+}
+
+function handle_hello(req, params) {
+    <- server.text_response(200, `Hello World`)
+}
+
+function handle_get_user(req, params) {
+    let user_id -> params[`id`]
+    <- server.json_response(200, `{"id":"` + user_id + `","name":"ZenUser"}`)
+}
+
+function test_server_router() {
+    let router -> server.create_router()
+    server.add_route(router, `GET`, `/hello`, handle_hello)
+    server.add_route(router, `GET`, `/users/:id`, handle_get_user)
+
+    // Route 1: exact match
+    let req1 -> { `method` -> `GET`, `path` -> `/hello` }
+    let resp1 -> server.handle_request(router, req1)
+    let pass -> test.assert_equal(resp1[`status`], 200, `router hello status`)
+    pass -> pass and test.assert_equal(resp1[`body`], `Hello World`, `router hello body`)
+
+    // Route 2: path param match
+    let req2 -> { `method` -> `GET`, `path` -> `/users/42` }
+    let resp2 -> server.handle_request(router, req2)
+    pass -> pass and test.assert_equal(resp2[`status`], 200, `router user status`)
+    pass -> pass and test.assert_equal(resp2[`body`], `{"id":"42","name":"ZenUser"}`, `router user body`)
+
+    // Route 3: 404
+    let req3 -> { `method` -> `GET`, `path` -> `/nonexistent` }
+    let resp3 -> server.handle_request(router, req3)
+    pass -> pass and test.assert_equal(resp3[`status`], 404, `router 404 status`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Net.IP`, `fn` -> test_ip_address },
+        { `name` -> `Net.Server`, `fn` -> test_server_router }
+    ]
+    <- test.run_suite(`Net IP & Server Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

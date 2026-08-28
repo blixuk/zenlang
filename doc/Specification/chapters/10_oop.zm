@@ -1,0 +1,35 @@
+// Chapter 10: Object-Oriented Programming & Classes
+
+Heading { text -> `10. Object-Oriented Programming & Classes`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang supports object-oriented modeling with classes, constructors, methods, and single inheritance:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        class Animal {
+            init(name) {
+                set this.name -> name
+            }
+            
+            speak() {
+                <- "Some generic animal sound"
+            }
+        }
+        
+        class Dog extends Animal {
+            init(name, breed) {
+                this.super(name)
+                set this.breed -> breed
+            }
+            
+            speak() {
+                <- "Woof! My name is " + this.name
+            }
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

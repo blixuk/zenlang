@@ -1,0 +1,53 @@
+import zen.test as test
+import zen.io.glob as glob
+
+function test_glob_magic_and_segment_matching() {
+    let pass -> test.assert_true(glob.has_magic(`*.zl`), `has magic *`)
+    pass -> pass and test.assert_true(glob.has_magic(`src/?/file.txt`), `has magic ?`)
+    pass -> pass and test.assert_true(glob.has_magic(`data[0-9].csv`), `has magic []`)
+    pass -> pass and test.assert_true(not glob.has_magic(`src/main.zl`), `no magic in plain path`)
+
+    // Simple wildcard
+    pass -> pass and test.assert_true(glob.match_pattern(`main.zl`, `*.zl`), `match *.zl`)
+    pass -> pass and test.assert_true(glob.match_pattern(`test_123.zl`, `test_*.zl`), `match test_*.zl`)
+    pass -> pass and test.assert_true(not glob.match_pattern(`main.c`, `*.zl`), `no match *.zl on .c`)
+
+    // Single char
+    pass -> pass and test.assert_true(glob.match_pattern(`file1.txt`, `file?.txt`), `match file?.txt`)
+    pass -> pass and test.assert_true(not glob.match_pattern(`file12.txt`, `file?.txt`), `no match file?.txt for 2 chars`)
+
+    // Bracket sets
+    pass -> pass and test.assert_true(glob.match_pattern(`cat.txt`, `[c-d]at.txt`), `bracket match c-d`)
+    pass -> pass and test.assert_true(not glob.match_pattern(`bat.txt`, `[c-d]at.txt`), `bracket no match bat for c-d`)
+
+    <- pass
+}
+
+function test_glob_path_and_recursive_matching() {
+    // Nested path
+    let pass -> test.assert_true(glob.match_pattern(`src/compiler/lexer.zl`, `src/compiler/*.zl`), `match nested single *`)
+    pass -> pass and test.assert_true(not glob.match_pattern(`src/compiler/sub/lexer.zl`, `src/compiler/*.zl`), `no match across dirs with single *`)
+
+    // Recursive **
+    pass -> pass and test.assert_true(glob.match_pattern(`src/compiler/sub/lexer.zl`, `src/**/*.zl`), `match ** across dirs`)
+    pass -> pass and test.assert_true(glob.match_pattern(`lib/zen/text/html.zl`, `lib/**/*.zl`), `match lib ** .zl`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Glob.magic_and_segment_matching`, `fn` -> test_glob_magic_and_segment_matching},
+        {`name` -> `Glob.path_and_recursive_matching`, `fn` -> test_glob_path_and_recursive_matching}
+    ]
+
+    <- test.run_suite(`Glob Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -1,0 +1,69 @@
+from zen.io import write_line
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write_line(`[FAIL] ` + message + `: Expected ` + a + `, got ` + b)
+        raise `AssertionFailed`
+    }
+}
+
+function get_ok() {
+    <- `Success`
+}
+
+function get_error() {
+    <- __builtin.error(`Failed`)
+}
+
+function test_keywords() {
+    write_line(`--- Testing Keywords ---`)
+    
+    // Keyword: assert
+    assert 1 = 1
+    assert 1 < 2 raise `MathBroken`
+    
+    // Keyword: check (recovery)
+    let val -> check get_ok() or `Fallback`
+    assert_eq(val, `Success`, `check keyword success`)
+    
+    let err_val -> check get_error() or `Recovered`
+    assert_eq(err_val, `Recovered`, `check keyword failure`)
+    
+    // Keyword: raise
+    check {
+        raise `TestError`
+    } or {
+        write_line(`[OK] Caught raise keyword`)
+    }
+}
+
+function test_symbols() {
+    write_line(`--- Testing Symbols ---`)
+    
+    // Symbol: ! (assert)
+    ! 1 = 1
+    ! 1 < 2 ^ `MathBroken`
+    
+    // Symbol: ? (check/unwrap)
+    let val -> ? get_ok() or `Fallback`
+    assert_eq(val, `Success`, `? symbol success`)
+    
+    let err_val -> ? get_error() or `Recovered`
+    assert_eq(err_val, `Recovered`, `? symbol failure`)
+    
+    // Symbol: ^ (raise)
+    check {
+        ^ `TestError`
+    } or {
+        write_line(`[OK] Caught ^ symbol`)
+    }
+}
+
+function run_tests() {
+    write_line(`Running Symbol vs Keyword Comparison...`)
+    test_keywords()
+    test_symbols()
+    write_line(`Comparison Tests Passed!`)
+}
+
+run_tests()

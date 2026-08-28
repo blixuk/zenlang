@@ -1,0 +1,108 @@
+/!
+    JSON Web Token (JWT) Module.
+    Supports signing, verifying, and decoding HMAC-SHA256 (HS256) JWTs.
+!/
+
+import zen.crypto.hmac as hmac
+import zen.crypto.base64 as base64
+import zen.data.json as json
+import zen.text.string as Str
+
+function _hex_to_bytes(hex_str) {
+    let s -> Str.to_string(hex_str)
+    let len -> Str.length(s)
+    let bytes -> []
+    let digits -> `0123456789abcdef`
+
+    let i -> 0
+    do while i < len {
+        let c1 -> Str.to_lower(Str.at(s, i))
+        let c2 -> Str.to_lower(Str.at(s, i + 1))
+        let n1 -> Str.index_of(digits, c1)
+        let n2 -> Str.index_of(digits, c2)
+        when (n1 == -1 or n2 == -1) { break }
+        bytes.append((n1 * 16) + n2)
+        i -> i + 2
+    }
+    <- bytes
+}
+
+/!
+    Signs a payload map with secret using HS256 algorithm.
+    @param payload Map containing token claims.
+    @param secret Secret string.
+    @return Compact JWT string (header.payload.signature).
+!/
+function sign(payload, secret) {
+    let header -> { `alg` -> `HS256`, `typ` -> `JWT` }
+    let header_json -> json.stringify(header)
+    let payload_json -> json.stringify(payload)
+
+    let h_b64 -> base64.encode_url_safe(header_json)
+    let p_b64 -> base64.encode_url_safe(payload_json)
+
+    let signing_input -> h_b64 + `.` + p_b64
+    let sig_hex -> hmac.sha256(secret, signing_input)
+    let sig_bytes -> _hex_to_bytes(sig_hex)
+    let sig_b64 -> base64.encode_url_safe(sig_bytes)
+
+    <- signing_input + `.` + sig_b64
+}
+
+/!
+    Decodes header and payload of a JWT without verifying the signature.
+    @return Map with "header" and "payload".
+!/
+function decode(token) {
+    let s -> Str.to_string(token)
+    let parts -> Str.split(s, `.`)
+    when (parts.length != 3) {
+        <- { `header` -> Nothing, `payload` -> Nothing }
+    }
+
+    let h_str -> base64.decode(parts[0])
+    let p_str -> base64.decode(parts[1])
+
+    let h_obj -> json.parse(h_str)
+    let p_obj -> json.parse(p_str)
+
+    <- {
+        `header` -> h_obj,
+        `payload` -> p_obj
+    }
+}
+
+/!
+    Verifies signature of a JWT against secret key.
+    @return Map with "valid" (boolean), "payload" (map), and "error" (string or Nothing).
+!/
+function verify(token, secret) {
+    let s -> Str.to_string(token)
+    let parts -> Str.split(s, `.`)
+    when (parts.length != 3) {
+        <- { `valid` -> False, `payload` -> Nothing, `error` -> `Invalid token segment count` }
+    }
+
+    let h_b64 -> parts[0]
+    let p_b64 -> parts[1]
+    let actual_sig_b64 -> parts[2]
+
+    let signing_input -> h_b64 + `.` + p_b64
+    let expected_sig_hex -> hmac.sha256(secret, signing_input)
+    let expected_sig_bytes -> _hex_to_bytes(expected_sig_hex)
+    let expected_sig_b64 -> base64.encode_url_safe(expected_sig_bytes)
+
+    let is_valid -> hmac.verify(expected_sig_b64, actual_sig_b64)
+    when (not is_valid) {
+        <- { `valid` -> False, `payload` -> Nothing, `error` -> `Signature verification failed` }
+    }
+
+    let p_str -> base64.decode(p_b64)
+    let p_obj -> json.parse(p_str)
+
+    <- {
+        `valid` -> True,
+        `payload` -> p_obj,
+        `error` -> Nothing
+    }
+}

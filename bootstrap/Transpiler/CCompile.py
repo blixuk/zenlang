@@ -19,27 +19,13 @@ class CCompiler:
         project_root = current_dir.parent.parent  # bootstrap/Transpiler → repo root
         runtime_dir = project_root / "runtime"
         if not runtime_dir.is_dir():
-            # Fallback: vendored/symlink next to the transpiler
             runtime_dir = current_dir / "runtime"
-
         if runtime_dir.is_dir():
-            # Clean build directory
-            if build_directory.exists():
-                shutil.rmtree(build_directory)
-            build_directory.mkdir(parents=True, exist_ok=True)
-
-            # Copy runtime directory contents recursively (follow symlink)
             runtime_dir = runtime_dir.resolve()
-            for item in runtime_dir.iterdir():
-                dest = build_directory / item.name
-                if item.is_dir():
-                    shutil.copytree(item, dest, symlinks=False)
-                else:
-                    shutil.copy(item, dest)
         else:
             print(f"Warning: Runtime directory not found at {project_root / 'runtime'}")
+            runtime_dir = project_root / "runtime"
 
-        # Write the generated C code
         out_c = build_directory / "out.c"
         code_with_include = "#include \"bootstrap_runtime.h\"\n" + code
         out_c.write_text(code_with_include)
@@ -49,32 +35,31 @@ class CCompiler:
             raise RuntimeError("No C compiler found (gcc/clang/tcc).")
 
         exe_path = build_directory / "zen_program"
-        
-        # Explicit whitelist to avoid legacy/conflicting runtime files
-        source_files = [
-            build_directory / "out.c",
-            build_directory / "bootstrap_runtime.c",
+        rt_obj = self._ensure_runtime_obj(compiler, runtime_dir, project_root)
+        includes = [
+            "-I", str(runtime_dir),
+            "-I", str(runtime_dir / "core"),
+            "-I", str(runtime_dir / "collections"),
+            "-I", str(runtime_dir / "io"),
+            "-I", str(runtime_dir / "memory"),
+            "-I", str(runtime_dir / "concurrency"),
         ]
-        
         cmd = [
                 compiler,
-                # match sources
-                *[str(s) for s in source_files],
+                str(out_c),
+                str(rt_obj),
                 "-o",
                 str(exe_path),
-                "-O2",
+                self._c_opt_flag(),
                 "-Wall",
-                "-Wno-unused-variable", # Suppress unused variable warnings for now
+                "-Wno-unused-variable",
                 "-Wno-unused-value",
                 "-Wno-unused-label",
                 "-Wno-unused-function",
-                "-I", str(build_directory), # Include build dir for headers
-                "-I", str(build_directory / "core"),
-                "-I", str(build_directory / "collections"),
-                "-I", str(build_directory / "io"),
-                "-I", str(build_directory / "memory"),
-                "-lm",                      # Link math library
-                "-lpthread",                 # Link pthreads for concurrency
+                *includes,
+                "-lm",
+                "-lpthread",
+                "-ldl",
             ]
 
         result = subprocess.run(
@@ -110,7 +95,57 @@ class CCompiler:
             sys.exit(run_result.returncode)
 
     # Find compiler
+    def _c_opt_flag(self) -> str:
+        # Edit-loop: ZEN_OPT=0 (or ZEN_CC=tcc). Release/default: -O2.
+        v = os.environ.get("ZEN_OPT", "2")
+        if v in ("0", "1", "2", "3"):
+            return f"-O{v}"
+        if v in ("s", "Os"):
+            return "-Os"
+        if v in ("g", "Og"):
+            return "-Og"
+        return "-O2"
+
+    def _ensure_runtime_obj(self, compiler: str, runtime_dir: Path, project_root: Path) -> Path:
+        """Compile runtime/bootstrap_runtime.c once; share cache with selfhost CLink."""
+        obj_dir = project_root / "output" / "selfhost_rt"
+        obj_dir.mkdir(parents=True, exist_ok=True)
+        obj = obj_dir / "bootstrap_runtime.o"
+        src = runtime_dir / "bootstrap_runtime.c"
+        if obj.is_file() and src.is_file() and obj.stat().st_mtime >= src.stat().st_mtime:
+            return obj
+        if not src.is_file():
+            raise RuntimeError(f"missing runtime C: {src}")
+        cmd = [
+            compiler,
+            "-c",
+            str(src),
+            "-o",
+            str(obj),
+            "-O2",
+            "-Wno-unused-variable",
+            "-Wno-unused-value",
+            "-Wno-unused-label",
+            "-Wno-unused-function",
+            "-I", str(runtime_dir),
+            "-I", str(runtime_dir / "core"),
+            "-I", str(runtime_dir / "collections"),
+            "-I", str(runtime_dir / "io"),
+            "-I", str(runtime_dir / "memory"),
+            "-I", str(runtime_dir / "concurrency"),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print("\n!!! C COMPILE FAILED (runtime .o) !!!")
+            print(result.stderr)
+            import sys
+            sys.exit(1)
+        return obj
+
     def find_compiler(self):
+        want = os.environ.get("ZEN_CC") or ""
+        if want and shutil.which(want):
+            return want
         for c in ("gcc", "clang", "tcc"):
             if shutil.which(c):
                 return c

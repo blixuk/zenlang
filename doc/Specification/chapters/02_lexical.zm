@@ -1,0 +1,44 @@
+// Chapter 2: Lexical Grammar & Source Representation
+
+Heading { text -> `Lexical Grammar & Source Representation`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang source files (.zl) are UTF-8 encoded text streams. Whitespace separates tokens and has no semantic significance except within string literals and comments. Indentation is stylistic and not syntactically enforced.`
+},
+
+Heading { text -> `Comments & Documentation`, size -> 2 },
+
+Paragraph {
+    text -> `Zenlang supports three distinct comment forms: single-line comments (//), multi-line block comments (/* ... */), and formal doc-comments (/! ... !/). Doc-comments are introspected by compiler tooling (zendoc) to produce structured API reference manuals.`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        // Single-line comment for brief annotations
+        let x -> 42
+        
+        /*
+         * Multi-line comment for detailed
+         * algorithmic documentation.
+         */
+        
+        /!
+          Calculates the factorial of an integer.
+          @param n Integer The input value
+          @return Integer The calculated factorial
+        !/
+        function factorial(n) {
+            when n <= 1 <- 1
+            <- n * factorial(n - 1)
+        }
+    ```
+},
+
+Heading { text -> `Identifiers & Lexical Scopes`, size -> 2 },
+
+Paragraph {
+    text -> `Identifiers begin with an ASCII letter (a-z, A-Z) or underscore (_), followed by alphanumeric characters. Identifiers are strictly case-sensitive. Code blocks delimited by curly braces ({ ... }) create nested lexical scopes where inner scopes inherit outer bindings.`
+},
+
+HorizontalRule { symbol -> `*` }

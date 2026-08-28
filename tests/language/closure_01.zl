@@ -1,0 +1,84 @@
+/!
+  Native-friendly closure tests: by-value capture of outer locals.
+  Interpreters already close over environments; C backend snapshots captures
+  into ZenClosureData and prepends them when applying.
+!/
+
+import zen.test as test
+import zen.collections.list as list
+
+function test_capture_add() {
+    let n -> 10
+    let add_n -> function(x) { <- x + n }
+    let r -> add_n(5)
+    <- test.assert_equal(r, 15, `closure captures outer local n`)
+}
+
+function test_capture_multi() {
+    let a -> 2
+    let b -> 3
+    let mix -> function(x) { <- x * a + b }
+    let r -> mix(4)
+    // 4*2 + 3 = 11
+    <- test.assert_equal(r, 11, `closure captures multiple outer locals`)
+}
+
+function test_capture_snapshot() {
+    // By-value: mutating the outer binding after creation must not change
+    // the captured value used by the lambda.
+    let n -> 1
+    let get -> function() { <- n }
+    n -> 99
+    let r -> get()
+    <- test.assert_equal(r, 1, `capture is by-value snapshot at creation`)
+}
+
+function test_hof_with_capture() {
+    let factor -> 3
+    let numbers -> [1, 2, 3]
+    let scaled -> list.map(numbers, function(x) { <- x * factor })
+    let pass -> test.assert_equal(scaled[0], 3, `map with capture first`)
+    pass -> pass and test.assert_equal(scaled[1], 6, `map with capture second`)
+    pass -> pass and test.assert_equal(scaled[2], 9, `map with capture third`)
+    <- pass
+}
+
+function test_no_capture_still_works() {
+    let double -> function(x) { <- x * 2 }
+    <- test.assert_equal(double(7), 14, `pure lambda without captures`)
+}
+
+function test_capture_list_append() {
+    // Mutable list object captured by value (shared object identity);
+    // append must compile as ZenValue_append(seen, x) under native -g.
+    let seen -> []
+    let push -> function(x) {
+        seen.append(x)
+    }
+    push(`a`)
+    push(`b`)
+    let pass -> test.assert_equal(seen.length, 2, `captured list grows via append`)
+    pass -> pass and test.assert_equal(seen[0], `a`, `first append`)
+    pass -> pass and test.assert_equal(seen[1], `b`, `second append`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Closure.capture_add`, `fn` -> test_capture_add},
+        {`name` -> `Closure.capture_multi`, `fn` -> test_capture_multi},
+        {`name` -> `Closure.capture_snapshot`, `fn` -> test_capture_snapshot},
+        {`name` -> `Closure.hof_with_capture`, `fn` -> test_hof_with_capture},
+        {`name` -> `Closure.no_capture`, `fn` -> test_no_capture_still_works},
+        {`name` -> `Closure.capture_list_append`, `fn` -> test_capture_list_append}
+    ]
+    <- test.run_suite(`Closures`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

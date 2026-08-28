@@ -1,0 +1,15 @@
+import zen.io.io
+
+let x -> [10, 20, 30]
+
+io.write(`x[0]: `)
+io.write(x[0])
+io.write(`\n`)
+
+io.write(`x[1]: `)
+io.write(x[1])
+io.write(`\n`)
+
+io.write(`x[2]: `)
+io.write(x[2])
+io.write(`\n`)

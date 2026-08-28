@@ -1,0 +1,48 @@
+import `lib/zen/io` as IO
+import `lib/zen/sys` as Sys
+import `lib/zen/string` as Str
+
+import `selfhost/Lexer`
+import `selfhost/Parser/Parser`
+import `selfhost/Transpiler/CodeGenerator`
+
+function main() {
+    let args: List -> Sys.get_args()
+    
+    when args.length < 2 {
+        IO.write(`Usage: zen_new <source_file> [output_file]\n`)
+        Sys.exit(1)
+    }
+
+    let source_path: String -> args[1]
+    IO.write(`Compiling with new selfhost: ` + source_path + `\n`)
+    
+    let src_code: String -> IO.read_file(source_path)
+    
+    // Lexer
+    let lex: Lexer -> Lexer(src_code)
+    let toks: List -> lex.tokenize()
+    
+    // Parser
+    let par: Parser -> Parser(toks, source_path)
+    let statements: List -> par.parse()
+    
+    // Transpiler
+    let transpiler: CodeGenerator -> CodeGenerator(statements)
+    
+    let out_path: String -> `out.c`
+    when args.length > 2 {
+        out_path -> args[2]
+    }
+    
+    let parts: List -> Str.split(out_path, `/`)
+    let filename: String -> parts[parts.length - 1]
+    let base_name: String -> Str.replace(filename, `.c`, ``)
+    let guard_name: String -> Str.to_upper(base_name) + `_H`
+    let include_name: String -> Str.replace(filename, `.c`, `.h`)
+
+    let c_code: String -> transpiler.generate(include_name)
+    
+    IO.write_file(out_path, c_code)
+    IO.write(`Compiled to ` + out_path + ` successfully!\n`)
+}

@@ -1,0 +1,180 @@
+import `lib/zen/io` as IO
+from `selfhost/Token` import Token, TokenType
+from `selfhost/AST` import ASTKind, ASTNode
+
+class ParserExpressionHandler {
+    let parser : Variant // Reference to Parser
+
+    function init(parser: Variant) {
+        self.parser -> parser
+    }
+
+    function expression() : Variant {
+        <- self.assignment()
+    }
+
+    function assignment() : Variant {
+        let expr : Variant -> self.logical_or()
+
+        when self.parser.match(TokenType.ASSIGNMENT) {
+            let equals : Token -> self.parser.previous()
+            let value : Variant -> self.assignment()
+
+            <- AssignmentExpression {
+                kind: ASTKind.ASSIGNMENT_EXPRESSION,
+                name: expr,   // simplified; real would handle lvalue
+                value: value,
+                line: equals.line,
+                column: equals.column
+            }
+        }
+
+        <- expr
+    }
+
+    function logical_or() : Variant {
+        let expr : Variant -> self.logical_and()
+        while self.parser.match(TokenType.OR) {
+            let operator : Token -> self.parser.previous()
+            let right : Variant -> self.logical_and()
+            <- LogicalExpression {
+                kind: ASTKind.LOGICAL_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+        <- expr
+    }
+
+    function logical_and() : Variant {
+        let expr : Variant -> self.bitwise_or()
+        while self.parser.match(TokenType.AND) {
+            let operator : Token -> self.parser.previous()
+            let right : Variant -> self.bitwise_or()
+            <- LogicalExpression {
+                kind: ASTKind.LOGICAL_EXPRESSION,
+                left: expr,
+                operator: operator,
+                right: right,
+                line: operator.line,
+                column: operator.column
+            }
+        }
+        <- expr
+    }
+    
+    function bitwise_or() : Variant { <- self.bitwise_xor() }
+    function bitwise_xor() : Variant { <- self.bitwise_and() }
+    function bitwise_and() : Variant { <- self.equality() }
+    function equality() : Variant { <- self.comparison() }
+    function comparison() : Variant { <- self.term() }
+    function term() : Variant { <- self.factor() }
+    function factor() : Variant { <- self.unary() }
+    function unary() : Variant { <- self.call() }
+    
+    function call() : Variant {
+        let expr : Variant -> self.primary()
+
+        while self.parser.check_token(TokenType.LEFT_PAREN) {
+            let paren : Token -> self.parser.advance()
+            let args : List -> []
+
+            when not self.parser.check_token(TokenType.RIGHT_PAREN) {
+                args.append(self.expression())
+                while self.parser.match(TokenType.COMMA) {
+                    args.append(self.expression())
+                }
+            }
+
+            self.parser.consume(TokenType.RIGHT_PAREN, `Expected ')' after arguments`)
+
+            expr <- CallExpression {
+                kind: ASTKind.CALL_EXPRESSION,
+                callee: expr,
+                arguments: args,
+                line: paren.line,
+                column: paren.column
+            }
+        }
+
+        <- expr
+    }
+    
+    function primary() : Variant {
+        let token : Token -> self.parser.advance()
+        
+        check token.kind {
+            case TokenType.INTEGER {
+                <- LiteralExpression {
+                    kind: ASTKind.LITERAL_EXPRESSION,
+                    value: token.value,
+                    is_string: False,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.DECIMAL {
+                <- LiteralExpression {
+                    kind: ASTKind.LITERAL_EXPRESSION,
+                    value: token.value,
+                    is_string: False,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.STRING {
+                <- LiteralExpression {
+                    kind: ASTKind.LITERAL_EXPRESSION,
+                    value: token.value,
+                    is_string: True,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.RUNE {
+                <- LiteralExpression {
+                    kind: ASTKind.LITERAL_EXPRESSION,
+                    value: token.value,
+                    is_string: True,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.IDENTIFIER {
+                <- VariableExpression {
+                    kind: ASTKind.VARIABLE_EXPRESSION,
+                    name: token,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.KEYWORD {
+                // true / false / Nothing
+                <- LiteralExpression {
+                    kind: ASTKind.LITERAL_EXPRESSION,
+                    value: token.value,
+                    is_string: False,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+            case TokenType.LEFT_PAREN {
+                let expr : Variant -> self.expression()
+                self.parser.consume(TokenType.RIGHT_PAREN, `Expected ')' after expression`)
+                <- GroupingExpression {
+                    kind: ASTKind.GROUPING_EXPRESSION,
+                    expression: expr,
+                    line: token.line,
+                    column: token.column
+                }
+            }
+        } or {
+            IO.write(`[Parser] Unexpected token in primary: ` + token.kind + `\n`)
+        }
+        
+        <- Nothing
+    }
+}

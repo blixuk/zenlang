@@ -1,0 +1,81 @@
+/!
+  reflect.call + plugins dual-path (map tables + class methods).
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_reflect_call.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_reflect_call.zl
+!/
+
+use zen.reflect as reflect
+use zen.plugins as P
+use zen.test as test
+
+class Counter is reflectable {
+    let n: Integer
+
+    function init() {
+        self.n -> 0
+    }
+
+    function bump() {
+        self.n -> self.n + 1
+    }
+
+    function add(x: Integer) {
+        self.n -> self.n + x
+    }
+
+    function value() {
+        <- self.n
+    }
+}
+
+function test_map_call() {
+    let t -> {
+        `add` -> function(a, b) { <- a + b },
+        `id` -> function(x) { <- x }
+    }
+    let r -> reflect.call(t, `add`, [2, 3])
+    let pass -> test.assert_equal(r, 5, `call add`)
+    pass -> pass and test.assert_equal(reflect.call(t, `id`, [9]), 9, `call id`)
+    pass -> pass and test.assert_equal(reflect.apply(t[`add`], [10, 1]), 11, `apply`)
+    <- pass
+}
+
+function test_plugins_helper() {
+    let cmds -> P.create()
+    cmds -> P.add(cmds, `hi`, function(name) { <- `hello ` + name })
+    let pass -> test.assert_equal(P.has(cmds, `hi`), true, `has hi`)
+    pass -> pass and test.assert_equal(P.list(cmds).length, 1, `list len`)
+    pass -> pass and test.assert_equal(P.dispatch(cmds, `hi`, [`zen`]), `hello zen`, `dispatch`)
+    <- pass
+}
+
+function test_class_call() {
+    let c -> Counter()
+    // zero-arg method via reflect.call
+    reflect.call(c, `bump`, [])
+    reflect.call(c, `bump`, [])
+    let pass -> test.assert_equal(reflect.call(c, `value`, []), 2, `value after 2 bumps`)
+    // method with args
+    reflect.call(c, `add`, [5])
+    pass -> pass and test.assert_equal(reflect.call(c, `value`, []), 7, `value after add 5`)
+    pass -> pass and test.assert_equal(reflect.has_method(c, `bump`), true, `has bump`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Call.map`, `fn` -> test_map_call},
+        {`name` -> `Call.plugins`, `fn` -> test_plugins_helper},
+        {`name` -> `Call.class`, `fn` -> test_class_call}
+    ]
+    <- test.run_suite(`reflect.call`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

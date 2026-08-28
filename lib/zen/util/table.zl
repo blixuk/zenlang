@@ -1,0 +1,350 @@
+/!
+    Terminal Table Formatter Module.
+    Formats tabular data with customizable border styles (Unicode, ASCII, Markdown, Plain)
+    and automatic column width calculation.
+!/
+
+import zen.text.string as Str
+
+/!
+    Pads a string to a given width with spaces.
+    @param s The string to pad.
+    @param width Target width.
+    @param align "left", "right", or "center".
+    @return Padded string.
+!/
+function pad_cell(s, width, align) {
+    let text -> Str.to_string(s)
+    let text_len -> Str.length(text)
+    when text_len >= width {
+        <- text
+    }
+    let total_pad -> 0 + width - text_len
+    when align == `right` {
+        <- Str.repeat(` `, total_pad) + text
+    } or when align == `center` {
+        let left_pad -> 0 + total_pad / 2
+        let right_pad -> 0 + total_pad - left_pad
+        <- Str.repeat(` `, left_pad) + text + Str.repeat(` `, right_pad)
+    } or {
+        // default left
+        <- text + Str.repeat(` `, total_pad)
+    }
+}
+
+/!
+    Calculates maximum column widths for headers and data rows.
+!/
+function compute_column_widths(headers, rows) {
+    let col_count -> 0
+    when headers != Nothing {
+        col_count -> 0 + headers.length
+    }
+    when rows != Nothing {
+        let r_idx -> 0
+        let r_len -> rows.length
+        do while r_idx < r_len {
+            let row -> rows[r_idx]
+            when row != Nothing and row.length > col_count {
+                col_count -> 0 + row.length
+            }
+            r_idx -> 0 + r_idx + 1
+        }
+    }
+
+    let widths -> []
+    let c_idx -> 0
+    do while c_idx < col_count {
+        widths.append(0)
+        c_idx -> 0 + c_idx + 1
+    }
+
+    // Measure headers
+    when headers != Nothing {
+        let h_idx -> 0
+        let h_len -> headers.length
+        do while h_idx < h_len {
+            let h_str -> Str.to_string(headers[h_idx])
+            let h_len_chars -> Str.length(h_str)
+            when h_len_chars > widths[h_idx] {
+                widths[h_idx] -> 0 + h_len_chars
+            }
+            h_idx -> 0 + h_idx + 1
+        }
+    }
+
+    // Measure row cells
+    when rows != Nothing {
+        let row_idx -> 0
+        let row_total -> rows.length
+        do while row_idx < row_total {
+            let row -> rows[row_idx]
+            when row != Nothing {
+                let cell_idx -> 0
+                let cell_total -> row.length
+                do while cell_idx < cell_total {
+                    let cell_str -> Str.to_string(row[cell_idx])
+                    let cell_len -> Str.length(cell_str)
+                    when cell_len > widths[cell_idx] {
+                        widths[cell_idx] -> 0 + cell_len
+                    }
+                    cell_idx -> 0 + cell_idx + 1
+                }
+            }
+            row_idx -> 0 + row_idx + 1
+        }
+    }
+
+    <- widths
+}
+
+/! Internal helper to format an ASCII border row. !/
+function format_ascii_border(widths) {
+    let b -> `+`
+    let idx -> 0
+    let col_count -> widths.length
+    do while idx < col_count {
+        b -> b + Str.repeat(`-`, widths[idx] + 2) + `+`
+        idx -> 0 + idx + 1
+    }
+    <- b + `\n`
+}
+
+/!
+    Renders a table into a formatted string.
+    @param headers List of column names or Nothing.
+    @param rows List of row lists.
+    @param options Map containing options: `style` ("unicode", "ascii", "markdown", "plain"), `align` ("left", "right", "center").
+    @return Formatted multi-line table string.
+!/
+function render_table(headers, rows, options) {
+    let widths -> compute_column_widths(headers, rows)
+    let col_count -> widths.length
+    when col_count == 0 { <- `` }
+
+    let style -> `unicode`
+    let align -> `left`
+    when options != Nothing {
+        when options.has(`style`) { style -> options[`style`] }
+        when options.has(`align`) { align -> options[`align`] }
+    }
+
+    let out -> ``
+
+    when style == `unicode` or style == `box` {
+        // Top border
+        out -> out + `┌`
+        let i -> 0
+        do while i < col_count {
+            out -> out + Str.repeat(`─`, widths[i] + 2)
+            when i < col_count - 1 { out -> out + `┬` }
+            i -> 0 + i + 1
+        }
+        out -> out + `┐\n`
+
+        // Header row
+        when headers != Nothing and headers.length > 0 {
+            out -> out + `│`
+            let h_idx -> 0
+            do while h_idx < col_count {
+                let cell_text -> ``
+                when h_idx < headers.length { cell_text -> Str.to_string(headers[h_idx]) }
+                out -> out + ` ` + pad_cell(cell_text, widths[h_idx], align) + ` │`
+                h_idx -> 0 + h_idx + 1
+            }
+            out -> out + `\n`
+
+            // Header separator
+            out -> out + `├`
+            let s_idx -> 0
+            do while s_idx < col_count {
+                out -> out + Str.repeat(`─`, widths[s_idx] + 2)
+                when s_idx < col_count - 1 { out -> out + `┼` }
+                s_idx -> 0 + s_idx + 1
+            }
+            out -> out + `┤\n`
+        }
+
+        // Data rows
+        when rows != Nothing {
+            let r_idx -> 0
+            let r_len -> rows.length
+            do while r_idx < r_len {
+                let row -> rows[r_idx]
+                out -> out + `│`
+                let c_idx -> 0
+                do while c_idx < col_count {
+                    let cell_text -> ``
+                    when row != Nothing and c_idx < row.length { cell_text -> Str.to_string(row[c_idx]) }
+                    out -> out + ` ` + pad_cell(cell_text, widths[c_idx], align) + ` │`
+                    c_idx -> 0 + c_idx + 1
+                }
+                out -> out + `\n`
+                r_idx -> 0 + r_idx + 1
+            }
+        }
+
+        // Bottom border
+        out -> out + `└`
+        let b_idx -> 0
+        do while b_idx < col_count {
+            out -> out + Str.repeat(`─`, widths[b_idx] + 2)
+            when b_idx < col_count - 1 { out -> out + `┴` }
+            b_idx -> 0 + b_idx + 1
+        }
+        out -> out + `┘`
+
+    } or when style == `ascii` {
+        // Top border
+        let ascii_b -> format_ascii_border(widths)
+        out -> out + ascii_b
+
+        // Header row
+        when headers != Nothing and headers.length > 0 {
+            out -> out + `|`
+            let h_idx -> 0
+            do while h_idx < col_count {
+                let cell_text -> ``
+                when h_idx < headers.length { cell_text -> Str.to_string(headers[h_idx]) }
+                out -> out + ` ` + pad_cell(cell_text, widths[h_idx], align) + ` |`
+                h_idx -> 0 + h_idx + 1
+            }
+            out -> out + `\n` + ascii_b
+        }
+
+        // Data rows
+        when rows != Nothing {
+            let r_idx -> 0
+            let r_len -> rows.length
+            do while r_idx < r_len {
+                let row -> rows[r_idx]
+                out -> out + `|`
+                let c_idx -> 0
+                do while c_idx < col_count {
+                    let cell_text -> ``
+                    when row != Nothing and c_idx < row.length { cell_text -> Str.to_string(row[c_idx]) }
+                    out -> out + ` ` + pad_cell(cell_text, widths[c_idx], align) + ` |`
+                    c_idx -> 0 + c_idx + 1
+                }
+                out -> out + `\n`
+                r_idx -> 0 + r_idx + 1
+            }
+        }
+
+        out -> out + Str.trim(ascii_b)
+
+    } or when style == `markdown` {
+        // Header
+        when headers != Nothing and headers.length > 0 {
+            out -> out + `|`
+            let h_idx -> 0
+            do while h_idx < col_count {
+                let cell_text -> ``
+                when h_idx < headers.length { cell_text -> Str.to_string(headers[h_idx]) }
+                out -> out + ` ` + pad_cell(cell_text, widths[h_idx], align) + ` |`
+                h_idx -> 0 + h_idx + 1
+            }
+            out -> out + `\n|`
+            let s_idx -> 0
+            do while s_idx < col_count {
+                when align == `right` {
+                    out -> out + ` ` + Str.repeat(`-`, widths[s_idx]) + `: |`
+                } or when align == `center` {
+                    out -> out + ` :` + Str.repeat(`-`, widths[s_idx] - 1) + `: |`
+                } or {
+                    out -> out + ` ` + Str.repeat(`-`, widths[s_idx] + 1) + ` |`
+                }
+                s_idx -> 0 + s_idx + 1
+            }
+            out -> out + `\n`
+        }
+
+        // Data rows
+        when rows != Nothing {
+            let r_idx -> 0
+            let r_len -> rows.length
+            do while r_idx < r_len {
+                let row -> rows[r_idx]
+                out -> out + `|`
+                let c_idx -> 0
+                do while c_idx < col_count {
+                    let cell_text -> ``
+                    when row != Nothing and c_idx < row.length { cell_text -> Str.to_string(row[c_idx]) }
+                    out -> out + ` ` + pad_cell(cell_text, widths[c_idx], align) + ` |`
+                    c_idx -> 0 + c_idx + 1
+                }
+                when r_idx < r_len - 1 { out -> out + `\n` }
+                r_idx -> 0 + r_idx + 1
+            }
+        }
+
+    } or {
+        // Plain / Simple
+        when headers != Nothing and headers.length > 0 {
+            let h_idx -> 0
+            do while h_idx < col_count {
+                let cell_text -> ``
+                when h_idx < headers.length { cell_text -> Str.to_string(headers[h_idx]) }
+                out -> out + pad_cell(cell_text, widths[h_idx], align) + `  `
+                h_idx -> 0 + h_idx + 1
+            }
+            out -> out + `\n`
+            let s_idx -> 0
+            do while s_idx < col_count {
+                out -> out + Str.repeat(`-`, widths[s_idx]) + `  `
+                s_idx -> 0 + s_idx + 1
+            }
+            out -> out + `\n`
+        }
+
+        when rows != Nothing {
+            let r_idx -> 0
+            let r_len -> rows.length
+            do while r_idx < r_len {
+                let row -> rows[r_idx]
+                let c_idx -> 0
+                do while c_idx < col_count {
+                    let cell_text -> ``
+                    when row != Nothing and c_idx < row.length { cell_text -> Str.to_string(row[c_idx]) }
+                    out -> out + pad_cell(cell_text, widths[c_idx], align) + `  `
+                    c_idx -> 0 + c_idx + 1
+                }
+                when r_idx < r_len - 1 { out -> out + `\n` }
+                r_idx -> 0 + r_idx + 1
+            }
+        }
+    }
+
+    <- out
+}
+
+/!
+    Creates a new Table builder object with convenience methods.
+    @param headers Initial list of column header names.
+    @return Table object map.
+!/
+function create(headers) {
+    let t_headers -> headers
+    when t_headers == Nothing { t_headers -> [] }
+    let t_rows -> []
+
+    let tbl -> {
+        `headers` -> t_headers,
+        `rows` -> t_rows
+    }
+
+    <- tbl
+}
+
+/! Appends a row to a table builder map. !/
+function add_row(tbl, row) {
+    when tbl != Nothing and row != Nothing {
+        tbl[`rows`].append(row)
+    }
+}
+
+/! Renders a table builder map. !/
+function render(tbl, options) {
+    when tbl == Nothing { <- `` }
+    <- render_table(tbl[`headers`], tbl[`rows`], options)
+}

@@ -1,0 +1,26 @@
+import zen.io.io as IO
+import zen.sys.process as Process
+import zen.text.string as Str
+
+function test_process_functions() {
+    IO.info(`--- Testing zen.process module ---`)
+    
+    let pid -> Process.get_id()
+    IO.info(`  Current PID: ` + Str.to_string(pid))
+    
+    IO.info(`  Running 'echo hello'...`)
+    let output -> Process.run(`echo`, [`hello`])
+    IO.info(`  Output: ` + output)
+    
+    when Str.trim(output) == `hello` {
+        IO.info(`  Verification: Process.run worked!`)
+    } or {
+        IO.error(`  Verification: Process.run failed! Got: '` + output + `'`)
+    }
+    
+    IO.info(`--- zen.sys.sys.process tests complete ---`)
+}
+
+function zen_entry() {
+    test_process_functions()
+}

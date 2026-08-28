@@ -1,0 +1,95 @@
+// Test Suite: Diagnostic & Source Code Frame Rendering
+import zen.io.io as io
+import zen.text.string as Str
+import zen.tooling.diagnostic as diag
+
+function test_diagnostic_frame() {
+    let src_text -> `function calculate(value: Integer) {
+    let discount -> 10
+    let total -> (price - discount) * rate
+    <- total
+}`
+
+    let span -> diag.Span(`src/calculator.zl`, 3, 19, 5, `variable 'price' is not defined`)
+    let d -> diag.make_error(`Variable 'price' is not defined`, `E0101`, span)
+    d.hints.append(`Check if 'price' was passed as a parameter or declared with 'let price -> ...'`)
+    d.notes.append(`Zenlang requires all variables to be declared before use.`)
+
+    let frame -> diag.render_frame(d, src_text, False)
+    
+    let pass -> True
+    pass -> pass and Str.contains(frame, `error[E0101]: Variable 'price' is not defined`)
+    pass -> pass and Str.contains(frame, `--> src/calculator.zl:3:19`)
+    pass -> pass and Str.contains(frame, `3 |     let total -> (price - discount) * rate`)
+    pass -> pass and Str.contains(frame, `^^^^^ variable 'price' is not defined`)
+    pass -> pass and Str.contains(frame, `= help: Check if 'price' was passed`)
+    pass -> pass and Str.contains(frame, `= note: Zenlang requires all variables`)
+
+    when not pass {
+        io.writeln(`[FAIL] test_diagnostic_frame failed. Frame was:\n` + frame)
+        <- 1
+    }
+    io.writeln(`[PASS] test_diagnostic_frame`)
+    <- 0
+}
+
+function test_diagnostic_zendata() {
+    let span -> diag.Span(`src/main.zl`, 10, 5, 8, `type mismatch`)
+    let d -> diag.make_error(`Cannot assign String to Integer`, `E0102`, span)
+    d.hints.append(`Use Str.to_int()`)
+
+    let zd -> diag.to_zendata(d)
+    let pass -> True
+    pass -> pass and Str.contains(zd, `Diagnostic {`)
+    pass -> pass and Str.contains(zd, `severity -> "error"`)
+    pass -> pass and Str.contains(zd, `code -> "E0102"`)
+    pass -> pass and Str.contains(zd, `file -> "src/main.zl"`)
+    pass -> pass and Str.contains(zd, `line -> 10`)
+    pass -> pass and Str.contains(zd, `column -> 5`)
+    pass -> pass and Str.contains(zd, `hints -> ["Use Str.to_int()"]`)
+
+    when not pass {
+        io.writeln(`[FAIL] test_diagnostic_zendata failed. ZD was:\n` + zd)
+        <- 1
+    }
+    io.writeln(`[PASS] test_diagnostic_zendata`)
+    <- 0
+}
+
+function test_diagnostic_zenmark() {
+    let src_text -> `let a -> 10\nlet b -> "hello" + a\n`
+    let span -> diag.Span(`src/main.zl`, 2, 19, 1, `cannot add Integer`)
+    let d -> diag.make_warning(`Implicit type coercion discouraged`, `W0005`, span)
+    d.notes.append(`Consider explicit conversions.`)
+
+    let zm_callout -> diag.to_zenmark(d, src_text)
+    let pass -> True
+    pass -> pass and Str.contains(zm_callout, `Callout {`)
+    pass -> pass and Str.contains(zm_callout, `type -> "warning"`)
+    pass -> pass and Str.contains(zm_callout, `title -> "warning[W0005]: Implicit type coercion discouraged"`)
+    pass -> pass and Str.contains(zm_callout, `\`\`\`zen`)
+    pass -> pass and Str.contains(zm_callout, `**Note:** Consider explicit conversions.`)
+
+    when not pass {
+        io.writeln(`[FAIL] test_diagnostic_zenmark failed. Callout was:\n` + zm_callout)
+        <- 1
+    }
+    io.writeln(`[PASS] test_diagnostic_zenmark`)
+    <- 0
+}
+
+function main() {
+    io.writeln(`--- Running Diagnostic & Source Frame Tests ---`)
+    let failed -> 0
+    failed -> failed + test_diagnostic_frame()
+    failed -> failed + test_diagnostic_zendata()
+    failed -> failed + test_diagnostic_zenmark()
+
+    when failed == 0 {
+        io.writeln(`ALL DIAGNOSTIC TESTS PASSED!`)
+        <- 0
+    } or {
+        io.writeln(`SOME TESTS FAILED! Total failures: ` + Str.to_string(failed))
+        <- 1
+    }
+}

@@ -98,6 +98,21 @@ class Generator(MangleHandler, BaseGenerator, TypeHandler, StructuralHandler, Fu
         
         self.defer_prototypes = []
         self.scan_for_defers(program)
+        for stmt in program.statements:
+            if isinstance(stmt, ImportStatement):
+                name = stmt.alias if stmt.alias else stmt.name
+                path_key = stmt.path or ""
+                if "/" in path_key:
+                    real_module_name = path_key.rstrip("/").split("/")[-1]
+                else:
+                    real_module_name = path_key.split(".")[-1]
+                resolved = getattr(stmt, "resolved_path", None) or getattr(stmt, "filename", None)
+                if resolved:
+                    import os as _os
+                    base = _os.path.basename(str(resolved)).replace(".zl", "")
+                    if base and base not in ("bootstrap_runtime",):
+                        real_module_name = base
+                self.module_aliases[name] = real_module_name
 
         self.setup_runtime()
         # 1. Forward Declarations FIRST

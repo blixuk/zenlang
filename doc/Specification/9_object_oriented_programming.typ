@@ -1,78 +1,30 @@
-=== Class Declaration
+#import "template.typ": *
 
-Classes define reference types with methods and fields.
+= Object-Oriented Programming & Classes
 
-```zl
-class Name {
-  let name : Type
+Classes in Zenlang define reference types with encapsulated fields, constructor initialization, and instance methods.
 
-  function name { .... }
-}
-```
+== Class Declarations
 
-=== Class Initialization
+Classes are declared using the `class` keyword. Fields are declared with `let`, and constructors are named `init`:
 
-```zl
-class Name {
-  let name : Type -> expression
+#feature(
+    "Class Declaration & Methods",
+    "class Identifier {\n    let field_name\n\n    function init(Parameters) {\n        self.field_name -> Parameter\n    }\n\n    function method_name() {\n        ...\n    }\n}",
+    "class BankAccount {\n    let owner : String\n    let balance : Decimal\n\n    function init(owner: String, initial_balance: Decimal -> 0.0) {\n        self.owner -> owner\n        self.balance -> initial_balance\n    }\n\n    function deposit(amount: Decimal) {\n        self.balance -> self.balance + amount\n    }\n\n    function get_balance() : Decimal {\n        <- self.balance\n    }\n}"
+)
 
-  function init ( parameters ) {
-    self.name -> parameter
-    statements
-  }
-}
-```
+== Instantiation & Usage
 
-=== Class Inheritance
+Creating an instance invokes the `init` constructor method automatically:
 
 ```zl
-class SuperClass {
-  let name : Type -> expression
+let account -> BankAccount(`Alice`, 100.0)
+account.deposit(50.0)
 
-  function init ( parameters ) {
-    self.name -> parameter when parameter or default
-  }
-}
-
-class SubClass : SuperClass {
-  function init ( parameters ) {
-    parent.init(parameters)
-    statements
-  }
-}
+io.writeln(`Account Balance: ` + Str.to_string(account.get_balance())) // 150.0
 ```
 
-=== Class Instantiation
-
-```zl
-let name -> Class()
-let name : Class -> Class ( parameters )
-
-name.member
-name.member -> value
-
-name.member()
-name.member ( parameters )
-```
-
-= Modules
-
-Zenlang supports importing and exporting code between files.
-
-== Importing
-
-```zl
-import math
-import utils.helpers
-from gui import Button
-
-from zen.io import write
-from zen.io import read as r
-```
-
-== Exporting
-
-```zl
-export function foo { .... }
-export class Person { .... }
-```
+#note[
+  Under dual-path compilation (`-g`), classes are compiled into C structs with associated method dispatch functions. For maximum speed in compiler and low-level code, free functions operating on maps or structures are also idiomatic.
+]

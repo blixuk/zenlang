@@ -1,0 +1,175 @@
+/!
+    Text comparison and unified diff generation.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+
+/!
+    Computes an LCS matrix for two lists of lines.
+!/
+function _lcs_matrix(lines_a, lines_b) {
+    let len_a -> lines_a.length
+    let len_b -> lines_b.length
+
+    // Initialize (len_a+1) x (len_b+1) matrix with zeros
+    let matrix -> []
+    let i -> 0
+    do while i <= len_a {
+        let row -> []
+        let j -> 0
+        do while j <= len_b {
+            row.append(0)
+            j -> j + 1
+        }
+        matrix.append(row)
+        i -> i + 1
+    }
+
+    i -> 0
+    do while i < len_a {
+        let j -> 0
+        do while j < len_b {
+            when lines_a[i] == lines_b[j] {
+                let prev -> matrix[i][j]
+                matrix[i + 1][j + 1] -> prev + 1
+            } or {
+                let left_val -> matrix[i + 1][j]
+                let up_val -> matrix[i][j + 1]
+                when left_val > up_val {
+                    matrix[i + 1][j + 1] -> left_val
+                } or {
+                    matrix[i + 1][j + 1] -> up_val
+                }
+            }
+            j -> j + 1
+        }
+        i -> i + 1
+    }
+
+    <- matrix
+}
+
+/!
+    Backtracks the LCS matrix to produce an edit sequence.
+!/
+function _backtrack(matrix, lines_a, lines_b, i, j) {
+    let edits -> []
+    let curr_i -> i
+    let curr_j -> j
+
+    do while curr_i > 0 or curr_j > 0 {
+        when curr_i > 0 and curr_j > 0 and lines_a[curr_i - 1] == lines_b[curr_j - 1] {
+            edits.append({
+                `type` -> `same`,
+                `line` -> lines_a[curr_i - 1]
+            })
+            curr_i -> curr_i - 1
+            curr_j -> curr_j - 1
+        } or when curr_j > 0 and (curr_i == 0 or matrix[curr_i][curr_j - 1] >= matrix[curr_i - 1][curr_j]) {
+            edits.append({
+                `type` -> `add`,
+                `line` -> lines_b[curr_j - 1]
+            })
+            curr_j -> curr_j - 1
+        } or when curr_i > 0 and (curr_j == 0 or matrix[curr_i][curr_j - 1] < matrix[curr_i - 1][curr_j]) {
+            edits.append({
+                `type` -> `del`,
+                `line` -> lines_a[curr_i - 1]
+            })
+            curr_i -> curr_i - 1
+        }
+    }
+
+    // Reverse list to chronological order
+    let reversed -> []
+    let k -> edits.length - 1
+    do while k >= 0 {
+        reversed.append(edits[k])
+        k -> k - 1
+    }
+
+    <- reversed
+}
+
+/!
+    Computes line-by-line differences between two strings.
+    @param text_a Original string.
+    @param text_b Modified string.
+    @return List of edit maps with fields: `type` ("same", "add", "del") and `line`.
+!/
+function diff_lines(text_a, text_b) {
+    let lines_a -> []
+    when text_a != Nothing and text_a != `` {
+        lines_a -> Str.split(text_a, `\n`)
+    }
+    let lines_b -> []
+    when text_b != Nothing and text_b != `` {
+        lines_b -> Str.split(text_b, `\n`)
+    }
+
+    let matrix -> _lcs_matrix(lines_a, lines_b)
+    <- _backtrack(matrix, lines_a, lines_b, lines_a.length, lines_b.length)
+}
+
+/!
+    Generates a standard unified diff format string between two texts.
+    @param text_a Original text.
+    @param text_b Modified text.
+    @param file_a Path or label for original file (default "a").
+    @param file_b Path or label for modified file (default "b").
+    @return Unified diff output string.
+!/
+function unified_diff(text_a, text_b, file_a, file_b) {
+    when file_a == Nothing { file_a -> `a` }
+    when file_b == Nothing { file_b -> `b` }
+
+    let edits -> diff_lines(text_a, text_b)
+    when edits.length == 0 {
+        <- ``
+    }
+
+    // Check if there are any changes
+    let has_changes -> false
+    let i -> 0
+    let len -> edits.length
+    do while i < len {
+        let t -> edits[i][`type`]
+        when t == `add` or t == `del` {
+            has_changes -> true
+        }
+        i -> i + 1
+    }
+
+    when not has_changes {
+        <- ``
+    }
+
+    let out -> `--- ` + file_a + `\n+++ ` + file_b + `\n`
+    let body -> ``
+    let count_a -> 0
+    let count_b -> 0
+
+    i -> 0
+    do while i < len {
+        let item -> edits[i]
+        let t -> item[`type`]
+        let line -> item[`line`]
+
+        when t == `same` {
+            body -> body + ` ` + line + `\n`
+            count_a -> count_a + 1
+            count_b -> count_b + 1
+        } or when t == `del` {
+            body -> body + `-` + line + `\n`
+            count_a -> count_a + 1
+        } or when t == `add` {
+            body -> body + `+` + line + `\n`
+            count_b -> count_b + 1
+        }
+        i -> i + 1
+    }
+
+    let hunk_header -> `@@ -1,` + Str.to_string(count_a) + ` +1,` + Str.to_string(count_b) + ` @@\n`
+    <- out + hunk_header + body
+}

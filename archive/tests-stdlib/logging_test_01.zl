@@ -1,0 +1,16 @@
+import zen.io.io as io
+
+function main() {
+    io.write(`Testing Standard Logging:`)
+    
+    io.info(`This is an info message`)
+    io.warn(`This is a warning message`)
+    io.error(`This is an error message`)
+    io.debug(`This is a debug message (may not show if debugging is off)`)
+    
+    io.write(`Testing direct __builtin_output calls:`)
+    __builtin_output.info(`Direct info`)
+    __builtin_output.warn(`Direct warn`)
+    __builtin_output.error(`Direct error`)
+    __builtin_output.debug(`Direct debug`)
+}

@@ -1,0 +1,32 @@
+/!
+  module.entry selects the process entry function (not a decorator).
+  Bypass main for tests / alternate CLI entry.
+
+  Run:
+    python3 bootstrap/Zen.py tests/language/module_entry_01.zl
+!/
+
+use zen.io
+use zen.text.string as Str
+
+let ran_main -> false
+let ran_run -> false
+
+function main() {
+    ran_main -> true
+    io.writeln(`main should not run when module.entry is set`)
+    <- 1
+}
+
+function run() {
+    ran_run -> true
+    io.writeln(`run entry ok`)
+    when ran_main == true {
+        io.writeln(`FAIL main also ran`)
+        <- 1
+    }
+    <- 0
+}
+
+// Custom entry: string name of the function
+module.entry -> `run`

@@ -1,0 +1,25 @@
+/!
+ Phase B2: enumerator payload construct + `is` bind.
+ Exit 0 iff Box.Hold(7) unpacks n==7 and Box.Empty matches.
+ !/
+
+enumerator Box {
+    Empty
+    Hold
+}
+
+function main() {
+    let o -> Box.Hold(7)
+    when o is Box.Hold(n) {
+        when n != 7 {
+            <- 1
+        }
+    } or {
+        <- 2
+    }
+    let z -> Box.Empty
+    when z is Box.Empty {
+        <- 0
+    }
+    <- 3
+}

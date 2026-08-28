@@ -1,0 +1,1733 @@
+/!
+ Self-hosted recursive-descent parser — Stage 2.
+ Dual-path: token list + index (no class cursor mutation).
+ AST nodes are maps from compiler.AST factories.
+ Input tokens from compiler.Lexer (Tok.token maps; struct IR later).
+ !/
+
+import compiler.AST as AST
+import compiler.Lexer as Lexer
+import compiler.Token as Tok
+from compiler.Token import TokenType
+import zen.text.string as Str
+import zen.time.time as Time
+import zen.sys.sys as Sys
+import compiler.Diagnostics as Diag
+import zen.io.io as io
+
+let G_SRC -> 0
+let G_TOKENS -> 1
+let G_LEN -> 2
+let G_FILENAME -> 3
+
+let G -> [``, [], 0, `<source>`]
+
+// ---------- Token helpers ----------
+
+function _ks(t) {
+    <- Str.to_string(Tok.tok_kind(t))
+}
+
+function unescape_string_literal(s) {
+    when s == Nothing or s == `` {
+        <- ``
+    }
+    when Str.index_of(s, `\\`) < 0 {
+        <- s
+    }
+    let n -> Str.length(s)
+    let acc -> ``
+    let i -> 0
+    do while i < n {
+        let c -> Str.at(s, i)
+        when c == `\\` and i + 1 < n {
+            let esc -> Str.at(s, i + 1)
+            when esc == `x` and i + 3 < n {
+                acc -> acc + `\\x` + Str.at(s, i + 2) + Str.at(s, i + 3)
+                i -> i + 4
+            } or when esc == `e` {
+                acc -> acc + `\\x1b`
+                i -> i + 2
+            } or when esc == `0` {
+                acc -> acc + `\\0`
+                i -> i + 2
+            } or {
+                acc -> acc + Lexer.escape_piece(esc)
+                i -> i + 2
+            }
+        } or {
+            acc -> acc + c
+            i -> i + 1
+        }
+    }
+    <- acc
+}
+
+/!
+ Exact token-kind match. Do NOT use ends_with/contains — those false-positive:
+   is_kind(NOTHING, NOT) via ".NOT" prefix of ".NOTHING"
+   is_kind(NOT_EQUAL, EQUAL) via ends_with "EQUAL"
+   is_kind(FOR, OR) via ends_with "OR"
+ Kind is an integer id (Token.kind_id). Compare ints on the native host.
+ !/
+function is_kind(t, name) {
+    when t == Nothing or name == Nothing {
+        <- false
+    }
+    let k -> Tok.tok_kind(t)
+    // Same representation on each host (int==int native, variant==variant interpret).
+    when k == name {
+        <- true
+    }
+    <- k == Tok.kind_id(name)
+}
+
+function is_eof(t) {
+    <- is_kind(t, TokenType.EOF)
+}
+
+function is_val(t, v) {
+    let src -> G[G_SRC]
+    when src != Nothing and Str.length(src) > 0 {
+        <- Tok.tok_lexeme(src, t) == v
+    }
+    <- Tok.tok_value(t) == v
+}
+
+function tok_at(i) {
+    let toks -> G[G_TOKENS]
+    let n -> G[G_LEN]
+    when i >= n {
+        <- toks[n - 1]
+    }
+    <- toks[i]
+}
+
+function line_of(t) {
+    <- Tok.tok_line(t)
+}
+
+function col_of(t) {
+    <- Tok.tok_column(t)
+}
+
+function val_of(t) {
+    let src -> G[G_SRC]
+    let raw -> ``
+    when src != Nothing and Str.length(src) > 0 {
+        raw -> Tok.tok_lexeme(src, t)
+    } or {
+        raw -> Tok.tok_value(t)
+    }
+    when is_kind(t, TokenType.STRING) {
+        let n -> Str.length(raw)
+        when n >= 2 and (Str.at(raw, 0) == `"` or Str.at(raw, 0) == `\``) {
+            <- unescape_string_literal(Str.substring(raw, 1, n - 1))
+        }
+        <- raw
+    }
+    when is_kind(t, TokenType.RUNE) {
+        let n -> Str.length(raw)
+        when n >= 2 and Str.at(raw, 0) == `'` {
+            <- unescape_string_literal(Str.substring(raw, 1, n - 1))
+        }
+        <- raw
+    }
+    <- raw
+}
+
+function kind_of(t) {
+    <- Tok.tok_kind(t)
+}
+
+// ---------- Result helpers: { node|stmts, i, err } ----------
+
+function parser_ok(node, i) {
+    <- {`node` -> node, `i` -> i, `err` -> Nothing}
+}
+
+function parser_ok_list(stmts, i) {
+    <- {`stmts` -> stmts, `i` -> i, `err` -> Nothing}
+}
+
+function fail(i, msg) {
+    when Str.starts_with(msg, `error:`) {
+        <- {`node` -> Nothing, `stmts` -> Nothing, `i` -> i, `err` -> msg}
+    }
+    let t -> tok_at(i)
+    let line -> Tok.tok_line(t)
+    let col -> Tok.tok_column(t)
+    let len -> Tok.tok_length(t)
+    let fn -> G[G_FILENAME]
+    let formatted -> Diag.format_error(G[G_SRC], fn, msg, line, col, len)
+    <- {`node` -> Nothing, `stmts` -> Nothing, `i` -> i, `err` -> formatted, `raw_err` -> msg, `line` -> line, `col` -> col}
+}
+
+// ---------- Public API ----------
+
+/!
+ Parse source text with filename → Program AST map.
+ !/
+function parse_source_file(src, filename) {
+    let want -> Sys.get_env(`ZEN_PROFILE`) == `1`
+    let t0 -> Time.monotonic()
+    G[G_SRC] -> src
+    G[G_FILENAME] -> filename
+    let tokens -> Lexer.tokenize_source(src)
+    let t1 -> Time.monotonic()
+    let prog -> parse_tokens(tokens)
+    let t2 -> Time.monotonic()
+    when want == true {
+        io.writeln(`profile lex ` + Str.to_string((t1 - t0) * 1000) + ` ms`)
+        io.writeln(`profile parse ` + Str.to_string((t2 - t1) * 1000) + ` ms`)
+    }
+    <- prog
+}
+
+/!
+ Parse source text → Program AST map.
+ !/
+function parse_source(src) {
+    <- parse_source_file(src, `<source>`)
+}
+
+/!
+ Parse token list → Program AST map.
+ !/
+function stmt_push(stmts, node) {
+    when stmts == Nothing {
+        stmts -> []
+    }
+    let grown -> stmts.append(node)
+    when grown != Nothing {
+        <- grown
+    }
+    <- stmts
+}
+
+function parse_tokens(tokens) {
+    G[G_TOKENS] -> tokens
+    G[G_LEN] -> tokens.length
+    let stmts -> []
+    let i -> 0
+    let err -> Nothing
+    do while i < G[G_LEN] and not is_eof(tok_at(i)) and err == Nothing {
+        let step -> parse_one_top(i, stmts)
+        err -> step[`err`]
+        i -> step[`i`]
+        stmts -> step[`stmts`]
+    }
+    when err != Nothing {
+        <- AST.program_error(err)
+    }
+    <- AST.program(stmts)
+}
+
+function parse_one_top(i, stmts) {
+    when is_kind(tok_at(i), TokenType.DOC_COMMENT) {
+        <- { `i` -> i + 1, `stmts` -> stmts, `err` -> Nothing }
+    }
+    let d -> parse_declaration(i)
+    when d[`err`] != Nothing {
+        <- { `i` -> i, `stmts` -> stmts, `err` -> d[`err`] }
+    }
+    let nxt -> d[`i`]
+    when nxt == Nothing or nxt <= i {
+        <- { `i` -> i, `stmts` -> stmts, `err` -> `Parser stuck.` }
+    }
+    when d[`node`] != Nothing {
+        <- { `i` -> nxt, `stmts` -> stmt_push(stmts, d[`node`]), `err` -> Nothing }
+    }
+    <- { `i` -> nxt, `stmts` -> stmts, `err` -> Nothing }
+}
+
+// Class wrapper (prefer free functions under -g)
+class Parser {
+    let tokens
+
+    function init(tokens) {
+        self.tokens -> tokens
+    }
+
+    function parse() {
+        <- parse_tokens(self.tokens)
+    }
+}
+
+// ---------- Program / declarations ----------
+
+function parse_program(i, stmts) {
+    <- parse_tokens(G[G_TOKENS])
+}
+
+function parse_declaration(i) {
+    let t -> tok_at(i)
+    // export function / export let — skip modifier (stdlib + selfhost)
+    when is_kind(t, TokenType.EXPORT) or is_val(t, `export`) {
+        <- parse_declaration(i + 1)
+    }
+    // from module import Name  → treat as import module (Stage 3/7.x)
+    when is_kind(t, TokenType.FROM) or is_val(t, `from`) {
+        <- parse_from_import(i + 1)
+    }
+    when is_kind(t, TokenType.KEYWORD) or is_kind(t, TokenType.SCOPE) or is_kind(t, TokenType.IMPORT) or is_kind(t, TokenType.FROM) {
+        let v -> val_of(t)
+        when v == `function` {
+            <- parse_function(i + 1)
+        }
+        when v == `let` or v == `set` {
+            <- parse_let(i + 1, v == `let`)
+        }
+        when v == `structure` {
+            <- parse_structure(i + 1)
+        }
+        when v == `scope` {
+            <- parse_scope(i + 1)
+        }
+        when v == `import` or v == `use` {
+            <- parse_import(i + 1)
+        }
+        when v == `class` {
+            <- parse_class(i + 1)
+        }
+        when v == `enumerator` {
+            <- parse_enumerator(i + 1)
+        }
+    }
+    when is_kind(t, TokenType.TYPE_LET) {
+        // :> sugar start — uncommon alone; fall through
+    }
+    <- parse_statement(i)
+}
+
+// ---------- Statements ----------
+
+function parse_statement(i) {
+    let t -> tok_at(i)
+    // check expr { case ... } / check expr or { ... } / check expr raise ...
+    when is_kind(t, TokenType.CHECK) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `check`)) {
+        <- parse_check(i + 1)
+    }
+    // with resource [as alias] { body } — TokenType.WITH
+    when is_kind(t, TokenType.WITH) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `with`)) {
+        <- parse_with(i + 1)
+    }
+    when is_kind(t, TokenType.RAISE) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `raise`)) {
+        <- parse_raise_stmt(i + 1)
+    }
+    when is_kind(t, TokenType.KEYWORD) or is_kind(t, TokenType.ASSERT) or
+         is_kind(t, TokenType.ASSERT_SYMBOL) or is_kind(t, TokenType.DEFER) or is_kind(t, TokenType.CASE) {
+        let v -> val_of(t)
+        when v == `raise` {
+            <- parse_raise_stmt(i + 1)
+        }
+        when v == `check` {
+            <- parse_check(i + 1)
+        }
+        when v == `when` {
+            <- parse_when(i + 1)
+        }
+        when v == `while` {
+            <- parse_while(i + 1)
+        }
+        when v == `do` {
+            <- parse_do(i + 1)
+        }
+        when v == `for` {
+            <- parse_for(i + 1)
+        }
+        when v == `return` {
+            <- parse_return_kw(i + 1)
+        }
+        when v == `assert` or is_kind(t, TokenType.ASSERT_SYMBOL) or v == `!` {
+            when is_kind(t, TokenType.ASSERT_SYMBOL) or v == `!` {
+                <- parse_assert(i + 1)
+            }
+            when v == `assert` {
+                <- parse_assert(i + 1)
+            }
+        }
+        when v == `defer` {
+            <- parse_defer(i + 1)
+        }
+        when v == `with` {
+            <- parse_with(i + 1)
+        }
+        when v == `let` or v == `set` {
+            <- parse_let(i + 1, v == `let`)
+        }
+        when v == `break` or v == `continue` {
+            <- parser_ok(AST.expr_stmt(AST.lit(v, line_of(t), col_of(t)), line_of(t), col_of(t)), i + 1)
+        }
+    }
+    when is_kind(t, TokenType.RETURN) or is_val(t, `<-`) {
+        <- parse_return_arrow(i + 1)
+    }
+    when is_kind(t, TokenType.ASSERT_SYMBOL) or is_val(t, `!`) {
+        // only if start of statement — assert expression
+        // careful: ! also appears in expressions; at statement start it's assert
+        <- parse_assert(i + 1)
+    }
+    when is_kind(t, TokenType.LEFT_BRACE) {
+        <- parse_block(i)
+    }
+    <- parse_expression_statement(i)
+}
+
+function parse_block(i) {
+    // expects '{'
+    let open -> tok_at(i)
+    when not is_kind(open, TokenType.LEFT_BRACE) {
+        <- fail(i, `Expected '{'.`)
+    }
+    let stmts -> []
+    let j -> i + 1
+    let err -> Nothing
+    do while j < G[G_LEN] and not is_eof(tok_at(j)) and not is_kind(tok_at(j), TokenType.RIGHT_BRACE) and err == Nothing {
+        let step -> parse_one_block(j, stmts)
+        err -> step[`err`]
+        j -> step[`j`]
+        stmts -> step[`stmts`]
+    }
+    when err != Nothing {
+        <- fail(j, err)
+    }
+    when not is_kind(tok_at(j), TokenType.RIGHT_BRACE) {
+        <- fail(j, `Expected '}'.`)
+    }
+    <- parser_ok(AST.block(stmts, line_of(open), col_of(open)), j + 1)
+}
+
+function parse_one_block(j, stmts) {
+    let s -> parse_declaration(j)
+    when s[`err`] != Nothing {
+        <- { `j` -> j, `stmts` -> stmts, `err` -> s[`err`] }
+    }
+    let nxt -> s[`i`]
+    when nxt == Nothing or nxt <= j {
+        <- { `j` -> j, `stmts` -> stmts, `err` -> `Parser stuck.` }
+    }
+    when s[`node`] != Nothing {
+        <- { `j` -> nxt, `stmts` -> stmt_push(stmts, s[`node`]), `err` -> Nothing }
+    }
+    <- { `j` -> nxt, `stmts` -> stmts, `err` -> Nothing }
+}
+
+function parse_block_body(i, stmts) {
+    <- parser_ok_list(stmts, i)
+}
+
+function parse_let(i, mutable) {
+    // after 'let'/'set'
+    let name_t -> tok_at(i)
+    when not is_name_token(name_t) {
+        <- fail(i, `Expected variable name.`)
+    }
+    let name -> val_of(name_t)
+    let j -> i + 1
+    let type_ann -> Nothing
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.TYPE_SET) or is_val(tj, `:`) {
+        let tr -> parse_type_name(j + 1)
+        type_ann -> tr[`node`]
+        j -> tr[`i`]
+        tj -> tok_at(j)
+    }
+    when is_kind(tj, TokenType.TYPE_LET) or is_val(tj, `:>`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        <- parser_ok(AST.let_stmt(name, er[`node`], type_ann, mutable, line_of(name_t), col_of(name_t)), er[`i`])
+    }
+    when not (is_kind(tj, TokenType.ASSIGNMENT) or is_val(tj, `->`)) {
+        // bare let name without init
+        <- parser_ok(AST.let_stmt(name, Nothing, type_ann, mutable, line_of(name_t), col_of(name_t)), j)
+    }
+    j -> j + 1
+    let er -> parse_expression(j)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    <- parser_ok(AST.let_stmt(name, er[`node`], type_ann, mutable, line_of(name_t), col_of(name_t)), er[`i`])
+}
+
+function parse_function(i) {
+    // after 'function'
+    let name_t -> tok_at(i)
+    when not is_name_token(name_t) {
+        <- fail(i, `Expected function name.`)
+    }
+    let name -> val_of(name_t)
+    let j -> i + 1
+    // optional ()
+    when is_kind(tok_at(j), TokenType.LEFT_PAREN) {
+        let pr -> parse_param_list(j + 1, [])
+        when pr[`err`] != Nothing {
+            <- pr
+        }
+        when not is_kind(tok_at(pr[`i`]), TokenType.RIGHT_PAREN) {
+            <- fail(pr[`i`], `Expected ')'.`)
+        }
+        <- parse_function_after_params(name, pr[`stmts`], name_t, pr[`i`] + 1)
+    }
+    <- parse_function_after_params(name, [], name_t, j)
+}
+
+function parse_function_after_params(name, params, name_t, j) {
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.TYPE_SET) or is_val(tj, `:`) {
+        let tr -> parse_type_name(j + 1)
+        when tr[`err`] != Nothing {
+            <- tr
+        }
+        <- parse_function_body(name, params, name_t, tr[`node`], tr[`i`])
+    }
+    <- parse_function_body(name, params, name_t, Nothing, j)
+}
+
+function parse_function_body(name, params, name_t, ret, j) {
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        let ret_stmt -> AST.return_stmt(er[`node`], line_of(tj), col_of(tj))
+        let body_node -> AST.block([ret_stmt], line_of(tj), col_of(tj))
+        <- parser_ok(AST.function_stmt(name, params, body_node, ret, line_of(name_t), col_of(name_t)), er[`i`])
+    }
+    let br -> parse_block(j)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.function_stmt(name, params, br[`node`], ret, line_of(name_t), col_of(name_t)), br[`i`])
+}
+
+/!
+ Lambda: after 'function', next is '(' or '{' (no name).
+ !/
+function parse_function_expression(i) {
+    // i at '(' or '{'
+    let t0 -> tok_at(i - 1)
+    let params -> []
+    let j -> i
+    when is_kind(tok_at(j), TokenType.LEFT_PAREN) {
+        let pr -> parse_param_list(j + 1, [])
+        when pr[`err`] != Nothing {
+            <- pr
+        }
+        params -> pr[`stmts`]
+        j -> pr[`i`]
+        when not is_kind(tok_at(j), TokenType.RIGHT_PAREN) {
+            <- fail(j, `Expected ')' after lambda params.`)
+        }
+        j -> j + 1
+    }
+    when is_kind(tok_at(j), TokenType.TYPE_SET) or is_val(tok_at(j), `:`) {
+        let tr -> parse_type_name(j + 1)
+        j -> tr[`i`]
+    }
+    let br -> parse_block(j)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.function_expr(params, br[`node`], line_of(t0), col_of(t0)), br[`i`])
+}
+
+/!
+ True when token can be a binding name (param, let, field). Soft keywords included.
+ !/
+function is_name_token(t) {
+    when is_kind(t, TokenType.IDENTIFIER) or is_kind(t, TokenType.KEYWORD) {
+        <- true
+    }
+    // Soft/dedicated keyword kinds used as identifiers in selfhost sources
+    when is_kind(t, TokenType.SCOPE) or is_kind(t, TokenType.SELF) or is_kind(t, TokenType.PARENT) or
+         is_kind(t, TokenType.TYPE) or is_kind(t, TokenType.OBJECT) or is_kind(t, TokenType.TASK) or
+         is_kind(t, TokenType.WITH) or is_kind(t, TokenType.AS) or is_kind(t, TokenType.FROM) or
+         is_kind(t, TokenType.IMPORT) or is_kind(t, TokenType.EXPORT) {
+        <- true
+    }
+    // Type words (`List`, `Map`, `String`, …) are TokenType.LIST etc.
+    // Needed for `when value is List` in stdlib (json.zl).
+    when is_kind(t, TokenType.LIST) or is_kind(t, TokenType.MAP) or is_kind(t, TokenType.STRING) or
+         is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or is_kind(t, TokenType.BOOLEAN) or
+         is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.VOID) or is_kind(t, TokenType.VARIANT) or
+         is_kind(t, TokenType.FUNCTION) or is_kind(t, TokenType.ENUMERATOR) or is_kind(t, TokenType.STRUCTURE) or
+         is_kind(t, TokenType.CLASS) or is_kind(t, TokenType.DEFAULT) {
+        <- true
+    }
+    <- false
+}
+
+function parse_param_list(i, acc) {
+    let params -> []
+    let j -> i
+    let err -> Nothing
+    do while j < G[G_LEN] and not is_eof(tok_at(j)) and not is_kind(tok_at(j), TokenType.RIGHT_PAREN) and err == Nothing {
+        let name_t -> tok_at(j)
+        when not is_name_token(name_t) {
+            err -> `Expected parameter name.`
+        } or {
+            let name -> val_of(name_t)
+            j -> j + 1
+            let ty -> Nothing
+            when is_kind(tok_at(j), TokenType.TYPE_SET) or is_val(tok_at(j), `:`) {
+                let tr -> parse_type_name(j + 1)
+                ty -> tr[`node`]
+                j -> tr[`i`]
+            }
+            params.append(AST.param(name, ty, line_of(name_t), col_of(name_t)))
+            when is_kind(tok_at(j), TokenType.COMMA) or is_val(tok_at(j), `,`) {
+                j -> j + 1
+            }
+        }
+    }
+    when err != Nothing {
+        <- fail(j, err)
+    }
+    <- parser_ok_list(params, j)
+}
+
+function parse_type_name(i) {
+    let t -> tok_at(i)
+    let j -> i
+    let qual -> ``
+    when is_kind(t, TokenType.KEYWORD) and (is_val(t, `owned`) or is_val(t, `borrowed`)) {
+        qual -> val_of(t)
+        j -> j + 1
+        t -> tok_at(j)
+    }
+    when is_kind(t, TokenType.TYPE) or is_kind(t, TokenType.IDENTIFIER) or is_kind(t, TokenType.KEYWORD) or
+         is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.STRING) or is_kind(t, TokenType.BOOLEAN) or
+         is_kind(t, TokenType.VOID) or is_kind(t, TokenType.LIST) or is_kind(t, TokenType.MAP) or is_kind(t, TokenType.VARIANT) or
+         is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.DECIMAL) or is_kind(t, TokenType.RUNE) or
+         is_kind(t, TokenType.STRUCTURE) or is_kind(t, TokenType.FUNCTION) or is_kind(t, TokenType.CLASS) {
+        // dotted types A.B
+        let name -> val_of(t)
+        j -> j + 1
+        when is_kind(tok_at(j), TokenType.DOT) {
+            let n2 -> tok_at(j + 1)
+            name -> name + `.` + val_of(n2)
+            j -> j + 2
+        }
+        <- parser_ok(type_ann(name, qual), j)
+    }
+    <- parser_ok(type_ann(val_of(t), qual), j + 1)
+}
+
+function type_ann(name, qual) {
+    <- AST.type_ann(name, qual)
+}
+
+function parse_raise_stmt(i) {
+    let t0 -> tok_at(i - 1)
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    <- parser_ok(AST.expr_stmt(er[`node`], line_of(t0), col_of(t0)), er[`i`])
+}
+
+function parse_return_kw(i) {
+    let t -> tok_at(i - 1)
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) or is_eof(tok_at(i)) {
+        <- parser_ok(AST.return_stmt(Nothing, line_of(t), col_of(t)), i)
+    }
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    <- parser_ok(AST.return_stmt(er[`node`], line_of(t), col_of(t)), er[`i`])
+}
+
+function parse_return_arrow(i) {
+    // after '<-'
+    let t -> tok_at(i - 1)
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) or is_eof(tok_at(i)) {
+        <- parser_ok(AST.return_stmt(Nothing, line_of(t), col_of(t)), i)
+    }
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    <- parser_ok(AST.return_stmt(er[`node`], line_of(t), col_of(t)), er[`i`])
+}
+
+function parse_assert(i) {
+    let t -> tok_at(i - 1)
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    <- parser_ok(AST.assert_stmt(er[`node`], line_of(t), col_of(t)), er[`i`])
+}
+
+function parse_defer(i) {
+    let t -> tok_at(i - 1)
+    let br -> parse_statement(i)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.defer_stmt(br[`node`], line_of(t), col_of(t)), br[`i`])
+}
+
+/!
+ with <expr> [as <alias>] { body }
+ !/
+function parse_with(i) {
+    // after 'with'
+    let t0 -> tok_at(i - 1)
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    let j -> er[`i`]
+    let alias -> ``
+    when is_kind(tok_at(j), TokenType.AS) or (is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `as`)) {
+        j -> j + 1
+        let a_t -> tok_at(j)
+        when not is_name_token(a_t) {
+            <- fail(j, `Expected alias after as.`)
+        }
+        alias -> val_of(a_t)
+        j -> j + 1
+    }
+    let br -> parse_block(j)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.with_stmt(er[`node`], alias, br[`node`], line_of(t0), col_of(t0)), br[`i`])
+}
+
+function parse_when(i) {
+    // after 'when' — condition [when guard] ({ body } | <- expr) (or when cond ... )* (or ... )?
+    let t0 -> tok_at(i - 1)
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    let cond -> er[`node`]
+    let j -> er[`i`]
+    let guard -> Nothing
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.KEYWORD) and is_val(tj, `when`) {
+        let gr -> parse_expression(j + 1)
+        when gr[`err`] != Nothing {
+            <- gr
+        }
+        guard -> gr[`node`]
+        j -> gr[`i`]
+        tj -> tok_at(j)
+    }
+    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) {
+        let ret_res -> parse_expression(j + 1)
+        when ret_res[`err`] != Nothing { <- ret_res }
+        let ret_stmt -> AST.return_stmt(ret_res[`node`], line_of(tj), col_of(tj))
+        let body_node -> AST.block([ret_stmt], line_of(tj), col_of(tj))
+        let cases -> [AST.case_clause_guard(cond, body_node, guard, line_of(t0), col_of(t0))]
+        let r -> parse_when_tail(ret_res[`i`], cases)
+        when r[`err`] != Nothing { <- r }
+        <- parser_ok(AST.when_stmt(r[`stmts`], line_of(t0), col_of(t0)), r[`i`])
+    }
+    let br -> parse_block(j)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    let cases -> [AST.case_clause_guard(cond, br[`node`], guard, line_of(t0), col_of(t0))]
+    let r -> parse_when_tail(br[`i`], cases)
+    when r[`err`] != Nothing { <- r }
+    <- parser_ok(AST.when_stmt(r[`stmts`], line_of(t0), col_of(t0)), r[`i`])
+}
+
+function parse_when_tail(i, cases) {
+    // } or { ... }   or   or when expr ...   or   or <- expr
+    let ti -> tok_at(i)
+    when not is_kind(ti, TokenType.OR) and not is_val(ti, `or`) {
+        <- parser_ok_list(cases, i)
+    }
+    // consume 'or'
+    let j -> i + 1
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.KEYWORD) and is_val(tj, `when`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        let cond -> er[`node`]
+        let k -> er[`i`]
+        let guard -> Nothing
+        let tk -> tok_at(k)
+        when is_kind(tk, TokenType.KEYWORD) and is_val(tk, `when`) {
+            let gr -> parse_expression(k + 1)
+            when gr[`err`] != Nothing {
+                <- gr
+            }
+            guard -> gr[`node`]
+            k -> gr[`i`]
+            tk -> tok_at(k)
+        }
+        when is_kind(tk, TokenType.RETURN) or is_val(tk, `<-`) {
+            let ret_res -> parse_expression(k + 1)
+            when ret_res[`err`] != Nothing { <- ret_res }
+            let ret_stmt -> AST.return_stmt(ret_res[`node`], line_of(tk), col_of(tk))
+            let body_node -> AST.block([ret_stmt], line_of(tk), col_of(tk))
+            cases.append(AST.case_clause_guard(cond, body_node, guard, line_of(ti), col_of(ti)))
+            <- parse_when_tail(ret_res[`i`], cases)
+        }
+        let br -> parse_block(k)
+        when br[`err`] != Nothing {
+            <- br
+        }
+        cases.append(AST.case_clause_guard(cond, br[`node`], guard, line_of(ti), col_of(ti)))
+        <- parse_when_tail(br[`i`], cases)
+    }
+    // else branch: or <- expr
+    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) {
+        let ret_res -> parse_expression(j + 1)
+        when ret_res[`err`] != Nothing { <- ret_res }
+        let ret_stmt -> AST.return_stmt(ret_res[`node`], line_of(tj), col_of(tj))
+        let body_node -> AST.block([ret_stmt], line_of(tj), col_of(tj))
+        cases.append(AST.case_clause(Nothing, body_node, line_of(ti), col_of(ti)))
+        <- parser_ok_list(cases, ret_res[`i`])
+    }
+    // else branch: or { ... }
+    when is_kind(tj, TokenType.LEFT_BRACE) {
+        let br -> parse_block(j)
+        when br[`err`] != Nothing {
+            <- br
+        }
+        cases.append(AST.case_clause(Nothing, br[`node`], line_of(ti), col_of(ti)))
+        <- parser_ok_list(cases, br[`i`])
+    }
+    <- parser_ok_list(cases, i)
+}
+
+function parse_check(i) {
+    // 1. check { ... } [or { ... }]
+    // 2. check expr { case ... } [or { ... }]
+    let t0 -> tok_at(i - 1)
+    let subj -> Nothing
+    let cases -> []
+    let or_block -> Nothing
+    let raise_expr -> Nothing
+    let j -> i
+    when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+        let br -> parse_block(j)
+        when br[`err`] != Nothing {
+            <- br
+        }
+        subj -> br[`node`]
+        j -> br[`i`]
+    } or {
+        let er -> parse_expression(j)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        subj -> er[`node`]
+        j -> er[`i`]
+        when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+            let cr -> parse_check_cases(j + 1, [])
+            when cr[`err`] != Nothing {
+                <- cr
+            }
+            cases -> cr[`stmts`]
+            j -> cr[`i`]
+            when is_kind(tok_at(j), TokenType.RIGHT_BRACE) {
+                j -> j + 1
+            } or {
+                <- fail(j, `Expected '}' after check cases.`)
+            }
+        }
+    }
+    when is_kind(tok_at(j), TokenType.OR) or is_val(tok_at(j), `or`) {
+        j -> j + 1
+        when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+            let br -> parse_block(j)
+            when br[`err`] != Nothing {
+                <- br
+            }
+            or_block -> br[`node`]
+            j -> br[`i`]
+        } or {
+            let sr -> parse_statement(j)
+            when sr[`err`] != Nothing {
+                <- sr
+            }
+            or_block -> sr[`node`]
+            j -> sr[`i`]
+        }
+    }
+    <- parser_ok(AST.check_statement(subj, cases, or_block, raise_expr, line_of(t0), col_of(t0)), j)
+}
+
+function parse_check_cases(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) or is_eof(tok_at(i)) {
+        <- parser_ok_list(acc, i)
+    }
+    let t -> tok_at(i)
+    when is_kind(t, TokenType.CASE) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `case`)) {
+        let pat_res -> parse_expression(i + 1)
+        when pat_res[`err`] != Nothing {
+            <- pat_res
+        }
+        let pat -> pat_res[`node`]
+        let j -> pat_res[`i`]
+        let guard -> Nothing
+        when is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `when`) {
+            let gr -> parse_expression(j + 1)
+            when gr[`err`] != Nothing {
+                <- gr
+            }
+            guard -> gr[`node`]
+            j -> gr[`i`]
+        }
+        let br -> parse_block(j)
+        when br[`err`] != Nothing {
+            <- br
+        }
+        acc.append(AST.case_clause_guard(pat, br[`node`], guard, line_of(t), col_of(t)))
+        when is_kind(tok_at(br[`i`]), TokenType.COMMA) {
+            <- parse_check_cases(br[`i`] + 1, acc)
+        }
+        <- parse_check_cases(br[`i`], acc)
+    }
+    <- parser_ok_list(acc, i)
+}
+
+function parse_while(i) {
+    let t0 -> tok_at(i - 1)
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    let br -> parse_block(er[`i`])
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.while_stmt(er[`node`], br[`node`], line_of(t0), col_of(t0)), br[`i`])
+}
+
+function parse_do(i) {
+    // after 'do' — do { } while cond   |  do while cond { }  |  do for ...
+    let t0 -> tok_at(i - 1)
+    when is_kind(tok_at(i), TokenType.KEYWORD) and is_val(tok_at(i), `while`) {
+        // do while cond { body }
+        let er -> parse_expression(i + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        let br -> parse_block(er[`i`])
+        when br[`err`] != Nothing {
+            <- br
+        }
+        <- parser_ok(AST.do_while_stmt(br[`node`], er[`node`], line_of(t0), col_of(t0), true), br[`i`])
+    }
+    when is_kind(tok_at(i), TokenType.KEYWORD) and is_val(tok_at(i), `for`) {
+        <- parse_for(i + 1)
+    }
+    // do { body } while cond
+    when is_kind(tok_at(i), TokenType.LEFT_BRACE) {
+        let br -> parse_block(i)
+        when br[`err`] != Nothing {
+            <- br
+        }
+        when is_kind(tok_at(br[`i`]), TokenType.KEYWORD) and is_val(tok_at(br[`i`]), `while`) {
+            let er -> parse_expression(br[`i`] + 1)
+            when er[`err`] != Nothing {
+                <- er
+            }
+            <- parser_ok(AST.do_while_stmt(br[`node`], er[`node`], line_of(t0), col_of(t0), false), er[`i`])
+        }
+        // bare do-block
+        <- br
+    }
+    <- fail(i, `Expected do while/for/block.`)
+}
+
+function parse_for(i) {
+    // after 'for' — name in expr { body }
+    let t0 -> tok_at(i - 1)
+    let name_t -> tok_at(i)
+    when not (is_kind(name_t, TokenType.IDENTIFIER) or is_kind(name_t, TokenType.KEYWORD)) {
+        <- fail(i, `Expected for variable.`)
+    }
+    let j -> i + 1
+    when not (is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `in`)) {
+        <- fail(j, `Expected 'in'.`)
+    }
+    j -> j + 1
+    let er -> parse_expression(j)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    let br -> parse_block(er[`i`])
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.for_stmt(val_of(name_t), er[`node`], br[`node`], line_of(t0), col_of(t0)), br[`i`])
+}
+
+function parse_structure(i) {
+    let name_t -> tok_at(i)
+    let name -> val_of(name_t)
+    let j -> i + 1
+    when not is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+        <- fail(j, `Expected '{' after structure name.`)
+    }
+    let mr -> parse_struct_members(j + 1, [])
+    when mr[`err`] != Nothing {
+        <- mr
+    }
+    when not is_kind(tok_at(mr[`i`]), TokenType.RIGHT_BRACE) {
+        <- fail(mr[`i`], `Expected '}'.`)
+    }
+    <- parser_ok(AST.structure_stmt(name, mr[`stmts`], line_of(name_t), col_of(name_t)), mr[`i`] + 1)
+}
+
+/!
+ class Name [extends Parent] { let/set fields; function methods; }
+ Emits ClassStatement with members + methods lists.
+ !/
+function parse_class(i) {
+    // after 'class'
+    let name_t -> tok_at(i)
+    when not is_name_token(name_t) {
+        <- fail(i, `Expected class name.`)
+    }
+    let name -> val_of(name_t)
+    let j -> i + 1
+    // Do not bind name `parent` — reserved (ParentExpression under bootstrap).
+    let base_name -> Nothing
+    // Lexer emits TokenType.EXTENDS (not KEYWORD+value).
+    when is_kind(tok_at(j), TokenType.EXTENDS) or (is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `extends`)) {
+        j -> j + 1
+        let p_t -> tok_at(j)
+        when not is_name_token(p_t) {
+            <- fail(j, `Expected parent class name after extends.`)
+        }
+        base_name -> val_of(p_t)
+        j -> j + 1
+    }
+    when not is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+        <- fail(j, `Expected '{' after class name.`)
+    }
+    let br -> parse_class_body(j + 1, [], [])
+    when br[`err`] != Nothing {
+        <- br
+    }
+    when not is_kind(tok_at(br[`i`]), TokenType.RIGHT_BRACE) {
+        <- fail(br[`i`], `Expected '}' after class body.`)
+    }
+    <- parser_ok(AST.class_stmt(name, base_name, br[`members`], br[`methods`], line_of(name_t), col_of(name_t)), br[`i`] + 1)
+}
+
+/!
+ Parse class body into { members, methods, i, err }.
+ members: LetStatement fields; methods: FunctionStatement list.
+ !/
+function parse_class_body(i, members, methods) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) or is_eof(tok_at(i)) {
+        <- {
+            `members` -> members,
+            `methods` -> methods,
+            `i` -> i,
+            `err` -> Nothing
+        }
+    }
+    let t -> tok_at(i)
+    // Skip comments if any slip through
+    when is_kind(t, TokenType.COMMENT) or is_kind(t, TokenType.DOC_COMMENT) {
+        <- parse_class_body(i + 1, members, methods)
+    }
+    when is_kind(t, TokenType.KEYWORD) and is_val(t, `function`) {
+        let fr -> parse_function(i + 1)
+        when fr[`err`] != Nothing {
+            <- {
+                `members` -> members,
+                `methods` -> methods,
+                `i` -> fr[`i`],
+                `err` -> fr[`err`]
+            }
+        }
+        methods.append(fr[`node`])
+        <- parse_class_body(fr[`i`], members, methods)
+    }
+    when is_kind(t, TokenType.KEYWORD) and (is_val(t, `let`) or is_val(t, `set`)) {
+        <- parse_class_body_after_let(i, t, members, methods)
+    }
+    // bare field: name [: Type]  (structure-style)
+    when is_name_token(t) {
+        let j -> i + 1
+        let ty -> Nothing
+        when is_kind(tok_at(j), TokenType.TYPE_SET) or is_val(tok_at(j), `:`) {
+            let tr -> parse_type_name(j + 1)
+            ty -> tr[`node`]
+            j -> tr[`i`]
+        }
+        // Treat as field let with optional type, no init
+        members.append(AST.let_stmt(val_of(t), Nothing, ty, false, line_of(t), col_of(t)))
+        <- parse_class_body(j, members, methods)
+    }
+    <- {
+        `members` -> members,
+        `methods` -> methods,
+        `i` -> i,
+        `err` -> `Unexpected token in class body: ` + Str.to_string(val_of(t))
+    }
+}
+
+function parse_class_body_after_let(i, t, members, methods) {
+    let is_set -> is_val(t, `set`)
+    let lr -> parse_let(i + 1, is_set != true)
+    when lr[`err`] != Nothing {
+        <- {
+            `members` -> members,
+            `methods` -> methods,
+            `i` -> lr[`i`],
+            `err` -> lr[`err`]
+        }
+    }
+    members.append(lr[`node`])
+    <- parse_class_body(lr[`i`], members, methods)
+}
+
+function parse_struct_members(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) {
+        <- parser_ok_list(acc, i)
+    }
+    when is_eof(tok_at(i)) {
+        <- parser_ok_list(acc, i)
+    }
+    let name_t -> tok_at(i)
+    // method or field
+    when is_kind(name_t, TokenType.KEYWORD) and is_val(name_t, `function`) {
+        let fr -> parse_function(i + 1)
+        when fr[`err`] != Nothing {
+            <- fr
+        }
+        acc.append(fr[`node`])
+        <- parse_struct_members(fr[`i`], acc)
+    }
+    when is_kind(name_t, TokenType.IDENTIFIER) or is_kind(name_t, TokenType.KEYWORD) {
+        let j -> i + 1
+        let ty -> Nothing
+        when is_kind(tok_at(j), TokenType.TYPE_SET) or is_val(tok_at(j), `:`) {
+            let tr -> parse_type_name(j + 1)
+            ty -> tr[`node`]
+            j -> tr[`i`]
+        }
+        acc.append(AST.struct_member(val_of(name_t), ty, line_of(name_t), col_of(name_t)))
+        <- parse_struct_members(j, acc)
+    }
+    // skip unknown
+    <- parse_struct_members(i + 1, acc)
+}
+
+function parse_enumerator(i) {
+    // enumerator Name { A, B, C -> `x`, ... }
+    let name_t -> tok_at(i)
+    let j -> i + 1
+    when not is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+        <- fail(j, `Expected '{' after enumerator.`)
+    }
+    let mr -> parse_enum_members(j + 1, [])
+    when mr[`err`] != Nothing {
+        <- mr
+    }
+    when not is_kind(tok_at(mr[`i`]), TokenType.RIGHT_BRACE) {
+        <- fail(mr[`i`], `Expected '}' after enumerator body.`)
+    }
+    <- parser_ok(AST.enumerator_stmt(val_of(name_t), mr[`stmts`], line_of(name_t), col_of(name_t)), mr[`i`] + 1)
+}
+
+function parse_enum_member_value(j) {
+    when is_kind(tok_at(j), TokenType.ASSIGNMENT) or is_val(tok_at(j), `->`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        <- parser_ok(er[`node`], er[`i`])
+    }
+    <- parser_ok(Nothing, j)
+}
+
+function parse_enum_members(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) or is_eof(tok_at(i)) {
+        <- parser_ok_list(acc, i)
+    }
+    let t -> tok_at(i)
+    when is_kind(t, TokenType.COMMA) or is_kind(t, TokenType.SEMICOLON) {
+        <- parse_enum_members(i + 1, acc)
+    }
+    when not is_name_token(t) {
+        <- parse_enum_members(i + 1, acc)
+    }
+    let after -> parse_enum_member_value(i + 1)
+    when after[`err`] != Nothing {
+        <- after
+    }
+    let nxt -> after[`i`]
+    when nxt == Nothing or nxt <= i {
+        <- fail(i, `Parser stuck.`)
+    }
+    <- parse_enum_members(nxt, stmt_push(acc, AST.enum_member(val_of(t), after[`node`], line_of(t), col_of(t))))
+}
+
+function skip_braced(i) {
+    // i at '{'; return index after matching '}'
+    let depth -> 1
+    let j -> i + 1
+    <- skip_braced_rec(j, depth)
+}
+
+function skip_braced_rec(j, depth) {
+    when depth == 0 or j >= G[G_LEN] or is_eof(tok_at(j)) {
+        <- j
+    }
+    when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+        <- skip_braced_rec(j + 1, depth + 1)
+    }
+    when is_kind(tok_at(j), TokenType.RIGHT_BRACE) {
+        <- skip_braced_rec(j + 1, depth - 1)
+    }
+    <- skip_braced_rec(j + 1, depth)
+}
+
+function parse_scope(i) {
+    let name_t -> tok_at(i)
+    let br -> parse_block(i + 1)
+    when br[`err`] != Nothing {
+        <- br
+    }
+    <- parser_ok(AST.scope_stmt(val_of(name_t), br[`node`], line_of(name_t), col_of(name_t)), br[`i`])
+}
+
+function parse_import(i) {
+    // import path [as Alias]  — path may be dotted or string
+    let t0 -> tok_at(i - 1)
+    let path -> ``
+    let j -> i
+    when is_kind(tok_at(j), TokenType.STRING) {
+        path -> val_of(tok_at(j))
+        j -> j + 1
+    } or {
+        let pr -> parse_dotted_name(j)
+        path -> pr[`node`]
+        j -> pr[`i`]
+    }
+    let alias -> Nothing
+    when is_kind(tok_at(j), TokenType.AS) or (is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `as`)) {
+        j -> j + 1
+        alias -> val_of(tok_at(j))
+        j -> j + 1
+    }
+    <- parser_ok(AST.import_stmt(path, alias, line_of(t0), col_of(t0)), j)
+}
+
+/!
+ from compiler.Token import TokenType
+ → ImportStatement path=compiler.Token alias=TokenType (MVP merge strips imports).
+ !/
+function parse_from_import(i) {
+    // after 'from'
+    let t0 -> tok_at(i - 1)
+    let pr -> parse_dotted_name(i)
+    let path -> pr[`node`]
+    let j -> pr[`i`]
+    when is_kind(tok_at(j), TokenType.IMPORT) or is_val(tok_at(j), `import`) {
+        j -> j + 1
+    }
+    let alias -> Nothing
+    when is_name_token(tok_at(j)) or is_kind(tok_at(j), TokenType.IDENTIFIER) or is_kind(tok_at(j), TokenType.KEYWORD) {
+        alias -> val_of(tok_at(j))
+        j -> j + 1
+    }
+    <- parser_ok(AST.import_stmt(path, alias, line_of(t0), col_of(t0)), j)
+}
+
+function parse_dotted_name(i) {
+    let t -> tok_at(i)
+    let name -> val_of(t)
+    let j -> i + 1
+    <- parse_dotted_name_tail(j, name)
+}
+
+function parse_dotted_name_tail(j, name) {
+    when is_kind(tok_at(j), TokenType.DOT) {
+        let n -> val_of(tok_at(j + 1))
+        <- parse_dotted_name_tail(j + 2, name + `.` + n)
+    }
+    <- parser_ok(name, j)
+}
+
+function parse_expression_statement(i) {
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    // reassignment: expr -> value  handled inside assignment parse at expression level
+    let t -> tok_at(i)
+    <- parser_ok(AST.expr_stmt(er[`node`], line_of(t), col_of(t)), er[`i`])
+}
+
+// ---------- Expressions (Pratt / precedence climbing via layers) ----------
+
+function parse_expression(i) {
+    <- parse_assignment(i)
+}
+
+function parse_assignment(i) {
+    let left -> parse_or(i)
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    // Kind-only for ops: is_val(`-`) etc. would match STRING values like `-`.
+    when is_kind(tok_at(j), TokenType.ASSIGNMENT) {
+        let right -> parse_assignment(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let ln -> left[`node`]
+        let ln_k -> AST.ast_kind(ln)
+        when ln_k == AST.K_VARIABLE {
+            <- parser_ok(AST.assign(AST.var_name(ln), right[`node`], AST.ast_line(ln), AST.ast_col(ln)), right[`i`])
+        }
+        when ln_k == AST.K_GET {
+            <- parser_ok(AST.set_expr(AST.get_obj(ln), AST.get_name(ln), right[`node`], AST.ast_line(ln), AST.ast_col(ln)), right[`i`])
+        }
+        when ln_k == AST.K_INDEX {
+            // treat as set via synthetic
+            <- parser_ok(AST.index_assign(AST.idx_obj(ln), AST.idx_expr(ln), right[`node`], AST.ast_line(ln), AST.ast_col(ln)), right[`i`])
+        }
+        <- fail(j, `Invalid assignment target.`)
+    }
+    <- left
+}
+
+function parse_or(i) {
+    let left -> parse_and(i)
+    <- parse_or_tail(left)
+}
+
+function parse_or_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    when is_kind(tok_at(j), TokenType.OR) {
+        let op -> val_of(tok_at(j))
+        let right -> parse_and(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.logical(left[`node`], op, right[`node`], line_of(tok_at(j)), col_of(tok_at(j)))
+        <- parse_or_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_and(i) {
+    let left -> parse_equality(i)
+    <- parse_and_tail(left)
+}
+
+function parse_and_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    when is_kind(tok_at(j), TokenType.AND) {
+        let op -> val_of(tok_at(j))
+        let right -> parse_equality(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.logical(left[`node`], op, right[`node`], line_of(tok_at(j)), col_of(tok_at(j)))
+        <- parse_and_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_equality(i) {
+    let left -> parse_comparison(i)
+    <- parse_equality_tail(left)
+}
+
+function parse_equality_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    // Pattern test: value is Pattern / value is not Pattern
+    when is_kind(t, TokenType.IS) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `is`)) {
+        let is_not -> false
+        let next_idx -> j + 1
+        when is_kind(tok_at(next_idx), TokenType.NOT) or is_val(tok_at(next_idx), `not`) {
+            is_not -> true
+            next_idx -> next_idx + 1
+        }
+        let right -> parse_comparison(next_idx)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.is_expr(left[`node`], right[`node`], line_of(t), col_of(t))
+        when is_not {
+            node -> AST.unary(`not`, node, line_of(t), col_of(t))
+        }
+        // allow chaining: is a and is b
+        <- parse_equality_tail(parser_ok(node, right[`i`]))
+    }
+    when is_kind(t, TokenType.EQUAL) or is_kind(t, TokenType.NOT_EQUAL) {
+        let op -> val_of(t)
+        let right -> parse_comparison(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.binary(left[`node`], op, right[`node`], line_of(t), col_of(t))
+        <- parse_equality_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_comparison(i) {
+    let left -> parse_range(i)
+    <- parse_comparison_tail(left)
+}
+
+function parse_comparison_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.LESS_THAN) or is_kind(t, TokenType.GREATER_THAN) or
+         is_kind(t, TokenType.LESS_THAN_OR_EQUAL) or is_kind(t, TokenType.GREATER_THAN_OR_EQUAL) {
+        let op -> val_of(t)
+        let right -> parse_range(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.binary(left[`node`], op, right[`node`], line_of(t), col_of(t))
+        <- parse_comparison_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_range(i) {
+    let left -> parse_term(i)
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.RANGE) or is_kind(t, TokenType.RANGE_INCLUSIVE) {
+        let op -> val_of(t)
+        let right -> parse_term(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        <- parser_ok(AST.binary(left[`node`], op, right[`node`], line_of(t), col_of(t)), right[`i`])
+    }
+    <- left
+}
+
+function parse_term(i) {
+    let left -> parse_factor(i)
+    <- parse_term_tail(left)
+}
+
+function parse_term_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.ADDITION) or is_kind(t, TokenType.SUBTRACTION) {
+        let op -> val_of(t)
+        let right -> parse_factor(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.binary(left[`node`], op, right[`node`], line_of(t), col_of(t))
+        <- parse_term_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_factor(i) {
+    let left -> parse_unary(i)
+    <- parse_factor_tail(left)
+}
+
+function parse_factor_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.MULTIPLICATION) or is_kind(t, TokenType.DIVISION) or is_kind(t, TokenType.MODULO) or
+         is_kind(t, TokenType.EXPONENTIATION) {
+        let op -> val_of(t)
+        let right -> parse_unary(j + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        let node -> AST.binary(left[`node`], op, right[`node`], line_of(t), col_of(t))
+        <- parse_factor_tail(parser_ok(node, right[`i`]))
+    }
+    <- left
+}
+
+function parse_unary(i) {
+    let t -> tok_at(i)
+    // Kind-only: never is_val(`-`)/`not` — STRING "`-`" and IDENT would false-match.
+    when is_kind(t, TokenType.NOT) or is_kind(t, TokenType.SUBTRACTION) or is_kind(t, TokenType.BITWISE_NOT) {
+        let right -> parse_unary(i + 1)
+        when right[`err`] != Nothing {
+            <- right
+        }
+        <- parser_ok(AST.unary(val_of(t), right[`node`], line_of(t), col_of(t)), right[`i`])
+    }
+    // check/raise postfix handled in call chain
+    <- parse_call(i)
+}
+
+function parse_call(i) {
+    let left -> parse_primary(i)
+    <- parse_call_tail(left)
+}
+
+function parse_call_tail(left) {
+    when left[`err`] != Nothing {
+        <- left
+    }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.LEFT_PAREN) {
+        let ar -> parse_arg_list(j + 1, [])
+        when ar[`err`] != Nothing {
+            <- ar
+        }
+        when not is_kind(tok_at(ar[`i`]), TokenType.RIGHT_PAREN) {
+            <- fail(ar[`i`], `Expected ')'.`)
+        }
+        let node -> AST.call(left[`node`], ar[`stmts`], line_of(t), col_of(t))
+        <- parse_call_tail(parser_ok(node, ar[`i`] + 1))
+    }
+    when is_kind(t, TokenType.DOT) {
+        let name_t -> tok_at(j + 1)
+        let node -> AST.get(left[`node`], val_of(name_t), line_of(t), col_of(t))
+        <- parse_call_tail(parser_ok(node, j + 2))
+    }
+    when is_kind(t, TokenType.LEFT_BRACKET) {
+        let ir -> parse_expression(j + 1)
+        when ir[`err`] != Nothing {
+            <- ir
+        }
+        when not is_kind(tok_at(ir[`i`]), TokenType.RIGHT_BRACKET) {
+            <- fail(ir[`i`], `Expected ']'.`)
+        }
+        let node -> AST.make_index(left[`node`], ir[`node`], line_of(t), col_of(t))
+        <- parse_call_tail(parser_ok(node, ir[`i`] + 1))
+    }
+    when is_kind(t, TokenType.CHECK_SYMBOL) or is_val(t, `?`) {
+        let node -> AST.ast_check_expr(left[`node`], line_of(t), col_of(t))
+        <- parse_call_tail(parser_ok(node, j + 1))
+    }
+    when is_kind(t, TokenType.RAISE_SYMBOL) or is_val(t, `^`) {
+        // postfix raise rare; treat as binary start only if followed by expr — skip
+    }
+    <- left
+}
+
+function parse_arg_list(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_PAREN) {
+        <- parser_ok_list(acc, i)
+    }
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    acc.append(er[`node`])
+    when is_kind(tok_at(er[`i`]), TokenType.COMMA) {
+        <- parse_arg_list(er[`i`] + 1, acc)
+    }
+    <- parser_ok_list(acc, er[`i`])
+}
+
+function parse_primary(i) {
+    let t -> tok_at(i)
+    when is_eof(t) {
+        <- fail(i, `Unexpected EOF in expression.`)
+    }
+    // Anonymous function: function(params) { body }
+    when (is_kind(t, TokenType.KEYWORD) and is_val(t, `function`)) or is_kind(t, TokenType.FUNCTION) {
+        when is_kind(tok_at(i + 1), TokenType.LEFT_PAREN) or is_kind(tok_at(i + 1), TokenType.LEFT_BRACE) {
+            <- parse_function_expression(i + 1)
+        }
+    }
+    // When expression: when cond { expr } or { expr }
+    when (is_kind(t, TokenType.KEYWORD) and is_val(t, `when`)) or is_kind(t, `WHEN`) {
+        <- parse_when(i + 1)
+    }
+    // literals
+    when is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or is_kind(t, TokenType.STRING) or
+         is_kind(t, TokenType.RUNE) or is_kind(t, TokenType.BOOLEAN) or is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.DEFAULT) {
+        <- parser_ok(AST.lit_tok(val_of(t), kind_of(t), line_of(t), col_of(t)), i + 1)
+    }
+    when is_val(t, `true`) or is_val(t, `false`) or is_val(t, `True`) or is_val(t, `False`) or
+         is_val(t, `nothing`) or is_val(t, `Nothing`) or is_val(t, `default`) or is_val(t, `Default`) {
+        // Note: lowercase 'nothing' and 'default' are deprecated. Use 'Nothing' and 'Default'.
+        <- parser_ok(AST.lit_tok(val_of(t), kind_of(t), line_of(t), col_of(t)), i + 1)
+    }
+    // Soft keywords as variables: self, parent, scope, ...
+    when is_kind(t, TokenType.SELF) or is_kind(t, TokenType.PARENT) or is_kind(t, TokenType.SCOPE) or
+         is_kind(t, TokenType.TASK) or is_kind(t, TokenType.WITH) or is_kind(t, TokenType.OBJECT) {
+        <- parser_ok(AST.variable(val_of(t), line_of(t), col_of(t)), i + 1)
+    }
+    // list literal
+    when is_kind(t, TokenType.LEFT_BRACKET) {
+        let er -> parse_list_elements(i + 1, [])
+        when er[`err`] != Nothing {
+            <- er
+        }
+        when not is_kind(tok_at(er[`i`]), TokenType.RIGHT_BRACKET) {
+            <- fail(er[`i`], `Expected ']'.`)
+        }
+        <- parser_ok(AST.list_lit(er[`stmts`], line_of(t), col_of(t)), er[`i`] + 1)
+    }
+    // grouping
+    when is_kind(t, TokenType.LEFT_PAREN) {
+        let er -> parse_expression(i + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        when not is_kind(tok_at(er[`i`]), TokenType.RIGHT_PAREN) {
+            <- fail(er[`i`], `Expected ')'.`)
+        }
+        <- parser_ok(AST.grouping(er[`node`], line_of(t), col_of(t)), er[`i`] + 1)
+    }
+    // Map literal: { `key` -> expr, ... } or { name -> expr, ... } or { a, b }
+    // Distinguishes from blocks by requiring key -> value or shorthand after `{`.
+    when is_kind(t, TokenType.LEFT_BRACE) {
+        when is_kind(tok_at(i + 1), TokenType.RIGHT_BRACE) {
+            <- parser_ok(AST.map_lit([], line_of(t), col_of(t)), i + 2)
+        }
+        // Peek: STRING/IDENT/KEYWORD then -> or , or }
+        let k0 -> tok_at(i + 1)
+        let k1 -> tok_at(i + 2)
+        let keyish -> is_kind(k0, TokenType.STRING) or is_kind(k0, TokenType.IDENTIFIER) or is_kind(k0, TokenType.KEYWORD)
+        let arrow -> is_kind(k1, TokenType.ASSIGNMENT) or is_val(k1, `->`)
+        let shorthand -> is_kind(k1, TokenType.COMMA) or is_kind(k1, TokenType.RIGHT_BRACE)
+        when keyish and (arrow or shorthand) {
+            let fr -> parse_map_entries(i + 1, [])
+            when fr[`err`] != Nothing {
+                <- fr
+            }
+            when not is_kind(tok_at(fr[`i`]), TokenType.RIGHT_BRACE) {
+                <- fail(fr[`i`], `Expected '}' after map literal.`)
+            }
+            <- parser_ok(AST.map_lit(fr[`stmts`], line_of(t), col_of(t)), fr[`i`] + 1)
+        }
+        <- fail(i, `Unexpected '{' in expression (map needs key -> value).`)
+    }
+    // structure init: Name { field -> expr, ... } or Name { x, y }
+    // Ambiguity: `do for i in xs { ... }` must not parse `xs {` as struct init.
+    // Convention: only attempt struct init when the name looks like a type (A-Z / TYPE token).
+    when is_name_token(t) {
+        let name -> val_of(t)
+        let j -> i + 1
+        let try_struct -> false
+        when is_kind(t, TokenType.TYPE) or is_kind(t, TokenType.STRUCTURE) or is_kind(t, TokenType.CLASS) {
+            try_struct -> true
+        }
+        when try_struct == false and Str.length(name) > 0 {
+            let c0 -> Str.at(name, 0)
+            when Str.index_of(`ABCDEFGHIJKLMNOPQRSTUVWXYZ`, c0) >= 0 {
+                try_struct -> true
+            }
+        }
+        when try_struct and is_kind(tok_at(j), TokenType.LEFT_BRACE) {
+            let fr -> parse_struct_init_fields(j + 1, [])
+            when fr[`err`] != Nothing {
+                // not struct init; fall through to variable
+            } or {
+                when is_kind(tok_at(fr[`i`]), TokenType.RIGHT_BRACE) {
+                    <- parser_ok(AST.struct_init(name, fr[`stmts`], line_of(t), col_of(t)), fr[`i`] + 1)
+                }
+            }
+        }
+        <- parser_ok(AST.variable(name, line_of(t), col_of(t)), i + 1)
+    }
+    <- fail(i, `Unexpected token in expression: ` + Str.to_string(val_of(t)) + ` (` + Str.to_string(kind_of(t)) + ` @` + Str.to_string(i) + `)`)
+}
+
+function parse_list_elements(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACKET) {
+        <- parser_ok_list(acc, i)
+    }
+    let t -> tok_at(i)
+    when is_kind(t, TokenType.ELLIPSIS) or is_val(t, `...`) {
+        let next_t -> tok_at(i + 1)
+        let name -> Nothing
+        let j -> i + 1
+        when is_name_token(next_t) {
+            name -> val_of(next_t)
+            j -> i + 2
+        }
+        acc.append(AST.rest_pattern(name, line_of(t), col_of(t)))
+        when is_kind(tok_at(j), TokenType.COMMA) {
+            <- parse_list_elements(j + 1, acc)
+        }
+        <- parser_ok_list(acc, j)
+    }
+    let er -> parse_expression(i)
+    when er[`err`] != Nothing {
+        <- er
+    }
+    acc.append(er[`node`])
+    when is_kind(tok_at(er[`i`]), TokenType.COMMA) {
+        <- parse_list_elements(er[`i`] + 1, acc)
+    }
+    <- parser_ok_list(acc, er[`i`])
+}
+
+function parse_struct_init_fields(i, acc) {
+    <- parse_map_entries(i, acc)
+}
+
+/!
+ Parse map / struct-init entries: key -> expr (, key -> expr)* or shorthand: key (, key)*
+ Keys: STRING (``name``), IDENTIFIER, or KEYWORD.
+ !/
+function parse_map_entries(i, acc) {
+    when is_kind(tok_at(i), TokenType.RIGHT_BRACE) {
+        <- parser_ok_list(acc, i)
+    }
+    let name_t -> tok_at(i)
+    when not (is_kind(name_t, TokenType.IDENTIFIER) or is_kind(name_t, TokenType.KEYWORD) or is_kind(name_t, TokenType.STRING)) {
+        <- fail(i, `Expected field/map key.`)
+    }
+    let j -> i + 1
+    let val_node -> Nothing
+    when is_kind(tok_at(j), TokenType.ASSIGNMENT) or is_val(tok_at(j), `->`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        val_node -> er[`node`]
+        j -> er[`i`]
+    } or {
+        // shorthand field: Point { x, y } -> field "x" has value Variable("x")
+        val_node -> AST.variable(val_of(name_t), line_of(name_t), col_of(name_t))
+    }
+    acc.append(AST.struct_init_field(val_of(name_t), val_node, line_of(name_t), col_of(name_t)))
+    when is_kind(tok_at(j), TokenType.COMMA) {
+        <- parse_map_entries(j + 1, acc)
+    }
+    <- parser_ok_list(acc, j)
+}

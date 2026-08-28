@@ -1,0 +1,170 @@
+/!
+ Entity Component System (ECS) Pattern.
+ Provides a high-performance architecture for data-driven applications.
+ !/
+class ECS {
+    let entities: List
+    let components: Map // Map<EntityID, Map<String, Object>>
+    let next_id: Integer
+
+    /!
+     Initializes a new ECS registry.
+     !/
+    function init() {
+        self.entities -> []
+        self.components -> {}
+        self.next_id -> 1
+    }
+
+    /!
+     Creates a new entity and returns its ID.
+     @return The entity ID.
+     !/
+    function create_entity() {
+        let id -> self.next_id
+        self.entities.append(id)
+        self.components[id] -> {}
+        self.next_id -> self.next_id + 1
+        <- id
+    }
+
+    /!
+     Destroys an entity and all its components.
+     @param entity The entity ID.
+     !/
+    function destroy_entity(entity) {
+        let new_entities -> []
+        do for e in self.entities {
+            when e != entity {
+                new_entities.append(e)
+            }
+        }
+        self.entities -> new_entities
+        self.components.remove(entity)
+    }
+
+    /!
+     Checks if an entity exists in the registry.
+     @param entity The entity ID.
+     @return True if it exists.
+     !/
+    function has_entity(entity) {
+        <- self.components.has(entity)
+    }
+
+    /!
+     Retrieves all components for an entity as a map.
+     @param entity The entity ID.
+     @return A map of type names to components.
+     !/
+    function get_entity(entity) {
+        <- self.components[entity]
+    }
+
+    /!
+     Adds a component to an entity.
+     @param entity The entity ID.
+     @param component The component object.
+     !/
+    function add_component(entity, component) {
+        let type -> component.kind
+        self.components[entity][type] -> component
+    }
+
+    /!
+     Retrieves a component from an entity by type name.
+     @param entity The entity ID.
+     @param type The component type name.
+     @return The component or Nothing.
+     !/
+    function get_component(entity, type) {
+        <- self.components[entity][type]
+    }
+
+    /!
+     Checks if an entity has a specific component.
+     @param entity The entity ID.
+     @param type The component type name.
+     @return True if it has the component.
+     !/
+    function has_component(entity, type) {
+        <- self.components[entity].has(type)
+    }
+
+    /!
+     Removes a component from an entity by type name.
+     @param entity The entity ID.
+     @param type The component type name.
+     !/
+    function destroy_component(entity, type) {
+        when self.has_entity(entity) {
+            self.components[entity].remove(type)
+        }
+    }
+
+    /!
+     Queries entities that have all of the required components.
+     @param types A list of component type names.
+     @return A list of entity IDs.
+     !/
+    function query(types) {
+        let results -> []
+        do for entity in self.entities {
+            // Nested early-fail without reassignment of a flag variable.
+            when self.has_component(entity, types[0]) {
+                when types.length == 1 {
+                    results.append(entity)
+                } or {
+                    when self.has_component(entity, types[1]) {
+                        when types.length == 2 {
+                            results.append(entity)
+                        } or {
+                            when self.has_component(entity, types[2]) {
+                                results.append(entity)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        <- results
+    }
+
+    /!
+     Returns a list of all entity IDs.
+     @return A list of entity IDs.
+     !/
+    function list_entities() {
+        <- self.entities
+    }
+
+    /!
+     Returns the total number of entities.
+     @return The entity count.
+     !/
+    function count_entities() {
+        <- self.entities.length
+    }
+
+    /!
+     Returns a list of all component type names for an entity.
+     @param entity The entity ID.
+     @return A list of type names.
+     !/
+    function list_components(entity) {
+        when self.has_entity(entity) {
+            <- self.components[entity].keys()
+        } or {
+            <- []
+        }
+    }
+
+    /!
+     Clears all entities and components from the registry.
+     !/
+    function clear() {
+        self.entities -> []
+        self.components -> {}
+        self.next_id -> 1
+    }
+}

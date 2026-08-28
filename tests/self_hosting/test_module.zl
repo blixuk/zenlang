@@ -1,0 +1,99 @@
+/!
+ Stage 3: Resolver + DependencyGraph dual-path smoke.
+ !/
+
+import compiler.Module.Resolver as Resolver
+import compiler.Module.DependencyGraph as Graph
+import compiler.Module.GraphBuilder as Builder
+import zen.test as test
+import zen.text.string as Str
+
+function fs_is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function test_resolve_stdlib_string() {
+    let st -> Resolver.configure_search(`.`, `lib`, `selfhost`, ``)
+    let p -> Resolver.resolve(`zen.text.string`, ``)
+    let pass -> test.assert_equal(p != ``, true, `resolved non-empty`)
+    pass -> pass and test.assert_equal(fs_is_file(p), true, `is file`)
+    pass -> pass and test.assert_equal(Str.ends_with(p, `string.zl`), true, `ends string.zl`)
+    <- pass
+}
+
+function test_resolve_alias_zen_string() {
+    let st -> Resolver.configure_search(`.`, `lib`, ``, ``)
+    let p -> Resolver.resolve(`zen.string`, ``)
+    let pass -> test.assert_equal(fs_is_file(p), true, `alias resolves`)
+    pass -> pass and test.assert_equal(Str.contains(p, `text`) and Str.contains(p, `string.zl`), true, `text+string`)
+    <- pass
+}
+
+function test_resolve_package_entry() {
+    let st -> Resolver.configure_search(`.`, `lib`, ``, ``)
+    let p -> Resolver.resolve(`zen.io.io`, ``)
+    let pass -> test.assert_equal(fs_is_file(p), true, `io package file`)
+    pass -> pass and test.assert_equal(Str.ends_with(p, `io.zl`), true, `io.zl`)
+    <- pass
+}
+
+function test_graph_order_manual() {
+    let g -> Graph.create()
+    g -> Graph.add_edge(g, `a.zl`, `b.zl`)
+    g -> Graph.add_edge(g, `b.zl`, `c.zl`)
+    let order -> Graph.get_compilation_order(g)
+    // Capture length before for-in: native for may move/consume the list.
+    let n -> order.length
+    let joined -> ``
+    do for p in order {
+        joined -> joined + p + `,`
+    }
+    let pass -> test.assert_equal(n, 3, `three nodes`)
+    let pos_c -> Str.index_of(joined, `c.zl`)
+    let pos_b -> Str.index_of(joined, `b.zl`)
+    let pos_a -> Str.index_of(joined, `a.zl`)
+    pass -> pass and test.assert_equal(pos_c >= 0 and pos_c < pos_b, true, `c before b`)
+    pass -> pass and test.assert_equal(pos_b >= 0 and pos_b < pos_a, true, `b before a`)
+    <- pass
+}
+
+function test_build_from_fixtures() {
+    let entry -> `tests/self_hosting/fixtures/mod_a.zl`
+    let pass -> test.assert_equal(fs_is_file(entry), true, `fixture exists`)
+    let g -> Builder.build_from_file_roots(entry, `tests/self_hosting`, `.`, `lib`, `selfhost`)
+    let order -> Graph.get_compilation_order(g)
+    let n -> order.length
+    let joined -> ``
+    do for p in order {
+        joined -> joined + p + `|`
+    }
+    pass -> pass and test.assert_equal(n >= 3, true, `at least 3 modules`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `mod_a.zl`), true, `has a`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `mod_b.zl`), true, `has b`)
+    pass -> pass and test.assert_equal(Str.contains(joined, `mod_c.zl`), true, `has c`)
+    let pos_c -> Str.index_of(joined, `mod_c.zl`)
+    let pos_b -> Str.index_of(joined, `mod_b.zl`)
+    let pos_a -> Str.index_of(joined, `mod_a.zl`)
+    pass -> pass and test.assert_equal(pos_c >= 0 and pos_c < pos_b, true, `c before b`)
+    pass -> pass and test.assert_equal(pos_b >= 0 and pos_b < pos_a, true, `b before a`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Module.resolve_stdlib`, `fn` -> test_resolve_stdlib_string},
+        {`name` -> `Module.resolve_alias`, `fn` -> test_resolve_alias_zen_string},
+        {`name` -> `Module.resolve_package`, `fn` -> test_resolve_package_entry},
+        {`name` -> `Module.graph_order`, `fn` -> test_graph_order_manual},
+        {`name` -> `Module.build_fixtures`, `fn` -> test_build_from_fixtures}
+    ]
+    <- test.run_suite(`Selfhost Stage3 Module`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

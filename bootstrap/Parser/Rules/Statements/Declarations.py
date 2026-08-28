@@ -15,7 +15,9 @@ from Parser.AST import (
     Identifier,
     MemberExpression,
     IndexExpression,
-    TypeLiteral
+    TypeLiteral,
+    ReturnStatement,
+    BlockStatement
 )
 from Checker.Type import Type, TypeVoid
 
@@ -51,6 +53,7 @@ class DeclarationParserMixin:
             mutable,
             self.scope_manager.get_current_scope_level(),
         )
+        statement.is_set = (getattr(token, "value") == "set")
 
         self.logger.debug("assignment_statement", statement)
 
@@ -102,6 +105,8 @@ class DeclarationParserMixin:
             function <identifier> : <type> { ... }
             function <identifier> ( <parameters> ) { ... }
             function <identifier> ( <parameters> ) : <type> { ... }
+            function <identifier> ( <parameters> ) <- <expression>
+            function <identifier> ( <parameters> ) : <type> <- <expression>
         """
         token: Token | None = None
         identifer: Token | None = None
@@ -123,12 +128,28 @@ class DeclarationParserMixin:
         # Return Type
         inferred_return_type, _ = self.handle_typing()
 
-        # Block Scope
+        # Block Scope or Concise Expression Return (<- expr)
         if self.token_handler.check_type(TokenType.LEFT_BRACE):
             block = self.block_statement("function")
+        elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+            expr = self.expression_handler.expression()
+            ret_stmt = ReturnStatement(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                value=expr,
+                inferred_type=None,
+            )
+            block = BlockStatement(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                scope_type="function",
+                statements=[ret_stmt],
+            )
         else:
             raise self.logger.error_expect_token(
-                "Expected block after function identifer", self.token_handler.peek()
+                "Expected `{` or `<-` after function declaration", self.token_handler.peek()
             )
 
         statement = FunctionStatement(
@@ -163,12 +184,28 @@ class DeclarationParserMixin:
         inferred_return_type, _ = self.handle_typing()
         if not inferred_return_type: inferred_return_type = TypeVoid()
 
-        # Block Scope
+        # Block Scope or Concise Expression Return (<- expr)
         if self.token_handler.check_type(TokenType.LEFT_BRACE):
             block = self.block_statement("task")
+        elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+            expr = self.expression_handler.expression()
+            ret_stmt = ReturnStatement(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                value=expr,
+                inferred_type=None,
+            )
+            block = BlockStatement(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                scope_type="task",
+                statements=[ret_stmt],
+            )
         else:
             raise self.logger.error_expect_token(
-                "Expected block after task identifier", self.token_handler.peek()
+                "Expected `{` or `<-` after task identifier", self.token_handler.peek()
             )
 
         statement = TaskStatement(
@@ -382,7 +419,7 @@ class DeclarationParserMixin:
 
     def handle_assignment_declaration(self) -> tuple[Token | None, bool]:
         token = self.token_handler.expect_type_values(TokenType.KEYWORD, ["let", "set"], "Expected assignment `let` or `set` declaration")
-        return token, getattr(token, "value") == "let"
+        return token, True
 
     def handle_identifier(self) -> Token | None:
         previous_token = self.token_handler.previous()

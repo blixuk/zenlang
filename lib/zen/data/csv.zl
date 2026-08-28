@@ -1,0 +1,184 @@
+/!
+ CSV parsing and serialization module.
+ Provides robust handling for CSV format, including quoted fields and multiline data.
+ !/
+
+import zen.text.string as Str
+
+class CsvParser {
+    let _str: String
+    let _pos: Integer
+    let _delimiter: String
+
+    function init(csv_str, delimiter) {
+        self._str -> csv_str
+        self._pos -> 0
+        self._delimiter -> delimiter
+    }
+
+    function peek() {
+        when self._pos < Str.length(self._str) {
+            <- Str.at(self._str, self._pos)
+        }
+        <- ``
+    }
+
+    function next() {
+        let c -> self.peek()
+        self._pos -> self._pos + 1
+        <- c
+    }
+
+    function parse() {
+        let rows -> []
+        let current_row -> []
+        let current_field -> ``
+        let in_quotes -> False
+
+        do while self._pos < Str.length(self._str) {
+            let c -> self.next()
+
+            when in_quotes {
+                when c == `"` {
+                    // Check if escaped quote
+                    when self.peek() == `"` {
+                        current_field -> current_field + `"`
+                        self.next() // consume the escaped quote
+                    } or {
+                        in_quotes -> False
+                    }
+                } or {
+                    current_field -> current_field + c
+                }
+            } or {
+                when c == `"` {
+                    in_quotes -> True
+                } or when c == self._delimiter {
+                    current_row.append(current_field)
+                    current_field -> ``
+                } or when c == `\n` {
+                    // Handle \r\n
+                    when Str.ends_with(current_field, `\r`) {
+                        current_field -> Str.substring(current_field, 0, Str.length(current_field) - 1)
+                    }
+                    current_row.append(current_field)
+                    rows.append(current_row)
+                    current_row -> []
+                    current_field -> ``
+                } or when c == `\r` and self.peek() == `\n` {
+                    // Ignore \r if followed by \n (handled in the \n case)
+                } or {
+                    current_field -> current_field + c
+                }
+            }
+        }
+
+        // Add last field and row
+        when current_field != `` or current_row.length > 0 {
+            // Strip trailing \r on the very last line if no \n was present
+            when Str.ends_with(current_field, `\r`) {
+                current_field -> Str.substring(current_field, 0, Str.length(current_field) - 1)
+            }
+            current_row.append(current_field)
+            rows.append(current_row)
+        }
+
+        <- rows
+    }
+}
+
+/!
+ Parses a CSV string into a list of rows (which are lists of strings).
+ @param csv_str The CSV string.
+ @param delimiter The delimiter string (defaults to `,`).
+ @return A list of rows.
+ !/
+function parse(csv_str, delimiter) {
+    let delim -> delimiter
+    when delim == Nothing {
+        delim -> `,`
+    }
+    let p -> CsvParser(csv_str, delim)
+    <- p.parse()
+}
+
+/!
+ Parses a CSV string with a header row into a list of maps.
+ @param csv_str The CSV string.
+ @param delimiter The delimiter string (defaults to `,`).
+ @return A list of maps, where keys are headers.
+ !/
+function parse_with_headers(csv_str, delimiter) {
+    let rows -> parse(csv_str, delimiter)
+    when rows.length == 0 {
+        <- []
+    }
+    
+    let headers -> rows[0]
+    let result -> []
+    
+    let i -> 1
+    do while i < rows.length {
+        let row -> rows[i]
+        let obj -> {}
+        let j -> 0
+        do while j < headers.length {
+            let key -> headers[j]
+            let val -> ``
+            when j < row.length {
+                val -> row[j]
+            }
+            obj[key] -> val
+            j -> j + 1
+        }
+        result.append(obj)
+        i -> i + 1
+    }
+    <- result
+}
+
+/!
+ Serializes a list of rows (lists of strings) into a CSV string.
+ @param rows The list of rows.
+ @param delimiter The delimiter string (defaults to `,`).
+ @return The serialized CSV string.
+ !/
+function stringify(rows, delimiter) {
+    let delim -> delimiter
+    when delim == Nothing { 
+        delim -> `,` 
+    }
+    
+    let result -> ``
+    let i -> 0
+    do while i < rows.length {
+        let row -> rows[i]
+        let j -> 0
+        do while j < row.length {
+            let field -> Str.to_string(row[j])
+            
+            // Need quotes if field contains delimiter, quote, \n, or \r
+            let need_quotes -> False
+            when Str.index_of(field, delim) != -1 or Str.index_of(field, `"`) != -1 or Str.index_of(field, `\n`) != -1 or Str.index_of(field, `\r`) != -1 {
+                need_quotes -> True
+            }
+            
+            when need_quotes {
+                field -> `"` + Str.replace(field, `"`, `""`) + `"`
+            }
+            
+            result -> result + field
+            when j < row.length - 1 {
+                result -> result + delim
+            }
+            j -> j + 1
+        }
+        
+        when i < rows.length - 1 {
+            result -> result + `\n`
+        }
+        i -> i + 1
+    }
+    
+    <- result
+}

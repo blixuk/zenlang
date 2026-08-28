@@ -1,0 +1,37 @@
+/!
+  Extra non-interactive term key/raw tests (also covered by test_term.zl).
+  Kept for targeted runs: python3 bootstrap/Zen.py tests/lib/test_term_keys.zl
+!/
+
+import zen.sys.term as term
+import zen.test as test
+
+function test_raw_and_poll() {
+    let ok -> term.raw_enter()
+    term.raw_exit()
+    let pass -> test.assert_true(ok == true or ok == false, `raw_enter returns boolean`)
+    let k -> term.poll_key(0)
+    pass -> pass and test.assert_true(k.kind == `none` or k.kind == `char` or k.kind == `special` or k.kind == `resize`, `poll_key map`)
+    <- pass
+}
+
+function test_kind_field() {
+    let k -> {`kind` -> `special`, `name` -> `ctrl_q`, `ch` -> ``, `ctrl` -> true, `code` -> 17}
+    <- test.assert_true(k.kind == `special` and k.name == `ctrl_q`, `key map .kind is data`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Term.raw_and_poll`, `fn` -> test_raw_and_poll},
+        {`name` -> `Term.kind_field`, `fn` -> test_kind_field}
+    ]
+    <- test.run_suite(`Term Keys`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

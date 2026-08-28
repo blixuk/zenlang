@@ -1,0 +1,45 @@
+import zen.test as test
+import zen.data.zendata as zd
+import zen.zenmark as zm
+import zen.text.string as Str
+
+function test_zenview_render() {
+    let zm_text -> `
+Entry {
+    \`title\` -> \`Test Doc\`,
+    \`author\` -> \`Tester\`,
+    \`version\` -> \`1.0.0\`,
+    \`date\` -> \`2026-08-27\`
+}
+
+Document {
+    Heading { \`text\` -> \`Section One\`, \`size\` -> 1 },
+    Paragraph { \`text\` -> \`This is a test paragraph.\` },
+    Table {
+        \`headers\` -> [\`A\`, \`B\`],
+        \`rows\` -> [[\`1\`, \`2\`]]
+    }
+}
+`
+    let parsed -> zd.parse(zm_text)
+    let doc -> zm.Document(parsed)
+    let out -> zm.render_term(doc)
+    
+    let pass -> test.assert_true(Str.contains(out, `Test Doc`), `Entry title present`)
+    pass -> pass and test.assert_true(Str.contains(out, `Section One`), `Heading text present`)
+    pass -> pass and test.assert_true(Str.contains(out, `test paragraph`), `Paragraph text present`)
+    pass -> pass and test.assert_true(Str.contains(out, `A │ B`), `Table headers present`)
+    <- pass
+}
+
+function main() {
+    let tests -> [
+        {`name` -> `ZenView.render_term`, `fn` -> test_zenview_render}
+    ]
+    let pass -> test.run_suite(`Zen View Terminal Reader Tests`, tests)
+    when pass {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -1,0 +1,38 @@
+// Chapter 1: Introduction & Language Philosophy
+
+Heading { id -> `sec-intro`, text -> `Introduction & Language Philosophy`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang is a modern, optionally typed, Unix-native programming language designed for clarity, visual simplicity, and high-performance execution across scripts, terminal user interfaces, and networked backend services.`
+},
+
+Callout {
+    type -> `note`,
+    title -> `The Dual Execution Guarantee`,
+    text -> `Every valid Zenlang program executes with byte-exact behavioral equivalence in interpreted VM mode and Ahead-Of-Time (-g) native C compilation.`
+},
+
+Heading { id -> `sec-principles`, text -> `Core Guiding Principles`, size -> 2 },
+
+Paragraph {
+    text -> `1. Visual Data Flow: Data movement is explicit in the code syntax. Variable binding and assignment use -> (moving left-to-right into the target), while function returns, yields, and emissions use <- (returning outward to the caller).\n2. Explicitness Over Magic: No hidden type coercions, no implicit variable captures, and no silent conversions. Absence is represented by Nothing, and type zero-states are represented by Default.\n3. Dual Execution Parity: Every valid Zenlang program (.zl) executes identically in two complementary modes without code changes:\n   - Interpreted Mode: Direct AST/bytecode execution for instantaneous feedback and rapid iteration.\n   - Native Compiled Mode (-g): Ahead-Of-Time (AOT) transpilation to optimized C and native machine code, linking with the shared runtime in runtime/.\n4. Terminal as a First-Class Citizen: Sub-millisecond ANSI canvas rendering, 60 FPS redraw capabilities, interactive keyboard polling, and declarative table formatting are standard library primitives.\n5. Snapshot-by-Value Concurrency: Captured outer variables are snapshotted by value at instantiation time, eliminating data races without heavy runtime locks.\n6. Self-Hosting Architecture: The compiler is designed for full self-hosting (selfhost/), bootstrapping from a Python reference implementation (bootstrap/) toward a native self-hosted toolchain.`
+},
+
+Callout {
+    type -> `tip`,
+    title -> `Production Deployment`,
+    text -> `For performance-critical networked services or CLI utilities, compile with zen -g file.zl -o app to produce a zero-dependency standalone ELF machine binary.`
+},
+
+Table {
+    headers -> [`Concept`, `Syntax Example`, `Semantic Guarantee`],
+    rows -> [
+        [`Assignment`, `let x -> 42`, `Visual flow from expression into binding`],
+        [`Return`, `<- result`, `Visual flow from function back to caller`],
+        [`Guard Exit`, `when error <- 1`, `Concise single-line early return`],
+        [`Sentinels`, `Nothing, Default`, `Explicit absent and zero states`],
+        [`Range`, `0 .. 10, 0 ..= 10`, `Exclusive and inclusive numeric intervals`]
+    ]
+},
+
+HorizontalRule { symbol -> `*` }

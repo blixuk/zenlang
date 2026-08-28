@@ -1,0 +1,291 @@
+/!
+    Interactive CLI Prompts and Surveys.
+    Provides standard questionnaire components: confirm, text input, password, single select, and multiselect.
+!/
+
+import zen.text.string as Str
+import zen.io.io as io
+import zen.sys.term as term
+
+/!
+    Parses user confirm answer string.
+    @param input_str Raw text input from user.
+    @param default_val Fallback boolean when empty input.
+    @return Boolean result.
+!/
+function parse_confirm_input(input_str, default_val) {
+    let s -> Str.to_lower(Str.trim(input_str))
+    when Str.length(s) == 0 {
+        <- default_val
+    }
+    when s == `y` or s == `yes` or s == `true` or s == `1` {
+        <- True
+    }
+    when s == `n` or s == `no` or s == `false` or s == `0` {
+        <- False
+    }
+    <- default_val
+}
+
+/!
+    Prompts user for a yes/no confirmation.
+    @param prompt_text Question to display.
+    @param default_val Boolean default on empty enter.
+    @return Boolean choice.
+!/
+function confirm(prompt_text, default_val) {
+    let hint -> ` (y/N): `
+    when default_val {
+        hint -> ` (Y/n): `
+    }
+    io.write(prompt_text + hint)
+    io.flush()
+    let line -> io.read(Nothing)
+    <- parse_confirm_input(line, default_val)
+}
+
+/!
+    Prompts user for a single line of text input.
+    @param prompt_text Question or label.
+    @param default_val Default string if empty.
+    @return User string.
+!/
+function text_input(prompt_text, default_val) {
+    let suffix -> `: `
+    when default_val != Nothing and Str.length(default_val) > 0 {
+        suffix -> ` [` + default_val + `]: `
+    }
+    io.write(prompt_text + suffix)
+    io.flush()
+    let line -> Str.trim(io.read(Nothing))
+    when Str.length(line) == 0 and default_val != Nothing {
+        <- default_val
+    }
+    <- line
+}
+
+/!
+    Prompts user for a masked password.
+    @param prompt_text Label to display.
+    @return Password string.
+!/
+function password(prompt_text) {
+    io.write(prompt_text + `: `)
+    io.flush()
+    when not term.is_tty() {
+        <- Str.trim(io.read(Nothing))
+    }
+
+    term.raw_enter()
+    let buf -> ``
+    let running -> True
+    do while running {
+        let k -> term.poll_key(50)
+        when k != Nothing {
+            let ch -> k[`char`]
+            let kind -> k[`kind`]
+            when kind == `enter` or ch == `\n` or ch == `\r` {
+                running -> False
+            } or when kind == `backspace` or ch == `\x7f` or ch == `\x08` {
+                when Str.length(buf) > 0 {
+                    buf -> Str.substring(buf, 0, Str.length(buf) - 1)
+                    io.write(`\x08 \x08`)
+                    io.flush()
+                }
+            } or when kind == `escape` {
+                buf -> ``
+                running -> False
+            } or when Str.length(ch) > 0 {
+                buf -> buf + ch
+                io.write(`*`)
+                io.flush()
+            }
+        }
+    }
+    term.raw_exit()
+    io.writeln(``)
+    <- buf
+}
+
+/!
+    Formats a single-select menu string for display.
+!/
+function format_select_menu(prompt_text, options, selected_idx) {
+    let out -> prompt_text + `\n`
+    let i -> 0
+    let len -> options.length
+    do while i < len {
+        let opt -> options[i]
+        when i == selected_idx {
+            out -> out + `  > ` + opt + `\n`
+        } or {
+            out -> out + `    ` + opt + `\n`
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Prompts user to select an item from a list.
+    @param prompt_text Title or prompt.
+    @param options List of string options.
+    @param default_idx Starting selected index (0-based).
+    @return Selected string, or Nothing if cancelled/empty.
+!/
+function select(prompt_text, options, default_idx) {
+    when options.length == 0 { <- Nothing }
+    let selected -> default_idx
+    when selected < 0 or selected >= options.length { selected -> 0 }
+
+    when not term.is_tty() {
+        io.writeln(format_select_menu(prompt_text, options, selected))
+        <- options[selected]
+    }
+
+    term.raw_enter()
+    term.hide_cursor()
+
+    let running -> True
+    let total -> options.length
+
+    let rendered_lines -> total + 1
+    io.write(format_select_menu(prompt_text, options, selected))
+    io.flush()
+
+    do while running {
+        let k -> term.poll_key(50)
+        when k != Nothing {
+            let kind -> k[`kind`]
+            let ch -> k[`char`]
+            when kind == `up` or ch == `k` {
+                when selected > 0 {
+                    selected -> selected - 1
+                    io.write(`\x1b[` + Str.to_string(rendered_lines) + `A`)
+                    io.write(format_select_menu(prompt_text, options, selected))
+                    io.flush()
+                }
+            } or when kind == `down` or ch == `j` {
+                when selected < total - 1 {
+                    selected -> selected + 1
+                    io.write(`\x1b[` + Str.to_string(rendered_lines) + `A`)
+                    io.write(format_select_menu(prompt_text, options, selected))
+                    io.flush()
+                }
+            } or when kind == `enter` or ch == `\n` or ch == `\r` {
+                running -> False
+            } or when kind == `escape` {
+                selected -> -1
+                running -> False
+            }
+        }
+    }
+
+    term.show_cursor()
+    term.raw_exit()
+
+    when selected >= 0 and selected < total {
+        <- options[selected]
+    }
+    <- Nothing
+}
+
+/!
+    Formats a multiselect menu string for display.
+!/
+function format_multiselect_menu(prompt_text, options, cursor_idx, selected_flags) {
+    let out -> prompt_text + ` (Space to toggle, Enter to confirm):\n`
+    let i -> 0
+    let len -> options.length
+    do while i < len {
+        let opt -> options[i]
+        let checked -> `[ ]`
+        when selected_flags[i] == True {
+            checked -> `[x]`
+        }
+        let pointer -> `  `
+        when i == cursor_idx {
+            pointer -> `> `
+        }
+        out -> out + pointer + checked + ` ` + opt + `\n`
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Prompts user to select multiple items from a list with checkboxes.
+    @param prompt_text Title or prompt.
+    @param options List of string options.
+    @return List of chosen strings.
+!/
+function multiselect(prompt_text, options) {
+    when options.length == 0 { <- [] }
+    let total -> options.length
+    let flags -> []
+    let i -> 0
+    do while i < total {
+        flags.append(False)
+        i -> i + 1
+    }
+
+    let cursor_idx -> 0
+    when not term.is_tty() {
+        io.writeln(format_multiselect_menu(prompt_text, options, cursor_idx, flags))
+        <- []
+    }
+
+    term.raw_enter()
+    term.hide_cursor()
+
+    let running -> True
+    let rendered_lines -> total + 1
+    io.write(format_multiselect_menu(prompt_text, options, cursor_idx, flags))
+    io.flush()
+
+    do while running {
+        let k -> term.poll_key(50)
+        when k != Nothing {
+            let kind -> k[`kind`]
+            let ch -> k[`char`]
+            when kind == `up` or ch == `k` {
+                when cursor_idx > 0 {
+                    cursor_idx -> cursor_idx - 1
+                    io.write(`\x1b[` + Str.to_string(rendered_lines) + `A`)
+                    io.write(format_multiselect_menu(prompt_text, options, cursor_idx, flags))
+                    io.flush()
+                }
+            } or when kind == `down` or ch == `j` {
+                when cursor_idx < total - 1 {
+                    cursor_idx -> cursor_idx + 1
+                    io.write(`\x1b[` + Str.to_string(rendered_lines) + `A`)
+                    io.write(format_multiselect_menu(prompt_text, options, cursor_idx, flags))
+                    io.flush()
+                }
+            } or when ch == ` ` {
+                flags[cursor_idx] -> not flags[cursor_idx]
+                io.write(`\x1b[` + Str.to_string(rendered_lines) + `A`)
+                io.write(format_multiselect_menu(prompt_text, options, cursor_idx, flags))
+                io.flush()
+            } or when kind == `enter` or ch == `\n` or ch == `\r` {
+                running -> False
+            } or when kind == `escape` {
+                flags -> []
+                running -> False
+            }
+        }
+    }
+
+    term.show_cursor()
+    term.raw_exit()
+
+    let result -> []
+    i -> 0
+    do while i < total {
+        when flags[i] == True {
+            result.append(options[i])
+        }
+        i -> i + 1
+    }
+    <- result
+}

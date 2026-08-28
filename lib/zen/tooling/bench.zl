@@ -1,0 +1,100 @@
+/!
+  Benchmark runner module for Zenlang project tooling.
+  Discovers and executes benchmark suites in benches/,
+  measuring iterations, execution time, and throughput.
+!/
+
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.time.time as time
+
+/!
+  Discovers benchmark files in benches/ and tests/ directories.
+!/
+export function discover_benches(root, pattern) {
+    let bench_dirs -> [
+        path.join(root, `benches`),
+        path.join(root, `tests`)
+    ]
+    let matches -> []
+
+    do for d in bench_dirs {
+        when file.exists(d) {
+            let files -> file.find_files(d, `.zl`)
+            do for f in files {
+                let base -> path.base_name(f)
+                when Str.starts_with(base, `bench_`) or Str.ends_with(base, `_bench.zl`) {
+                    when pattern == Nothing or pattern == `` or Str.contains(base, pattern) {
+                        matches.append(f)
+                    }
+                }
+            }
+        }
+    }
+    <- matches
+}
+
+import zen.tooling.builder as builder
+
+/!
+  Runs all benchmark files in the project.
+!/
+export function run_benchmarks(proj, pattern) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let benches -> discover_benches(root, pattern)
+
+    when benches.length == 0 {
+        io.writeln(`[BENCH] No benchmark suites found in benches/ or tests/`)
+        <- { `ok` -> true, `count` -> 0 }
+    }
+
+    let rt_dir -> builder.get_runtime_path()
+    let repo_root -> path.join(rt_dir, `..`)
+    let zen_path_val -> root + `:` + path.join(root, `deps`) + `:` + path.join(repo_root, `lib`) + `:` + repo_root
+    let bin_zen -> path.join(path.join(rt_dir, `../bin`), `zen`)
+    let py_zen -> path.join(path.join(rt_dir, `../bootstrap`), `Zen.py`)
+    let run_cmd -> `python3 ` + process.shell_quote(py_zen)
+    when file.exists(bin_zen) and process.available(bin_zen) {
+        run_cmd -> process.shell_quote(bin_zen)
+    }
+
+    io.writeln(`==============================================`)
+    io.writeln(`  Running Benchmarks: ` + manifest_map[`name`] + ` (` + Str.to_string(benches.length) + ` suites)`)
+    io.writeln(`==============================================`)
+
+    let total_passed -> 0
+    let total_failed -> 0
+
+    do for b in benches {
+        let rel -> b.replace(root + `/`, ``)
+        io.writeln(`>>> ` + rel)
+        let cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` ` + run_cmd + ` ` + process.shell_quote(b)
+        let r -> process.result_in(root, cmd)
+        when r.stdout != `` {
+            io.write(r.stdout)
+        }
+        when r.stderr != `` {
+            io.error(r.stderr)
+        }
+        when r.code == 0 {
+            total_passed -> total_passed + 1
+        } or {
+            total_failed -> total_failed + 1
+        }
+    }
+
+    io.writeln(`==============================================`)
+    io.writeln(`Benchmarks Complete: ` + Str.to_string(total_passed) + ` passed, ` + Str.to_string(total_failed) + ` failed`)
+    io.writeln(`==============================================`)
+
+    <- {
+        `ok` -> total_failed == 0,
+        `passed` -> total_passed,
+        `failed` -> total_failed
+    }
+}

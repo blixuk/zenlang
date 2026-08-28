@@ -1,0 +1,88 @@
+/!
+  zen.sys.cli dual-path.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_cli.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_cli.zl
+!/
+
+use zen.sys.cli as cli
+use zen.test as test
+
+function test_cli_parser() {
+    let parser -> cli.Parser(`test-app`, `A test application`)
+    parser.flag(`v`, `verbose`, `Verbose mode`)
+    parser.option(`o`, `output`, `Output file`, `Default.txt`)
+    parser.argument(`input`, `Input file`)
+
+    let args -> [`test-app`, `-v`, `--output`, `result.txt`, `input.txt`]
+    let values -> parser.parse(args)
+
+    let pass -> test.assert_true(values[`verbose`], `verbose flag should be true`)
+    pass -> pass and test.assert_equal(values[`output`], `result.txt`, `output option should be result.txt`)
+    pass -> pass and test.assert_equal(values[`input`], `input.txt`, `positional argument should be input.txt`)
+    <- pass
+}
+
+function test_equals_form_and_rest() {
+    let parser -> cli.Parser(`app`, `desc`)
+    parser.flag(`q`, `quiet`, `Quiet`)
+    parser.option(`n`, `name`, `Name`, `anon`)
+    parser.argument(`path`, `Path`)
+
+    let args -> [`app`, `--name=zen`, `-q`, `src/main.zl`, `extra1`, `extra2`]
+    let values -> parser.parse(args)
+
+    let pass -> test.assert_equal(values[`name`], `zen`, `--name=value`)
+    pass -> pass and test.assert_true(values[`quiet`], `short quiet flag`)
+    pass -> pass and test.assert_equal(values[`path`], `src/main.zl`, `positional`)
+    let rest -> values[`_rest`]
+    pass -> pass and test.assert_equal(rest.length, 2, `two leftovers`)
+    pass -> pass and test.assert_equal(rest[0], `extra1`, `rest0`)
+    pass -> pass and test.assert_equal(rest[1], `extra2`, `rest1`)
+    <- pass
+}
+
+function test_get_helpers() {
+    let values -> {`verbose` -> true, `output` -> `out.txt`}
+    let pass -> test.assert_true(cli.flag_set(values, `verbose`), `flag_set`)
+    pass -> pass and test.assert_false(cli.flag_set(values, `missing`), `missing flag`)
+    pass -> pass and test.assert_equal(cli.get(values, `output`, `x`), `out.txt`, `get hit`)
+    pass -> pass and test.assert_equal(cli.get(values, `nope`, `fallback`), `fallback`, `get Default`)
+    <- pass
+}
+
+function test_parse_args_free() {
+    let flags -> [
+        {`short` -> `v`, `long` -> `verbose`, `help` -> `Verbose`}
+    ]
+    let options -> [
+        {`short` -> `o`, `long` -> `output`, `help` -> `Out`, `Default` -> `a.txt`}
+    ]
+    let positionals -> [
+        {`name` -> `file`, `help` -> `File`}
+    ]
+    let args -> [`tool`, `--verbose`, `-o`, `b.txt`, `in.zl`]
+    let values -> cli.parse_args(args, flags, options, positionals)
+    let pass -> test.assert_true(values[`verbose`], `free verbose`)
+    pass -> pass and test.assert_equal(values[`output`], `b.txt`, `free output`)
+    pass -> pass and test.assert_equal(values[`file`], `in.zl`, `free file`)
+    <- pass
+}
+
+function run_tests() {
+    let suite -> [
+        {`name` -> `CLI.basic`, `fn` -> test_cli_parser},
+        {`name` -> `CLI.equals_rest`, `fn` -> test_equals_form_and_rest},
+        {`name` -> `CLI.get_helpers`, `fn` -> test_get_helpers},
+        {`name` -> `CLI.parse_args_free`, `fn` -> test_parse_args_free}
+    ]
+    <- test.run_suite(`CLI Library`, suite)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

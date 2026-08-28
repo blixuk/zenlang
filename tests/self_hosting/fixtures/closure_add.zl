@@ -1,0 +1,30 @@
+/!
+ Closure MVP: by-value capture + apply.
+ Exit 0 iff add_n(5) == 15 and pure double(7) == 14.
+ !/
+
+function main() {
+    let n -> 10
+    let add_n -> function(x) {
+        <- x + n
+    }
+    let r -> add_n(5)
+    when r != 15 {
+        <- 1
+    }
+    let double -> function(x) {
+        <- x * 2
+    }
+    when double(7) != 14 {
+        <- 2
+    }
+    // Snapshot: mutate n after capture
+    let get -> function() {
+        <- n
+    }
+    n -> 99
+    when get() != 10 {
+        <- 3
+    }
+    <- 0
+}

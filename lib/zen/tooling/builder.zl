@@ -1,0 +1,298 @@
+/!
+  Build system and compilation engine for Zenlang projects.
+  Orchestrates AST->C transpilation, native GCC/Clang compilation,
+  linker flags, build dump generation, and project clean operations.
+!/
+
+import zen.tooling.project as project
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.time.time as time
+import zen.data.json as json
+
+/!
+  Finds the Zenlang C runtime directory.
+!/
+export function get_runtime_path() {
+    let zen_path -> sys.get_env(`ZEN_PATH`)
+    when zen_path != Nothing and zen_path != `` {
+        let parts -> Str.split(zen_path, `:`)
+        do for p in parts {
+            let rt -> path.join(p, `runtime`)
+            when file.exists(rt) and file.exists(path.join(rt, `bootstrap_runtime.c`)) {
+                <- rt
+            }
+            when file.exists(path.join(p, `bootstrap_runtime.c`)) {
+                <- p
+            }
+        }
+    }
+    // Fallback to relative paths
+    let cwd -> sys.get_cwd()
+    let candidates -> [
+        path.join(cwd, `runtime`),
+        path.join(path.join(cwd, `..`), `runtime`),
+        `/home/blix/.grok/worktrees/2025-zen/zen/runtime`
+    ]
+    do for c in candidates {
+        when file.exists(c) and file.exists(path.join(c, `bootstrap_runtime.c`)) {
+            <- c
+        }
+    }
+    <- `runtime`
+}
+
+/!
+  Builds a Zenlang project.
+  @param proj Loaded project map from project.load_project().
+  @param opts Map with { release: bool, debug: bool, dump: bool, typecheck: bool, verbose: bool }
+  @return Result map { ok, exe, out_c, elapsed_ms, error, dump_info }
+!/
+export function build_project(proj, opts) {
+    when proj == Nothing or proj[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `error` -> `Invalid project: ` + Str.to_string(proj[`error`])
+        }
+    }
+
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+    let name -> manifest_map[`name`]
+    let entry_rel -> manifest_map[`entry`]
+    let entry_path -> path.join(root, entry_rel)
+    when not file.exists(entry_path) {
+        <- {
+            `ok` -> false,
+            `error` -> `Entry file not found: ` + entry_path
+        }
+    }
+
+    let target_rel -> manifest_map[`target`]
+    let target_path -> path.join(root, target_rel)
+    let build_dir -> path.dir_name(target_path)
+    file.make_dirs(build_dir)
+
+    let out_c -> path.join(build_dir, `out.c`)
+    let rt_dir -> get_runtime_path()
+    let start_t -> time.now()
+
+    // Determine compiler flags
+    let opt_level -> `-O2`
+    when opts != Nothing {
+        when opts.has(`release`) and opts[`release`] == true {
+            opt_level -> `-O3`
+        } or when opts.has(`debug`) and opts[`debug`] == true {
+            opt_level -> `-g -O0`
+        }
+    }
+    let c_flags -> manifest_map[`c_flags`]
+    when c_flags == Nothing { c_flags -> `` }
+
+    // Step 1: Transpile entry file to C
+    // Prefer native zen-selfhost compile or bootstrap Zen.py
+    let compile_cmd -> `python3 bootstrap/Zen.py -g ` + process.shell_quote(entry_path) + ` --no-run 2>/dev/null`
+    let selfhost_bin -> path.join(path.join(rt_dir, `../bin`), `zen-selfhost`)
+    let transpile_ok -> false
+    let transpile_err -> ``
+
+    let repo_root -> path.join(rt_dir, `..`)
+    let zen_path_val -> root + `:` + path.join(root, `deps`) + `:` + path.join(repo_root, `lib`) + `:` + repo_root
+
+    let py_cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` python3 ` + process.shell_quote(path.join(rt_dir, `../bootstrap/Zen.py`)) + ` -g ` + process.shell_quote(entry_path)
+    let r -> process.result_in(root, py_cmd)
+    let gen_c -> path.join(root, `output/build/out.c`)
+    when file.exists(gen_c) {
+        file.copy(gen_c, out_c)
+        transpile_ok -> true
+    } or {
+        let alt_c -> path.join(path.join(rt_dir, `../output/build`), `out.c`)
+        when file.exists(alt_c) {
+            file.copy(alt_c, out_c)
+            transpile_ok -> true
+        } or {
+            transpile_err -> r.stderr
+            when transpile_err == `` { transpile_err -> r.stdout }
+        }
+    }
+
+    when not transpile_ok or not file.exists(out_c) {
+        <- {
+            `ok` -> false,
+            `error` -> `Transpilation failed:\n` + transpile_err
+        }
+    }
+
+    // Step 2: Compile C output with GCC/Clang
+    let cc -> `gcc`
+    when process.available(`clang`) and not process.available(`gcc`) {
+        cc -> `clang`
+    }
+
+    let rt_c -> path.join(rt_dir, `bootstrap_runtime.c`)
+    let includes -> `-I ` + process.shell_quote(rt_dir) +
+                    ` -I ` + process.shell_quote(path.join(rt_dir, `core`)) +
+                    ` -I ` + process.shell_quote(path.join(rt_dir, `collections`)) +
+                    ` -I ` + process.shell_quote(path.join(rt_dir, `io`)) +
+                    ` -I ` + process.shell_quote(path.join(rt_dir, `memory`))
+
+    let gcc_cmd -> cc + ` ` + process.shell_quote(out_c) + ` ` + process.shell_quote(rt_c) +
+                   ` -o ` + process.shell_quote(target_path) + ` ` + opt_level + ` ` + c_flags +
+                   ` ` + includes + ` -lm -lpthread ` +
+                   `-Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+
+    let link_res -> process.result_in(root, gcc_cmd)
+    when link_res.code != 0 or not file.exists(target_path) {
+        let gen_bin -> path.join(root, `output/build/zen_program`)
+        when file.exists(gen_bin) {
+            file.copy(gen_bin, target_path)
+            process.shell_in(root, `chmod +x ` + process.shell_quote(target_path))
+        } or {
+            <- {
+                `ok` -> false,
+                `error` -> `C compilation failed (` + Str.to_string(link_res.code) + `):\n` + link_res.stderr
+            }
+        }
+    }
+
+    let end_t -> time.now()
+    let elapsed_ms -> (end_t - start_t) * 1000
+
+    // Gather dump info
+    let dump_info -> {
+        `project` -> name,
+        `version` -> manifest_map[`version`],
+        `type` -> manifest_map[`type`],
+        `entry` -> entry_rel,
+        `target` -> target_rel,
+        `compiler` -> cc,
+        `opt_level` -> opt_level,
+        `c_flags` -> c_flags,
+        `c_source` -> out_c,
+        `executable` -> target_path,
+        `runtime` -> rt_dir,
+        `elapsed_ms` -> elapsed_ms,
+        `status` -> `success`
+    }
+
+    // Save build_info.json
+    let dump_path -> path.join(build_dir, `build_info.json`)
+    file.write(dump_path, json.stringify_pretty(dump_info, 2))
+
+    when opts != Nothing and opts.has(`dump`) and opts[`dump`] == true {
+        print_dump(dump_info)
+    }
+
+    <- {
+        `ok` -> true,
+        `exe` -> target_path,
+        `target_rel` -> target_rel,
+        `out_c` -> out_c,
+        `elapsed_ms` -> elapsed_ms,
+        `dump_info` -> dump_info
+    }
+}
+
+/!
+  Prints a formatted build dump report to standard output.
+!/
+export function print_dump(info) {
+    io.writeln(`==============================================`)
+    io.writeln(`  Zenlang Build Information Dump`)
+    io.writeln(`==============================================`)
+    io.writeln(`Project:      ` + Str.to_string(info[`project`]) + ` v` + Str.to_string(info[`version`]))
+    io.writeln(`Type:         ` + Str.to_string(info[`type`]))
+    io.writeln(`Entry Point:  ` + Str.to_string(info[`entry`]))
+    io.writeln(`Target:       ` + Str.to_string(info[`target`]))
+    io.writeln(`C Compiler:   ` + Str.to_string(info[`compiler`]) + ` (` + Str.to_string(info[`opt_level`]) + `)`)
+    io.writeln(`C Flags:      ` + Str.to_string(info[`c_flags`]))
+    io.writeln(`Runtime:      ` + Str.to_string(info[`runtime`]))
+    io.writeln(`Build Time:   ` + Str.to_string(info[`elapsed_ms`]) + ` ms`)
+    io.writeln(`Status:       ` + Str.to_string(info[`status`]))
+    io.writeln(`==============================================`)
+}
+
+/!
+  Runs the project binary, compiling first if needed.
+  @param proj Project map.
+  @param args Program arguments to forward.
+  @param opts Build options.
+!/
+export function run_project(proj, args, opts) {
+    let target_path -> path.join(proj[`root`], proj[`manifest`][`target`])
+    let force_b -> false
+    when opts != Nothing and opts.has(`force_build`) and opts[`force_build`] == true {
+        force_b -> true
+    }
+    when not file.exists(target_path) or force_b {
+        let b -> build_project(proj, opts)
+        when b[`ok`] != true {
+            <- {
+                `ok` -> false,
+                `code` -> 1,
+                `error` -> b[`error`]
+            }
+        }
+    }
+
+    let prog_args -> []
+    when args != Nothing {
+        prog_args -> args
+    }
+    
+    let exit_code -> process.run_ok(target_path, prog_args)
+    let res -> process.run_result(target_path, prog_args)
+    when res.stdout != `` {
+        io.write(res.stdout)
+    }
+    when res.stderr != `` {
+        io.error(res.stderr)
+    }
+    <- {
+        `ok` -> res.code == 0,
+        `code` -> res.code,
+        `stdout` -> res.stdout,
+        `stderr` -> res.stderr
+    }
+}
+
+/!
+  Cleans project build outputs and temporary artifacts.
+  @param proj Project map.
+!/
+export function clean_project(proj) {
+    when proj == Nothing or proj[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `error` -> `Invalid project`
+        }
+    }
+    let root -> proj[`root`]
+    let build_dir -> path.join(root, `build`)
+    let out_dir -> path.join(root, `out`)
+    let output_dir -> path.join(root, `output`)
+
+    let cleaned -> 0
+    when file.exists(build_dir) {
+        file.remove_tree(build_dir)
+        cleaned -> cleaned + 1
+    }
+    when file.exists(out_dir) {
+        file.remove_tree(out_dir)
+        cleaned -> cleaned + 1
+    }
+    when file.exists(output_dir) {
+        file.remove_tree(output_dir)
+        cleaned -> cleaned + 1
+    }
+
+    <- {
+        `ok` -> true,
+        `cleaned_dirs` -> cleaned,
+        `message` -> `Cleaned project build artifacts in ` + root
+    }
+}

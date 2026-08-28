@@ -1,0 +1,37 @@
+import zen.graphics.ppm as ppm
+import zen.test as test
+
+function test_ppm_creation() {
+    let img -> ppm.PPM(2, 2)
+    let pass -> test.assert_equal(img.width, 2, `width should be 2`)
+    pass -> pass and test.assert_equal(img.height, 2, `height should be 2`)
+    pass -> pass and test.assert_equal(img.pixels.length, 4, `pixels length should be 4`)
+    <- pass
+}
+
+function test_ppm_set_pixel() {
+    let img -> ppm.PPM(2, 2)
+    img.set_pixel(1, 1, 255, 0, 128)
+    let p -> img.pixels[3]
+    let pass -> test.assert_equal(p[`r`], 255, `r should be 255`)
+    pass -> pass and test.assert_equal(p[`g`], 0, `g should be 0`)
+    pass -> pass and test.assert_equal(p[`b`], 128, `b should be 128`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `PPM.creation`, `fn` -> test_ppm_creation},
+        {`name` -> `PPM.set_pixel`, `fn` -> test_ppm_set_pixel}
+    ]
+
+    <- test.run_suite(`Graphics Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

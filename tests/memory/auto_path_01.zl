@@ -1,0 +1,66 @@
+/!
+ Automatic + opt-in arena smoke (dual-path).
+ Under bootstrap -g, SMIR may push a per-function region arena, so
+ using_arena()/depth may be non-zero inside main. Tests use relative depth.
+ Exit 0 on success.
+!/
+
+import zen.memory as memory
+import zen.text.string as Str
+
+function main() {
+    // 1) Ordinary values work (automatic path / process heap for collections)
+    let xs -> [1, 2, 3]
+    let m -> { `k` -> 10 }
+    let s -> `hello` + Str.to_string(xs.length)
+    when xs.length != 3 {
+        <- 1
+    }
+    when m[`k`] != 10 {
+        <- 2
+    }
+    when Str.contains(s, `hello`) != True {
+        <- 3
+    }
+
+    // 2) User push increases depth; pop restores
+    let base -> memory.arena_depth()
+    let a -> memory.create_arena(4096)
+    memory.push_arena(a)
+    when memory.arena_depth() != base + 1 {
+        memory.pop_arena()
+        memory.free_arena(a)
+        <- 4
+    }
+    memory.pop_arena()
+    when memory.arena_depth() != base {
+        memory.free_arena(a)
+        <- 5
+    }
+    memory.free_arena(a)
+    when memory.arena_depth() != base {
+        <- 6
+    }
+
+    // 3) Nested push
+    let a2 -> memory.create_arena(2048)
+    memory.push_arena(a2)
+    let a3 -> memory.create_arena(2048)
+    memory.push_arena(a3)
+    when memory.arena_depth() != base + 2 {
+        memory.pop_arena()
+        memory.pop_arena()
+        memory.free_arena(a3)
+        memory.free_arena(a2)
+        <- 7
+    }
+    memory.pop_arena()
+    memory.pop_arena()
+    memory.free_arena(a3)
+    memory.free_arena(a2)
+    when memory.arena_depth() != base {
+        <- 8
+    }
+
+    <- 0
+}

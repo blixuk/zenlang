@@ -1,0 +1,31 @@
+// Chapter 8: Functions & Snapshot Closures
+
+Heading { text -> `Functions & Snapshot Closures`, size -> 1 },
+
+Paragraph {
+    text -> `Functions are first-class values in Zenlang. Functions accept parameters, declare optional return types, and emit return values using the left arrow (<-).`
+},
+
+Heading { text -> `Concise Expression Functions`, size -> 2 },
+
+Paragraph {
+    text -> `Short single-expression functions can be written on a single line using function name(params) <- expr:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        // Concise single-expression functions
+        function square(x) <- x * x
+        function add(a, b) <- a + b
+        function is_even(n) <- n % 2 == 0
+        
+        // Higher-order function with capture-by-value closure
+        function make_multiplier(factor) {
+            // factor is snapshotted by value
+            <- function(x) <- x * factor
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

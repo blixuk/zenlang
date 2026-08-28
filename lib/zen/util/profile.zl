@@ -1,0 +1,270 @@
+/!
+  zen.util.profile — Standard Library Performance Profiler.
+  Provides high-resolution function & block profiling, call stack tracking,
+  self vs child time aggregation, and call-tree event recording.
+!/
+
+import zen.time.time as time
+import zen.text.string as Str
+import zen.reflect.reflect as reflect
+
+/!
+  Creates a new Profiler session instance.
+  @return Profiler session map.
+!/
+export function create_profiler() {
+    let root_node -> {
+        `label` -> `root`,
+        `total_ms` -> 0.0,
+        `self_ms` -> 0.0,
+        `calls` -> 0,
+        `depth` -> -1,
+        `children` -> []
+    }
+    <- {
+        `kind` -> `PROFILER`,
+        `entries` -> {},        // label -> stats map
+        `call_stack` -> [],     // active stack frames
+        `events` -> [],         // recorded call events for flame graph
+        `tree_root` -> root_node,
+        `tree_stack` -> [root_node],
+        `start_time` -> time.monotonic(),
+        `end_time` -> 0.0,
+        `total_calls` -> 0,
+        `is_active` -> true
+    }
+}
+
+/!
+  Starts measuring a named block or function on the profiler call stack.
+  @param profiler Profiler session map.
+  @param label Human-readable identifier.
+!/
+export function profile_start(profiler, label) {
+    when profiler == Nothing or profiler[`is_active`] == false { <- false }
+    let l -> label
+    when l == Nothing or l == `` { l -> `anonymous` }
+
+    let now_t -> time.monotonic()
+    let depth -> profiler[`call_stack`].length
+    let parent_label -> `root`
+    when depth > 0 {
+        let parent_frame -> profiler[`call_stack`][depth - 1]
+        parent_label -> parent_frame[`label`]
+    }
+
+    let frame -> {
+        `label` -> l,
+        `start_t` -> now_t,
+        `child_time_sec` -> 0.0,
+        `depth` -> depth,
+        `parent_name` -> parent_label
+    }
+    profiler[`call_stack`].append(frame)
+
+    // Append to live call tree
+    let node -> {
+        `label` -> l,
+        `total_ms` -> 0.0,
+        `self_ms` -> 0.0,
+        `calls` -> 1,
+        `depth` -> depth,
+        `children` -> []
+    }
+    let parent_node -> profiler[`tree_stack`][profiler[`tree_stack`].length - 1]
+    parent_node[`children`].append(node)
+    profiler[`tree_stack`].append(node)
+
+    <- true
+}
+
+/!
+  Stops measuring the current or matching named block and records metrics.
+  @param profiler Profiler session map.
+  @param label Optional expected label to stop.
+  @return Elapsed duration in milliseconds.
+!/
+export function profile_stop(profiler, label) {
+    when profiler == Nothing or profiler[`call_stack`].length == 0 { <- 0.0 }
+
+    let stack_len -> profiler[`call_stack`].length
+    let frame -> profiler[`call_stack`][stack_len - 1]
+    profiler[`call_stack`].pop()
+
+    let now_t -> time.monotonic()
+    let elapsed_sec -> now_t - frame[`start_t`]
+    when elapsed_sec < 0.0 { elapsed_sec -> 0.000001 }
+    let elapsed_ms -> elapsed_sec * 1000.0
+
+    let child_sec -> frame[`child_time_sec`]
+    let self_sec -> elapsed_sec - child_sec
+    when self_sec < 0.0 { self_sec -> 0.0 }
+    let self_ms -> self_sec * 1000.0
+
+    // Propagate child time to parent frame if one exists
+    let new_stack_len -> profiler[`call_stack`].length
+    when new_stack_len > 0 {
+        let parent_frame -> profiler[`call_stack`][new_stack_len - 1]
+        parent_frame[`child_time_sec`] -> parent_frame[`child_time_sec`] + elapsed_sec
+    }
+
+    // Finalize node on call tree stack
+    when profiler[`tree_stack`].length > 1 {
+        let node -> profiler[`tree_stack`][profiler[`tree_stack`].length - 1]
+        profiler[`tree_stack`].pop()
+        node[`total_ms`] -> elapsed_ms
+        node[`self_ms`] -> self_ms
+    }
+
+    let l -> frame[`label`]
+    profiler[`total_calls`] -> profiler[`total_calls`] + 1
+
+    // Record raw event for timeline/flamegraph reconstruction
+    let start_offset_ms -> (frame[`start_t`] - profiler[`start_time`]) * 1000.0
+    profiler[`events`].append({
+        `label` -> l,
+        `start_ms` -> start_offset_ms,
+        `duration_ms` -> elapsed_ms,
+        `self_ms` -> self_ms,
+        `depth` -> frame[`depth`],
+        `parent_name` -> frame[`parent_name`]
+    })
+
+    // Aggregate statistics in profiler entries
+    let entries -> profiler[`entries`]
+    when not entries.has(l) {
+        entries[l] -> {
+            `label` -> l,
+            `call_count` -> 0,
+            `total_time_ms` -> 0.0,
+            `self_time_ms` -> 0.0,
+            `min_time_ms` -> elapsed_ms,
+            `max_time_ms` -> elapsed_ms
+        }
+    }
+
+    let stat -> entries[l]
+    stat[`call_count`] -> stat[`call_count`] + 1
+    stat[`total_time_ms`] -> stat[`total_time_ms`] + elapsed_ms
+    stat[`self_time_ms`] -> stat[`self_time_ms`] + self_ms
+    when elapsed_ms < stat[`min_time_ms`] {
+        stat[`min_time_ms`] -> elapsed_ms
+    }
+    when elapsed_ms > stat[`max_time_ms`] {
+        stat[`max_time_ms`] -> elapsed_ms
+    }
+
+    <- elapsed_ms
+}
+
+/!
+  Executes a function within an automatically started and stopped profile scope.
+  @param profiler Profiler session map.
+  @param label Identifier label.
+  @param fn Function with no arguments () to execute.
+  @return Result of fn().
+!/
+export function profile_scoped(profiler, label, fn) {
+    profile_start(profiler, label)
+    let res -> fn()
+    profile_stop(profiler, label)
+    <- res
+}
+
+/!
+  Finalizes profiling session and computes summary analytics.
+  @param profiler Profiler session map.
+  @return Summary map with ranked entries and timing analytics.
+!/
+export function profile_summary(profiler) {
+    when profiler == Nothing {
+        <- {
+            `total_duration_ms` -> 0.0,
+            `total_calls` -> 0,
+            `entries` -> [],
+            `events` -> []
+        }
+    }
+
+    profiler[`end_time`] -> time.monotonic()
+    let total_session_sec -> profiler[`end_time`] - profiler[`start_time`]
+    when total_session_sec <= 0.0 { total_session_sec -> 0.000001 }
+    let total_session_ms -> total_session_sec * 1000.0
+
+    let entry_list -> []
+    let entries_map -> profiler[`entries`]
+
+    do for label in entries_map.keys() {
+        let e -> entries_map[label]
+        let calls -> e[`call_count`]
+        let tot_ms -> e[`total_time_ms`]
+        let self_ms -> e[`self_time_ms`]
+        let avg_ms -> 0.0
+        when calls > 0 { avg_ms -> tot_ms / calls }
+
+        let total_pct -> 0.0
+        let self_pct -> 0.0
+        when total_session_ms > 0.0 {
+            total_pct -> (tot_ms / total_session_ms) * 100.0
+            self_pct -> (self_ms / total_session_ms) * 100.0
+        }
+
+        let ops_per_sec -> 0.0
+        when tot_ms > 0.0 {
+            ops_per_sec -> (calls / tot_ms) * 1000.0
+        }
+
+        entry_list.append({
+            `label` -> e[`label`],
+            `calls` -> calls,
+            `total_time_ms` -> tot_ms,
+            `self_time_ms` -> self_ms,
+            `min_time_ms` -> e[`min_time_ms`],
+            `max_time_ms` -> e[`max_time_ms`],
+            `avg_time_ms` -> avg_ms,
+            `total_pct` -> total_pct,
+            `self_pct` -> self_pct,
+            `ops_per_sec` -> ops_per_sec
+        })
+    }
+
+    // Sort entries descending by self_time_ms (Bubble sort for dual-path compatibility)
+    let n -> entry_list.length
+    do for i in 0..n {
+        do for j in 0..(n - 1) {
+            when entry_list[j][`self_time_ms`] < entry_list[j + 1][`self_time_ms`] {
+                let temp -> entry_list[j]
+                entry_list[j] -> entry_list[j + 1]
+                entry_list[j + 1] -> temp
+            }
+        }
+    }
+
+    <- {
+        `total_duration_ms` -> total_session_ms,
+        `total_calls` -> profiler[`total_calls`],
+        `entries` -> entry_list,
+        `events` -> profiler[`events`]
+    }
+}
+
+/!
+  Builds a hierarchical call tree from profiler events.
+  @param profiler Profiler session map.
+  @return Hierarchical root tree node map.
+!/
+export function profile_tree(profiler) {
+    when profiler == Nothing {
+        <- {
+            `label` -> `root`,
+            `total_ms` -> 0.0,
+            `self_ms` -> 0.0,
+            `calls` -> 0,
+            `children` -> []
+        }
+    }
+    let summary -> profile_summary(profiler)
+    profiler[`tree_root`][`total_ms`] -> summary[`total_duration_ms`]
+    profiler[`tree_root`][`calls`] -> summary[`total_calls`]
+    <- profiler[`tree_root`]
+}

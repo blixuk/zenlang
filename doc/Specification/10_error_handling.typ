@@ -1,105 +1,47 @@
-= Error Handling
+#import "template.typ": *
 
-Zenlang uses `check`, `assert` and `raise` to manage exceptions.
+= Error Handling & Resilience
 
-== Check
+Zenlang provides two complementary error management models: *Result Maps* for predictable, explicit function returns, and *`check` / `raise` / `assert`* for structured exceptions.
 
-```zl
-check {
-  ....
-} or {
-  write(error)
-}
-```
+== Result Maps (Idiomatic Zen Flow)
 
-```zl
-function calculate() {
-    let result -> check divide(10, 0) or {
-        write(`Something went wrong!`)
-        <- 0 // Default value
-    }
-    
-    write(`Result is: ` + result)
-}
-```
+The primary and recommended approach for recoverable errors in Zenlang is returning explicit result maps:
+
+#feature(
+    "Result Map Pattern",
+    "<- { `ok` -> True, `value` -> val, `error` -> `` }\n<- { `ok` -> False, `value` -> Nothing, `error` -> `reason` }",
+    "function read_config(path: String) {\n    when not file.exists(path) {\n        <- { `ok` -> False, `value` -> Nothing, `error` -> `file_not_found` }\n    }\n    <- { `ok` -> True, `value` -> file.read_all(path), `error` -> `` }\n}\n\nlet res -> read_config(`settings.json`)\nwhen not res.ok {\n    io.writeln(`Error: ` + res.error)\n} or {\n    process_config(res.value)\n}"
+)
+
+== Structured Exception Handling (`check` / `raise`)
+
+When an unrecoverable failure occurs deep in a call stack, `raise` immediately unwinds execution:
 
 ```zl
-let file -> open(`config.zl`)
-
-check file {
-    case is Error { 
-        write(`Failed to open file`) 
-    },
-    case is String { 
-        write(`File content: ` + file) 
-    }
-}
-```
-
-```zl
-check condition { 
-    cases 
-} or { default }                    // check conditions
-
-check condition or default          // check with default
-? condition or default              // inline check with check symbol '?'
-
-check condition raise error         // check with raise
-? condition ^ error                 // inline check symbol '?' with raise symbol '^' 
-
-```
-
-== Raise
-
-```zl
-raise `ErrorUnknown`                // raise keyword
-
-^ `ErrorUnknown`                    // raise symbol '^' 
-
-raise `ErrorUnknown` with `Value`   // raise with value
-```
-
-```zl
-function divide(a: Decimal, b: Decimal) Decimal {
-    when b == 0 {
-        raise `DivisionByZeroError` // This immediately returns the error value
+function divide(a: Decimal, b: Decimal) : Decimal {
+    when b == 0.0 {
+        raise `DivisionByZeroError`
     }
     <- a / b
 }
 ```
 
-== Assert
+=== Recovering with `check ... or`
+
+The `check` construct catches errors raised within a block and executes an alternative recovery block:
+
+#feature(
+    "Check Recovery Block",
+    "check {\n    ...\n} or {\n    ...\n}",
+    "let result -> check {\n    <- divide(10.0, 0.0)\n} or {\n    io.writeln(`Caught division error, falling back to 0.0`)\n    <- 0.0\n}"
+)
+
+== Validation Asserts (`assert`)
+
+The `assert` keyword validates invariants. If the condition is false, execution terminates or raises an assertion failure:
 
 ```zl
-assert condition                // assert keyword
-assert condition raise error    // assert keyword with raise keyword
-
-! condition                     // assert symbol '!'
-! condition ^ error             // assert symbol '!' with raise symbol '^' 
-```
-
-- Symbol: ^, Keyword: raise, Purpose: Immediate return of an error value/variant.
-- Symbol: ?, Keyword: check, Purpose: Unwrapping a value or branching based on a condition.
-- Symbol: !, Keyword: assert, Purpose: Validation of assumptions; halts or raises on failure.
-
-=== Semantic Comparison Table
-
-Recovery: let x -> ? func() or 0
-Propagation: ? condition ^ Error(`ErrorName`)
-Validation: `! x > 0`
-Matching: `check value { case ... }`
-
-== Error ReturnType
-
-```zl
-// Multiple Return Types '[Decimal, Error]'
-// Will return error if raise is called else return Decimal
-// Base ReturnType should be either Variant or TypeUnion?
-
-function divide : [Decimal, Error] (a: Decimal, b: Decimal) {
-    when b == 0 {
-        raise `DivisionByZeroError` // This immediately returns the error value
-    }
-    <- a / b
-}
+assert user_age >= 0
+assert buffer.length > 0
 ```

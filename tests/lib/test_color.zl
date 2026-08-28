@@ -1,0 +1,147 @@
+import zen.test as test
+import zen.color as color
+import zen.ui.color as ui_color
+import zen.text.string as Str
+
+function test_rgb_and_rgba() {
+    let c1 -> color.rgb(255, 128, 0)
+    let pass -> test.assert_equal(c1.r, 255, `r should be 255`)
+    pass -> pass and test.assert_equal(c1.g, 128, `g should be 128`)
+    pass -> pass and test.assert_equal(c1.b, 0, `b should be 0`)
+    pass -> pass and test.assert_equal(c1.a, 255, `default alpha should be 255`)
+    
+    let c2 -> color.rgba(10, 20, 30, 100)
+    pass -> pass and test.assert_equal(c2.a, 100, `custom alpha should be 100`)
+    
+    // Clamping
+    let c3 -> color.rgb(300, -50, 200)
+    pass -> pass and test.assert_equal(c3.r, 255, `r should be clamped to 255`)
+    pass -> pass and test.assert_equal(c3.g, 0, `g should be clamped to 0`)
+    <- pass
+}
+
+function test_hex() {
+    let c1 -> color.hex(`#ff8000`)
+    let pass -> test.assert_equal(c1.r, 255, `hex r should be 255`)
+    pass -> pass and test.assert_equal(c1.g, 128, `hex g should be 128`)
+    pass -> pass and test.assert_equal(c1.b, 0, `hex b should be 0`)
+    
+    // 3-digit shorthand
+    let c2 -> color.hex(`#f00`)
+    pass -> pass and test.assert_equal(c2.r, 255, `3-digit hex r should be 255`)
+    pass -> pass and test.assert_equal(c2.g, 0, `3-digit hex g should be 0`)
+    pass -> pass and test.assert_equal(c2.b, 0, `3-digit hex b should be 0`)
+    
+    // to_hex formatting
+    let hex_str -> color.to_hex(c1)
+    pass -> pass and test.assert_equal(hex_str, `#ff8000`, `to_hex should return #ff8000`)
+    <- pass
+}
+
+function test_hsl() {
+    // Pure Red (H=0, S=100, L=50)
+    let red_c -> color.hsl(0, 100, 50)
+    let pass -> test.assert_equal(red_c.r, 255, `hsl red r should be 255`)
+    pass -> pass and test.assert_equal(red_c.g, 0, `hsl red g should be 0`)
+    pass -> pass and test.assert_equal(red_c.b, 0, `hsl red b should be 0`)
+    
+    // Pure Green (H=120, S=100, L=50)
+    let green_c -> color.hsl(120, 100, 50)
+    pass -> pass and test.assert_equal(green_c.r, 0, `hsl green r should be 0`)
+    pass -> pass and test.assert_equal(green_c.g, 255, `hsl green g should be 255`)
+    pass -> pass and test.assert_equal(green_c.b, 0, `hsl green b should be 0`)
+    <- pass
+}
+
+function test_named_colors() {
+    let red_c -> color.named(`red`)
+    let pass -> test.assert_equal(red_c.r, 205, `standard red r should be 205`)
+    
+    let bright_red -> color.named(`bright_red`)
+    pass -> pass and test.assert_equal(bright_red.r, 255, `bright red r should be 255`)
+    
+    let gray_c -> color.named(`gray`)
+    pass -> pass and test.assert_equal(gray_c.r, 127, `gray r should be 127`)
+    
+    let gold_c -> color.named(`gold`)
+    pass -> pass and test.assert_equal(gold_c.r, 255, `gold r should be 255`)
+    pass -> pass and test.assert_equal(gold_c.g, 215, `gold g should be 215`)
+    
+    pass -> pass and test.assert_true(color.has_named(`cyan`), `has_named('cyan') should be true`)
+    pass -> pass and test.assert_false(color.has_named(`nonexistent_color_xyz`), `has_named for invalid should be false`)
+    <- pass
+}
+
+function test_ansi_escapes() {
+    let c -> color.rgb(56, 189, 248)
+    let fg_esc -> color.fg(c)
+    let pass -> test.assert_equal(fg_esc, `\x1b[38;2;56;189;248m`, `fg should return TrueColor SGR escape`)
+    
+    let bg_esc -> color.bg(c)
+    pass -> pass and test.assert_equal(bg_esc, `\x1b[48;2;56;189;248m`, `bg should return TrueColor SGR escape`)
+    
+    let reset_esc -> color.reset()
+    pass -> pass and test.assert_equal(reset_esc, `\x1b[0m`, `reset should return \x1b[0m`)
+    
+    let fg16 -> color.fg_16(`red`)
+    pass -> pass and test.assert_equal(fg16, `\x1b[31m`, `fg_16('red') should return \x1b[31m`)
+    
+    let painted -> color.paint(`Zen`, color.named(`red`), Nothing)
+    pass -> pass and test.assert_true(Str.starts_with(painted, `\x1b[`), `paint should start with escape`)
+    pass -> pass and test.assert_true(Str.ends_with(painted, `\x1b[0m`), `paint should end with reset`)
+    <- pass
+}
+
+function test_color_math() {
+    let black_c -> color.rgb(0, 0, 0)
+    let white_c -> color.rgb(255, 255, 255)
+    
+    // 50% blend of black (0) and white (255) -> 127.5 rounds to 128
+    let mid_gray -> color.blend(black_c, white_c, 0.5)
+    let pass -> test.assert_equal(mid_gray.r, 128, `blend 50% r should be 128`)
+    
+    // Luminance
+    let l_white -> color.luminance(white_c)
+    pass -> pass and test.assert_equal(l_white, 1.0, `white luminance should be 1.0`)
+    
+    let l_black -> color.luminance(black_c)
+    pass -> pass and test.assert_equal(l_black, 0.0, `black luminance should be 0.0`)
+    
+    // Contrast ratio (black on white is 21:1)
+    let ratio -> color.contrast_ratio(white_c, black_c)
+    pass -> pass and test.assert_true(ratio >= 20.9 and ratio <= 21.1, `contrast ratio between black and white should be 21:1`)
+    
+    pass -> pass and test.assert_true(color.is_dark(black_c), `black is_dark should be true`)
+    pass -> pass and test.assert_true(color.is_light(white_c), `white is_light should be true`)
+    <- pass
+}
+
+function test_ui_color_bridge() {
+    let c -> ui_color.hex(`#00ff00`)
+    let pass -> test.assert_equal(c.g, 255, `ui_color bridge should parse hex`)
+    let bold_str -> ui_color.bold(`test`)
+    pass -> pass and test.assert_true(Str.contains(bold_str, `\x1b[1m`), `ui_color.bold should wrap text in bold code`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Color.rgb_and_rgba`, `fn` -> test_rgb_and_rgba},
+        {`name` -> `Color.hex`, `fn` -> test_hex},
+        {`name` -> `Color.hsl`, `fn` -> test_hsl},
+        {`name` -> `Color.named_colors`, `fn` -> test_named_colors},
+        {`name` -> `Color.ansi_escapes`, `fn` -> test_ansi_escapes},
+        {`name` -> `Color.color_math`, `fn` -> test_color_math},
+        {`name` -> `Color.ui_color_bridge`, `fn` -> test_ui_color_bridge}
+    ]
+
+    <- test.run_suite(`Color Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

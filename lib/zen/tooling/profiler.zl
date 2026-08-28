@@ -1,0 +1,476 @@
+/!
+  zen.tooling.profiler — Performance Visualizer & Profiling Engine.
+  Renders terminal hot-spot tables, ASCII/Unicode call flame trees,
+  and exports interactive zoomable HTML flame graphs.
+!/
+
+import zen.util.profile as profile
+import zen.io.file as file
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.time.time as time
+
+function get_base_name(p) {
+    let parts -> Str.split(p, `/`)
+    when parts.length > 0 {
+        <- parts[parts.length - 1]
+    }
+    <- p
+}
+
+/!
+  Formats a floating point number to a fixed decimal string (e.g. 12.34ms).
+!/
+function format_float(num, decimals) {
+    let s -> Str.to_string(num)
+    let dot_idx -> Str.index_of(s, `.`)
+    when dot_idx < 0 {
+        <- s + `.0`
+    }
+    let end_idx -> dot_idx + 1 + decimals
+    when end_idx > Str.length(s) {
+        end_idx -> Str.length(s)
+    }
+    <- Str.substring(s, 0, end_idx)
+}
+
+/!
+  Builds an ASCII/Unicode percentage progress bar (e.g. [██████░░░░] 60.0%).
+!/
+function make_bar(pct, width) {
+    let p -> pct
+    when p < 0.0 { p -> 0.0 }
+    when p > 100.0 { p -> 100.0 }
+    let filled -> (p / 100.0) * width
+    let filled_int -> 0
+    do while (filled_int + 1) <= filled {
+        filled_int -> filled_int + 1
+    }
+
+    let bar -> ``
+    do for i in 0..width {
+        when i < filled_int {
+            bar -> bar + `█`
+        } or {
+            bar -> bar + `░`
+        }
+    }
+    <- `[` + bar + `] ` + format_float(p, 1) + `%`
+}
+
+/!
+  Renders a formatted terminal hot-spot report table from profiler summary metrics.
+!/
+export function format_hotspots_table(summary, max_rows) {
+    let entries -> summary[`entries`]
+    let limit -> max_rows
+    when limit == Nothing or limit <= 0 { limit -> 20 }
+    when limit > entries.length { limit -> entries.length }
+
+    let out -> []
+    out.append(`========================================================================================================`)
+    out.append(`  ZENLANG PERFORMANCE PROFILER: HOT SPOTS`)
+    out.append(`  Total Time: ` + format_float(summary[`total_duration_ms`], 2) + ` ms | Total Calls: ` + Str.to_string(summary[`total_calls`]))
+    out.append(`========================================================================================================`)
+    out.append(`Rank | Function / Block               | Calls    | Total (ms) | Self (ms)  | % Self | Ops/Sec  | Distribution`)
+    out.append(`-----+--------------------------------+----------+------------+------------+--------+----------+--------------------`)
+
+    when entries.length == 0 {
+        out.append(`     | (No profile entries recorded)   |          |            |            |        |          |`)
+    }
+
+    do for i in 0..limit {
+        let e -> entries[i]
+        let rank_str -> Str.pad_left(Str.to_string(i + 1), 4, ` `)
+        let label_str -> Str.pad_right(Str.substring(e[`label`], 0, 30), 30, ` `)
+        let calls_str -> Str.pad_left(Str.to_string(e[`calls`]), 8, ` `)
+        let tot_str -> Str.pad_left(format_float(e[`total_time_ms`], 2), 10, ` `)
+        let self_str -> Str.pad_left(format_float(e[`self_time_ms`], 2), 10, ` `)
+        let pct_str -> Str.pad_left(format_float(e[`self_pct`], 1) + `%`, 6, ` `)
+        let ops_str -> Str.pad_left(format_float(e[`ops_per_sec`], 0), 8, ` `)
+        let bar_str -> make_bar(e[`self_pct`], 10)
+
+        let line -> rank_str + ` | ` + label_str + ` | ` + calls_str + ` | ` + tot_str + ` | ` + self_str + ` | ` + pct_str + ` | ` + ops_str + ` | ` + bar_str
+        when e[`self_pct`] >= 20.0 {
+            line -> line + ` 🔥`
+        }
+        out.append(line)
+    }
+
+    out.append(`========================================================================================================`)
+    <- Str.join(out, `\n`)
+}
+
+/!
+/!
+  Recursive helper to render flame tree nodes.
+!/
+function render_flame_node(node, prefix, is_last, depth, limit_depth, out_list) {
+    when limit_depth != Nothing and depth > limit_depth { <- true }
+    let branch -> `├── `
+    when is_last { branch -> `└── ` }
+    when depth == 0 { branch -> `` }
+
+    let line_prefix -> prefix + branch
+    let label -> node[`label`]
+    let tot -> format_float(node[`total_ms`], 2) + ` ms`
+    let self_t -> format_float(node[`self_ms`], 2) + ` ms self`
+    let line -> line_prefix + label + ` (` + tot + `, ` + self_t + `)`
+    out_list.append(line)
+
+    let next_prefix -> prefix + `│   `
+    when depth == 0 {
+        next_prefix -> ``
+    } or when is_last {
+        next_prefix -> prefix + `    `
+    }
+
+    let children -> node[`children`]
+    let num_children -> children.length
+    do for i in 0..num_children {
+        let child -> children[i]
+        let child_is_last -> (i == (num_children - 1))
+        render_flame_node(child, next_prefix, child_is_last, depth + 1, limit_depth, out_list)
+    }
+}
+
+/!
+  Renders a hierarchical ASCII flame tree from the root node.
+!/
+export function format_flame_tree(root_node, max_depth) {
+    let out -> []
+    out.append(`========================================================================================================`)
+    out.append(`  ZENLANG CALL TREE & FLAME HIERARCHY`)
+    out.append(`========================================================================================================`)
+
+    render_flame_node(root_node, ``, true, 0, max_depth, out)
+    out.append(`========================================================================================================`)
+    <- Str.join(out, `\n`)
+}
+
+/!
+  Generates an interactive, standalone HTML performance report with an interactive zoomable Flame Graph.
+!/
+export function generate_html_report(summary, title, out_path) {
+    let p_title -> title
+    when p_title == Nothing or p_title == `` { p_title -> `Zenlang Performance Profile` }
+
+    let entries -> summary[`entries`]
+    let events -> summary[`events`]
+
+    let table_rows -> ``
+    do for i in 0..entries.length {
+        let e -> entries[i]
+        let badge -> ``
+        when e[`self_pct`] >= 20.0 {
+            badge -> `<span class="badge-hot">HOT SPOT</span>`
+        }
+        table_rows -> table_rows + `<tr>
+            <td>` + Str.to_string(i + 1) + `</td>
+            <td><strong>` + e[`label`] + `</strong> ` + badge + `</td>
+            <td>` + Str.to_string(e[`calls`]) + `</td>
+            <td>` + format_float(e[`total_time_ms`], 2) + ` ms</td>
+            <td>` + format_float(e[`self_time_ms`], 2) + ` ms</td>
+            <td>` + format_float(e[`self_pct`], 1) + `%</td>
+            <td>` + format_float(e[`avg_time_ms`], 3) + ` ms</td>
+            <td>` + format_float(e[`ops_per_sec`], 0) + `</td>
+            <td>
+                <div class="bar-container">
+                    <div class="bar-fill" style="width: ` + format_float(e[`self_pct`], 1) + `%;"></div>
+                </div>
+            </td>
+        </tr>\n`
+    }
+
+    // Build event JSON array string for embedded JS flamegraph renderer
+    let event_json_parts -> []
+    do for ev in events {
+        let p_label -> ev[`parent_name`]
+        when p_label == Nothing { p_label -> `root` }
+        event_json_parts.append(`{"label":"` + ev[`label`] + `","start":` + format_float(ev[`start_ms`], 3) + `,"duration":` + format_float(ev[`duration_ms`], 3) + `,"self":` + format_float(ev[`self_ms`], 3) + `,"depth":` + Str.to_string(ev[`depth`]) + `,"parent":"` + p_label + `"}`)
+    }
+    let events_json -> `[` + Str.join(event_json_parts, `,`) + `]`
+
+    let html -> `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>` + p_title + `</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-hover: #334155;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-color: #38bdf8;
+            --hot-color: #ef4444;
+            --warm-color: #f59e0b;
+            --green-color: #10b981;
+            --border-color: #334155;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background: var(--bg-color); color: var(--text-color); padding: 2rem; line-height: 1.5; }
+        header { margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.5rem; }
+        h1 { font-size: 2rem; color: var(--accent-color); margin-bottom: 0.5rem; }
+        .meta-bar { display: flex; gap: 2rem; color: var(--text-muted); font-size: 0.95rem; }
+        .card { background: var(--surface-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 1.5rem; margin-bottom: 2rem; }
+        h2 { font-size: 1.25rem; margin-bottom: 1rem; color: var(--text-color); display: flex; justify-content: space-between; align-items: center; }
+        .search-input { background: var(--bg-color); border: 1px solid var(--border-color); color: var(--text-color); padding: 0.5rem 1rem; border-radius: 4px; font-size: 0.9rem; width: 280px; }
+        
+        /* Table Styles */
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.9rem; }
+        th { background: #0b1120; color: var(--text-muted); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; }
+        td { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color); }
+        tr:hover { background: var(--surface-hover); }
+        .badge-hot { background: rgba(239, 68, 68, 0.2); color: var(--hot-color); border: 1px solid var(--hot-color); padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; margin-left: 0.5rem; }
+        .bar-container { background: #0f172a; width: 100px; height: 8px; border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent-color), var(--hot-color)); }
+
+        /* Flame Graph Container */
+        #flame-container { width: 100%; height: 360px; position: relative; background: #0b1120; border-radius: 6px; overflow: hidden; border: 1px solid var(--border-color); }
+        canvas { width: 100%; height: 100%; display: block; }
+        #tooltip { position: absolute; display: none; background: #1e293b; border: 1px solid var(--accent-color); padding: 0.5rem 0.75rem; border-radius: 4px; font-size: 0.8rem; pointer-events: none; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.5); z-index: 100; }
+        .flame-hint { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>⚡ ` + p_title + `</h1>
+        <div class="meta-bar">
+            <div>⏱️ <strong>Total Time:</strong> ` + format_float(summary[`total_duration_ms`], 2) + ` ms</div>
+            <div>🔄 <strong>Total Invocations:</strong> ` + Str.to_string(summary[`total_calls`]) + `</div>
+            <div>📊 <strong>Tracked Functions:</strong> ` + Str.to_string(entries.length) + `</div>
+        </div>
+    </header>
+
+    <div class="card">
+        <h2>
+            <span>🔥 Interactive Flame Graph</span>
+            <input type="text" id="flame-search" class="search-input" placeholder="Search function or block...">
+        </h2>
+        <div id="flame-container">
+            <canvas id="flameCanvas"></canvas>
+            <div id="tooltip"></div>
+        </div>
+        <p class="flame-hint">Click a block to zoom in. Double-click to reset zoom. Hover for time and self-time breakdown.</p>
+    </div>
+
+    <div class="card">
+        <h2>📈 Performance Hot Spots & Function Breakdown</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Function / Block</th>
+                    <th>Calls</th>
+                    <th>Total Time</th>
+                    <th>Self Time</th>
+                    <th>% Self</th>
+                    <th>Avg / Call</th>
+                    <th>Ops / Sec</th>
+                    <th>Distribution</th>
+                </tr>
+            </thead>
+            <tbody>
+                ` + table_rows + `
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const rawEvents = ` + events_json + `;
+        const totalDuration = ` + format_float(summary[`total_duration_ms`], 3) + `;
+        const canvas = document.getElementById('flameCanvas');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+        const searchInput = document.getElementById('flame-search');
+
+        let scale = 1;
+        let viewStart = 0;
+        let viewEnd = totalDuration || 1;
+        let hoveredBlock = null;
+
+        function resize() {
+            canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
+            canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+            render();
+        }
+        window.addEventListener('resize', resize);
+
+        const ROW_HEIGHT = 28;
+        const PALETTE = ['#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981'];
+
+        function hashColor(str) {
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+            return PALETTE[Math.abs(hash) % PALETTE.length];
+        }
+
+        function render() {
+            const width = canvas.width / window.devicePixelRatio;
+            const height = canvas.height / window.devicePixelRatio;
+            ctx.resetTransform();
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            ctx.clearRect(0, 0, width, height);
+
+            const query = searchInput.value.toLowerCase().trim();
+            const viewDuration = viewEnd - viewStart || 1;
+
+            rawEvents.forEach(ev => {
+                const x = ((ev.start - viewStart) / viewDuration) * width;
+                const w = Math.max(2, (ev.duration / viewDuration) * width);
+                const y = height - (ev.depth + 1) * (ROW_HEIGHT + 2) - 10;
+
+                if (x + w < 0 || x > width) return;
+
+                let color = hashColor(ev.label);
+                if (query && ev.label.toLowerCase().includes(query)) {
+                    color = '#22c55e'; // Highlight green for search match
+                }
+
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, w - 1, ROW_HEIGHT);
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '11px -apple-system, sans-serif';
+                if (w > 40) {
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.rect(x + 4, y, w - 8, ROW_HEIGHT);
+                    ctx.clip();
+                    ctx.fillText(ev.label + ' (' + ev.duration.toFixed(2) + 'ms)', x + 6, y + 18);
+                    ctx.restore();
+                }
+            });
+        }
+
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const width = rect.width;
+            const height = rect.height;
+            const viewDuration = viewEnd - viewStart || 1;
+
+            let found = null;
+            rawEvents.forEach(ev => {
+                const x = ((ev.start - viewStart) / viewDuration) * width;
+                const w = Math.max(2, (ev.duration / viewDuration) * width);
+                const y = height - (ev.depth + 1) * (ROW_HEIGHT + 2) - 10;
+
+                if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + ROW_HEIGHT) {
+                    found = ev;
+                }
+            });
+
+            if (found) {
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 15) + 'px';
+                tooltip.style.top = (e.clientY + 15) + 'px';
+                tooltip.innerHTML = '<strong>' + found.label + '</strong><br>' +
+                                    'Duration: ' + found.duration.toFixed(2) + ' ms<br>' +
+                                    'Self Time: ' + found.self.toFixed(2) + ' ms';
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            const width = rect.width;
+            const height = rect.height;
+            const viewDuration = viewEnd - viewStart || 1;
+
+            rawEvents.forEach(ev => {
+                const x = ((ev.start - viewStart) / viewDuration) * width;
+                const w = Math.max(2, (ev.duration / viewDuration) * width);
+                const y = height - (ev.depth + 1) * (ROW_HEIGHT + 2) - 10;
+
+                if (mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + ROW_HEIGHT) {
+                    viewStart = ev.start;
+                    viewEnd = ev.start + ev.duration;
+                    render();
+                }
+            });
+        });
+
+        canvas.addEventListener('dblclick', () => {
+            viewStart = 0;
+            viewEnd = totalDuration || 1;
+            render();
+        });
+
+        searchInput.addEventListener('input', render);
+        resize();
+    </script>
+</body>
+</html>`
+
+    file.write(out_path, html)
+    <- out_path
+}
+
+/!
+  Profiles an executable Zen file and prints or exports visual reports.
+!/
+export function profile_file(target_file, options) {
+    when not file.exists(target_file) {
+        io.error(`[PROFILE] Target file not found: ` + target_file)
+        <- { `ok` -> false, `error` -> `File not found` }
+    }
+
+    let opts -> options
+    when opts == Nothing { opts -> {} }
+
+    let p -> profile.create_profiler()
+
+    let runs -> 1
+    when opts.has(`iters`) and opts[`iters`] > 1 {
+        runs -> opts[`iters`]
+    }
+
+    io.writeln(`[PROFILE] Profiling execution of: ` + target_file + ` (` + Str.to_string(runs) + ` iterations)...`)
+
+    let start_wall -> time.monotonic()
+
+    // Execute target file via process runner while timing total span
+    let base_name -> get_base_name(target_file)
+    do for r in 0..runs {
+        profile.profile_start(p, `iteration_` + Str.to_string(r + 1))
+        let res -> process.result_in(sys.get_cwd(), `python3 bootstrap/Zen.py ` + process.shell_quote(target_file))
+        profile.profile_stop(p, `iteration_` + Str.to_string(r + 1))
+    }
+
+    let summary -> profile.profile_summary(p)
+
+    // 1. Render Table
+    let table_str -> format_hotspots_table(summary, 25)
+    io.writeln(table_str)
+
+    // 2. Render Tree if requested
+    when opts.has(`tree`) and opts[`tree`] == true {
+        let tree_root -> profile.profile_tree(p)
+        let tree_str -> format_flame_tree(tree_root, 10)
+        io.writeln(tree_str)
+    }
+
+    // 3. Export HTML if requested
+    when opts.has(`html`) and opts[`html`] != `` {
+        let html_path -> opts[`html`]
+        generate_html_report(summary, `Zenlang Profile: ` + base_name, html_path)
+        io.writeln(`[PROFILE] Interactive Flame Graph exported to: ` + html_path)
+    }
+
+    <- {
+        `ok` -> true,
+        `summary` -> summary
+    }
+}

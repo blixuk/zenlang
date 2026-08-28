@@ -68,7 +68,7 @@ class ControlFlowExpressionsMixin:
         when_block = self.block_expression("when")
 
         # Handle any number of conditionals
-        while self.token_handler.match_type(TokenType.OR):
+        while self.token_handler.match_type(TokenType.OR) or self.token_handler.match_type_value(TokenType.KEYWORD, "or"):
             if not self.token_handler.check_type(TokenType.LEFT_BRACE):
                 self.token_handler.match_type_value(TokenType.KEYWORD, "when")
                 conditional_condition: ASTNode = self.expression()

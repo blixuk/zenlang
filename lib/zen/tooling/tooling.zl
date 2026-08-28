@@ -1,0 +1,34 @@
+/!
+  Zenlang Developer Tooling and Project Management Domain.
+  Re-exports all project lifecycle modules.
+!/
+
+import zen.tooling.manifest as manifest
+import zen.tooling.templates as templates
+import zen.tooling.project as project
+import zen.tooling.builder as builder
+import zen.tooling.watcher as watcher
+import zen.tooling.tester as tester
+import zen.tooling.bench as bench
+import zen.tooling.todo as todo
+import zen.tooling.pkg as pkg
+import zen.tooling.publish as publish
+import zen.tooling.docgen as docgen
+import zen.tooling.graph as graph
+import zen.tooling.dash as dash
+import zen.tooling.profiler as profiler
+
+export manifest
+export templates
+export project
+export builder
+export watcher
+export tester
+export bench
+export todo
+export pkg
+export publish
+export docgen
+export graph
+export dash
+export profiler

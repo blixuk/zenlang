@@ -1,0 +1,278 @@
+/!
+  Dual-path map widgets for zen.ui.canvas (+ layout bounds).
+
+  Widget = map with `kind` and fields. Draw with `draw(canvas, bounds, widget)`
+  where bounds is `{ x, y, w, h }` (layout node works).
+
+  Kinds:
+    label     — single line of text
+    panel     — bordered box + optional title
+    progress  — horizontal bar (value / max)
+    list      — scrollable lines with selected index
+    status    — left/right status line (fills width)
+
+  Style helpers: `with_colors(w, fg, bg)`.
+
+  Legacy class widgets live in `widgets.zl` (demos only).
+!/
+
+use zen.ui.canvas as canvas
+use zen.text.string as Str
+
+// ---------------------------------------------------------------------------
+// Constructors
+// ---------------------------------------------------------------------------
+
+function label(text) {
+    <- {
+        `kind` -> `label`,
+        `text` -> text,
+        `fg` -> `white`,
+        `bg` -> `black`
+    }
+}
+
+function panel(title) {
+    <- {
+        `kind` -> `panel`,
+        `title` -> title,
+        `fg` -> `white`,
+        `bg` -> `black`,
+        `border_fg` -> `bright_black`
+    }
+}
+
+function progress(value, max_v) {
+    let m -> max_v
+    when m == Nothing or m == 0 { m -> 1 }
+    <- {
+        `kind` -> `progress`,
+        `value` -> value,
+        `max` -> m,
+        `fg` -> `green`,
+        `bg` -> `black`,
+        `track` -> `bright_black`
+    }
+}
+
+function list_view(items, selected) {
+    let sel -> selected
+    when sel == Nothing { sel -> 0 }
+    <- {
+        `kind` -> `list`,
+        `items` -> items,
+        `selected` -> sel,
+        `scroll` -> 0,
+        `fg` -> `white`,
+        `bg` -> `black`,
+        `sel_fg` -> `black`,
+        `sel_bg` -> `cyan`
+    }
+}
+
+function status(left, right) {
+    <- {
+        `kind` -> `status`,
+        `left` -> left,
+        `right` -> right,
+        `fg` -> `black`,
+        `bg` -> `white`
+    }
+}
+
+function with_colors(w, fg, bg) {
+    w[`fg`] -> fg
+    w[`bg`] -> bg
+    <- w
+}
+
+// ---------------------------------------------------------------------------
+// List helpers (mutate selection)
+// ---------------------------------------------------------------------------
+
+function list_select(w, index) {
+    let items -> w[`items`]
+    let n -> items.length
+    when n <= 0 {
+        w[`selected`] -> 0
+        <- w
+    }
+    let i -> index
+    when i < 0 { i -> 0 }
+    when i >= n { i -> n - 1 }
+    w[`selected`] -> i
+    // keep selection visible
+    let scroll -> w[`scroll`]
+    // height unknown here; view pass uses ensure_visible in draw via bounds.h
+    w[`_want`] -> i
+    <- w
+}
+
+function list_move(w, delta) {
+    let i -> w[`selected`] + delta
+    <- list_select(w, i)
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+
+function bounds_x(b) { <- b[`x`] }
+function bounds_y(b) { <- b[`y`] }
+function bounds_w(b) { <- b[`w`] }
+function bounds_h(b) { <- b[`h`] }
+
+function draw_label(c, b, w) {
+    let t -> Str.to_string(w[`text`])
+    canvas.draw_text(c, b[`x`], b[`y`], t, w[`fg`], w[`bg`])
+}
+
+function draw_panel(c, b, w) {
+    let x -> b[`x`]
+    let y -> b[`y`]
+    let bw -> b[`w`]
+    let bh -> b[`h`]
+    when bw < 2 or bh < 2 { <- Nothing }
+    let bfg -> w[`border_fg`]
+    when bfg == Nothing { bfg -> w[`fg`] }
+    // fill interior
+    canvas.fill_rect(c, x, y, bw, bh, ` `, w[`fg`], w[`bg`])
+    // borders (use range loops for dual-path)
+    do for xi in (x + 1)..(x + bw - 1) {
+        canvas.set_cell(c, xi, y, `-`, bfg, w[`bg`])
+        canvas.set_cell(c, xi, y + bh - 1, `-`, bfg, w[`bg`])
+    }
+    do for yi in (y + 1)..(y + bh - 1) {
+        canvas.set_cell(c, x, yi, `|`, bfg, w[`bg`])
+        canvas.set_cell(c, x + bw - 1, yi, `|`, bfg, w[`bg`])
+    }
+    canvas.set_cell(c, x, y, `+`, bfg, w[`bg`])
+    canvas.set_cell(c, x + bw - 1, y, `+`, bfg, w[`bg`])
+    canvas.set_cell(c, x, y + bh - 1, `+`, bfg, w[`bg`])
+    canvas.set_cell(c, x + bw - 1, y + bh - 1, `+`, bfg, w[`bg`])
+    // title last so it sits on top border
+    let title -> w[`title`]
+    when title != Nothing and title != `` {
+        let t -> ` ` + Str.to_string(title) + ` `
+        canvas.draw_text(c, x + 2, y, t, w[`fg`], w[`bg`])
+    }
+}
+
+function draw_progress(c, b, w) {
+    let x -> b[`x`]
+    let y -> b[`y`]
+    let bw -> b[`w`]
+    when bw <= 0 { <- Nothing }
+    let max_v -> w[`max`]
+    when max_v <= 0 { max_v -> 1 }
+    let val -> w[`value`]
+    when val < 0 { val -> 0 }
+    when val > max_v { val -> max_v }
+    let filled -> (val * bw) / max_v
+    when filled < 0 { filled -> 0 }
+    when filled > bw { filled -> bw }
+    let track -> w[`track`]
+    when track == Nothing { track -> `bright_black` }
+    canvas.fill_rect(c, x, y, bw, 1, `-`, track, w[`bg`])
+    when filled > 0 {
+        canvas.fill_rect(c, x, y, filled, 1, `=`, w[`fg`], w[`bg`])
+    }
+}
+
+function draw_list(c, b, w) {
+    let x -> b[`x`]
+    let y -> b[`y`]
+    let bw -> b[`w`]
+    let bh -> b[`h`]
+    when bh <= 0 { <- Nothing }
+    let items -> w[`items`]
+    let n -> items.length
+    let sel -> w[`selected`]
+    when sel < 0 { sel -> 0 }
+    when n > 0 and sel >= n { sel -> n - 1 }
+    // scroll so selection visible
+    let scroll -> w[`scroll`]
+    when scroll == Nothing { scroll -> 0 }
+    when sel < scroll {
+        scroll -> sel
+    }
+    when sel >= scroll + bh {
+        scroll -> sel - bh + 1
+    }
+    when scroll < 0 { scroll -> 0 }
+    w[`scroll`] -> scroll
+
+    let row -> 0
+    do while row < bh {
+        let idx -> scroll + row
+        when idx < n {
+            let line -> Str.to_string(items[idx])
+            // pad/truncate to width
+            let fg -> w[`fg`]
+            let bg -> w[`bg`]
+            when idx == sel {
+                fg -> w[`sel_fg`]
+                bg -> w[`sel_bg`]
+                canvas.fill_rect(c, x, y + row, bw, 1, ` `, fg, bg)
+            }
+            // prefix marker
+            let prefix -> `  `
+            when idx == sel { prefix -> `> ` }
+            let text -> prefix + line
+            let tl -> Str.length(text)
+            when tl > bw {
+                text -> Str.substring(text, 0, bw)
+            }
+            canvas.draw_text(c, x, y + row, text, fg, bg)
+        }
+        row -> row + 1
+    }
+}
+
+function draw_status(c, b, w) {
+    let x -> b[`x`]
+    let y -> b[`y`]
+    let bw -> b[`w`]
+    when bw <= 0 { <- Nothing }
+    canvas.fill_rect(c, x, y, bw, 1, ` `, w[`fg`], w[`bg`])
+    let left -> Str.to_string(w[`left`])
+    let right -> Str.to_string(w[`right`])
+    canvas.draw_text(c, x, y, left, w[`fg`], w[`bg`])
+    let rl -> Str.length(right)
+    let rx -> x + bw - rl
+    when rx < x { rx -> x }
+    canvas.draw_text(c, rx, y, right, w[`fg`], w[`bg`])
+}
+
+/!
+  Draw widget `w` into bounds `b` on canvas `c`.
+!/
+function draw(c, b, w) {
+    when w == Nothing { <- Nothing }
+    when b == Nothing { <- Nothing }
+    let kind -> w[`kind`]
+    when kind == `label` {
+        draw_label(c, b, w)
+    } or when kind == `panel` {
+        draw_panel(c, b, w)
+    } or when kind == `progress` {
+        draw_progress(c, b, w)
+    } or when kind == `list` {
+        draw_list(c, b, w)
+    } or when kind == `status` {
+        draw_status(c, b, w)
+    }
+}
+
+/!
+  Draw widget filling an entire canvas.
+!/
+function draw_full(c, w) {
+    let b -> {
+        `x` -> 0,
+        `y` -> 0,
+        `w` -> c[`width`],
+        `h` -> c[`height`]
+    }
+    draw(c, b, w)
+}

@@ -1,0 +1,34 @@
+/!
+  09 — CLI arguments
+
+  Run:
+    ./bin/zen examples/getting_started/09_cli_args.zl
+    ./bin/zen examples/getting_started/09_cli_args.zl hello world
+
+  Learn: Sys.get_args(), argv[0] is script/binary, early <- 1 on errors.
+!/
+
+import zen.sys.sys as Sys
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    let args -> Sys.get_args()
+    let n -> args.length
+    io.writeln(`argc = ` + Str.to_string(n))
+
+    let i -> 0
+    do while i < n {
+        io.writeln(`  [` + Str.to_string(i) + `] ` + Str.to_string(args[i]))
+        i -> i + 1
+    }
+
+    // Optional: require a user argument
+    when n < 2 {
+        io.writeln(`(tip: pass extra args after the script path)`)
+        <- 0
+    }
+
+    io.writeln(`first user arg: ` + Str.to_string(args[1]))
+    <- 0
+}

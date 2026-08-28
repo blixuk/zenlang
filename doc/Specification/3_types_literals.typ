@@ -733,10 +733,38 @@ True
 False
 ```
 
-=== Nothing literal
+=== Nothing and Default literals
+
+`Nothing` represents the absence of a value (unassigned or null state).
+`Default` represents the type's natural zero-state or empty value.
 
 ```zl
 Nothing
+Default
+```
+
+When assigned to a typed variable or evaluated in a typed context, `Default` materializes according to its type:
+
+- `Integer`: `0`
+- `Decimal`: `0.0`
+- `Boolean`: `False`
+- `String` / `Rune`: #raw("``", lang: "zl") (empty string)
+- `List`: `[]` (empty list)
+- `Map` / `Dictionary`: `{}` (empty map)
+- `Structure` / `Class`: Default field zero-values / empty instance
+- `Nothing` / `Void`: `Nothing`
+
+```zl
+let x : Integer -> Default
+when x == Default {
+    // True: x equals the zero value of its type (0)
+}
+when x == 0 {
+    // True
+}
+when x == Nothing {
+    // False: 0 is not Nothing
+}
 ```
 
 === Rune and String literals

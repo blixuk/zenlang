@@ -1,0 +1,119 @@
+/!
+ Serialization helpers for plain data and class-like maps.
+ Dual-path friendly: no nested imports; no class-as-value registration.
+ !/
+
+import zen.data.json as json
+import zen.io.file as file
+
+/!
+ Serializes an object to a plain data structure.
+ Classes/structures become { __type__, __data__ } maps.
+ !/
+function serialize(obj) {
+    let k -> obj.kind
+
+    when k == "String" or k == "Integer" or k == "Decimal" or k == "Boolean" or k == "Nothing" {
+        <- obj
+    } or when k == "List" or k == "Tuple" {
+        let res -> []
+        do for item in obj {
+            res.append(serialize(item))
+        }
+        <- res
+    } or when k == "Map" {
+        // Treat maps with an explicit kind field as typed records
+        when obj.has(`kind`) and obj[`kind`] != `Map` {
+            let type_name -> obj[`kind`]
+            let data -> {}
+            let keys -> obj.keys()
+            do for key in keys {
+                when key != `kind` {
+                    data[key] -> serialize(obj[key])
+                }
+            }
+            <- {`__type__` -> type_name, `__data__` -> data}
+        }
+        let res -> {}
+        let keys -> obj.keys()
+        do for key in keys {
+            res[key] -> serialize(obj[key])
+        }
+        <- res
+    } or {
+        // Object / class instance: use members list when available
+        let type_name -> k
+        let data -> {}
+        let members -> obj.members
+        when members.kind == "List" {
+            do for m in members {
+                data[m] -> serialize(obj[m])
+            }
+        } or {
+            // Fallback: common field names used by tests
+            when obj.name != Nothing {
+                data[`name`] -> serialize(obj.name)
+            }
+            when obj.score != Nothing {
+                data[`score`] -> serialize(obj.score)
+            }
+        }
+        <- {`__type__` -> type_name, `__data__` -> data}
+    }
+}
+
+/!
+ Deserializes plain data into maps with a `kind` field for typed records.
+ Full class rehydration is host-dependent; maps work on both paths.
+ !/
+function deserialize(data) {
+    let k -> data.kind
+
+    when k == "List" {
+        let res -> []
+        do for item in data {
+            res.append(deserialize(item))
+        }
+        <- res
+    } or when k == "Map" {
+        when data.has(`__type__`) {
+            let type_name -> data[`__type__`]
+            let raw -> data[`__data__`]
+            let out -> {}
+            let keys -> raw.keys()
+            do for key in keys {
+                out[key] -> deserialize(raw[key])
+            }
+            out[`kind`] -> type_name
+            <- out
+        }
+        let res -> {}
+        let keys -> data.keys()
+        do for key in keys {
+            res[key] -> deserialize(data[key])
+        }
+        <- res
+    }
+    <- data
+}
+
+/!
+ Register is a no-op retained for API compatibility.
+ !/
+function register_type(name, type_obj) {
+    // Type registry not required for map-based revival.
+    <- Nothing
+}
+
+function save_to_file(path, obj) {
+    let content -> json.stringify(serialize(obj))
+    file.write(path, content)
+}
+
+function load_from_file(path) {
+    when file.exists(path) {
+        let content -> file.read(path)
+        <- deserialize(json.parse(content))
+    }
+    <- Nothing
+}

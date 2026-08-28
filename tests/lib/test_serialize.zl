@@ -1,0 +1,39 @@
+import zen.data.serialize as ser
+import zen.test as test
+
+function test_serialization_record() {
+    // Typed record as a map with kind (works interpret + native)
+    let p1 -> {
+        `kind` -> `Player`,
+        `name` -> `Alice`,
+        `score` -> 100
+    }
+    ser.register_type(`Player`, Nothing)
+
+    let serialized -> ser.serialize(p1)
+    let pass -> test.assert_equal(serialized.get(`__type__`), `Player`, `type check`)
+    pass -> pass and test.assert_equal(serialized.get(`__data__`).get(`name`), `Alice`, `name check`)
+    pass -> pass and test.assert_equal(serialized.get(`__data__`).get(`score`), 100, `score check`)
+
+    let p2 -> ser.deserialize(serialized)
+    pass -> pass and test.assert_equal(p2.kind, `Player`, `deserialized kind`)
+    pass -> pass and test.assert_equal(p2.name, `Alice`, `deserialized name`)
+    pass -> pass and test.assert_equal(p2.score, 100, `deserialized score`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Serialize.record`, `fn` -> test_serialization_record}
+    ]
+    <- test.run_suite(`Data Serialization Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

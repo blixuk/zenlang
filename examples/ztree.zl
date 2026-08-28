@@ -1,0 +1,126 @@
+/!
+  ztree — colorful directory tree (like `tree`, simpler).
+
+  Run:
+    python3 bootstrap/Zen.py examples/ztree.zl [dir]
+    ./bin/zen examples/ztree.zl lib/zen
+    ./bin/zen -g examples/ztree.zl .
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.text.string as Str
+
+function collect_children(dir) {
+    let names -> file.list_dir(dir)
+    let kids -> []
+    let i -> 0
+    do while i < names.length {
+        let n -> names[i]
+        when n != `.` and n != `..` {
+            kids.append(path.join(dir, n))
+        }
+        i -> i + 1
+    }
+    // dirs first, then files
+    let dirs -> []
+    let files_only -> []
+    let k -> 0
+    do while k < kids.length {
+        let c -> kids[k]
+        when file.is_dir(c) {
+            dirs.append(c)
+        } or {
+            files_only.append(c)
+        }
+        k -> k + 1
+    }
+    let ordered -> []
+    let d -> 0
+    do while d < dirs.length {
+        ordered.append(dirs[d])
+        d -> d + 1
+    }
+    let f -> 0
+    do while f < files_only.length {
+        ordered.append(files_only[f])
+        f -> f + 1
+    }
+    <- ordered
+}
+
+function print_entry(p, prefix, is_last) {
+    let name -> path.basename(p)
+    let branch -> `├── `
+    when is_last { branch -> `└── ` }
+
+    term.write(prefix)
+    term.write(branch)
+
+    when file.is_dir(p) {
+        term.color(`blue`, `black`)
+        term.write(name)
+        term.write(`/`)
+        term.reset()
+        io.writeln(``)
+
+        let ordered -> collect_children(p)
+        let next -> prefix + `│   `
+        when is_last { next -> prefix + `    ` }
+
+        let j -> 0
+        do while j < ordered.length {
+            let last -> j == ordered.length - 1
+            print_entry(ordered[j], next, last)
+            j -> j + 1
+        }
+    } or {
+        when Str.ends_with(name, `.zl`) {
+            term.color(`green`, `black`)
+        } or {
+            when Str.ends_with(name, `.md`) {
+                term.color(`yellow`, `black`)
+            } or {
+                term.color(`white`, `black`)
+            }
+        }
+        term.write(name)
+        term.reset()
+        io.writeln(``)
+    }
+}
+
+function main() {
+    let args -> sys.get_args()
+    let root -> `.`
+    when args.length > 1 {
+        root -> args[1]
+    }
+
+    when not file.exists(root) {
+        term.color(`red`, `black`)
+        io.writeln(`ztree: no such path: ` + root)
+        term.reset()
+        <- 1
+    }
+
+    term.color(`cyan`, `black`)
+    term.write(root)
+    when file.is_dir(root) { term.write(`/`) }
+    term.reset()
+    io.writeln(``)
+
+    when file.is_dir(root) {
+        let ordered -> collect_children(root)
+        let j -> 0
+        do while j < ordered.length {
+            print_entry(ordered[j], ``, j == ordered.length - 1)
+            j -> j + 1
+        }
+    }
+
+    <- 0
+}

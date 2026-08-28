@@ -1,0 +1,29 @@
+/!
+ Phase B3: two unrelated classes sharing method short-name `speak`.
+ Dispatch must use instance `__type`, not last-wins.
+ Exit 0 iff Dog.speak==1 and Cat.speak==2.
+ !/
+
+class Dog {
+    function speak() {
+        <- 1
+    }
+}
+
+class Cat {
+    function speak() {
+        <- 2
+    }
+}
+
+function main() {
+    let d -> Dog()
+    let c -> Cat()
+    when d.speak() != 1 {
+        <- 1
+    }
+    when c.speak() != 2 {
+        <- 2
+    }
+    <- 0
+}

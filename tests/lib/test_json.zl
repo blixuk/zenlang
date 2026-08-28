@@ -1,0 +1,39 @@
+import zen.data.json as json
+import zen.test as test
+
+function test_stringify_scalars_and_lists() {
+    let pass -> test.assert_equal(json.stringify(`line\nbreak`), `"line\\nbreak"`, `stringify should escape special characters in strings`)
+    pass -> pass and test.assert_equal(json.stringify([1, `zen`, true, Nothing]), `[1,"zen",true,null]`, `stringify should serialize mixed lists correctly`)
+    <- pass
+}
+
+function test_parse_and_roundtrip() {
+    let parsed -> json.parse(`{"name":"Zen","active":true,"count":2,"tags":["fast","calm"]}`)
+    let pass -> test.assert_equal(parsed[`name`], `Zen`, `parse should read string fields`)
+    pass -> pass and test.assert_true(parsed[`active`], `parse should read boolean fields`)
+    pass -> pass and test.assert_equal(parsed[`count`], 2, `parse should read numeric fields`)
+    pass -> pass and test.assert_equal(parsed[`tags`][1], `calm`, `parse should read nested list values`)
+
+    let list_roundtrip -> json.parse(json.stringify([`a`, 2, false]))
+    pass -> pass and test.assert_equal(list_roundtrip[0], `a`, `roundtrip should preserve the first list item`)
+    pass -> pass and test.assert_equal(list_roundtrip[1], 2, `roundtrip should preserve numeric list items`)
+    pass -> pass and test.assert_false(list_roundtrip[2], `roundtrip should preserve boolean list items`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Json.stringify_scalars_and_lists`, `fn` -> test_stringify_scalars_and_lists},
+        {`name` -> `Json.parse_and_roundtrip`, `fn` -> test_parse_and_roundtrip}
+    ]
+
+    <- test.run_suite(`JSON Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

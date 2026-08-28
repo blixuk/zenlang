@@ -1,0 +1,47 @@
+import zen.io.io as io
+import zen.test as test
+
+let io_path -> `tests/lib/.tmp_io_module.txt`
+
+function cleanup() {
+    when io.exists(io_path) {
+        __builtin_file.remove(io_path)
+    }
+}
+
+function test_file_helpers() {
+    cleanup()
+    io.write_file(io_path, `io payload`)
+    let pass -> test.assert_true(io.exists(io_path), `write_file should create the file`)
+    pass -> pass and test.assert_equal(io.read_file(io_path), `io payload`, `read_file should return the written content`)
+    cleanup()
+    <- pass
+}
+
+function test_output_helpers() {
+    io.write(``)
+    io.writeln(``)
+    io.write_line(``)
+    io.info(`io.info smoke`)
+    io.warn(`io.warn smoke`)
+    io.error(`io.error smoke`)
+    io.debug(`io.debug smoke`)
+    <- test.assert_true(true, `output helpers should be callable`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `IO.file_helpers`, `fn` -> test_file_helpers},
+        {`name` -> `IO.output_helpers`, `fn` -> test_output_helpers}
+    ]
+
+    <- test.run_suite(`IO Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

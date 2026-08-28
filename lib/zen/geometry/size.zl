@@ -1,0 +1,17 @@
+/!
+ Class representing a 2D size.
+ !/
+class Size {
+    let w: Decimal
+    let h: Decimal
+
+    /!
+     Initializes a new Size.
+     @param w The width.
+     @param h The height.
+     !/
+    function init(w, h) {
+        self.w -> w
+        self.h -> h
+    }
+}

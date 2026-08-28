@@ -1,0 +1,62 @@
+/!
+ Finite State Machine (FSM) Pattern.
+ Provides a structured way to manage state transitions.
+ !/
+class FSM {
+    let states: Map // Map<String, Map<String, String>>
+    let current_state: String
+
+    /!
+     Initializes a new FSM with an initial state.
+     @param initial_state The starting state.
+     !/
+    function init(initial_state) {
+        self.states -> {}
+        self.current_state -> initial_state
+    }
+
+    /!
+     Adds a transition between states.
+     @param from The source state.
+     @param event The event triggering the transition.
+     @param to The destination state.
+     !/
+    function add_transition(from, event, to) {
+        when self.states.has(from) = False {
+            self.states[from] -> {}
+        }
+        self.states[from][event] -> to
+    }
+
+    /!
+     Processes an event and transitions to the next state if defined.
+     @param event The event to handle.
+     @return True if a transition occurred.
+     !/
+    function handle_event(event) {
+        when self.states.has(self.current_state) {
+            let transitions -> self.states[self.current_state]
+            when transitions.has(event) {
+                self.current_state -> transitions[event]
+                <- True
+            }
+        }
+        <- False
+    }
+
+    /!
+     Returns the current state of the FSM.
+     @return The current state name.
+     !/
+    function get_state() {
+        <- self.current_state
+    }
+
+    /!
+     Resets the FSM to a specific state.
+     @param state The state to reset to.
+     !/
+    function reset(state) {
+        self.current_state -> state
+    }
+}

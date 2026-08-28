@@ -1,0 +1,36 @@
+// Chapter 13: Unified Task Concurrency & Channels
+
+Heading { text -> `13. Unified Task Concurrency & Channels`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang integrates asynchronous tasks, fiber coroutines, and CSP-style message channels into a unified concurrency model:`
+},
+
+CodeBlock {
+    language -> `zen`,
+    code -> ```
+        use zen.task
+        use zen.sync.chan as chan
+        
+        function producer_consumer() {
+            let ch -> chan.create(10)
+            
+            // Spawn asynchronous background producer task
+            task.spawn(function() {
+                let i -> 1
+                do while i <= 5 {
+                    ch.send(i * 10)
+                    set i -> i + 1
+                }
+                ch.close()
+            })
+            
+            // Consume messages in main thread
+            do for msg in ch {
+                io.writeln("Received value: " + Str.to_string(msg))
+            }
+        }
+    ```
+},
+
+HorizontalRule { symbol -> `*` }

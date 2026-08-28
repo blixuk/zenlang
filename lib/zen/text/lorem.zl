@@ -1,0 +1,280 @@
+/!
+  Lorem Ipsum text and dummy data generator.
+  Provides classical Latin placeholder words, sentences, paragraphs, and titles.
+  Supports both global randomized generation and deterministic seedable generation.
+
+  Usage:
+    use zen.text.lorem
+
+    let w -> lorem.word()
+    let words -> lorem.words(5)
+    let s -> lorem.sentence(6, 12)
+    let p -> lorem.paragraph(3, 5)
+    let text -> lorem.paragraphs(2)
+    let passage -> lorem.standard()
+!/
+
+import zen.math.random as random
+import zen.text.string as Str
+
+set _WORDS -> [
+    `ad`, `adipiscing`, `aliqua`, `aliquam`, `aliquet`, `amet`, `ante`, `arcu`, `at`, `auctor`,
+    `augue`, `bibendum`, `blandit`, `commodo`, `condimentum`, `congue`, `consectetur`, `consequat`,
+    `convallis`, `cras`, `cubilia`, `curabitur`, `curae`, `cursus`, `dapibus`, `diam`, `dictum`,
+    `dictumst`, `dignissim`, `dis`, `dolor`, `dolore`, `donec`, `dui`, `duis`, `efficitur`, `egestas`,
+    `eget`, `eleifend`, `elementum`, `elit`, `enim`, `erat`, `eros`, `est`, `et`, `etiam`, `eu`,
+    `euismod`, `facilisi`, `facilisis`, `fames`, `faucibus`, `felis`, `fermentum`, `feugiat`,
+    `fringilla`, `fusce`, `gravida`, `habitant`, `habitasse`, `hac`, `hendrerit`, `iaculis`, `id`,
+    `imperdiet`, `in`, `inceptos`, `integer`, `interdum`, `ipsum`, `justo`, `lacinia`, `lacus`,
+    `laoreet`, `lectus`, `leo`, `libero`, `ligula`, `litora`, `lobortis`, `lorem`, `luctus`,
+    `maecenas`, `magna`, `malesuada`, `massa`, `mattis`, `mauris`, `maximus`, `metus`, `mi`,
+    `molestie`, `mollis`, `montes`, `morbi`, `nam`, `nascetur`, `natoque`, `nec`, `neque`, `netus`,
+    `nibh`, `nisi`, `nisl`, `nobis`, `non`, `nostra`, `nulla`, `nullam`, `nunc`, `odio`, `orci`,
+    `ornare`, `parturient`, `pellentesque`, `penatibus`, `per`, `pharetra`, `phasellus`, `placerat`,
+    `porta`, `porttitor`, `posuere`, `potenti`, `praesent`, `pretium`, `primis`, `proin`, `pulvinar`,
+    `purus`, `quam`, `quis`, `quisque`, `rhoncus`, `ridiculus`, `risus`, `rutrum`, `sagittis`,
+    `sapien`, `scelerisque`, `sed`, `sem`, `semper`, `senectus`, `sit`, `sociis`, `sodales`,
+    `sollicitudin`, `suscipit`, `suspendisse`, `taciti`, `tellus`, `tempor`, `tempus`, `tincidunt`,
+    `torquent`, `tortor`, `tristique`, `turpis`, `ullamcorper`, `ultrices`, `ultricies`, `urna`,
+    `ut`, `varius`, `vehicula`, `vel`, `velit`, `venenatis`, `vestibulum`, `vitae`, `vivamus`,
+    `viverra`, `volutpat`, `vulputate`
+]
+
+/!
+  Returns the canonical standard Lorem Ipsum passage.
+!/
+function standard() {
+    <- `Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.`
+}
+
+/!
+  Returns the canonical standard passage (alias for standard).
+!/
+function classic() {
+    <- standard()
+}
+
+/!
+  Returns a random single Latin word using a provided generator `g`.
+!/
+function rng_word(g) {
+    let idx -> random.rng_integer(g, 0, _WORDS.length - 1)
+    <- _WORDS[idx]
+}
+
+/!
+  Returns a random single Latin word.
+!/
+function word() {
+    let idx -> random.integer(0, _WORDS.length - 1)
+    <- _WORDS[idx]
+}
+
+/!
+  Returns a list of `n` random words using a provided generator `g`.
+!/
+function rng_words_list(g, n) {
+    when n <= 0 { <- [] }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(rng_word(g))
+        i -> i + 1
+    }
+    <- list
+}
+
+/!
+  Returns a list of `n` random words.
+!/
+function words_list(n) {
+    when n <= 0 { <- [] }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(word())
+        i -> i + 1
+    }
+    <- list
+}
+
+/!
+  Returns a space-separated string of `n` random words using generator `g`.
+!/
+function rng_words(g, n) {
+    when n <= 0 { <- `` }
+    let list -> rng_words_list(g, n)
+    <- Str.join(list, ` `)
+}
+
+/!
+  Returns a space-separated string of `n` random words.
+!/
+function words(n) {
+    when n <= 0 { <- `` }
+    let list -> words_list(n)
+    <- Str.join(list, ` `)
+}
+
+/!
+  Returns a hyphen-separated slug of `n` random words.
+!/
+function slug(n) {
+    when n <= 0 { <- `` }
+    let list -> words_list(n)
+    <- Str.join(list, `-`)
+}
+
+/!
+  Capitalizes the first character of a string.
+!/
+function _capitalize(s) {
+    when s == Nothing or s == `` { <- `` }
+    when s.length == 1 { <- Str.to_upper(s) }
+    let first -> Str.to_upper(s.substring(0, 1))
+    let rest -> s.substring(1)
+    <- first + rest
+}
+
+/!
+  Generates a single sentence using generator `g` with word count between `min_words` and `max_words`.
+!/
+function rng_sentence(g, min_words, max_words) {
+    when min_words <= 0 { min_words -> 5 }
+    when max_words < min_words { max_words -> min_words }
+    let count -> random.rng_integer(g, min_words, max_words)
+    let w_list -> rng_words_list(g, count)
+    when w_list.length == 0 { <- `` }
+    
+    // Capitalize first word
+    w_list[0] -> _capitalize(w_list[0])
+    
+    let text -> Str.join(w_list, ` `)
+    <- text + `.`
+}
+
+/!
+  Generates a single sentence with word count between `min_words` and `max_words`.
+!/
+function sentence(min_words, max_words) {
+    when min_words == Nothing or min_words <= 0 { min_words -> 5 }
+    when max_words == Nothing or max_words < min_words { max_words -> 12 }
+    let count -> random.integer(min_words, max_words)
+    let w_list -> words_list(count)
+    when w_list.length == 0 { <- `` }
+    
+    w_list[0] -> _capitalize(w_list[0])
+    let text -> Str.join(w_list, ` `)
+    <- text + `.`
+}
+
+/!
+  Generates `n` sentences joined by spaces using generator `g`.
+!/
+function rng_sentences(g, n) {
+    when n <= 0 { <- `` }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(rng_sentence(g, 6, 12))
+        i -> i + 1
+    }
+    <- Str.join(list, ` `)
+}
+
+/!
+  Generates `n` sentences joined by spaces.
+!/
+function sentences(n) {
+    when n <= 0 { <- `` }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(sentence(6, 12))
+        i -> i + 1
+    }
+    <- Str.join(list, ` `)
+}
+
+/!
+  Generates a single paragraph using generator `g` with sentence count between `min_sentences` and `max_sentences`.
+!/
+function rng_paragraph(g, min_sentences, max_sentences) {
+    when min_sentences <= 0 { min_sentences -> 3 }
+    when max_sentences < min_sentences { max_sentences -> min_sentences }
+    let count -> random.rng_integer(g, min_sentences, max_sentences)
+    <- rng_sentences(g, count)
+}
+
+/!
+  Generates a single paragraph with sentence count between `min_sentences` and `max_sentences`.
+!/
+function paragraph(min_sentences, max_sentences) {
+    when min_sentences == Nothing or min_sentences <= 0 { min_sentences -> 3 }
+    when max_sentences == Nothing or max_sentences < min_sentences { max_sentences -> 6 }
+    let count -> random.integer(min_sentences, max_sentences)
+    <- sentences(count)
+}
+
+/!
+  Generates `n` paragraphs separated by `\n\n` using generator `g`.
+!/
+function rng_paragraphs(g, n) {
+    when n <= 0 { <- `` }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(rng_paragraph(g, 3, 5))
+        i -> i + 1
+    }
+    <- Str.join(list, `\n\n`)
+}
+
+/!
+  Generates `n` paragraphs separated by `\n\n`.
+!/
+function paragraphs(n) {
+    when n <= 0 { <- `` }
+    let list -> []
+    let i -> 0
+    do while i < n {
+        list.append(paragraph(3, 5))
+        i -> i + 1
+    }
+    <- Str.join(list, `\n\n`)
+}
+
+/!
+  Generates a Title Cased heading string with between `min_words` and `max_words`.
+!/
+function title(min_words, max_words) {
+    when min_words == Nothing or min_words <= 0 { min_words -> 2 }
+    when max_words == Nothing or max_words < min_words { max_words -> 6 }
+    let count -> random.integer(min_words, max_words)
+    let w_list -> words_list(count)
+    let title_list -> []
+    do for w in w_list {
+        title_list.append(_capitalize(w))
+    }
+    <- Str.join(title_list, ` `)
+}
+
+/!
+  Generates dummy text of approximately `target_len` characters.
+!/
+function text(target_len) {
+    when target_len <= 0 { <- `` }
+    let result -> ``
+    do while result.length < target_len {
+        let p -> paragraph(3, 6)
+        when result.length == 0 {
+            result -> p
+        } or {
+            result -> result + `\n\n` + p
+        }
+    }
+    when result.length > target_len {
+        result -> result.substring(0, target_len)
+    }
+    <- result
+}

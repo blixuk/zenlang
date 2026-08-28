@@ -1,0 +1,62 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+function test_if_else() {
+    io.write(`  - If/Else... `)
+    let x -> 10
+    let result -> ``
+    when x > 5 {
+        result -> `greater`
+    } or {
+        result -> `smaller`
+    }
+    utils.assert_eq(result, `greater`, `if block`)
+
+    when x < 5 {
+        result -> `greater`
+    } or {
+        result -> `smaller`
+    }
+    utils.assert_eq(result, `smaller`, `else block`)
+    io.write(`PASS\n`)
+}
+
+function test_loops() {
+    io.write(`  - Loops... `)
+    let i -> 0
+    let sum -> 0
+    do while i < 5 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    utils.assert_eq(sum, 10, `while loop sum`)
+    utils.assert_eq(i, 5, `while loop counter`)
+    io.write(`PASS\n`)
+}
+
+function test_when_statement() {
+    io.write(`  - When statement... `)
+    let grade -> `A`
+    let msg -> ``
+    when grade {
+        is `A` { msg -> `Excellent` }
+        is `B` { msg -> `Good` }
+        or { msg -> `Try harder` }
+    }
+    utils.assert_eq(msg, `Excellent`, `when match`)
+    
+    let other -> `C`
+    when other {
+        is `A` { msg -> `Excellent` }
+        or { msg -> `Unknown` }
+    }
+    utils.assert_eq(msg, `Unknown`, `when Default`)
+    io.write(`PASS\n`)
+}
+
+function run_control_flow_tests() {
+    io.write(`Running Control Flow Tests:\n`)
+    test_if_else()
+    test_loops()
+    test_when_statement()
+}

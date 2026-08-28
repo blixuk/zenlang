@@ -1,0 +1,61 @@
+/!
+ Geometry library for UI layout.
+ !/
+
+class UIPoint {
+    let x
+    let y
+
+    function init(x, y) {
+        self.x -> x
+        self.y -> y
+    }
+
+    function to_string() {
+        <- `(` + self.x + `, ` + self.y + `)`
+    }
+}
+
+class UISize {
+    let width
+    let height
+
+    function init(w, h) {
+        self.width -> w
+        self.height -> h
+    }
+
+    function to_string() {
+        <- self.width + `x` + self.height
+    }
+}
+
+class UIRect {
+    let x
+    let y
+    let width
+    let height
+
+    function init(x, y, w, h) {
+        self.x -> x
+        self.y -> y
+        self.width -> w
+        self.height -> h
+    }
+
+    function contains(p) {
+        <- p.x >= self.x and p.x < self.x + self.width and
+           p.y >= self.y and p.y < self.y + self.height
+    }
+
+    function intersects(other) {
+        <- not (other.x >= self.x + self.width or
+                other.x + other.width <= self.x or
+                other.y >= self.y + self.height or
+                other.y + other.height <= self.y)
+    }
+
+    function to_string() {
+        <- `UIRect(` + self.x + `, ` + self.y + `, ` + self.width + `, ` + self.height + `)`
+    }
+}

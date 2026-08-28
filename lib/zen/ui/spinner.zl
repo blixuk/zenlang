@@ -1,0 +1,117 @@
+/!
+    Terminal Animated Spinners.
+    Provides customizable ASCII/Unicode activity spinners for CLI loading states.
+!/
+
+use zen.text.string as Str
+use zen.io.io as io
+use zen.sys.term as term
+
+function get_spinner_frames(style_name) {
+    when style_name == `line` {
+        <- [`-`, `\\`, `|`, `/`]
+    }
+    when style_name == `arc` {
+        <- [`◜`, `◠`, `◝`, `◞`, `◡`, `◟`]
+    }
+    when style_name == `circle` {
+        <- [`◐`, `◓`, `◑`, `◒`]
+    }
+    when style_name == `arrows` {
+        <- [`←`, `↖`, `↑`, `↗`, `→`, `↘`, `↓`, `↙`]
+    }
+    when style_name == `bouncing_bar` {
+        <- [`[    ]`, `[=   ]`, `[==  ]`, `[=== ]`, `[====]`, `[ ===]`, `[  ==]`, `[   =]`]
+    }
+    // Default: Unicode dots
+    <- [`⠋`, `⠙`, `⠹`, `⠸`, `⠼`, `⠴`, `⠦`, `⠧`, `⠇`, `⠏`]
+}
+
+class Spinner {
+    let message
+    let style_name
+    let frames
+    let frame_idx
+    let color_name
+
+    function init(message, style_name) {
+        self.message -> message
+        when self.message == Nothing { self.message -> `` }
+        self.style_name -> style_name
+        when self.style_name == Nothing { self.style_name -> `dots` }
+        self.frames -> get_spinner_frames(self.style_name)
+        self.frame_idx -> 0
+        self.color_name -> `bright_cyan`
+    }
+
+    function set_color(color_name) {
+        self.color_name -> color_name
+    }
+
+    function set_message(message) {
+        self.message -> message
+    }
+
+    function next_frame() {
+        let frame -> self.frames[self.frame_idx]
+        self.frame_idx -> (self.frame_idx + 1) % self.frames.length
+        <- frame
+    }
+
+    function tick() {
+        let frame -> self.next_frame()
+        io.write(`\r\033[K`)
+        when self.color_name != `` {
+            term.color(self.color_name, ``)
+        }
+        io.write(frame + ` `)
+        term.reset()
+        io.write(self.message)
+        term.flush()
+    }
+
+    function success(done_msg) {
+        io.write(`\r\033[K`)
+        term.color(`bright_green`, ``)
+        io.write(`✔ `)
+        term.reset()
+        when done_msg != Nothing and done_msg != `` {
+            io.writeln(done_msg)
+        } or {
+            io.writeln(self.message)
+        }
+    }
+
+    function error(err_msg) {
+        io.write(`\r\033[K`)
+        term.color(`bright_red`, ``)
+        io.write(`✖ `)
+        term.reset()
+        when err_msg != Nothing and err_msg != `` {
+            io.writeln(err_msg)
+        } or {
+            io.writeln(self.message)
+        }
+    }
+
+    function info(info_msg) {
+        io.write(`\r\033[K`)
+        term.color(`bright_blue`, ``)
+        io.write(`ℹ `)
+        term.reset()
+        when info_msg != Nothing and info_msg != `` {
+            io.writeln(info_msg)
+        } or {
+            io.writeln(self.message)
+        }
+    }
+
+    function stop() {
+        io.write(`\r\033[K`)
+        term.flush()
+    }
+}
+
+function create(message, style_name) {
+    <- Spinner(message, style_name)
+}

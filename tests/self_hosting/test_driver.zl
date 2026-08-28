@@ -1,0 +1,217 @@
+/!
+ Stage 6: Driver pipeline dual-path smoke.
+ !/
+
+import compiler.Driver as Driver
+import zen.test as test
+import zen.text.string as Str
+
+function test_compile_string_ok() {
+    let src -> `
+function add(a, b) {
+    <- a + b
+}
+function main() {
+    <- add(1, 2)
+}
+`
+    let r -> Driver.compile_string(src, false)
+    let pass -> test.assert_equal(r[`ok`], true, `compile ok`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `zen_main`), true, `has zen_main`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `ZenValue_add`), true, `has add`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `bootstrap_runtime.h`), true, `runtime inc`)
+    <- pass
+}
+
+function test_compile_string_check_ok() {
+    let src -> `
+function main() {
+    let x -> 1
+    <- x
+}
+`
+    let r -> Driver.compile_string(src, true)
+    let pass -> test.assert_equal(r[`ok`], true, `check+compile ok`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `z_x`), true, `let x`)
+    <- pass
+}
+
+function test_check_undefined() {
+    let src -> `
+function main() {
+    <- missing
+}
+`
+    let r -> Driver.check_string(src)
+    let pass -> test.assert_equal(r[`ok`], false, `check fails`)
+    let n -> r[`errors`].length
+    pass -> pass and test.assert_equal(n > 0, true, `has errors`)
+    let joined -> ``
+    // length before for
+    let en -> r[`errors`].length
+    let i -> 0
+    do while i < en {
+        joined -> joined + Str.to_string(r[`errors`][i])
+        i -> i + 1
+    }
+    pass -> pass and test.assert_equal(Str.contains(joined, `Undefined`), true, `undefined msg`)
+    <- pass
+}
+
+function test_run_args_help() {
+    let args -> [`help`]
+    let r -> Driver.run_args(args)
+    let pass -> test.assert_equal(r[`code`], 0, `help exit 0`)
+    pass -> pass and test.assert_equal(Str.contains(r[`message`], `Usage`), true, `usage text`)
+    <- pass
+}
+
+function test_run_args_compile_string_via_pipeline() {
+    // exercise compile_string path is the core; CLI file path tested when file exists
+    let src -> `
+function main() {
+    <- 42
+}
+`
+    let r -> Driver.compile_string(src, false)
+    let pass -> test.assert_equal(r[`ok`], true, `ok`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `ZenValue_make_integer(42`), true, `lit 42`)
+    <- pass
+}
+
+function test_check_ok_program() {
+    let src -> `
+function f(x) {
+    when x == 1 {
+        <- 1
+    } or {
+        <- 0
+    }
+}
+function main() {
+    <- f(1)
+}
+`
+    let r -> Driver.check_string(src)
+    let pass -> test.assert_equal(r[`ok`], true, `check ok`)
+    <- pass
+}
+
+function test_compile_multi_file() {
+    let entry -> `tests/self_hosting/fixtures/multi_main.zl`
+    let r -> Driver.compile_file(entry, ``, false)
+    let pass -> test.assert_equal(r[`ok`], true, `multi compile ok`)
+    let c -> r[`c_code`]
+    pass -> pass and test.assert_equal(Str.contains(c, `z_multi_lib_val`), true, `lib fn in C`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_multi_lib_add`), true, `lib add in C`)
+    pass -> pass and test.assert_equal(Str.contains(c, `zen_main`), true, `entry main`)
+    // both functions should appear before host main
+    pass -> pass and test.assert_equal(Str.contains(c, `multi_lib_val`), true, `call site or def`)
+    <- pass
+}
+
+function test_compile_stage5_for_sum_file() {
+    let entry -> `tests/self_hosting/fixtures/stage5_for_sum.zl`
+    let r -> Driver.compile_file(entry, ``, false)
+    let pass -> test.assert_equal(r[`ok`], true, `for_sum ok`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `ZenList_make_from_arguments`), true, `list`)
+    pass -> pass and test.assert_equal(Str.contains(r[`c_code`], `ZenList_get_value_at_index`), true, `for-in`)
+    <- pass
+}
+
+function test_compile_class_counter() {
+    let entry -> `tests/self_hosting/fixtures/class_counter.zl`
+    let r -> Driver.compile_file(entry, ``, false)
+    let pass -> test.assert_equal(r[`ok`], true, `class compile ok`)
+    let c -> Str.to_string(r[`c_code`])
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_new`), true, `ctor`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Counter_inc`), true, `inc`)
+    pass -> pass and test.assert_equal(Str.contains(c, `zen_main`), true, `main`)
+    <- pass
+}
+
+function test_compile_with_region() {
+    let r -> Driver.compile_file(`tests/self_hosting/fixtures/with_region.zl`, ``, false)
+    let pass -> test.assert_equal(r[`ok`], true, `with compile`)
+    let c -> Str.to_string(r[`c_code`])
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenMemory_push_arena`), true, `push`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_region`), true, `alias`)
+    <- pass
+}
+
+function test_compile_enum_closure() {
+    let e1 -> Driver.compile_file(`tests/self_hosting/fixtures/enum_color.zl`, ``, false)
+    let pass -> test.assert_equal(e1[`ok`], true, `enum compile`)
+    pass -> pass and test.assert_equal(Str.contains(e1[`c_code`], `z_Color_Red`), true, `Color_Red`)
+    let e2 -> Driver.compile_file(`tests/self_hosting/fixtures/closure_add.zl`, ``, false)
+    pass -> pass and test.assert_equal(e2[`ok`], true, `closure compile`)
+    pass -> pass and test.assert_equal(Str.contains(e2[`c_code`], `ZenValue_from_closure`), true, `from_closure`)
+    <- pass
+}
+
+function test_compile_class_inherit() {
+    let entry -> `tests/self_hosting/fixtures/class_inherit.zl`
+    let r -> Driver.compile_file(entry, ``, false)
+    let pass -> test.assert_equal(r[`ok`], true, `inherit compile ok`)
+    let c -> Str.to_string(r[`c_code`])
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Dog_new`), true, `Dog_new`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Animal_init`), true, `Animal_init`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Dog_speak`), true, `override`)
+    pass -> pass and test.assert_equal(Str.contains(c, `z_Animal_speak`), true, `base`)
+    <- pass
+}
+
+function test_compile_multi_unit() {
+    let entry -> `tests/self_hosting/fixtures/multi_main.zl`
+    let outdir -> `output/test_multi_unit`
+    let r -> Driver.compile_file_multi(entry, outdir, false)
+    let pass -> test.assert_equal(r[`ok`], true, `multi-unit ok`)
+    let files -> r[`c_files`]
+    pass -> pass and test.assert_equal(files != Nothing, true, `has c_files`)
+    when files != Nothing {
+        pass -> pass and test.assert_equal(files.length >= 3, true, `>=3 units (lib+main+host)`)
+    }
+    let inits -> r[`init_names`]
+    when inits != Nothing {
+        pass -> pass and test.assert_equal(inits.length >= 2, true, `>=2 inits`)
+        let i0 -> Str.to_string(inits[0])
+        pass -> pass and test.assert_equal(Str.starts_with(i0, `zen_mod_init_`), true, `init name prefix`)
+    }
+    // Host main content is returned in c_code for convenience
+    let host -> Str.to_string(r[`c_code`])
+    pass -> pass and test.assert_equal(Str.contains(host, `zen_main`), true, `host refs zen_main`)
+    pass -> pass and test.assert_equal(Str.contains(host, `zen_mod_init_`), true, `host calls unit init`)
+    // CLI --multi path
+    let args -> [`compile`, entry, outdir, `--multi`]
+    let cli -> Driver.run_args(args)
+    pass -> pass and test.assert_equal(cli[`code`], 0, `CLI --multi exit 0`)
+    pass -> pass and test.assert_equal(Str.contains(cli[`message`], `multi-unit`), true, `CLI multi msg`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Driver.compile_string`, `fn` -> test_compile_string_ok},
+        {`name` -> `Driver.compile_with_check`, `fn` -> test_compile_string_check_ok},
+        {`name` -> `Driver.check_undefined`, `fn` -> test_check_undefined},
+        {`name` -> `Driver.help`, `fn` -> test_run_args_help},
+        {`name` -> `Driver.compile_lit`, `fn` -> test_run_args_compile_string_via_pipeline},
+        {`name` -> `Driver.check_ok`, `fn` -> test_check_ok_program},
+        {`name` -> `Driver.multi_file`, `fn` -> test_compile_multi_file},
+        {`name` -> `Driver.stage5_for_sum`, `fn` -> test_compile_stage5_for_sum_file},
+        {`name` -> `Driver.class_counter`, `fn` -> test_compile_class_counter},
+        {`name` -> `Driver.class_inherit`, `fn` -> test_compile_class_inherit},
+        {`name` -> `Driver.enum_closure`, `fn` -> test_compile_enum_closure},
+        {`name` -> `Driver.with_region`, `fn` -> test_compile_with_region},
+        {`name` -> `Driver.multi_unit`, `fn` -> test_compile_multi_unit}
+    ]
+    <- test.run_suite(`Selfhost Stage6 Driver`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

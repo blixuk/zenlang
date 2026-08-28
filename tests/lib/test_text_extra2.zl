@@ -1,0 +1,74 @@
+import zen.test as test
+import zen.text.fuzzy as fuzzy
+import zen.text.inflect as inflect
+
+function test_fuzzy_matching() {
+    let d1 -> fuzzy.levenshtein(`kitten`, `sitting`)
+    let pass -> test.assert_equal(d1, 3, `levenshtein kitten vs sitting is 3`)
+
+    let d2 -> fuzzy.levenshtein(`zen`, `zen`)
+    pass -> pass and test.assert_equal(d2, 0, `levenshtein identical is 0`)
+
+    let m1 -> fuzzy.match(`zn`, `zenlang`)
+    pass -> pass and test.assert_true(m1, `fuzzy match zn in zenlang`)
+
+    let m2 -> fuzzy.match(`xyz`, `zenlang`)
+    pass -> pass and test.assert_false(m2, `fuzzy match xyz in zenlang`)
+
+    let s1 -> fuzzy.score(`zen`, `zenlang`)
+    pass -> pass and test.assert_true(s1 > 0.5, `fuzzy score prefix bonus`)
+
+    let candidates -> [`zen_compiler`, `python_bootstrap`, `zen_runtime`, `c_backend`]
+    let matches -> fuzzy.filter(`zen`, candidates, 2)
+    pass -> pass and test.assert_equal(matches.length, 2, `fuzzy filter limit 2`)
+    pass -> pass and test.assert_equal(matches[0], `zen_runtime`, `fuzzy filter top match`)
+    pass -> pass and test.assert_equal(matches[1], `zen_compiler`, `fuzzy filter 2nd match`)
+
+    <- pass
+}
+
+function test_inflect_transforms() {
+    let c -> inflect.camel_case(`user_first_name`)
+    let pass -> test.assert_equal(c, `userFirstName`, `camel_case`)
+
+    let p -> inflect.pascal_case(`user_first_name`)
+    pass -> pass and test.assert_equal(p, `UserFirstName`, `pascal_case`)
+
+    let s -> inflect.snake_case(`userFirstName`)
+    pass -> pass and test.assert_equal(s, `user_first_name`, `snake_case`)
+
+    let k -> inflect.kebab_case(`userFirstName`)
+    pass -> pass and test.assert_equal(k, `user-first-name`, `kebab_case`)
+
+    let t -> inflect.title_case(`hello world app`)
+    pass -> pass and test.assert_equal(t, `Hello World App`, `title_case`)
+
+    let slug -> inflect.slugify(`Zenlang: Fast & Simple 2026!`)
+    pass -> pass and test.assert_equal(slug, `zenlang-fast-simple-2026`, `slugify`)
+
+    let pl1 -> inflect.pluralize(`item`, 2)
+    pass -> pass and test.assert_equal(pl1, `items`, `pluralize items`)
+
+    let pl2 -> inflect.pluralize(`box`, 3)
+    pass -> pass and test.assert_equal(pl2, `boxes`, `pluralize boxes`)
+
+    let pl3 -> inflect.pluralize(`city`, 4)
+    pass -> pass and test.assert_equal(pl3, `cities`, `pluralize cities`)
+
+    let pl4 -> inflect.pluralize(`item`, 1)
+    pass -> pass and test.assert_equal(pl4, `item`, `pluralize count 1`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Text.Fuzzy`, `fn` -> test_fuzzy_matching },
+        { `name` -> `Text.Inflect`, `fn` -> test_inflect_transforms }
+    ]
+    <- test.run_suite(`Text Extra 2 Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

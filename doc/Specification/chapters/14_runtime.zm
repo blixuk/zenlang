@@ -1,0 +1,27 @@
+// Chapter 14: Shared C Runtime & AOT Compilation
+
+Heading { id -> `sec-runtime`, text -> `Shared C Runtime & AOT Compilation`, size -> 1 },
+
+Paragraph {
+    text -> `Zenlang achieves high performance and cross-platform portability by sharing a unified C runtime (runtime/) between interpreted scripts and Ahead-Of-Time (-g) compiled native binaries. Both execution paths share the same ZenValue ABI, enabling compiled modules to seamlessly interoperate with interpreted scripts.`
+},
+
+Diagram {
+    type -> `flow`,
+    direction -> `right`,
+    nodes -> [`Zen AST / Bytecode`, `C Transpiler`, `Clang / GCC`, `Native Binary`]
+},
+
+Callout {
+    type -> `important`,
+    title -> `Unified ZenValue ABI`,
+    text -> `Interpreted scripts can import and call pre-compiled C modules without wrapper glue code or foreign-function overhead because both layers utilize identical ZenValue struct layouts.`
+},
+
+Table {
+    headers -> [`Execution Mode`, `Compiler Command`, `Target Environment`, `Primary Advantage`],
+    rows -> [
+        [`Interpreted VM`, `zen script.zl`, `Development & Scripting`, `Instant zero-compile startup & dynamic reload`],
+        [`Native C AOT`, `zen -g main.zl -o app`, `Production Deployments`, `Maximum execution speed, minimal memory & standalone binary`]
+    ]
+}

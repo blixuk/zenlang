@@ -1,0 +1,56 @@
+import zen.test as test
+import zen.text.string as str
+
+function test_length() {
+    <- test.assert_equal(str.length(`hello`), 5, `length of 'hello' should be 5`)
+}
+
+function test_trim() {
+    <- test.assert_equal(str.trim(`  zen  `), `zen`, `trim should remove whitespace`)
+}
+
+function test_split_join() {
+    let parts -> str.split(`a,b,c`, `,`)
+    let pass -> test.assert_equal(parts.length, 3, `split result length should be 3`)
+    pass -> pass and test.assert_equal(parts[0], `a`, `first part should be 'a'`)
+    pass -> pass and test.assert_equal(str.join(parts, `-`), `a-b-c`, `join should combine with separator`)
+    <- pass
+}
+
+function test_case() {
+    let pass -> test.assert_equal(str.to_upper(`zen`), `ZEN`, `to_upper('zen') should be 'ZEN'`)
+    pass -> pass and test.assert_equal(str.to_lower(`ZEN`), `zen`, `to_lower('ZEN') should be 'zen'`)
+    <- pass
+}
+
+function test_substring() {
+    <- test.assert_equal(str.substring(`zenlang`, 0, 3), `zen`, `substring(0, 3) of 'zenlang' should be 'zen'`)
+}
+
+function test_search() {
+    let pass -> test.assert_true(str.starts_with(`zenlang`, `zen`), `'zenlang' starts with 'zen'`)
+    pass -> pass and test.assert_true(str.ends_with(`zenlang`, `lang`), `'zenlang' ends with 'lang'`)
+    pass -> pass and test.assert_equal(str.index_of(`zenlang`, `lang`), 3, `index of 'lang' in 'zenlang' is 3`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `String.length`, `fn` -> test_length},
+        {`name` -> `String.trim`, `fn` -> test_trim},
+        {`name` -> `String.split_join`, `fn` -> test_split_join},
+        {`name` -> `String.case`, `fn` -> test_case},
+        {`name` -> `String.substring`, `fn` -> test_substring},
+        {`name` -> `String.search`, `fn` -> test_search}
+    ]
+
+    <- test.run_suite(`String Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

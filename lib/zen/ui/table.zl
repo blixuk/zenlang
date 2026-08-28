@@ -1,0 +1,280 @@
+/!
+    Terminal Data Table Formatter.
+    Provides declarative tabular rendering with customizable borders,
+    automatic column sizing, and text alignment.
+!/
+
+use zen.text.string as Str
+use zen.math.math as Math
+use zen.io.io as io
+
+function s_len(s) {
+    when s == Nothing { <- 0 }
+    <- Str.length(Str.to_string(s))
+}
+
+function s_spaces(count) {
+    when count <= 0 { <- `` }
+    <- Str.repeat(` `, count)
+}
+
+function map_get(m, key, default_val) {
+    when m == Nothing { <- default_val }
+    let ks -> m.keys()
+    let i -> 0
+    do while i < ks.length {
+        when ks[i] == key {
+            <- m[key]
+        }
+        i -> 0 + i + 1
+    }
+    <- default_val
+}
+
+function get_border_style(style_name) {
+    when style_name == `rounded` {
+        <- {
+            `top_left` -> `╭`, `top_mid` -> `┬`, `top_right` -> `╮`,
+            `mid_left` -> `├`, `mid_mid` -> `┼`, `mid_right` -> `┤`,
+            `bot_left` -> `╰`, `bot_mid` -> `┴`, `bot_right` -> `╯`,
+            `h` -> `─`, `v` -> `│`
+        }
+    }
+    when style_name == `ascii` {
+        <- {
+            `top_left` -> `+`, `top_mid` -> `+`, `top_right` -> `+`,
+            `mid_left` -> `+`, `mid_mid` -> `+`, `mid_right` -> `+`,
+            `bot_left` -> `+`, `bot_mid` -> `+`, `bot_right` -> `+`,
+            `h` -> `-`, `v` -> `|`
+        }
+    }
+    when style_name == `markdown` {
+        <- {
+            `top_left` -> `|`, `top_mid` -> `|`, `top_right` -> `|`,
+            `mid_left` -> `|`, `mid_mid` -> `|`, `mid_right` -> `|`,
+            `bot_left` -> `|`, `bot_mid` -> `|`, `bot_right` -> `|`,
+            `h` -> `-`, `v` -> `|`
+        }
+    }
+    when style_name == `minimal` {
+        <- {
+            `top_left` -> ` `, `top_mid` -> ` `, `top_right` -> ` `,
+            `mid_left` -> ` `, `mid_mid` -> ` `, `mid_right` -> ` `,
+            `bot_left` -> ` `, `bot_mid` -> ` `, `bot_right` -> ` `,
+            `h` -> `─`, `v` -> ` `
+        }
+    }
+    // Default: Unicode grid
+    <- {
+        `top_left` -> `┌`, `top_mid` -> `┬`, `top_right` -> `┐`,
+        `mid_left` -> `├`, `mid_mid` -> `┼`, `mid_right` -> `┤`,
+        `bot_left` -> `└`, `bot_mid` -> `┴`, `bot_right` -> `┘`,
+        `h` -> `─`, `v` -> `│`
+    }
+}
+
+function align_cell(text, target_len, align_mode) {
+    let str_val -> Str.to_string(text)
+    let cur_len -> s_len(str_val)
+    when cur_len >= target_len { <- str_val }
+    let pad -> target_len - cur_len
+    
+    when align_mode == `right` {
+        <- s_spaces(pad) + str_val
+    } or when align_mode == `center` {
+        let left_pad -> pad / 2
+        let right_pad -> pad - left_pad
+        <- s_spaces(left_pad) + str_val + s_spaces(right_pad)
+    }
+    // Default: left align
+    <- str_val + s_spaces(pad)
+}
+
+function format_table(headers, rows, options) {
+    when (headers == Nothing or headers.length == 0) and (rows == Nothing or rows.length == 0) {
+        <- ``
+    }
+    
+    let style_name -> map_get(options, `style`, `unicode`)
+    let padding -> map_get(options, `padding`, 1)
+    let custom_align -> map_get(options, `align`, [])
+    
+    let b -> get_border_style(style_name)
+    let is_markdown -> (style_name == `markdown`)
+    let is_minimal -> (style_name == `minimal`)
+    
+    // Determine column count
+    let num_cols -> 0
+    when headers != Nothing { num_cols -> headers.length }
+    when rows != Nothing and rows.length > 0 {
+        let r0 -> rows[0]
+        when r0 != Nothing and r0.length > num_cols { num_cols -> r0.length }
+    }
+    when num_cols == 0 { <- `` }
+    
+    // Calculate column widths
+    let col_widths -> []
+    let c -> 0
+    do while c < num_cols {
+        let max_w -> 0
+        when headers != Nothing and c < headers.length {
+            max_w -> Math.max(max_w, s_len(headers[c]))
+        }
+        when rows != Nothing {
+            let r -> 0
+            do while r < rows.length {
+                let row -> rows[r]
+                when row != Nothing and c < row.length {
+                    max_w -> Math.max(max_w, s_len(row[c]))
+                }
+                r -> 0 + r + 1
+            }
+        }
+        col_widths.append(max_w)
+        c -> 0 + c + 1
+    }
+    
+    let lines -> []
+    let pad_str -> s_spaces(padding)
+    
+    // Top border (omitted in markdown and minimal)
+    when not is_markdown and not is_minimal {
+        let top_line -> b[`top_left`]
+        c -> 0
+        do while c < num_cols {
+            let cell_w -> col_widths[c] + (padding * 2)
+            top_line -> top_line + Str.repeat(b[`h`], cell_w)
+            when c + 1 < num_cols {
+                top_line -> top_line + b[`top_mid`]
+            } or {
+                top_line -> top_line + b[`top_right`]
+            }
+            c -> 0 + c + 1
+        }
+        lines.append(top_line)
+    }
+    
+    // Header row
+    when headers != Nothing and headers.length > 0 {
+        let header_line -> b[`v`]
+        c -> 0
+        do while c < num_cols {
+            let h_text -> ``
+            when c < headers.length { h_text -> headers[c] }
+            let cell_w -> col_widths[c]
+            let aligned -> align_cell(h_text, cell_w, `left`)
+            header_line -> header_line + pad_str + aligned + pad_str + b[`v`]
+            c -> 0 + c + 1
+        }
+        lines.append(header_line)
+        
+        // Header separator
+        let sep_line -> ``
+        when is_markdown {
+            sep_line -> `|`
+            c -> 0
+            do while c < num_cols {
+                let cell_w -> col_widths[c] + (padding * 2)
+                let align_mode -> `left`
+                when c < custom_align.length { align_mode -> custom_align[c] }
+                
+                when align_mode == `right` {
+                    sep_line -> sep_line + Str.repeat(`-`, cell_w - 1) + `:` + `|`
+                } or when align_mode == `center` {
+                    sep_line -> sep_line + `:` + Str.repeat(`-`, cell_w - 2) + `:` + `|`
+                } or {
+                    sep_line -> sep_line + Str.repeat(`-`, cell_w) + `|`
+                }
+                c -> 0 + c + 1
+            }
+        } or {
+            sep_line -> b[`mid_left`]
+            c -> 0
+            do while c < num_cols {
+                let cell_w -> col_widths[c] + (padding * 2)
+                sep_line -> sep_line + Str.repeat(b[`h`], cell_w)
+                when c + 1 < num_cols {
+                    sep_line -> sep_line + b[`mid_mid`]
+                } or {
+                    sep_line -> sep_line + b[`mid_right`]
+                }
+                c -> 0 + c + 1
+            }
+        }
+        lines.append(sep_line)
+    }
+    
+    // Data rows
+    when rows != Nothing {
+        let r -> 0
+        do while r < rows.length {
+            let row -> rows[r]
+            let row_line -> b[`v`]
+            c -> 0
+            do while c < num_cols {
+                let val_str -> ``
+                when row != Nothing and c < row.length { val_str -> Str.to_string(row[c]) }
+                let cell_w -> col_widths[c]
+                let align_mode -> `left`
+                when c < custom_align.length { align_mode -> custom_align[c] }
+                let aligned -> align_cell(val_str, cell_w, align_mode)
+                row_line -> row_line + pad_str + aligned + pad_str + b[`v`]
+                c -> 0 + c + 1
+            }
+            lines.append(row_line)
+            r -> 0 + r + 1
+        }
+    }
+    
+    // Bottom border (omitted in markdown and minimal)
+    when not is_markdown and not is_minimal {
+        let bot_line -> b[`bot_left`]
+        c -> 0
+        do while c < num_cols {
+            let cell_w -> col_widths[c] + (padding * 2)
+            bot_line -> bot_line + Str.repeat(b[`h`], cell_w)
+            when c + 1 < num_cols {
+                bot_line -> bot_line + b[`bot_mid`]
+            } or {
+                bot_line -> bot_line + b[`bot_right`]
+            }
+            c -> 0 + c + 1
+        }
+        lines.append(bot_line)
+    }
+    
+    <- Str.join(lines, `\n`)
+}
+
+class Table {
+    let headers
+    let rows
+    let options
+
+    function init(headers, options) {
+        self.headers -> headers
+        self.rows -> []
+        self.options -> options
+        when self.options == Nothing { self.options -> {} }
+    }
+
+    function add_row(row) {
+        self.rows.append(row)
+    }
+
+    function add_rows(rows_list) {
+        let i -> 0
+        do while i < rows_list.length {
+            self.rows.append(rows_list[i])
+            i -> 0 + i + 1
+        }
+    }
+
+    function render() {
+        <- format_table(self.headers, self.rows, self.options)
+    }
+
+    function print() {
+        io.writeln(self.render())
+    }
+}

@@ -1,0 +1,82 @@
+import zen.io.file as f
+import zen.io.io as io
+import zen.text.string as Str
+import zen.zenmark as zm
+
+function _create_specimen(theme_name, theme_title) {
+    let entry -> zm.Entry({
+        `title` -> theme_title + ` Specimen`,
+        `author` -> `Zenlang Typography Engine`,
+        `date` -> `2026-08-24`,
+        `version` -> `1.0.0`,
+        `archetype` -> `specification`,
+        `theme` -> theme_name
+    })
+    
+    let doc -> zm.Document([
+        zm.Heading({ `text` -> `Visual Typography & Palette Specimen`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `This specimen showcases the color harmony, typography contrast, syntax token palettes, callouts, and vector diagrams for the **` + theme_name + `** theme.`
+        }),
+        zm.Callout({
+            `type` -> `note`,
+            `title` -> `Theme Palette Guarantee`,
+            `text` -> `All color tokens are calibrated for high contrast, WCAG AAA readability, and consistent cross-medium rendering across PDF and HTML.`
+        }),
+        zm.Heading({ `text` -> `Executable Syntax & Vector Flow`, `size` -> 2 }),
+        zm.Diagram({
+            `type` -> `flow`,
+            `direction` -> `right`,
+            `nodes` -> [`Source (.zl)`, `AST Parser`, `C Transpiler`, `Native ELF`]
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// Directional data flow in Zenlang\nfunction calculate_pipeline(input) {\n    let status -> Nothing\n    when input == Default <- 0\n    \n    let result -> input * 42\n    <- result\n}`
+        }),
+        zm.Table({
+            `headers` -> [`Token Type`, `Role`, `Color Token`],
+            `rows` -> [
+                [`Keyword`, `Control Flow & Declarations`, `Primary Accent`],
+                [`Flow Arrow (->)`, `Visual Assignment / Return`, `Warm Amber / Gold`],
+                [`Sentinel`, `Nothing & Default`, `Ruby / Coral`],
+                [`String`, `Text & Backtick Literals`, `Emerald / Olive`]
+            ]
+        })
+    ], entry)
+    
+    <- doc
+}
+
+function main() {
+    io.writeln(`[THEMES] Generating specimen PDFs for all 6 themes...`)
+    
+    let themes_list -> [
+        [`antiquarian`, `Antiquarian (Pine & Copper)`],
+        [`modernist_dark`, `Modernist Dark (Cyan & Slate)`],
+        [`clean_light`, `Clean Light (Indigo & Obsidian)`],
+        [`retro_terminal`, `Retro Terminal (Phosphor & Amber)`],
+        [`nord`, `Nord (Arctic Frost & Aurora)`],
+        [`monokai`, `Monokai (Vibrant Pink & Gold)`]
+    ]
+    
+    let i -> 0
+    do while i < themes_list.length {
+        let t_info -> themes_list[i]
+        let t_name -> t_info[0]
+        let t_title -> t_info[1]
+        
+        let doc -> _create_specimen(t_name, t_title)
+        let pdf_path -> `output/themes/theme_` + t_name + `.pdf`
+        let html_path -> `output/themes/theme_` + t_name + `.html`
+        
+        zm.render_pdf(doc, pdf_path)
+        let html_out -> zm.render_html(doc)
+        f.write(html_path, html_out)
+        
+        io.writeln(`[THEMES] Generated ` + t_name + ` -> ` + pdf_path)
+        i -> i + 1
+    }
+    
+    io.writeln(`[THEMES] All 6 theme specimens compiled successfully!`)
+    <- 0
+}

@@ -1,0 +1,68 @@
+import zen.ui.term as term
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.ui.widgets as widgets
+import zen.ui.layout as layout
+
+function main() {
+    term.alt_screen(function() {
+        let size -> term.size()
+        let c -> canvas.create(size.width, size.height)
+        
+        let root -> layout.VBox()
+        root.expand -> true
+        
+        let header -> widgets.Label(0, 0, ` === Zenlang Layout Demo === `)
+        header.bg -> `blue`
+        header.fg -> `white`
+        // Header height is 1, doesn't expand
+        root.add(header)
+        
+        let main_area -> layout.HBox()
+        main_area.expand -> true
+        
+        let sidebar -> layout.VBox()
+        // fixed width sidebar (15 chars)
+        sidebar.rect.width -> 15
+        sidebar.rect.height -> 0 // will be expanded by HBox
+        let btn1 -> widgets.Button(0,0, `Menu 1`)
+        let btn2 -> widgets.Button(0,0, `Menu 2`)
+        sidebar.add(btn1)
+        sidebar.add(btn2)
+        
+        let content -> widgets.Panel(geom.UIRect(0,0,0,0))
+        content.expand -> true
+        content.bg -> `bright_black`
+        let inner_label -> widgets.Label(0,0, `Welcome to the responsive UI!`)
+        inner_label.bg -> `bright_black`
+        content.add(inner_label)
+        
+        main_area.add(sidebar)
+        main_area.add(content)
+        
+        root.add(main_area)
+        
+        let footer -> widgets.Label(0, 0, ` Press 'q' to quit `)
+        footer.bg -> `green`
+        footer.fg -> `black`
+        root.add(footer)
+        
+        // Compute layout based on full terminal size
+        root.layout(geom.UIRect(0, 0, size.width, size.height))
+        
+        term.with_raw(function() {
+            let running -> true
+            do while running {
+                canvas.clear(c, ` `, `white`, `black`)
+                root.draw(c)
+                canvas.render(c)
+                
+                let key -> term.read_key()
+                when key.kind == `char` and key.ch == `q` {
+                    running -> false
+                }
+                // Handle resize event if terminal emits it (usually resize doesn't emit key, but we can poll)
+            }
+        })
+    })
+}

@@ -1,0 +1,83 @@
+import zen.test as test
+import zen.crypto.hash as hash
+import zen.crypto.hmac as hmac
+import zen.crypto.jwt as jwt
+import zen.time.cron as cron
+
+function test_sha256_hash() {
+    let h1 -> hash.sha256(`abc`)
+    let pass -> test.assert_equal(h1, `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`, `sha256 of abc`)
+
+    let h_empty -> hash.sha256(``)
+    pass -> pass and test.assert_equal(h_empty, `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, `sha256 of empty string`)
+
+    <- pass
+}
+
+function test_hmac_sha256() {
+    let mac -> hmac.sha256(`Jefe`, `what do ya want for nothing?`)
+    let pass -> test.assert_equal(mac, `5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843`, `hmac-sha256 RFC 4231 test case 2`)
+
+    let valid -> hmac.verify(mac, mac)
+    pass -> pass and test.assert_true(valid, `hmac verify match`)
+
+    let invalid -> hmac.verify(mac, `0000000000000000000000000000000000000000000000000000000000000000`)
+    pass -> pass and test.assert_false(invalid, `hmac verify mismatch`)
+
+    <- pass
+}
+
+function test_jwt() {
+    let secret -> `super-secret-key-1234`
+    let claims -> { `sub` -> `user_42`, `role` -> `admin` }
+
+    let token -> jwt.sign(claims, secret)
+    let pass -> test.assert_true(token != Nothing, `jwt sign produces token`)
+
+    let decoded -> jwt.decode(token)
+    pass -> pass and test.assert_equal(decoded[`payload`][`sub`], `user_42`, `jwt decode sub claim`)
+    pass -> pass and test.assert_equal(decoded[`payload`][`role`], `admin`, `jwt decode role claim`)
+
+    let verified -> jwt.verify(token, secret)
+    pass -> pass and test.assert_true(verified[`valid`], `jwt valid signature`)
+    pass -> pass and test.assert_equal(verified[`payload`][`sub`], `user_42`, `jwt verified payload claim`)
+
+    let bad_verify -> jwt.verify(token, `wrong-secret`)
+    pass -> pass and test.assert_false(bad_verify[`valid`], `jwt wrong secret fails`)
+
+    <- pass
+}
+
+function test_cron() {
+    let expr -> `*/15 9-17 1,15 * 1-5`
+    let parsed -> cron.parse(expr)
+    let pass -> test.assert_true(parsed != Nothing, `cron parsed expression`)
+
+    let m1 -> cron.matches(expr, 30, 9, 15, 6, 1)
+    pass -> pass and test.assert_true(m1, `cron matches schedule`)
+
+    let m2 -> cron.matches(expr, 31, 9, 15, 6, 1)
+    pass -> pass and test.assert_false(m2, `cron non-matching minute`)
+
+    let m3 -> cron.matches(expr, 0, 20, 15, 6, 1)
+    pass -> pass and test.assert_false(m3, `cron non-matching hour`)
+
+    let m4 -> cron.matches(expr, 0, 10, 15, 6, 0)
+    pass -> pass and test.assert_false(m4, `cron non-matching weekday`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Crypto.SHA256`, `fn` -> test_sha256_hash },
+        { `name` -> `Crypto.HMAC`, `fn` -> test_hmac_sha256 },
+        { `name` -> `Crypto.JWT`, `fn` -> test_jwt },
+        { `name` -> `Time.Cron`, `fn` -> test_cron }
+    ]
+    <- test.run_suite(`Crypto, JWT & Cron Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

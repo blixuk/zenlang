@@ -1,0 +1,17 @@
+/!
+ Phase A1: entry that imports a sibling module by alias.
+ Selfhost interpret_file binds Lib to that module's exports.
+ Exit 0 iff Lib.add(Lib.lib_val(), 4) == 7 and Lib.LIB_N == 3.
+ !/
+
+import fixtures.interp_lib as Lib
+
+function main() {
+    let s -> Lib.add(Lib.lib_val(), 4)
+    when s == 7 {
+        when Lib.LIB_N == 3 {
+            <- 0
+        }
+    }
+    <- 1
+}

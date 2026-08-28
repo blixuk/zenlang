@@ -1,0 +1,75 @@
+/!
+  zen.net.http dual-path (offline-safe).
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_http.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_http.zl
+!/
+
+use zen.net.http as http
+use zen.io.file as file
+use zen.sys.process as process
+use zen.test as test
+use zen.text.string as Str
+
+let fixture -> `tests/lib/.tmp_http_body.txt`
+
+function cleanup() {
+    when file.exists(fixture) {
+        file.remove(fixture)
+    }
+}
+
+function test_helpers_and_file_url() {
+    cleanup()
+    file.write(fixture, `hello_http_body`)
+
+    // Absolute file:// URL for curl (native) and urllib (interpret)
+    let cwd -> Str.trim(process.shell(`pwd`))
+    let url -> `file://` + cwd + `/` + fixture
+
+    let r -> http.get(url)
+    let pass -> test.assert_true(http.ok(r), `file url ok status`)
+    pass -> pass and test.assert_equal(http.status(r), 200, `status 200`)
+    pass -> pass and test.assert_equal(http.body(r), `hello_http_body`, `body matches`)
+
+    // Helper map access
+    pass -> pass and test.assert_equal(r[`status`], 200, `map status`)
+    cleanup()
+    <- pass
+}
+
+function test_connection_error_shape() {
+    // Closed port — offline transport error, stable map shape
+    let r -> http.get(`http://127.0.0.1:1/`)
+    let pass -> test.assert_true(r[`status`] != Nothing, `has status`)
+    pass -> pass and test.assert_true(r[`body`] != Nothing, `has body`)
+    // status is -1 or connection error code, not 200
+    pass -> pass and test.assert_true(http.ok(r) == false, `not ok`)
+    pass -> pass and test.assert_true(http.status(r) != 200, `not 200`)
+    <- pass
+}
+
+function test_request_post_shape() {
+    // POST against closed port still returns structured map (no hang with short timeout)
+    let r -> http.post(`http://127.0.0.1:1/`, `payload`, {`Content-Type` -> `text/plain`})
+    let pass -> test.assert_true(r[`status`] != Nothing, `post has status`)
+    pass -> pass and test.assert_false(http.ok(r), `post not ok`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Http.file_url`, `fn` -> test_helpers_and_file_url},
+        {`name` -> `Http.error_shape`, `fn` -> test_connection_error_shape},
+        {`name` -> `Http.post_shape`, `fn` -> test_request_post_shape}
+    ]
+    <- test.run_suite(`HTTP Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

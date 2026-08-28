@@ -1,0 +1,11 @@
+/!
+ Multi-file Stage 5.x helper — merged into C unit before entry.
+ !/
+
+function multi_lib_val() {
+    <- 3
+}
+
+function multi_lib_add(a, b) {
+    <- a + b
+}

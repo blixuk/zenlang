@@ -1,0 +1,60 @@
+import zen.ui.canvas as canvas
+import zen.ui.geometry as geom
+import zen.ui.term as term
+import zen.ui.widgets as ui
+import zen.sys.process as proc
+import zen.text.string as str
+import zen.time as time
+
+/!
+ ZenTop: A simple process monitor.
+ Demonstrates Process interaction, String parsing, and UI Widgets.
+ !/
+function zentop() {
+    let s -> term.size()
+    let c -> canvas.Canvas(s.width, s.height)
+    
+    let main_panel -> ui.Panel(geom.UIRect(1, 1, s.width - 2, s.height - 2))
+    main_panel.bg -> `black`
+    
+    let header -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 1, `PID     CPU%    MEM%    COMMAND`)
+    header.fg -> `cyan`
+    main_panel.add(header)
+    
+    let process_labels -> []
+    do for i in 0..10 {
+        let l -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + 3 + i, ``)
+        process_labels.append(l)
+        main_panel.add(l)
+    }
+    
+    let footer -> ui.Label(main_panel.rect.x + 2, main_panel.rect.y + main_panel.rect.height - 2, `Refreshing every 2s...`)
+    footer.fg -> `bright_black`
+    main_panel.add(footer)
+    
+    do for tick in 0..100 {
+        c.clear(` `, `white`, `black`)
+        
+        // Get process list: pid, %cpu, %mem, command
+        let output -> proc.run(`ps`, [`-eo`, `pid,pcpu,pmem,comm`, `--sort=-pcpu`]).trim()
+        let lines -> str.split(output, `\n`)
+        
+        // Skip header and fill labels
+        do for i in 0..10 {
+            when i + 1 < lines.length {
+                let line -> lines[i + 1].trim()
+                // Simple formatting: ps output usually has spaces
+                process_labels[i].text -> line
+            }
+        }
+        
+        main_panel.draw(c)
+        c.render()
+        
+        time.sleep(2.0)
+    }
+}
+
+function main() {
+    term.alt_screen(zentop)
+}

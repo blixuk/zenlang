@@ -1,0 +1,23 @@
+import zen.io.io as IO
+import zen.math.math as Math
+import zen.text.string as Str
+
+function main() {
+    IO.info(`--- Testing Pure Zenlang Math ---`)
+
+    // Test abs
+    let a -> -10
+    let b -> 5
+    IO.info(`abs(-10) = ` + Str.to_string(Math.abs(a)))
+    IO.info(`abs(5) = ` + Str.to_string(Math.abs(b)))
+
+    // Test min
+    IO.info(`min(-10, 5) = ` + Str.to_string(Math.min(a, b)))
+    IO.info(`min(20, 10) = ` + Str.to_string(Math.min(20, 10)))
+
+    // Test max
+    IO.info(`max(-10, 5) = ` + Str.to_string(Math.max(a, b)))
+    IO.info(`max(20, 10) = ` + Str.to_string(Math.max(20, 10)))
+
+    IO.info(`--- Math Tests Completed ---`)
+}

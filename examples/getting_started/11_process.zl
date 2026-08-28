@@ -1,0 +1,30 @@
+/!
+  11 — Compose with the OS
+
+  Run:
+    ./bin/zen examples/getting_started/11_process.zl
+
+  Learn: process.shell, process.ok, Str.trim — Unix composition.
+!/
+
+import zen.sys.process as process
+import zen.io.io as io
+import zen.text.string as Str
+
+function main() {
+    io.writeln(`=== process demo ===`)
+
+    when process.ok(`test -d lib/zen`) {
+        io.writeln(`ok: lib/zen is a directory`)
+    } or {
+        io.writeln(`note: run from repo root for best results`)
+    }
+
+    let uname -> Str.trim(process.shell(`uname -s`))
+    io.writeln(`uname: ` + uname)
+
+    let head -> process.shell(`printf 'alpha\nbeta\ngamma\n' | head -2`)
+    io.write(`piped sample:\n` + head)
+
+    <- 0
+}

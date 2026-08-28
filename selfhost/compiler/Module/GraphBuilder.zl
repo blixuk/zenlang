@@ -1,0 +1,271 @@
+/!
+ Build a dependency graph from an entry .zl file using Stage 2 parser.
+ Stage 3: extract import paths from AST, resolve, recurse.
+ !/
+
+import compiler.Parser as Parser
+import compiler.AST as AST
+import compiler.Module.Resolver as Resolver
+import compiler.Module.DependencyGraph as Graph
+import zen.io.path as Path
+import zen.text.string as Str
+
+let B -> {
+    `graph` -> Nothing,
+    `visited` -> [],
+    `cache` -> {}
+}
+
+export function get_cache() {
+    <- B[`cache`]
+}
+
+export function clear_cache() {
+    B[`cache`] -> {}
+}
+
+/!
+ Cheap source scan: skip GraphBuilder when the entry cannot import.
+ False positives only cost a graph walk; false negatives would drop deps
+ so keep this conservative (`import ` / `use ` / `from `).
+ !/
+export function source_may_import(src) {
+    when src == Nothing or src == `` {
+        <- false
+    }
+    let s -> Str.to_string(src)
+    when Str.contains(s, `import `) {
+        <- true
+    }
+    when Str.contains(s, `use `) {
+        <- true
+    }
+    when Str.contains(s, `from `) {
+        <- true
+    }
+    <- false
+}
+
+function canon_path(path) {
+    when path == Nothing or path == `` {
+        <- path
+    }
+    let s -> Str.to_string(path)
+    when Str.starts_with(s, `./`) {
+        <- Str.substring(s, 2, Str.length(s))
+    }
+    <- s
+}
+
+/!
+ Return a cached Program for `path`, or parse once and store.
+ Keys are canon (no `./` prefix) so Driver merge and Interpreter
+ load_module_file do not lex/parse the same file twice after graph walk.
+ !/
+export function parse_cached(path) {
+    path -> canon_path(path)
+    when path == Nothing or path == `` {
+        <- Nothing
+    }
+    let cache -> B[`cache`]
+    when cache == Nothing {
+        cache -> {}
+    }
+    when cache.has(path) {
+        <- cache[path]
+    }
+    when not fs_is_file(path) {
+        <- Nothing
+    }
+    let src -> fs_read(path)
+    let prog -> Parser.parse_source_file(src, path)
+    cache[path] -> prog
+    B[`cache`] -> cache
+    <- prog
+}
+
+function fs_is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function fs_read(path) {
+    <- __builtin_file.read(path)
+}
+
+function list_contains(lst, item) {
+    when lst == Nothing {
+        <- false
+    }
+    <- gb_list_has_at(lst, item, 0, lst.length)
+}
+
+function gb_list_has_at(lst, item, i, n) {
+    when i >= n {
+        <- false
+    }
+    when lst[i] == item {
+        <- true
+    }
+    <- gb_list_has_at(lst, item, i + 1, n)
+}
+
+function gb_list_push(lst, item) {
+    when lst == Nothing {
+        lst -> []
+    }
+    let grown -> lst.append(item)
+    when grown != Nothing {
+        <- grown
+    }
+    <- lst
+}
+
+// Accumulator for import paths (module map avoids list-arg move under -g).
+let IMPS -> {
+    `list` -> []
+}
+
+function collect_imports(prog) {
+    IMPS[`list`] -> []
+    when prog == Nothing {
+        <- IMPS[`list`]
+    }
+    let stmts -> AST.prog_stmts(prog)
+    when stmts == Nothing {
+        <- IMPS[`list`]
+    }
+    let n -> stmts.length
+    let i -> 0
+    do while i < n {
+        collect_from_node(stmts[i])
+        i -> i + 1
+    }
+    <- IMPS[`list`]
+}
+
+function collect_from_node(node) {
+    when node == Nothing {
+        <- Nothing
+    }
+    // Exact kinds only — Str.contains false-positives:
+    // StructureMember ⊃ Structure, StructureInitExpression ⊃ Structure, etc.
+    let k -> AST.ast_kind(node)
+    when k == AST.K_IMPORT or k == AST.K_FROM_IMPORT {
+        let p -> AST.import_path(node)
+        when p != Nothing and p != `` {
+            IMPS[`list`] -> gb_list_push(IMPS[`list`], p)
+        }
+        <- Nothing
+    }
+    when k == AST.K_BLOCK {
+        let stmts -> AST.block_stmts(node)
+        when stmts != Nothing {
+            let n -> stmts.length
+            let i -> 0
+            do while i < n {
+                collect_from_node(stmts[i])
+                i -> i + 1
+            }
+        }
+        <- Nothing
+    }
+    when k == AST.K_FUNCTION {
+        collect_from_node(AST.fn_body(node))
+        <- Nothing
+    }
+    when k == AST.K_SCOPE {
+        collect_from_node(AST.scope_body(node))
+        <- Nothing
+    }
+    when k == AST.K_STRUCTURE or k == AST.K_CLASS {
+        let members -> AST.struct_members(node)
+        when members != Nothing {
+            let n -> members.length
+            let i -> 0
+            do while i < n {
+                collect_from_node(members[i])
+                i -> i + 1
+            }
+        }
+        <- Nothing
+    }
+    // Walk values that may hold nested imports (rare but safe)
+    when k == AST.K_LET {
+        collect_from_node(AST.let_val(node))
+        <- Nothing
+    }
+    when k == AST.K_WHEN {
+        let cases -> AST.when_cases(node)
+        when cases != Nothing {
+            let n -> cases.length
+            let i -> 0
+            do while i < n {
+                let c -> cases[i]
+                collect_from_node(AST.case_body(c))
+                i -> i + 1
+            }
+        }
+        <- Nothing
+    }
+}
+
+/!
+  Build graph. r0..r3 optional search roots (`` to skip).
+!/
+function build_from_file_roots(entry_path, r0, r1, r2, r3) {
+    let status -> Resolver.configure_search(r0, r1, r2, r3)
+    let g -> Graph.create()
+    B[`graph`] -> g
+    B[`visited`] -> []
+    B[`cache`] -> {}
+    walk_file(entry_path)
+    <- B[`graph`]
+}
+
+function walk_file(path) {
+    when path == Nothing or path == `` {
+        <- Nothing
+    }
+    path -> canon_path(path)
+    let visited -> B[`visited`]
+    when list_contains(visited, path) {
+        <- Nothing
+    }
+    B[`visited`] -> gb_list_push(visited, path)
+
+    let g -> B[`graph`]
+    g -> Graph.add_node(g, path)
+    B[`graph`] -> g
+
+    when not fs_is_file(path) {
+        <- Nothing
+    }
+    let prog -> parse_cached(path)
+    when prog == Nothing {
+        <- Nothing
+    }
+
+    when AST.prog_err(prog) != Nothing {
+        <- Nothing
+    }
+    let imports -> collect_imports(prog)
+    let base -> Path.dirname(path)
+    let inum -> imports.length
+    let ii -> 0
+    do while ii < inum {
+        let imp -> imports[ii]
+        let resolved -> Resolver.resolve(imp, base)
+        when resolved != Nothing and resolved != `` {
+            g -> B[`graph`]
+            g -> Graph.add_edge(g, path, resolved)
+            B[`graph`] -> g
+            walk_file(resolved)
+        }
+        ii -> ii + 1
+    }
+}
+
+function compilation_order(entry_path, r0, r1, r2, r3) {
+    let g -> build_from_file_roots(entry_path, r0, r1, r2, r3)
+    <- Graph.get_compilation_order(g)
+}

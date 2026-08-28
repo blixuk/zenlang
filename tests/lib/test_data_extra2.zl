@@ -1,0 +1,68 @@
+import zen.test as test
+import zen.data.schema as schema
+import zen.data.tar as tar
+
+function test_schema_validation() {
+    let user_schema -> {
+        `type` -> `object`,
+        `required` -> [`id`, `name`, `email`],
+        `properties` -> {
+            `id` -> { `type` -> `integer`, `min` -> 1 },
+            `name` -> { `type` -> `string`, `min_length` -> 2, `max_length` -> 50 },
+            `email` -> { `type` -> `string`, `min_length` -> 5 },
+            `role` -> { `type` -> `string`, `enum` -> [`admin`, `member`, `guest`] }
+        }
+    }
+
+    let valid_user -> {
+        `id` -> 42,
+        `name` -> `Alice`,
+        `email` -> `alice@zenlang.org`,
+        `role` -> `admin`
+    }
+
+    let res_valid -> schema.validate(valid_user, user_schema)
+    let pass -> test.assert_true(res_valid[`valid`], `schema valid user`)
+    pass -> pass and test.assert_equal(res_valid[`errors`].length, 0, `schema valid user 0 errors`)
+
+    let invalid_user -> {
+        `id` -> 0,
+        `name` -> `A`
+    }
+    let res_invalid -> schema.validate(invalid_user, user_schema)
+    pass -> pass and test.assert_false(res_invalid[`valid`], `schema invalid user fails`)
+    pass -> pass and test.assert_true(res_invalid[`errors`].length > 0, `schema invalid user has errors`)
+
+    <- pass
+}
+
+function test_tar_archive() {
+    let files_in -> [
+        { `name` -> `hello.txt`, `content` -> `Hello Zenlang Tar Archive!` },
+        { `name` -> `docs/readme.md`, `content` -> `# Documentation\nZen standard library.` }
+    ]
+
+    let archive_bytes -> tar.create(files_in)
+    let pass -> test.assert_true(archive_bytes.length >= 1024, `tar create produces non-empty bytes`)
+
+    let extracted -> tar.parse(archive_bytes)
+    pass -> pass and test.assert_equal(extracted.length, 2, `tar parse extracts 2 files`)
+    pass -> pass and test.assert_equal(extracted[0][`name`], `hello.txt`, `tar file 0 name`)
+    pass -> pass and test.assert_equal(extracted[0][`content`], `Hello Zenlang Tar Archive!`, `tar file 0 content`)
+    pass -> pass and test.assert_equal(extracted[1][`name`], `docs/readme.md`, `tar file 1 name`)
+    pass -> pass and test.assert_equal(extracted[1][`content`], `# Documentation\nZen standard library.`, `tar file 1 content`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Data.Schema`, `fn` -> test_schema_validation },
+        { `name` -> `Data.Tar`, `fn` -> test_tar_archive }
+    ]
+    <- test.run_suite(`Data Schema & Tar Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

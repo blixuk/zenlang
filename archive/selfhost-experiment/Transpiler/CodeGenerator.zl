@@ -1,0 +1,63 @@
+import `lib/zen/io` as IO
+import `lib/zen/string` as Str
+from `selfhost/AST` import ASTKind, ASTNode
+
+from `selfhost/Transpiler/Handlers/StatementHandler` import TranspilerStatementHandler
+from `selfhost/Transpiler/Handlers/ExpressionHandler` import TranspilerExpressionHandler
+
+class CodeGenerator {
+    let statements : List
+    let includes : List
+    let source_code : String
+    
+    let stmt_handler : TranspilerStatementHandler
+    let expr_handler : TranspilerExpressionHandler
+
+    function init(statements: List) {
+        self.statements -> statements
+        self.includes -> []
+        self.source_code -> ``
+        self.expr_handler -> TranspilerExpressionHandler(self)
+        self.stmt_handler -> TranspilerStatementHandler(self, self.expr_handler)
+    }
+
+    function add_include(path: String) {
+        // Prevent duplicate includes
+        let found : Boolean -> False
+        for inc in self.includes {
+            when (inc = path) {
+                found -> True
+                break
+            }
+        }
+        when (not found) {
+            self.includes.append(path)
+        }
+    }
+
+    function generate(header_name: String) : String {
+        let result : String -> ``
+        result -> result + `#include "zen_sys.h"\n`
+        result -> result + `#include "zen_io.h"\n`
+        result -> result + `#include "` + header_name + `"\n\n`
+        
+        for inc in self.includes {
+            result -> result + `#include "` + inc + `"\n`
+        }
+        result -> result + `\n`
+
+        // Emit statements (functions etc)
+        for stmt in self.statements {
+            let code : String -> self.stmt_handler.generate_statement(stmt)
+            result -> result + code + `\n`
+        }
+
+        // Provide a Default entry if no main
+        result -> result + `\nZenValue zen_entry() {\n`
+        result -> result + `    // call main if present\n`
+        result -> result + `    return ZEN_BOX(0);\n`
+        result -> result + `}\n`
+
+        <- result
+    }
+}

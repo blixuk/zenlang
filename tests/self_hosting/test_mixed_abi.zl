@@ -1,0 +1,169 @@
+/!
+ Selfhost Stage 4: Mixed Execution ABI Test Suite.
+ Tests bidirectional interop between the Bytecode VM and native C functions,
+ closures, collections, and embedded script execution.
+ !/
+
+import zen.test as test
+import compiler.Bytecode as Bytecode
+import compiler.Parser as Parser
+
+function native_double(x) {
+    <- x * 2
+}
+
+function native_format_point(x, y) {
+    <- `(` + x + `, ` + y + `)`
+}
+
+function native_transform_list(lst, multiplier) {
+    let res -> []
+    let i -> 0
+    let n -> lst.length
+    do while i < n {
+        res.append(lst[i] * multiplier)
+        i -> i + 1
+    }
+    <- res
+}
+
+function native_map_lookup(map_data, key) {
+    when map_data.has(key) {
+        <- map_data[key]
+    }
+    <- `NOT_FOUND`
+}
+
+function test_vm_calls_native_func() {
+    let src -> `
+        let val -> 21
+        let res -> double_fn(val)
+        <- res
+    `
+    let prog -> Parser.parse_source(src)
+    let c_res -> Bytecode.compile_program(prog)
+    let chunk -> c_res[`chunk`]
+    let globals -> {
+        `double_fn` -> native_double
+    }
+    let res -> Bytecode.eval_chunk(chunk, globals)
+    <- test.assert_equal(res, 42, `VM should call native_double and receive 42`)
+}
+
+function test_vm_calls_multi_arg_native() {
+    let src -> `
+        let x -> 10
+        let y -> 25
+        let pt -> format_pt(x, y)
+        <- pt
+    `
+    let prog -> Parser.parse_source(src)
+    let c_res -> Bytecode.compile_program(prog)
+    let chunk -> c_res[`chunk`]
+    let globals -> {
+        `format_pt` -> native_format_point
+    }
+    let res -> Bytecode.eval_chunk(chunk, globals)
+    <- test.assert_equal(res, `(10, 25)`, `VM should call native_format_point with 2 arguments`)
+}
+
+function test_vm_passes_collections_to_native() {
+    let src -> `
+        let numbers -> [1, 2, 3, 4]
+        let scaled -> transform(numbers, 3)
+        <- scaled
+    `
+    let prog -> Parser.parse_source(src)
+    let c_res -> Bytecode.compile_program(prog)
+    let chunk -> c_res[`chunk`]
+    let globals -> {
+        `transform` -> native_transform_list
+    }
+    let res -> Bytecode.eval_chunk(chunk, globals)
+    let expected -> [3, 6, 9, 12]
+    <- test.assert_equal(res, expected, `Scaled list should match`)
+}
+
+function test_vm_map_interop() {
+    let src -> `
+        let config -> {
+            host -> "localhost",
+            port -> 8080,
+            active -> true
+        }
+        let h -> lookup(config, "host")
+        let p -> lookup(config, "port")
+        let missing -> lookup(config, "missing_key")
+        <- [h, p, missing]
+    `
+    let prog -> Parser.parse_source(src)
+    let c_res -> Bytecode.compile_program(prog)
+    let chunk -> c_res[`chunk`]
+    let globals -> {
+        `lookup` -> native_map_lookup
+    }
+    let res -> Bytecode.eval_chunk(chunk, globals)
+    let expected -> [`localhost`, 8080, `NOT_FOUND`]
+    <- test.assert_equal(res, expected, `Map lookup should match`)
+}
+
+function test_vm_closure_capture_interop() {
+    let base_offset -> 100
+    let closure_fn -> function(x) {
+        <- x + base_offset
+    }
+    
+    let src -> `
+        let val -> 55
+        let res -> offset_fn(val)
+        <- res
+    `
+    let prog -> Parser.parse_source(src)
+    let c_res -> Bytecode.compile_program(prog)
+    let chunk -> c_res[`chunk`]
+    let globals -> {
+        `offset_fn` -> closure_fn
+    }
+    let res -> Bytecode.eval_chunk(chunk, globals)
+    <- test.assert_equal(res, 155, `VM should call native closure with captures`)
+}
+
+function test_embed_script_evaluator() {
+    // Demonstrates embedding: native host compiling and evaluating multiple scripts
+    let script1 -> `
+        function compute(a, b) {
+            <- (a * a) + (b * b)
+        }
+        <- compute(3, 4)
+    `
+    let prog1 -> Parser.parse_source(script1)
+    let res1 -> Bytecode.eval_chunk(Bytecode.compile_program(prog1)[`chunk`], {})
+    when res1 != 25 {
+        <- false
+    }
+
+    let script2 -> `
+        let acc -> 0
+        let i -> 1
+        do while i <= 5 {
+            acc -> acc + i
+            i -> i + 1
+        }
+        <- acc
+    `
+    let prog2 -> Parser.parse_source(script2)
+    let res2 -> Bytecode.eval_chunk(Bytecode.compile_program(prog2)[`chunk`], {})
+    <- test.assert_equal(res2, 15, `1+2+3+4+5 = 15`)
+}
+
+function main() {
+    test.run_suite(`Selfhost Stage 4 Mixed Execution ABI`, [
+        { `name` -> `MixedABI.vm_calls_native_func`, `fn` -> test_vm_calls_native_func },
+        { `name` -> `MixedABI.vm_calls_multi_arg_native`, `fn` -> test_vm_calls_multi_arg_native },
+        { `name` -> `MixedABI.vm_passes_collections_to_native`, `fn` -> test_vm_passes_collections_to_native },
+        { `name` -> `MixedABI.vm_map_interop`, `fn` -> test_vm_map_interop },
+        { `name` -> `MixedABI.vm_closure_capture_interop`, `fn` -> test_vm_closure_capture_interop },
+        { `name` -> `MixedABI.embed_script_evaluator`, `fn` -> test_embed_script_evaluator }
+    ])
+    <- 0
+}

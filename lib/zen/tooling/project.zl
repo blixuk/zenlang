@@ -1,0 +1,205 @@
+/!
+  Project management module for Zenlang tooling.
+  Handles project detection, root traversal, initialization (zen init),
+  and new project scaffolding (zen new).
+!/
+
+import zen.tooling.manifest as manifest
+import zen.tooling.templates as templates
+import zen.io.file as file
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+
+/!
+  Searches upward from start_dir for a directory containing .zbuild.
+  @param start_dir Starting directory path (or Nothing for current working directory).
+  @return Absolute directory path containing .zbuild, or Nothing if not found.
+!/
+export function find_root(start_dir) {
+    let cur -> start_dir
+    when cur == Nothing or cur == `` {
+        cur -> sys.get_cwd()
+    }
+    
+    do while cur != Nothing and cur != `` {
+        let manifest_path -> path.join(cur, `.zbuild`)
+        when file.exists(manifest_path) {
+            <- cur
+        }
+        let parent -> path.dir_name(cur)
+        when parent == cur or parent == `` or parent == `.` {
+            break
+        }
+        cur -> parent
+    }
+    <- Nothing
+}
+
+/!
+  Loads project configuration and lockfile from a project directory.
+  @param dir Project root directory (or Nothing to auto-discover).
+  @return Map with { ok, root, manifest, lock, manifest_path, lock_path, error }
+!/
+export function load_project(dir) {
+    let root -> dir
+    when root == Nothing or root == `` {
+        root -> find_root(Nothing)
+    }
+    when root == Nothing {
+        <- {
+            `ok` -> false,
+            `error` -> `No .zbuild project manifest found in current or parent directories.`
+        }
+    }
+
+    let manifest_path -> path.join(root, `.zbuild`)
+    when not file.exists(manifest_path) {
+        <- {
+            `ok` -> false,
+            `error` -> `Missing .zbuild manifest at: ` + manifest_path
+        }
+    }
+
+    let manifest_content -> file.read(manifest_path)
+    let manifest_map -> manifest.parse_manifest(manifest_content)
+
+    let lock_path -> path.join(root, `zen.lock`)
+    let lock -> { `version` -> `1.0`, `packages` -> {} }
+    when file.exists(lock_path) {
+        let lock_content -> file.read(lock_path)
+        lock -> manifest.parse_lockfile(lock_content)
+    }
+
+    <- {
+        `ok` -> true,
+        `root` -> root,
+        `manifest` -> manifest_map,
+        `lock` -> lock,
+        `manifest_path` -> manifest_path,
+        `lock_path` -> lock_path
+    }
+}
+
+/!
+  Initializes a new Zenlang project inside target_dir.
+  @param target_dir Directory to initialize.
+  @param name Name of the project.
+  @param template_type Template type ("cli", "tui", "lib", "service").
+  @param description Optional description.
+  @return Result map { ok, root, message, error }
+!/
+export function init_project(target_dir, name, template_type, description) {
+    let dir -> target_dir
+    when dir == Nothing or dir == `` {
+        dir -> sys.get_cwd()
+    }
+    let p_name -> name
+    when p_name == Nothing or p_name == `` {
+        p_name -> path.base_name(dir)
+    }
+    when p_name == Nothing or p_name == `` or p_name == `.` {
+        p_name -> `zen_app`
+    }
+    let p_type -> template_type
+    when p_type == Nothing or p_type == `` {
+        p_type -> `cli`
+    }
+    let desc -> description
+    when desc == Nothing or desc == `` {
+        desc -> `A ` + p_type + ` application built with Zenlang`
+    }
+
+    // Ensure directory structure
+    file.make_dirs(dir)
+    file.make_dirs(path.join(dir, `src`))
+    file.make_dirs(path.join(dir, `tests`))
+    file.make_dirs(path.join(dir, `docs`))
+    file.make_dirs(path.join(dir, `deps`))
+    file.make_dirs(path.join(dir, `build`))
+
+    // Write .zbuild manifest
+    let manifest_map -> manifest.default_manifest(p_name)
+    manifest_map[`type`] -> p_type
+    manifest_map[`description`] -> desc
+    when p_type == `lib` {
+        manifest_map[`entry`] -> `src/` + p_name + `.zl`
+        manifest_map[`target`] -> `build/lib` + p_name + `.a`
+    }
+    let manifest_path -> path.join(dir, `.zbuild`)
+    file.write(manifest_path, manifest.stringify_manifest(manifest_map))
+
+    // Write main source file based on template
+    let src_path -> path.join(dir, `src/main.zl`)
+    let src_content -> ``
+    when p_type == `tui` {
+        src_content -> templates.get_tui_template(p_name, desc)
+    } or when p_type == `lib` {
+        src_path -> path.join(dir, `src/` + p_name + `.zl`)
+        src_content -> templates.get_lib_template(p_name, desc)
+    } or when p_type == `service` {
+        src_content -> templates.get_service_template(p_name, desc)
+    } or {
+        src_content -> templates.get_cli_template(p_name, desc)
+    }
+    file.write(src_path, src_content)
+
+    // Write tests
+    let test_path -> path.join(dir, `tests/test_main.zl`)
+    file.write(test_path, templates.get_test_template(p_name, p_type))
+
+    // Write .gitignore
+    let gitignore_path -> path.join(dir, `.gitignore`)
+    when not file.exists(gitignore_path) {
+        file.write(gitignore_path, templates.get_gitignore())
+    }
+
+    // Write README.md
+    let readme_path -> path.join(dir, `README.md`)
+    when not file.exists(readme_path) {
+        file.write(readme_path, templates.get_readme(p_name, desc))
+    }
+
+    // Initialize Git repository if available
+    let git_dir -> path.join(dir, `.git`)
+    when not file.exists(git_dir) and process.available(`git`) {
+        process.shell_in(dir, `git init -q 2>/dev/null`)
+    }
+
+    <- {
+        `ok` -> true,
+        `root` -> dir,
+        `name` -> p_name,
+        `type` -> p_type,
+        `message` -> `Created new ` + p_type + ` project '` + p_name + `' in ` + dir
+    }
+}
+
+/!
+  Creates a new project directory and initializes it.
+  @param name Name of the project.
+  @param parent_dir Optional parent directory.
+  @param template_type Template type ("cli", "tui", "lib", "service").
+  @param description Optional description.
+!/
+export function new_project(name, parent_dir, template_type, description) {
+    when name == Nothing or name == `` {
+        <- {
+            `ok` -> false,
+            `error` -> `Please specify a project name (e.g. zen new my_app).`
+        }
+    }
+    let base -> parent_dir
+    when base == Nothing or base == `` {
+        base -> sys.get_cwd()
+    }
+    let target_dir -> path.join(base, name)
+    when file.exists(target_dir) and file.exists(path.join(target_dir, `.zbuild`)) {
+        <- {
+            `ok` -> false,
+            `error` -> `Directory already contains a Zenlang project: ` + target_dir
+        }
+    }
+    <- init_project(target_dir, name, template_type, description)
+}

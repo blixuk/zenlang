@@ -1,0 +1,33 @@
+import zen.crypto.hash as hash
+import zen.crypto.base64 as b64
+import zen.io.io as io
+
+/!
+ Cryptography Example.
+ Demonstrates hashing and Base64 encoding.
+ !/
+function main() {
+    let secret -> `Zenlang is the future of Unix-native programming.`
+    
+    io.writeln(`Original Message: ` + secret)
+    io.writeln(``)
+    
+    // Hashing
+    io.writeln(`--- Hashes ---`)
+    io.writeln(`MD5:    ` + hash.md5(secret))
+    io.writeln(`SHA1:   ` + hash.sha1(secret))
+    io.writeln(`SHA256: ` + hash.sha256(secret))
+    io.writeln(``)
+    
+    // Base64
+    let encoded -> b64.encode(secret)
+    io.writeln(`--- Base64 ---`)
+    io.writeln(`Encoded: ` + encoded)
+    
+    let decoded -> b64.decode(encoded)
+    io.writeln(`Decoded: ` + decoded)
+    
+    when secret == decoded {
+        io.writeln(`Status: Success (Decoded matches original)`)
+    }
+}

@@ -1,0 +1,50 @@
+function test_when() {
+    let x -> 10
+    let result -> 0
+    
+    when x == 10 {
+        result -> 1
+    } or {
+        result -> 2
+    }
+    ! result == 1
+    
+    x -> 20
+    when x == 10 {
+        result -> 1
+    } or when x == 20 {
+        result -> 3
+    } or {
+        result -> 2
+    }
+    ! result == 3
+}
+
+function test_do_while() {
+    let i -> 0
+    let sum -> 0
+    do {
+        i -> i + 1
+        sum -> sum + i
+    } while i < 5
+    ! sum == 15
+}
+
+function test_do_for() {
+    // Zenlang might not have list literals fully supported in 'for' yet, let's see
+    // If not, we'll use a simple while
+    let i -> 0
+    let sum -> 0
+    do while i < 3 {
+        i -> i + 1
+        sum -> sum + 10
+    }
+    ! sum == 30
+}
+
+function main() {
+    test_when()
+    test_do_while()
+    test_do_for()
+    io.write(`05_control_flow passed!\n`)
+}

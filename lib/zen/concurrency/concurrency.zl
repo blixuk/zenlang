@@ -1,0 +1,93 @@
+/!
+  Domain package entry for zen.concurrency.
+  Re-exports channels, tasks, synchronization primitives, and cooperative fibers.
+!/
+
+import zen.concurrency.channel as channel
+import zen.concurrency.task as tasks
+import zen.concurrency.sync as sync
+import zen.concurrency.fiber as fiber
+
+// Channel re-exports
+export let create_channel -> channel.create_channel
+export let send -> channel.send
+export let try_send -> channel.try_send
+export let receive -> channel.receive
+export let try_receive -> channel.try_receive
+export let close -> channel.close
+export let is_closed -> channel.is_closed
+export let length -> channel.length
+export let capacity -> channel.capacity
+export let is_empty -> channel.is_empty
+export let is_full -> channel.is_full
+export let drain -> channel.drain
+export let select -> channel.select
+
+// Task re-exports
+export let create_task -> tasks.create_task
+export let spawn -> tasks.spawn_task
+export let spawn_task -> tasks.spawn_task
+export let wait -> tasks.wait_task
+export let wait_task -> tasks.wait_task
+export let await -> tasks.await_task
+export let await_task -> tasks.await_task
+export let is_done -> tasks.task_is_done
+export let is_success -> tasks.task_is_success
+export let result -> tasks.task_result
+export let error -> tasks.task_error
+export let cancel -> tasks.cancel_task
+export let all -> tasks.task_all
+export let race -> tasks.task_race
+export let sleep -> tasks.task_sleep
+export let yield_now -> tasks.task_yield_now
+export let create_task_pool -> tasks.create_task_pool
+export let pool_submit -> tasks.pool_submit
+export let pool_run_all -> tasks.pool_run_all
+
+// Sync re-exports
+export let create_waitgroup -> sync.create_waitgroup
+export let wg_add -> sync.wg_add
+export let wg_done -> sync.wg_done
+export let wg_wait -> sync.wg_wait
+export let wg_count -> sync.wg_count
+export let wg_is_done -> sync.wg_is_done
+
+export let create_mutex -> sync.create_mutex
+export let mutex_acquire -> sync.mutex_acquire
+export let mutex_try_acquire -> sync.mutex_try_acquire
+export let mutex_release -> sync.mutex_release
+export let mutex_is_locked -> sync.mutex_is_locked
+export let with_lock -> sync.with_lock
+
+export let create_atomic -> sync.create_atomic
+export let atomic_get -> sync.atomic_get
+export let atomic_set -> sync.atomic_set
+export let atomic_add -> sync.atomic_add
+export let atomic_sub -> sync.atomic_sub
+export let atomic_compare_and_swap -> sync.atomic_compare_and_swap
+
+export let create_barrier -> sync.create_barrier
+export let barrier_arrive -> sync.barrier_arrive
+export let barrier_reset -> sync.barrier_reset
+
+export let create_semaphore -> sync.create_semaphore
+export let sem_acquire -> sync.sem_acquire
+export let sem_release -> sync.sem_release
+export let sem_available -> sync.sem_available
+
+export let create_once -> sync.create_once
+export let do_once -> sync.do_once
+export let once_is_done -> sync.once_is_done
+
+// Fiber re-exports
+export let create_fiber -> fiber.create_fiber
+export let resume -> fiber.resume
+export let fiber_yield -> fiber.fiber_yield
+export let fiber_done -> fiber.fiber_done
+export let fiber_is_dead -> fiber.fiber_is_dead
+export let fiber_is_suspended -> fiber.fiber_is_suspended
+export let create_scheduler -> fiber.create_scheduler
+export let sched_spawn -> fiber.sched_spawn
+export let sched_step -> fiber.sched_step
+export let sched_run_all -> fiber.sched_run_all
+export let sched_active_count -> fiber.sched_active_count

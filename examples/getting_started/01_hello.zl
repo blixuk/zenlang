@@ -1,0 +1,18 @@
+/!
+  01 — Hello, Zenlang
+
+  Run:
+    ./bin/zen examples/getting_started/01_hello.zl
+    python3 bootstrap/Zen.py examples/getting_started/01_hello.zl
+    ./bin/zen -g examples/getting_started/01_hello.zl
+
+  Learn: entry point main(), backtick strings, nested imports, <- exit code.
+!/
+
+use zen.io
+
+function main() {
+    io.writeln(`Hello, Zenlang!`)
+    io.writeln(`Visual flow: values move with -> and <-`)
+    <- 0
+}

@@ -1,0 +1,15 @@
+import zen.io.io as io
+
+// Ownership move is opt-in (MemoryKind.UNIQUE / owned bindings).
+// Structures currently share/copy by Default so compiler sources can rebind AST nodes.
+// This test locks that Default: assigning a structure does not invalidate the source.
+
+structure Point { x, y }
+
+function zen_entry() {
+    let p1 -> Point(1, 2)
+    let p2 -> p1
+
+    io.write_line("p2.x: " + p2.x)
+    io.write_line("p1.x: " + p1.x)
+}

@@ -1,0 +1,56 @@
+import zen.geometry.point as point
+
+/!
+ Class representing a 2D rectangle.
+ !/
+class Rectangle {
+    let x: Decimal
+    let y: Decimal
+    let w: Decimal
+    let h: Decimal
+
+    /!
+     Initializes a new Rectangle.
+     @param x The x-coordinate.
+     @param y The y-coordinate.
+     @param w The width.
+     @param h The height.
+     !/
+    function init(x, y, w, h) {
+        self.x -> x
+        self.y -> y
+        self.w -> w
+        self.h -> h
+    }
+
+    /!
+     Checks if the rectangle contains a point.
+     !/
+    function contains(p: Point) {
+        <- (
+            p.x >= self.x and
+            p.x <= self.x + self.w and
+            p.y >= self.y and
+            p.y <= self.y + self.h
+        )
+    }
+
+    /!
+     Checks if the rectangle intersects with another rectangle.
+     !/
+    function intersects(other: Rectangle) {
+        <- (
+            self.x + self.w >= other.x and
+            other.x + other.w >= self.x and
+            self.y + self.h >= other.y and
+            other.y + other.h >= self.y
+        )
+    }
+
+    /!
+     Returns the center point of the rectangle.
+     !/
+    function center() : Point {
+        <- point.Point(self.x + self.w / 2, self.y + self.h / 2)
+    }
+}

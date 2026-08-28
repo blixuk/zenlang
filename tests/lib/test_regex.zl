@@ -1,0 +1,33 @@
+import zen.text.regex as re
+import zen.test as test
+
+function test_regex_basic() {
+    let pass -> test.assert_equal(re.match(`^foo`, `foobar`), True, `match should succeed at start`)
+    pass -> pass and test.assert_equal(re.match(`^bar`, `foobar`), False, `match should fail at start`)
+    pass -> pass and test.assert_equal(re.search(`bar`, `foobar`), True, `search should succeed anywhere`)
+    
+    let parts -> re.split(`\s+`, `hello    world  zen`)
+    pass -> pass and test.assert_equal(parts.length, 3, `split should produce 3 parts`)
+    pass -> pass and test.assert_equal(parts[1], `world`, `part 1 should be world`)
+    
+    let replaced -> re.replace(`\d+`, `NUM`, `user123 score456`)
+    pass -> pass and test.assert_equal(replaced, `userNUM scoreNUM`, `replace should work`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Regex.basic`, `fn` -> test_regex_basic}
+    ]
+
+    <- test.run_suite(`Text Regex Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

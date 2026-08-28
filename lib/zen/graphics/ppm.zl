@@ -1,0 +1,92 @@
+import zen.io.file as file
+import zen.text.string as Str
+
+/!
+ Portable PixMap (PPM) Graphics Module.
+ Implements the ASCII P3 format.
+ !/
+class PPM {
+    let width: Integer
+    let height: Integer
+    let max_color: Integer
+    let pixels: List
+
+    /!
+     Initializes a new PPM image.
+     @param w The width in pixels.
+     @param h The height in pixels.
+     !/
+    function init(w, h) {
+        self.width -> w
+        self.height -> h
+        self.max_color -> 255
+        self.pixels -> []
+        
+        let total -> w * h
+        let i -> 0
+        do while i < total {
+            self.pixels.append({`r` -> 0, `g` -> 0, `b` -> 0})
+            i -> i + 1
+        }
+    }
+
+    /!
+     Sets a pixel at the given coordinates.
+     @param x The x coordinate.
+     @param y The y coordinate.
+     @param r Red value (0-255).
+     @param g Green value (0-255).
+     @param b Blue value (0-255).
+     !/
+    function set_pixel(x, y, r, g, b) {
+        when x >= 0 and x < self.width and y >= 0 and y < self.height {
+            let index -> y * self.width + x
+            // Clamp values
+            when r < 0 { r -> 0 }
+            when r > self.max_color { r -> self.max_color }
+            when g < 0 { g -> 0 }
+            when g > self.max_color { g -> self.max_color }
+            when b < 0 { b -> 0 }
+            when b > self.max_color { b -> self.max_color }
+            
+            self.pixels[index] -> {`r` -> r, `g` -> g, `b` -> b}
+        }
+    }
+
+    /!
+     Fills the entire image with a single color.
+     @param r Red value (0-255).
+     @param g Green value (0-255).
+     @param b Blue value (0-255).
+     !/
+    function fill(r, g, b) {
+        let i -> 0
+        let total -> self.width * self.height
+        do while i < total {
+            self.pixels[i] -> {`r` -> r, `g` -> g, `b` -> b}
+            i -> i + 1
+        }
+    }
+
+    /!
+     Writes the PPM image to a file.
+     @param path The path to write to.
+     !/
+    function save(path) {
+        let f -> file.File(path, `w`)
+        f.open()
+        f.write(`P3\n`)
+        f.write(`# CREATED BY ZENLANG PPM MODULE\n`)
+        f.write(Str.to_string(self.width) + ` ` + Str.to_string(self.height) + `\n`)
+        f.write(Str.to_string(self.max_color) + `\n`)
+
+        do for p in self.pixels {
+            let rs -> Str.to_string(p[`r`])
+            let gs -> Str.to_string(p[`g`])
+            let bs -> Str.to_string(p[`b`])
+            // Writing one pixel per line ensures we never exceed the 70-character line limit of P3
+            f.write(rs + ` ` + gs + ` ` + bs + `\n`)
+        }
+        f.close()
+    }
+}

@@ -1,0 +1,57 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+structure Vec2 {
+    x: Decimal
+    y: Decimal
+}
+
+enumerator Result {
+    Ok(value),
+    Err(message)
+}
+
+function test_structs() {
+    io.write(`  - Structs... `)
+    let v -> Vec2(10.0, 20.0)
+    utils.assert_eq(v.x, 10.0, `struct field x`)
+    utils.assert_eq(v.y, 20.0, `struct field y`)
+    
+    v.x -> 30.0
+    utils.assert_eq(v.x, 30.0, `struct field mutation`)
+    io.write(`PASS\n`)
+}
+
+function test_adts() {
+    io.write(`  - ADTs... `)
+    let res -> Result.Ok(42)
+    let msg -> ``
+    
+    when res {
+        is Result.Ok(v) {
+            utils.assert_eq(v, 42, `adt ok value`)
+            msg -> `success`
+        }
+        is Result.Err(e) {
+            msg -> `fail`
+        }
+    }
+    utils.assert_eq(msg, `success`, `adt pattern match ok`)
+    
+    let error -> Result.Err(`not found`)
+    when error {
+        is Result.Ok(v) { msg -> `success` }
+        is Result.Err(e) {
+            utils.assert_eq(e, `not found`, `adt err message`)
+            msg -> `fail`
+        }
+    }
+    utils.assert_eq(msg, `fail`, `adt pattern match err`)
+    io.write(`PASS\n`)
+}
+
+function run_structs_adts_tests() {
+    io.write(`Running Structs & ADTs Tests:\n`)
+    test_structs()
+    test_adts()
+}

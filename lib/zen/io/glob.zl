@@ -1,0 +1,223 @@
+/!
+    File Globbing & Pattern Matching Module.
+    Provides fnmatch-style wildcard matching (*, ?, **, [a-z]) and filesystem glob searches.
+!/
+
+import zen.text.string as Str
+import zen.io.file as file
+import zen.io.path as path
+
+/!
+    Checks if a pattern contains wildcard/glob magic characters (*, ?, [).
+    @param pattern Pattern string to check.
+    @return True if contains magic characters.
+!/
+function has_magic(pattern) {
+    when pattern == Nothing { <- false }
+    <- Str.contains(pattern, `*`) or Str.contains(pattern, `?`) or Str.contains(pattern, `[`)
+}
+
+/!
+    Helper to check if char is inside bracket expression.
+!/
+function _bracket_has(ch, s) {
+    let slen -> Str.length(s)
+    let idx -> 0
+    do while idx < slen {
+        let is_range -> false
+        when idx + 2 < slen {
+            when Str.at(s, idx + 1) == `-` {
+                is_range -> true
+            }
+        }
+
+        when is_range {
+            let low -> Str.at(s, idx)
+            let high -> Str.at(s, idx + 2)
+            when ch >= low and ch <= high {
+                <- true
+            }
+            idx -> idx + 3
+        } or {
+            when ch == Str.at(s, idx) {
+                <- true
+            }
+            idx -> idx + 1
+        }
+    }
+    <- false
+}
+
+/!
+    Checks if a character matches a bracket expression pattern, e.g. "a-z", "abc", "0-9".
+!/
+function match_bracket(ch, expr) {
+    let len -> Str.length(expr)
+    when len == 0 { <- false }
+
+    let negate -> Str.starts_with(expr, `!`) or Str.starts_with(expr, `^`)
+    let s -> `` + expr
+    when negate {
+        s -> Str.substring(expr, 1, len)
+    }
+
+    let has -> _bracket_has(ch, s)
+    when negate {
+        <- not has
+    }
+    <- has
+}
+
+/!
+    Recursive segment matcher at character indices.
+!/
+function _match_segment_at(name, n_idx, pat, p_idx) {
+    let n_len -> Str.length(name)
+    let p_len -> Str.length(pat)
+
+    when p_idx == p_len {
+        <- n_idx == n_len
+    }
+
+    let p_char -> Str.at(pat, p_idx)
+
+    when p_char == `*` {
+        when _match_segment_at(name, n_idx, pat, p_idx + 1) {
+            <- true
+        }
+        when n_idx < n_len {
+            when _match_segment_at(name, n_idx + 1, pat, p_idx) {
+                <- true
+            }
+        }
+        <- false
+    }
+
+    when n_idx >= n_len {
+        <- false
+    }
+
+    let n_char -> Str.at(name, n_idx)
+
+    when p_char == `?` or p_char == n_char {
+        <- _match_segment_at(name, n_idx + 1, pat, p_idx + 1)
+    }
+
+    when p_char == `[` {
+        let rest -> Str.substring(pat, p_idx, p_len)
+        let close -> Str.index_of(rest, `]`)
+        when close != -1 {
+            let expr -> Str.substring(pat, p_idx + 1, p_idx + close)
+            when match_bracket(n_char, expr) {
+                <- _match_segment_at(name, n_idx + 1, pat, p_idx + close + 1)
+            }
+            <- false
+        }
+    }
+
+    <- false
+}
+
+/!
+    Matches a single path component (without slashes) against a segment pattern.
+!/
+function match_segment(name, pat) {
+    when pat == `*` { <- true }
+    when pat == name { <- true }
+    <- _match_segment_at(name, 0, pat, 0)
+}
+
+/!
+    Recursive path segment matcher across directories.
+!/
+function _match_parts_at(p_parts, pi, pat_parts, pati) {
+    let p_len -> p_parts.length
+    let pat_len -> pat_parts.length
+
+    when pi == p_len and pati == pat_len {
+        <- true
+    }
+
+    when pi == p_len {
+        when pati < pat_len and pat_parts[pati] == `**` {
+            <- _match_parts_at(p_parts, pi, pat_parts, pati + 1)
+        }
+        <- false
+    }
+
+    when pati >= pat_len {
+        <- false
+    }
+
+    let curr_pat -> pat_parts[pati]
+
+    when curr_pat == `**` {
+        when _match_parts_at(p_parts, pi, pat_parts, pati + 1) {
+            <- true
+        }
+        when pi < p_len {
+            when _match_parts_at(p_parts, pi + 1, pat_parts, pati) {
+                <- true
+            }
+        }
+        <- false
+    }
+
+    let curr_seg -> p_parts[pi]
+    when match_segment(curr_seg, curr_pat) {
+        <- _match_parts_at(p_parts, pi + 1, pat_parts, pati + 1)
+    }
+
+    <- false
+}
+
+/!
+    Matches a full path against a glob pattern.
+    Supports single `*`, recursive `**`, `?`, and `[a-z]` character sets.
+    @param target_path File path to match.
+    @param pattern Glob pattern.
+    @return True if target_path matches pattern.
+!/
+function match_pattern(target_path, pattern) {
+    when target_path == Nothing or pattern == Nothing { <- false }
+    let p_clean -> Str.replace(target_path, `\\`, `/`)
+    let pat_clean -> Str.replace(pattern, `\\`, `/`)
+
+    when p_clean == pat_clean { <- true }
+
+    when not Str.contains(pat_clean, `/`) {
+        let base -> path.basename(p_clean)
+        <- match_segment(base, pat_clean)
+    }
+
+    let p_parts -> Str.split(p_clean, `/`)
+    let pat_parts -> Str.split(pat_clean, `/`)
+
+    <- _match_parts_at(p_parts, 0, pat_parts, 0)
+}
+
+/!
+    Finds all files under root_dir matching a glob pattern.
+    @param pattern Glob pattern, e.g. "src/**/*.zl" or "*.json".
+    @param root_dir Starting directory, defaults to ".".
+    @return List of matching file paths.
+!/
+function find(pattern, root_dir) {
+    let base_dir -> root_dir
+    when base_dir == Nothing or Str.length(base_dir) == 0 {
+        base_dir -> `.`
+    }
+
+    let all_files -> file.list_files(base_dir)
+    let matches -> []
+    let idx -> 0
+    let count -> all_files.length
+    do while idx < count {
+        let f_path -> all_files[idx]
+        when match_pattern(f_path, pattern) {
+            matches.append(f_path)
+        }
+        idx -> 0 + idx + 1
+    }
+    <- matches
+}

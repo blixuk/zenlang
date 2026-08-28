@@ -1,0 +1,22 @@
+/!
+ Set utilities.
+ !/
+scope Set {
+    /!
+     Creates a set from a list of elements.
+     @param l The list.
+     @return A new set.
+     !/
+    function from_list(l) {
+        <- __builtin_set.from_list(l)
+    }
+
+    /!
+     Converts a set back to a list.
+     @param s The set.
+     @return A list of elements.
+     !/
+    function to_list(s) {
+        <- __builtin_set.to_list(s)
+    }
+}

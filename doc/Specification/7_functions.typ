@@ -1,325 +1,71 @@
 #import "template.typ": *
 
-=== Function Declarations
+= Functions & Closures
 
-Functions are introduced with the function keyword.
+Functions in Zenlang are declared using the `function` keyword. Data returning from a function uses the outward return arrow `<-`.
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Functions
-        #v(0.5em)
+== Function Declarations
 
-        Syntax:
-        ```zl
-        function Identifier { ... }
-
-        function Identifier : ReturnType { ... }
-
-        function Identifier ( Parameters ) { ... }
-
-        function Identifier ( Parameters ) : ReturnType { ... }
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        function hello_world {
-          write(`Hello World`)
-        }
-
-        function get_greeting : String {
-          <- `Hello World`
-        }
-
-        function print : String ( message : String ) {
-          write(message)
-        }
-
-        function add : Integer ( a : Integer, b : Integer ) {
-          <- a + b
-        }
-        ```
-    ]
+#feature(
+    "Standard Function Declaration",
+    "function Identifier(Parameters) : ReturnType {\n    ...\n    <- ReturnValue\n}",
+    "function calculate_area(width: Decimal, height: Decimal) : Decimal {\n    let area -> width * height\n    <- area\n}"
 )
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Functions Inline
-        #v(0.5em)
+=== Inline Functions
 
-        Syntax:
-        ```zl
-        function Identifier Expression
+Functions consisting of a single return expression can be written concisely inline:
 
-        function Identifier <- Expression
-
-        function Identifier : ReturnType <- Expression
-
-        function Identifier ( Parameters ) Expression
-
-        function Identifier ( Parameters ) <- Expression
-
-        function Identifier ( Parameters ) : ReturnType <- Expression
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        function hello_world write(`Hello World`)
-
-        function hello_world <- `Hello World`
-
-        function get_greeting : String <- `Hello World`
-
-        function print : String ( message : String ) write(message)
-
-        function add ( a, b ) <- a + b
-
-        function sub : Integer ( a : Integer, b : Integer ) <- a - b
-        ```
-    ]
+#feature(
+    "Inline Function Definition",
+    "function Identifier(Parameters) <- Expression",
+    "function add(a: Integer, b: Integer) : Integer <- a + b\nfunction square(n: Decimal) <- n * n"
 )
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Anonymous Functions
-        #v(0.5em)
+== Anonymous Functions & Closures
 
-        Syntax:
-        ```zl
-        let Identifier -> function { ... }
+Anonymous functions are first-class values that can be assigned to variables, passed into higher-order functions, or returned from other functions.
 
-        let Identifier : ReturnType -> function { ... }
-
-        let Identifier ( Parameters ) -> function { ... }
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        let hello_world -> function {
-          write(`Hello World`)
-        }
-
-        let get_greeting : Function<String> -> function {
-          <- `Hello World`
-        }
-
-        let print : Function<String> -> function ( message : String ) {
-          write(message)
-        }
-
-        let add : Function<Integer> -> function ( a : Integer, b : Integer ) {
-          <- a + b
-        }
-
-        // Free outer locals are captured *by value* at creation time
-        // (interpreter + native). Up to 8 captures in the C runtime.
-        let n -> 10
-        let add_n -> function(x) { <- x + n }
-        ```
-    ]
+#feature(
+    "Anonymous Function Binding",
+    "let Identifier -> function(Parameters) { ... }",
+    "let multiply -> function(x, y) {\n    <- x * y\n}\n\nlet result -> multiply(6, 7) // 42"
 )
 
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Anonymous Functions Inline
-        #v(0.5em)
+=== Snapshot-by-Value Closure Capture
 
-        Syntax:
-        ```zl
-        let Identifier -> function ...
+When an anonymous function references variables from its enclosing lexical scope, the values are *captured by value* (snapshotted) at the moment the closure is created.
 
-        let Identifier -> function <- ... 
+#tip[
+  *By-Value Isolation Guarantee:* Capturing outer variables by value prevents concurrent data corruption and race conditions across tasks. In the shared C runtime, closures support up to 8 captured values efficiently.
+]
 
-        let Identifier : ReturnType -> function <- ... 
+```zl
+function make_adder(offset: Integer) {
+    // offset is snapshotted into the returned closure
+    let adder -> function(x: Integer) {
+        <- x + offset
+    }
+    <- adder
+}
 
-        let Identifier ( Parameters ) -> function ... 
+let add_10 -> make_adder(10)
+let add_50 -> make_adder(50)
 
-        let Identifier ( Parameters ) -> function <- ... 
-        ```
-        #v(0.5em)
+io.writeln(Str.to_string(add_10(5))) // 15
+io.writeln(Str.to_string(add_50(5))) // 55
+```
 
-        Example:
-        ```zl
-        let hello_world -> function write(`Hello World`)
+== Parameter Defaults & Variadics
 
-        let get_greeting : Function<String> -> function <- `Hello World`
+Parameters can specify default values or accept variadic argument lists:
 
-        let print : Function<String> -> function ( message : String ) write(message)
+```zl
+// Default parameter values
+function greet(name: String, greeting: String -> `Hello`) {
+    io.writeln(greeting + `, ` + name + `!`)
+}
 
-        let add : Function<Integer> -> function ( a : Integer, b : Integer ) <- a + b
-        ```
-    ]
-)
-
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Function Parameters
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        ( Identifier, ... )
-
-        ( Identifier : Type, ... )
-
-        ( Identifier -> Value, ... )
-
-        ( Identifier : Type -> Value, ... )
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        ( a, b )
-
-        ( a : Integer, b : Integer )
-
-        ( a -> 1, b -> 2 )
-
-        ( a : Integer -> 1, b : Integer -> 2 )
-        ```
-    ]
-)
-
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Function Variadic Parameters
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        ( Identifier* )
-
-        ( Identifier** )
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        // Variadic Arguments
-        function test ( args* ) {
-          write(args[0])
-
-          for arg in args {
-            write(arg)
-          }
-        }
-
-        test( 1, 2, 3 )
-
-        // Variadic Keyword Arguments
-        function test ( kwargs** ) { 
-          write(kwargs.a)
-
-          for key, value in kwargs {
-            write(key)
-            write(value)
-          }
-        }
-
-        test( a -> 1, b -> 2, c -> 3 )
-
-        test( a : Integer -> 1, b : Integer -> 2, c : Integer -> 3 )
-        ```
-    ]
-)
-
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Function Structrue Unpacking
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        function add( x, y ) {
-          write(x + y)
-        }
-
-        structure vec2 { x -> 1, y -> 2 }
-
-        add( vec2 )
-        ```
-    ]
-)
-
-#block(
-    stroke: accent, 
-    inset: 10pt, 
-    radius: 5pt,
-    breakable: false,
-    [
-        === Function Returns
-        #v(0.5em)
-
-        Syntax:
-        ```zl
-        function Identifier : ReturnType, ... { ... }
-
-        function Identifier : ReturnType<Type, ... > { ... }
-        ```
-        #v(0.5em)
-
-        Example:
-        ```zl
-        // Single Return
-        function add( x, y ) : Integer {
-          <- x + y
-        }
-
-        let result : Integer = add( 1, 2 )
-
-        // Multiple Returns
-        function test( x, y ) : Integer, Integer {
-          <- x, y
-        }
-
-        let result = test( 1, 2 ) // result is a Tuple = ( 1, 2 )
-
-        let a, b : Integer = test( 1, 2 )
-
-        // Multiple Return Unpacking
-        function test( x, y, z ) : Tuple<Integer, Integer> {
-          <- ( x * z, y * z)
-        }
-        
-        let result -> test( 1, 2, 3 )
-
-        let a, b : Integer -> test( 1, 2, 3 )
-        ```
-    ]
-)
+greet(`Alice`)               // Prints: Hello, Alice!
+greet(`Bob`, `Welcome back`) // Prints: Welcome back, Bob!
+```

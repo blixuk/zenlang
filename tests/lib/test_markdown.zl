@@ -1,0 +1,41 @@
+import zen.text.markdown as md
+import zen.test as test
+import zen.text.string as str
+
+function test_md_headers() {
+    let text -> `# Hello\n## World`
+    let html -> md.to_html(text)
+    
+    let pass -> test.assert_equal(str.contains(html, `<h1>Hello</h1>`), True, `should contain h1`)
+    pass -> pass and test.assert_equal(str.contains(html, `<h2>World</h2>`), True, `should contain h2`)
+    
+    <- pass
+}
+
+function test_md_lists() {
+    let text -> `- Item 1\n- Item 2`
+    let html -> md.to_html(text)
+    
+    let pass -> test.assert_equal(str.contains(html, `<ul>`), True, `should contain ul`)
+    pass -> pass and test.assert_equal(str.contains(html, `<li>Item 1</li>`), True, `should contain li 1`)
+    pass -> pass and test.assert_equal(str.contains(html, `<li>Item 2</li>`), True, `should contain li 2`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Markdown.headers`, `fn` -> test_md_headers},
+        {`name` -> `Markdown.lists`, `fn` -> test_md_lists}
+    ]
+
+    <- test.run_suite(`Text Markdown Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

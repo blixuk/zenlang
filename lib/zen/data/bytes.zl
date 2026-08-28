@@ -1,0 +1,100 @@
+/!
+ Byte Array Library.
+ !/
+
+class Bytes {
+    let _data
+    
+    /!
+     Initializes a new byte array.
+     @param size_or_list Either an integer size or a list of bytes.
+     @example
+     let b -> Bytes([72, 101, 108, 108, 111])
+     !/
+    function init(size_or_list) {
+        when size_or_list.kind == `Integer` {
+            self._data -> __builtin.create_bytes_size(size_or_list)
+        } or {
+            self._data -> __builtin.create_bytes_list(size_or_list)
+        }
+    }
+    
+    /!
+     Gets a byte at a specific index.
+     @param index The index.
+     @return The byte value (0-255).
+     !/
+    function get(index) {
+        <- self._data[index]
+    }
+    
+    /!
+     Sets a byte at a specific index.
+     @param index The index.
+     @param value The byte value (0-255).
+     !/
+    function set(index, value) {
+        self._data[index] -> value
+    }
+    
+    /!
+     Returns the length of the byte array.
+     !/
+    function length() {
+        <- self._data.length
+    }
+    
+    /!
+     Converts the byte array to a standard list.
+     !/
+    function to_list() {
+        let res -> []
+        do for i in 0..self.length() {
+            res.append(self.get(i))
+        }
+        <- res
+    }
+    
+    /!
+     Converts the byte array to a string (UTF-8).
+     !/
+    function to_string() {
+        <- __builtin.bytes_to_string(self._data)
+    }
+    
+    /!
+     Returns a slice of the byte array.
+     !/
+    function slice(start, end) {
+        let b -> Bytes(0)
+        b._data -> self._data.slice(start, end)
+        <- b
+    }
+}
+
+/!
+ Creates a byte array from a string.
+ @param s The input string.
+ @example
+ let b -> bytes.from_string(`Hello World`)
+ !/
+function from_string(s) {
+    // List path: Bytes(list) copies into `_data` (kind Integer vs List works natively).
+    <- Bytes(__builtin.string_to_bytes(s))
+}
+
+/!
+ Packs a map of values into a byte array according to a structure.
+ @param spec A map of field names to types (u8, u16, u32, i8, i16, i32).
+ @param data A map of field names to values.
+ !/
+function pack(spec, data) {
+    <- __builtin.pack_binary(spec, data)
+}
+
+/!
+ Unpacks a raw byte buffer (list of ints or host bytearray) into a map.
+ !/
+function unpack(spec, raw) {
+    <- __builtin.unpack_binary(spec, raw)
+}

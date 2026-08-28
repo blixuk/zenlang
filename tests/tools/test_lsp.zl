@@ -1,0 +1,104 @@
+/!
+  Tests for Zenlang Language Server Protocol (LSP) Server.
+!/
+
+import selfhost.lsp.Protocol as Protocol
+import selfhost.lsp.Server as Server
+import zen.test.test as test
+import zen.text.string as Str
+
+function test_content_length_parser() {
+    let cl1 -> Protocol.parse_content_length(`Content-Length: 128`)
+    test.assert_equal(cl1, 128, Nothing)
+
+    let cl2 -> Protocol.parse_content_length(`content-length: 4096`)
+    test.assert_equal(cl2, 4096, Nothing)
+
+    let cl3 -> Protocol.parse_content_length(`Invalid-Header: foo`)
+    test.assert_equal(cl3, -1, Nothing)
+    <- true
+}
+
+function test_completions() {
+    let uri -> `file:///workspace/test.zl`
+    let doc -> `function calculate(x) {\n    let total -> x * 2\n    <- total\n}`
+    Server.set_document(uri, doc)
+
+    let items -> Server.build_completions(uri, 0, 10)
+    test.assert_true(items.length > 20, Nothing)
+
+    let has_let -> false
+    let has_func -> false
+    let has_calc -> false
+    let has_arrow -> false
+    do for item in items {
+        when item[`label`] == `let` { has_let -> true }
+        when item[`label`] == `function` { has_func -> true }
+        when item[`label`] == `calculate` { has_calc -> true }
+        when item[`label`] == `->` { has_arrow -> true }
+    }
+    test.assert_true(has_let, `has_let`)
+    test.assert_true(has_func, `has_func`)
+    test.assert_true(has_calc, `has_calc`)
+    test.assert_true(has_arrow, `has_arrow`)
+    <- true
+}
+
+function test_hover() {
+    let uri -> `file:///workspace/test_hover.zl`
+    let doc -> `let count -> 10\nwhen count > 0 { <- count }`
+    Server.set_document(uri, doc)
+
+    let h_when -> Server.build_hover(uri, 1, 1)
+    test.assert_true(h_when != Nothing, Nothing)
+    let content_when -> h_when[`contents`][`value`]
+    test.assert_true(Str.contains(content_when, `Branching`), Nothing)
+    <- true
+}
+
+function test_document_symbols() {
+    let uri -> `file:///workspace/test_symbols.zl`
+    let doc -> `function compute() { <- 42 }\nstructure Vector { x, y }\nclass App { function run() {} }`
+    Server.set_document(uri, doc)
+
+    let symbols -> Server.build_document_symbols(uri)
+    test.assert_equal(symbols.length, 3, Nothing)
+
+    let s0 -> symbols[0]
+    let s1 -> symbols[1]
+    let s2 -> symbols[2]
+    test.assert_equal(s0[`name`], `compute`, Nothing)
+    test.assert_equal(s0[`kind`], 12, Nothing) // Function
+
+    test.assert_equal(s1[`name`], `Vector`, Nothing)
+    test.assert_equal(s1[`kind`], 23, Nothing) // Struct
+
+    test.assert_equal(s2[`name`], `App`, Nothing)
+    test.assert_equal(s2[`kind`], 5, Nothing) // Class
+    <- true
+}
+
+function test_definition() {
+    let uri -> `file:///workspace/test_def.zl`
+    let doc -> `function greet(name) { <- "hello" }\ngreet("world")`
+    Server.set_document(uri, doc)
+
+    let def_res -> Server.find_definition(uri, 1, 2)
+    test.assert_true(def_res != Nothing, Nothing)
+    test.assert_equal(def_res[`uri`], uri, Nothing)
+    test.assert_equal(def_res[`range`][`start`][`line`], 0, Nothing)
+    <- true
+}
+
+function main() {
+    let ok -> true
+    when not test.run_unit(`LSP.content_length`, test_content_length_parser) { ok -> false }
+    when not test.run_unit(`LSP.completions`, test_completions) { ok -> false }
+    when not test.run_unit(`LSP.hover`, test_hover) { ok -> false }
+    when not test.run_unit(`LSP.document_symbols`, test_document_symbols) { ok -> false }
+    when not test.run_unit(`LSP.definition`, test_definition) { ok -> false }
+    when ok {
+        <- 0
+    }
+    <- 1
+}

@@ -1,0 +1,1184 @@
+/!
+ Type checker — Stage 4 + endgame depth.
+ Walks Stage 2 AST nodes; dual-path free functions + module state.
+ Reports undefined names, basic redeclares, simple type clashes.
+ Covers with/alias scope, class methods (self), enumerators, is, lambdas.
+ Phase C: method/call resolution + arity, typed with alias, opt-in owned/borrowed.
+ !/
+
+import compiler.Types as Ty
+import compiler.AST as AST
+import compiler.Parser as Parser
+import compiler.Diagnostics as Diag
+import zen.text.string as Str
+
+// Checker work state (module map — dual-path safe).
+let C -> {
+    `scope` -> Nothing,
+    `errors` -> [],
+    `notes` -> [],
+    `current_return` -> Nothing,
+    `in_function` -> false,
+    `with_depth` -> 0,
+    `src` -> Nothing,
+    `filename` -> `<source>`
+}
+
+function err_list() {
+    <- C[`errors`]
+}
+
+function push_error(msg) {
+    let errs -> C[`errors`]
+    errs.append(msg)
+    C[`errors`] -> errs
+}
+
+function push_node_error(node, msg) {
+    let line -> AST.ast_line(node)
+    let col -> AST.ast_col(node)
+    when line > 0 and C[`src`] != Nothing and C[`src`] != `` {
+        let formatted -> Diag.format_error(C[`src`], C[`filename`], msg, line, col, 1)
+        push_error(formatted)
+    } or {
+        when line > 0 {
+            push_error(msg + ` (line ` + Str.to_string(line) + `, col ` + Str.to_string(col) + `)`)
+        } or {
+            push_error(msg)
+        }
+    }
+}
+
+function push_note(msg) {
+    let ns -> C[`notes`]
+    ns.append(msg)
+    C[`notes`] -> ns
+}
+
+function checker_reset(scope) {
+    C[`scope`] -> scope
+    C[`errors`] -> []
+    C[`notes`] -> []
+    C[`current_return`] -> Ty.t_void()
+    C[`in_function`] -> false
+    C[`with_depth`] -> 0
+}
+
+function kind_str(node) {
+    when node == Nothing {
+        <- ``
+    }
+    <- Str.to_string(AST.ast_kind(node))
+}
+
+function is_kind(node, name) {
+    when node == Nothing or name == Nothing {
+        <- false
+    }
+    <- AST.ast_kind(node) == name
+}
+
+// ---------- Public API ----------
+
+/!
+ Check source text (lex+parse via caller or internal parse).
+ Prefer check_program after Parser.parse_source.
+ !/
+function check_source_file(src, filename) {
+    let prog -> Parser.parse_source_file(src, filename)
+    when AST.prog_err(prog) != Nothing {
+        <- {
+            `ok` -> false,
+            `errors` -> [Str.to_string(AST.prog_err(prog))],
+            `notes` -> [],
+            `program` -> prog
+        }
+    }
+    C[`src`] -> src
+    C[`filename`] -> filename
+    <- check_program(prog)
+}
+
+function check_source(src) {
+    <- check_source_file(src, `<source>`)
+}
+
+/!
+ Check a Program AST. Returns { ok, errors, program }.
+ !/
+function check_program(prog) {
+    let global -> Ty.sc_create(Nothing)
+    // Builtins (minimal)
+    global -> Ty.sc_define(global, `io`, Ty.t_variant(), `MODULE`, false)
+    global -> Ty.sc_define(global, `write`, Ty.t_function(`write`, [], Ty.t_void()), `FUNCTION`, false)
+    global -> Ty.sc_define(global, `true`, Ty.t_boolean(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `false`, Ty.t_boolean(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `True`, Ty.t_boolean(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `False`, Ty.t_boolean(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `Nothing`, Ty.t_nothing(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `Default`, Ty.t_default(), `VARIABLE`, false)
+
+    checker_reset(global)
+
+    // Two passes over statements by index (native for-in moves/consumes lists).
+    let stmts -> AST.prog_stmts(prog)
+    when stmts != Nothing {
+        walk_stmts(stmts, 0, 0)
+        walk_stmts(stmts, 0, 1)
+    }
+
+    let errs -> err_list()
+    let n -> errs.length
+    <- {
+        `ok` -> n == 0,
+        `errors` -> errs,
+        `notes` -> C[`notes`],
+        `program` -> prog
+    }
+}
+
+/!
+ mode 0 = declare_toplevel, mode 1 = check_stmt
+ !/
+function walk_stmts(stmts, i, mode) {
+    when i >= stmts.length {
+        <- Nothing
+    }
+    let s -> stmts[i]
+    when mode == 0 {
+        declare_toplevel(s)
+    } or {
+        check_stmt(s)
+    }
+    walk_stmts(stmts, i + 1, mode)
+}
+
+// ---------- Declare ----------
+
+function declare_toplevel(node) {
+    when node == Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_FUNCTION) {
+        let name -> AST.fn_name(node)
+        let params -> AST.fn_params(node)
+        let ptypes -> []
+        when params != Nothing {
+            do for p in params {
+                let pt -> Ty.t_variant()
+                when AST.param_type(p) != Nothing {
+                    pt -> Ty.type_from_ann(AST.param_type(p))
+                }
+                ptypes.append(pt)
+            }
+        }
+        let ret -> Ty.t_variant()
+        when AST.fn_ret(node) != Nothing {
+            ret -> Ty.type_from_ann(AST.fn_ret(node))
+        }
+        let ft -> Ty.t_function(name, ptypes, ret)
+        let sc -> C[`scope`]
+        sc -> Ty.sc_define(sc, name, ft, `FUNCTION`, false)
+        C[`scope`] -> sc
+        <- Nothing
+    }
+    when is_kind(node, AST.K_STRUCTURE) {
+        let name -> AST.struct_name(node)
+        let members -> {}
+        let ms -> AST.struct_members(node)
+        when ms != Nothing {
+            do for m in ms {
+                when is_kind(m, AST.K_STRUCT_MEMBER) or Str.contains(kind_str(m), `Member`) {
+                    let mn -> AST.struct_member_name(m)
+                    let mt -> Ty.t_variant()
+                    when AST.struct_member_type(m) != Nothing {
+                        mt -> Ty.type_from_ann(AST.struct_member_type(m))
+                    }
+                    members[mn] -> mt
+                }
+            }
+        }
+        let st -> Ty.t_structure(name, members)
+        let sc -> C[`scope`]
+        sc -> Ty.sc_define(sc, name, st, `STRUCTURE`, false)
+        C[`scope`] -> sc
+        <- Nothing
+    }
+    when is_kind(node, AST.K_CLASS) {
+        declare_class(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_ENUMERATOR) {
+        declare_enumerator(node)
+        <- Nothing
+    }
+}
+
+function declare_class(node) {
+    let name -> AST.class_name(node)
+    let members -> {}
+    let ms -> AST.class_members(node)
+    when ms != Nothing {
+        do for m in ms {
+            let mn -> AST.let_name(m)
+            when mn != Nothing {
+                let mt -> Ty.t_variant()
+                when AST.let_type(m) != Nothing {
+                    mt -> Ty.type_from_ann(AST.let_type(m))
+                }
+                members[mn] -> mt
+            }
+        }
+    }
+    let method_tab -> {}
+    let methods -> AST.class_methods(node)
+    when methods != Nothing {
+        do for meth in methods {
+            when is_kind(meth, AST.K_FUNCTION) {
+                let mname -> AST.fn_name(meth)
+                let params -> AST.fn_params(meth)
+                let user_ptypes -> []
+                let ptypes -> [Ty.t_variant()]
+                when params != Nothing {
+                    do for p in params {
+                        let pt -> Ty.t_variant()
+                        when AST.param_type(p) != Nothing {
+                            pt -> Ty.type_from_ann(AST.param_type(p))
+                        }
+                        ptypes.append(pt)
+                        user_ptypes.append(pt)
+                    }
+                }
+                let ret -> Ty.t_variant()
+                when AST.fn_ret(meth) != Nothing {
+                    ret -> Ty.type_from_ann(AST.fn_ret(meth))
+                }
+                let fname -> name + `_` + Str.to_string(mname)
+                let ft -> Ty.t_function(fname, ptypes, ret)
+                let user_ft -> Ty.t_function(mname, user_ptypes, ret)
+                method_tab[mname] -> user_ft
+                let sc0 -> C[`scope`]
+                sc0 -> Ty.sc_define(sc0, fname, ft, `FUNCTION`, false)
+                C[`scope`] -> sc0
+            }
+        }
+    }
+    let st -> Ty.t_class(name, members, method_tab)
+    let sc -> C[`scope`]
+    sc -> Ty.sc_define(sc, name, st, `CLASS`, false)
+    C[`scope`] -> sc
+}
+
+function declare_enumerator(node) {
+    let name -> AST.enum_name(node)
+    let members -> {}
+    let ms -> AST.enum_members(node)
+    when ms != Nothing {
+        do for m in ms {
+            let mn -> AST.enum_mem_name(m)
+            when mn != Nothing {
+                members[mn] -> Ty.t_variant()
+            }
+        }
+    }
+    let st -> Ty.t_structure(name, members)
+    let sc -> C[`scope`]
+    sc -> Ty.sc_define(sc, name, st, `STRUCTURE`, false)
+    C[`scope`] -> sc
+}
+
+// ---------- Statements ----------
+
+function check_stmt(node) {
+    when node == Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_FUNCTION) {
+        check_function(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_LET) {
+        check_let(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_BLOCK) {
+        check_block(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_RETURN) {
+        check_return(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_WHEN) {
+        check_when(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_CHECK_STMT) {
+        check_check(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_WHILE) or is_kind(node, AST.K_DO_WHILE) {
+        check_loop(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_FOR) {
+        check_for(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_ASSERT) {
+        let _t -> check_expr(AST.assert_expr(node))
+        <- Nothing
+    }
+    when is_kind(node, AST.K_EXPR_STMT) {
+        let _t -> check_expr(AST.expr_stmt_expr(node))
+        <- Nothing
+    }
+    when is_kind(node, AST.K_STRUCTURE) {
+        // already declared
+        <- Nothing
+    }
+    when is_kind(node, AST.K_CLASS) {
+        check_class(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_ENUMERATOR) {
+        // declared in pass 0; members are variant tags
+        <- Nothing
+    }
+    when is_kind(node, AST.K_WITH) {
+        check_with(node)
+        <- Nothing
+    }
+    when is_kind(node, AST.K_IMPORT) or is_kind(node, AST.K_FROM_IMPORT) {
+        // Stage 4: treat imports as defining alias modules as Variant
+        let alias -> AST.import_alias(node)
+        when alias != Nothing and alias != `` {
+            let sc -> C[`scope`]
+            sc -> Ty.sc_define(sc, alias, Ty.t_variant(), `MODULE`, false)
+            C[`scope`] -> sc
+        }
+        <- Nothing
+    }
+    when is_kind(node, AST.K_SCOPE) {
+        check_block(AST.scope_body(node))
+        <- Nothing
+    }
+}
+
+function check_with(node) {
+    let rt -> check_expr(AST.with_expr(node))
+    when not Ty.is_arena_type(rt) {
+        push_note(`with: resource type ` + Ty.type_name(rt) + ` is not an arena`)
+    }
+    let alias_t -> Ty.copy_type_plain(rt)
+    // Untyped (Variant) with-alias is a plain value; typed/arena alias is borrowed.
+    when not is_untyped(rt) {
+        alias_t[`qualifier`] -> `borrowed`
+    }
+    let outer -> C[`scope`]
+    let inner -> Ty.sc_create(outer)
+    let alias -> AST.with_alias(node)
+    when alias != Nothing and alias != `` {
+        inner -> Ty.sc_define(inner, alias, alias_t, `VARIABLE`, false)
+    }
+    let prev_d -> C[`with_depth`]
+    C[`with_depth`] -> prev_d + 1
+    C[`scope`] -> inner
+    when AST.with_body(node) != Nothing {
+        check_stmt(AST.with_body(node))
+    }
+    C[`scope`] -> outer
+    C[`with_depth`] -> prev_d
+}
+
+function check_class(node) {
+    // Fields already in type; walk method bodies with self (+ soft parent for extends)
+    let methods -> AST.class_methods(node)
+    when methods == Nothing {
+        <- Nothing
+    }
+    let cname -> AST.class_name(node)
+    let base_name -> AST.class_base(node)
+    do for meth in methods {
+        when is_kind(meth, AST.K_FUNCTION) {
+            let outer -> C[`scope`]
+            let body_scope -> Ty.sc_create(outer)
+            body_scope -> Ty.sc_define(body_scope, `self`, Ty.t_variant(), `PARAMETER`, true)
+            when base_name != Nothing and base_name != `` {
+                // soft name for parent.meth receiver resolution only
+                body_scope -> Ty.sc_define(body_scope, `parent`, Ty.t_variant(), `PARAMETER`, false)
+            }
+            let params -> AST.fn_params(meth)
+            when params != Nothing {
+                do for p in params {
+                    let pt -> Ty.t_variant()
+                    when AST.param_type(p) != Nothing {
+                        pt -> Ty.type_from_ann(AST.param_type(p))
+                    }
+                    body_scope -> Ty.sc_define(body_scope, AST.param_name(p), pt, `PARAMETER`, false)
+                }
+            }
+            let prev_ret -> C[`current_return`]
+            let prev_in -> C[`in_function`]
+            let ret -> Ty.t_variant()
+            when AST.fn_ret(meth) != Nothing {
+                ret -> Ty.type_from_ann(AST.fn_ret(meth))
+            }
+            C[`current_return`] -> ret
+            C[`in_function`] -> true
+            C[`scope`] -> body_scope
+            let body -> AST.fn_body(meth)
+            when body != Nothing {
+                when is_kind(body, AST.K_BLOCK) {
+                    let stmts -> AST.block_stmts(body)
+                    when stmts != Nothing {
+                        do for s in stmts {
+                            check_stmt(s)
+                        }
+                    }
+                } or {
+                    check_stmt(body)
+                }
+            }
+            C[`scope`] -> outer
+            C[`current_return`] -> prev_ret
+            C[`in_function`] -> prev_in
+        }
+    }
+    // silence unused
+    when cname == Nothing {
+        <- Nothing
+    }
+}
+
+function check_function(node) {
+    let name -> AST.fn_name(node)
+    let outer -> C[`scope`]
+    let body_scope -> Ty.sc_create(outer)
+    // params
+    let params -> AST.fn_params(node)
+    when params != Nothing {
+        do for p in params {
+            let pt -> Ty.t_variant()
+            when AST.param_type(p) != Nothing {
+                pt -> Ty.type_from_ann(AST.param_type(p))
+            }
+            body_scope -> Ty.sc_define(body_scope, AST.param_name(p), pt, `PARAMETER`, false)
+        }
+    }
+    let prev_ret -> C[`current_return`]
+    let prev_in -> C[`in_function`]
+    let ret -> Ty.t_variant()
+    when AST.fn_ret(node) != Nothing {
+        ret -> Ty.type_from_ann(AST.fn_ret(node))
+    }
+    C[`current_return`] -> ret
+    C[`in_function`] -> true
+    C[`scope`] -> body_scope
+
+    let body -> AST.fn_body(node)
+    when body != Nothing {
+        when is_kind(body, AST.K_BLOCK) {
+            // don't create extra scope; already in function scope
+            let stmts -> AST.block_stmts(body)
+            when stmts != Nothing {
+                do for s in stmts {
+                    check_stmt(s)
+                }
+            }
+        } or {
+            check_stmt(body)
+        }
+    }
+
+    C[`scope`] -> outer
+    C[`current_return`] -> prev_ret
+    C[`in_function`] -> prev_in
+}
+
+function check_let(node) {
+    let name -> AST.let_name(node)
+    let sc -> C[`scope`]
+    when Ty.sc_has_local(sc, name) {
+        push_node_error(node, `Redeclaration of '` + name + `'`)
+    }
+    let declared -> Nothing
+    when AST.let_type(node) != Nothing {
+        declared -> Ty.type_from_ann(AST.let_type(node))
+    }
+    let value_t -> Ty.t_variant()
+    let val_node -> AST.let_val(node)
+    when val_node != Nothing {
+        value_t -> check_expr(val_node)
+        maybe_mark_move(val_node)
+    }
+    let final_t -> value_t
+    when declared == Nothing {
+        when Ty.is_borrowed_type(value_t) or Ty.is_owned_type(value_t) {
+            final_t -> Ty.copy_type_plain(value_t)
+        }
+    }
+    when declared != Nothing {
+        when not Ty.type_equal(declared, value_t) {
+            // materialize Default literal to declared type
+            when Str.to_string(value_t[`kind`]) == `Default` and val_node != Nothing and is_kind(val_node, AST.K_LITERAL) {
+                materialize_default(val_node, declared)
+                final_t -> declared
+            } or {
+                // allow Variant / Unknown
+                when Str.to_string(value_t[`kind`]) != `Variant` and Str.to_string(value_t[`kind`]) != `Unknown` {
+                    when Str.to_string(declared[`kind`]) != `Variant` {
+                        push_node_error(node, `Type mismatch in let '` + name + `': expected ` + Ty.type_name(declared) + ` got ` + Ty.type_name(value_t))
+                    }
+                }
+            }
+        }
+        final_t -> declared
+    }
+    let mut -> true
+    when AST.let_mut(node) == false {
+        mut -> false
+    }
+    sc -> Ty.sc_define(sc, name, final_t, `VARIABLE`, mut)
+    C[`scope`] -> sc
+}
+
+function check_block(node) {
+    when node == Nothing {
+        <- Nothing
+    }
+    let outer -> C[`scope`]
+    let inner -> Ty.sc_create(outer)
+    C[`scope`] -> inner
+    let stmts -> AST.block_stmts(node)
+    when stmts != Nothing {
+        do for s in stmts {
+            check_stmt(s)
+        }
+    }
+    C[`scope`] -> outer
+}
+
+function check_return(node) {
+    when C[`in_function`] != true {
+        push_node_error(node, `Return outside function`)
+    }
+    let val_node -> AST.ret_val(node)
+    when val_node != Nothing {
+        let vt -> check_expr(val_node)
+        maybe_mark_move(val_node)
+        when C[`with_depth`] > 0 {
+            when is_borrowed_expr(val_node) {
+                push_node_error(node, `borrowed escape from with`)
+            }
+        }
+        let expect -> C[`current_return`]
+        when expect != Nothing and not Ty.type_equal(expect, vt) {
+            when Str.to_string(expect[`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Variant` {
+                push_node_error(node, `Return type mismatch: expected ` + Ty.type_name(expect) + ` got ` + Ty.type_name(vt))
+            }
+        }
+    }
+}
+
+function check_when(node) {
+    let cases -> AST.when_cases(node)
+    when cases == Nothing {
+        <- Nothing
+    }
+    do for c in cases {
+        let outer -> C[`scope`]
+        let inner -> Ty.sc_create(outer)
+        C[`scope`] -> inner
+        let cond -> AST.case_cond(c)
+        when cond != Nothing {
+            when is_kind(cond, AST.K_IS) {
+                let _vt -> check_expr(AST.is_expr_val(cond))
+                check_pattern_binds(AST.is_expr_pat(cond))
+            } or {
+                let _ct -> check_expr(cond)
+            }
+        }
+        when AST.case_guard(c) != Nothing {
+            let _gt -> check_expr(AST.case_guard(c))
+        }
+        when AST.case_body(c) != Nothing {
+            check_stmt(AST.case_body(c))
+        }
+        C[`scope`] -> outer
+    }
+}
+
+function check_check(node) {
+    let expr -> AST.check_stmt_expr(node)
+    when expr != Nothing {
+        when is_kind(expr, AST.K_BLOCK) {
+            check_stmt(expr)
+        } or {
+            let _st -> check_expr(expr)
+        }
+    }
+    let cases -> AST.check_stmt_cases(node)
+    when cases != Nothing {
+        do for c in cases {
+            let outer -> C[`scope`]
+            let inner -> Ty.sc_create(outer)
+            C[`scope`] -> inner
+            when AST.case_cond(c) != Nothing {
+                check_pattern_binds(AST.case_cond(c))
+            }
+            when AST.case_guard(c) != Nothing {
+                let _gt -> check_expr(AST.case_guard(c))
+            }
+            when AST.case_body(c) != Nothing {
+                check_stmt(AST.case_body(c))
+            }
+            C[`scope`] -> outer
+        }
+    }
+    when AST.check_stmt_or_block(node) != Nothing {
+        check_stmt(AST.check_stmt_or_block(node))
+    }
+    when AST.check_stmt_raise(node) != Nothing {
+        let _rt -> check_expr(AST.check_stmt_raise(node))
+    }
+}
+
+function check_pattern_binds(pat) {
+    when pat == Nothing {
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_VARIABLE) {
+        let name -> AST.var_name(pat)
+        when name != `_` {
+            C[`scope`] -> Ty.sc_define(C[`scope`], name, Ty.t_variant(), `VARIABLE`, true)
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_REST) {
+        let name -> AST.rest_name(pat)
+        when name != Nothing and name != `_` {
+            C[`scope`] -> Ty.sc_define(C[`scope`], name, Ty.t_list(Ty.t_variant()), `VARIABLE`, true)
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_LIST) {
+        let elems -> AST.list_elems(pat)
+        when elems != Nothing {
+            do for el in elems {
+                check_pattern_binds(el)
+            }
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_MAP) {
+        let fields -> AST.map_entries(pat)
+        when fields != Nothing {
+            do for f in fields {
+                check_pattern_binds(AST.struct_field_val(f))
+            }
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_STRUCT_INIT) {
+        let fields -> AST.struct_init_fields(pat)
+        when fields != Nothing {
+            do for f in fields {
+                check_pattern_binds(AST.struct_field_val(f))
+            }
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_CALL) {
+        let args -> AST.call_args(pat)
+        when args != Nothing {
+            do for a in args {
+                check_pattern_binds(a)
+            }
+        }
+        <- Nothing
+    }
+}
+
+function check_loop(node) {
+    when AST.while_cond(node) != Nothing {
+        let _t -> check_expr(AST.while_cond(node))
+    }
+    when AST.while_body(node) != Nothing {
+        check_stmt(AST.while_body(node))
+    }
+}
+
+function check_for(node) {
+    let outer -> C[`scope`]
+    let inner -> Ty.sc_create(outer)
+    let vname -> AST.for_var(node)
+    when vname != Nothing {
+        inner -> Ty.sc_define(inner, vname, Ty.t_variant(), `VARIABLE`, true)
+    }
+    C[`scope`] -> inner
+    when AST.for_iter(node) != Nothing {
+        let _it -> check_expr(AST.for_iter(node))
+    }
+    when AST.for_body(node) != Nothing {
+        check_stmt(AST.for_body(node))
+    }
+    C[`scope`] -> outer
+}
+
+// ---------- Expressions ----------
+
+function check_expr(node) {
+    when node == Nothing {
+        <- Ty.t_unknown()
+    }
+    when is_kind(node, AST.K_WHEN) {
+        check_when(node)
+        <- Ty.t_unknown()
+    }
+    when is_kind(node, AST.K_LITERAL) {
+        <- infer_literal(AST.lit_val(node))
+    }
+    when is_kind(node, AST.K_VARIABLE) {
+        let name -> AST.var_name(node)
+        let sym -> Ty.sc_lookup(C[`scope`], name)
+        when sym == Nothing {
+            push_node_error(node, `Undefined variable '` + Str.to_string(name) + `'`)
+            <- Ty.t_unknown()
+        }
+        when sym[`moved`] == true {
+            push_node_error(node, `Use after move of '` + Str.to_string(name) + `'`)
+        }
+        <- sym[`type`]
+    }
+    when is_kind(node, AST.K_BINARY) {
+        let left -> AST.bin_left(node)
+        let right -> AST.bin_right(node)
+        let lt -> check_expr(left)
+        let rt -> check_expr(right)
+        
+        when Str.to_string(lt[`kind`]) == `Default` and is_kind(left, AST.K_LITERAL) {
+            materialize_default(left, rt)
+        }
+        when Str.to_string(rt[`kind`]) == `Default` and is_kind(right, AST.K_LITERAL) {
+            materialize_default(right, lt)
+        }
+        
+        let op -> Str.to_string(AST.bin_op(node))
+        <- infer_binary(op, lt, rt)
+    }
+    when is_kind(node, AST.K_UNARY) {
+        let rt -> check_expr(AST.un_right(node))
+        let op -> Str.to_string(AST.un_op(node))
+        when op == `not` {
+            <- Ty.t_boolean()
+        }
+        when op == `-` {
+            <- rt
+        }
+        <- rt
+    }
+    when is_kind(node, AST.K_LOGICAL) {
+        let _l -> check_expr(AST.log_left(node))
+        let _r -> check_expr(AST.log_right(node))
+        <- Ty.t_boolean()
+    }
+    when is_kind(node, AST.K_CALL) {
+        <- check_call(node)
+    }
+    when is_kind(node, AST.K_GET) {
+        <- check_get(node)
+    }
+    when is_kind(node, AST.K_INDEX) {
+        let _ot -> check_expr(AST.idx_obj(node))
+        let _it -> check_expr(AST.idx_expr(node))
+        when Str.to_string(_ot[`kind`]) == `List` {
+            <- _ot[`element`]
+        }
+        <- Ty.t_variant()
+    }
+    when is_kind(node, AST.K_ASSIGN) {
+        let name -> AST.assign_name(node)
+        let sym -> Ty.sc_lookup(C[`scope`], name)
+        when sym == Nothing {
+            push_node_error(node, `Undefined variable '` + Str.to_string(name) + `' in assignment`)
+        }
+        let val_node -> AST.assign_val(node)
+        let vt -> check_expr(val_node)
+        when sym != Nothing and not Ty.type_equal(sym[`type`], vt) {
+            // materialize Default literal to declared type
+            when Str.to_string(vt[`kind`]) == `Default` and val_node != Nothing and is_kind(val_node, AST.K_LITERAL) {
+                materialize_default(val_node, sym[`type`])
+                vt -> sym[`type`]
+            } or {
+                when Str.to_string(sym[`type`][`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Variant` {
+                    push_node_error(node, `Assignment type mismatch for '` + Str.to_string(name) + `'`)
+                }
+            }
+        }
+        <- vt
+    }
+    when is_kind(node, AST.K_SET) {
+        let _ot -> check_expr(AST.set_obj(node))
+        let vt -> check_expr(AST.set_val(node))
+        <- vt
+    }
+    when is_kind(node, AST.K_GROUPING) {
+        <- check_expr(AST.group_expr(node))
+    }
+    when is_kind(node, AST.K_LIST) {
+        let elems -> AST.list_elems(node)
+        let et -> Ty.t_variant()
+        when elems != Nothing and elems.length > 0 {
+            et -> check_expr(elems[0])
+            // check rest loosely
+            let n -> elems.length
+            // skip full loop for -g; first element sets type
+        }
+        <- Ty.t_list(et)
+    }
+    when is_kind(node, AST.K_STRUCT_INIT) {
+        let name -> AST.struct_init_name(node)
+        let sym -> Ty.sc_lookup(C[`scope`], name)
+        when sym == Nothing {
+            push_node_error(node, `Undefined structure '` + Str.to_string(name) + `'`)
+            <- Ty.t_unknown()
+        }
+        // check fields exist if structure type
+        let fields -> AST.struct_init_fields(node)
+        when fields != Nothing and Str.to_string(sym[`type`][`kind`]) == `Structure` {
+            let mems -> sym[`type`][`members`]
+            do for f in fields {
+                let fn -> AST.struct_field_name(f)
+                when mems != Nothing and not mems.has(fn) {
+                    push_node_error(node, `Unknown field '` + Str.to_string(fn) + `' on ` + Str.to_string(name))
+                }
+                when AST.struct_field_val(f) != Nothing {
+                    let _ft -> check_expr(AST.struct_field_val(f))
+                }
+            }
+        }
+        when sym != Nothing {
+            <- sym[`type`]
+        }
+        <- Ty.t_unknown()
+    }
+    when is_kind(node, AST.K_CHECK) {
+        <- check_expr(AST.check_expr_expr(node))
+    }
+    when is_kind(node, AST.K_IS) {
+        let _vt -> check_expr(AST.is_expr_val(node))
+        // pattern may be GetExpression (Enum.Variant) or literal; soft-check
+        when AST.is_expr_pat(node) != Nothing {
+            let _pt -> check_expr(AST.is_expr_pat(node))
+        }
+        <- Ty.t_boolean()
+    }
+    when is_kind(node, AST.K_FUNC_EXPR) {
+        // lambda: scope params, check body, type is Function
+        let outer -> C[`scope`]
+        let body_scope -> Ty.sc_create(outer)
+        let params -> AST.fn_expr_params(node)
+        let ptypes -> []
+        when params != Nothing {
+            do for p in params {
+                let pt -> Ty.t_variant()
+                when AST.param_type(p) != Nothing {
+                    pt -> Ty.type_from_ann(AST.param_type(p))
+                }
+                ptypes.append(pt)
+                body_scope -> Ty.sc_define(body_scope, AST.param_name(p), pt, `PARAMETER`, false)
+            }
+        }
+        let prev_ret -> C[`current_return`]
+        let prev_in -> C[`in_function`]
+        C[`current_return`] -> Ty.t_variant()
+        C[`in_function`] -> true
+        C[`scope`] -> body_scope
+        let body -> AST.fn_expr_body(node)
+        when body != Nothing {
+            when is_kind(body, AST.K_BLOCK) {
+                let stmts -> AST.block_stmts(body)
+                when stmts != Nothing {
+                    do for s in stmts {
+                        check_stmt(s)
+                    }
+                }
+            } or {
+                check_stmt(body)
+            }
+        }
+        C[`scope`] -> outer
+        C[`current_return`] -> prev_ret
+        C[`in_function`] -> prev_in
+        <- Ty.t_function(`lambda`, ptypes, Ty.t_variant())
+    }
+    when is_kind(node, AST.K_INDEX_ASSIGN) {
+        let _ot -> check_expr(AST.idx_assign_obj(node))
+        let _it -> check_expr(AST.idx_assign_expr(node))
+        let vt -> check_expr(AST.idx_assign_val(node))
+        <- vt
+    }
+    // Fallback
+    <- Ty.t_variant()
+}
+
+function check_call(node) {
+    let callee -> AST.call_callee(node)
+    let args -> AST.call_args(node)
+    let argc -> 0
+    when args != Nothing {
+        argc -> args.length
+        let ai -> 0
+        do while ai < argc {
+            let _at -> check_expr(args[ai])
+            maybe_mark_move(args[ai])
+            ai -> ai + 1
+        }
+    }
+    let callee_t -> check_expr(callee)
+    let ck -> Str.to_string(callee_t[`kind`])
+    when ck == `Class` or ck == `Structure` {
+        let cname -> Ty.type_name(callee_t)
+        check_ctor_arity(node, cname, callee_t, argc)
+        <- callee_t
+    }
+    when ck == `Function` {
+        let cname -> callee_t[`name`]
+        check_arity(node, cname, callee_t, argc)
+        when callee_t[`return`] != Nothing {
+            <- callee_t[`return`]
+        }
+    }
+    <- Ty.t_variant()
+}
+
+function check_ctor_arity(node, name, inst, argc) {
+    when inst == Nothing {
+        <- Nothing
+    }
+    let methods -> inst[`methods`]
+    when methods == Nothing {
+        when argc != 0 {
+            push_node_error(node, `Wrong arity for '` + Str.to_string(name) + `': expected 0 got ` + Str.to_string(argc))
+        }
+        <- Nothing
+    }
+    when methods.has(`init`) {
+        let init_t -> methods[`init`]
+        check_arity(node, Str.to_string(name), init_t, argc)
+        <- Nothing
+    }
+    when argc != 0 {
+        push_node_error(node, `Wrong arity for '` + Str.to_string(name) + `': expected 0 got ` + Str.to_string(argc))
+    }
+}
+
+function check_arity(node, name, ft, argc) {
+    when ft == Nothing {
+        <- Nothing
+    }
+    let params -> ft[`params`]
+    let expect -> 0
+    when params != Nothing {
+        expect -> params.length
+    }
+    when expect != argc {
+        push_node_error(node, `Wrong arity for '` + Str.to_string(name) + `': expected ` + Str.to_string(expect) + ` got ` + Str.to_string(argc))
+    }
+}
+
+function check_get(node) {
+    let ot -> check_expr(AST.get_obj(node))
+    let mn -> AST.get_name(node)
+    let k -> Str.to_string(ot[`kind`])
+    when k == `Structure` or k == `Class` {
+        let mems -> ot[`members`]
+        when mems != Nothing and mems.has(mn) {
+            <- mems[mn]
+        }
+        let methods -> ot[`methods`]
+        when methods != Nothing and methods.has(mn) {
+            <- methods[mn]
+        }
+        when mn == `length` {
+            <- Ty.t_variant()
+        }
+        when k == `Class` {
+            push_node_error(node, `Unknown method '` + Str.to_string(mn) + `' on ` + Ty.type_name(ot))
+        }
+    }
+    <- Ty.t_variant()
+}
+
+function maybe_mark_move(node) {
+    when node == Nothing {
+        <- Nothing
+    }
+    when is_kind(node, AST.K_VARIABLE) {
+        let name -> AST.var_name(node)
+        let sym -> Ty.sc_lookup(C[`scope`], name)
+        when sym != Nothing {
+            when is_owned_sym(sym) {
+                sym[`moved`] -> true
+            }
+        }
+    }
+}
+
+function is_untyped(t) {
+    when t == Nothing {
+        <- true
+    }
+    let k -> Str.to_string(t[`kind`])
+    when k == `Variant` or k == `Unknown` {
+        <- true
+    }
+    <- false
+}
+
+function is_owned_sym(sym) {
+    when sym == Nothing {
+        <- false
+    }
+    when sym[`qualifier`] == `owned` {
+        <- true
+    }
+    <- Ty.is_owned_type(sym[`type`])
+}
+
+function is_borrowed_expr(node) {
+    when node == Nothing {
+        <- false
+    }
+    when is_kind(node, AST.K_VARIABLE) {
+        let sym -> Ty.sc_lookup(C[`scope`], AST.var_name(node))
+        when sym == Nothing {
+            <- false
+        }
+        when sym[`qualifier`] == `borrowed` {
+            <- true
+        }
+        <- Ty.is_borrowed_type(sym[`type`])
+    }
+    <- false
+}
+
+function infer_literal(value) {
+    when value == Nothing {
+        <- Ty.t_nothing()
+    }
+    when value == true or value == false {
+        <- Ty.t_boolean()
+    }
+    let s -> Str.to_string(value)
+    when s == `true` or s == `false` or s == `True` or s == `False` {
+        <- Ty.t_boolean()
+    }
+    when s == `Nothing` or s == `Nothing` or s == `None` {
+        <- Ty.t_nothing()
+    }
+    when s == `Default` or s == `Default` {
+        <- Ty.t_default()
+    }
+    when Str.contains(s, `.`) {
+        // decimal or dotted — if mostly digits, decimal
+        when looks_decimal(s) {
+            <- Ty.t_decimal()
+        }
+    }
+    when looks_integer(s) {
+        <- Ty.t_integer()
+    }
+    <- Ty.t_string()
+}
+
+function looks_integer(s) {
+    let n -> Str.length(s)
+    when n == 0 {
+        <- false
+    }
+    let digits -> `0123456789`
+    let i -> 0
+    let ch0 -> Str.at(s, 0)
+    when ch0 == `-` {
+        when n == 1 {
+            <- false
+        }
+        i -> 1
+    }
+    <- all_in(s, i, n, digits)
+}
+
+function looks_decimal(s) {
+    // one dot, digits around
+    when not Str.contains(s, `.`) {
+        <- false
+    }
+    <- true
+}
+
+function all_in(s, i, n, alphabet) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when not Str.contains(alphabet, ch) {
+        <- false
+    }
+    <- all_in(s, i + 1, n, alphabet)
+}
+
+function materialize_default(node, target_type) {
+    let k -> Str.to_string(target_type[`kind`])
+    when k == `Integer` {
+        AST.set_lit_val(node, 0)
+    }
+    when k == `Decimal` {
+        AST.set_lit_val(node, 0.0)
+    }
+    when k == `String` {
+        AST.set_lit_val(node, ``)
+    }
+    when k == `Rune` {
+        AST.set_lit_val(node, ``)
+    }
+    when k == `Boolean` {
+        AST.set_lit_val(node, `False`)
+    }
+    when k == `Nothing` or k == `Void` {
+        AST.set_lit_val(node, `Nothing`)
+    }
+    when k == `List` {
+        AST.set_ast_kind(node, AST.K_LIST)
+        AST.set_list_elems(node, [])
+    }
+    when k == `Structure` or k == `Named` {
+        // null-pointer equivalent
+        AST.set_lit_val(node, `Nothing`)
+    }
+}
+
+function infer_binary(op, lt, rt) {
+    when op == `+` or op == `-` or op == `*` or op == `/` or op == `%` or op == `**` {
+        when Str.to_string(lt[`kind`]) == `String` or Str.to_string(rt[`kind`]) == `String` {
+            when op == `+` {
+                <- Ty.t_string()
+            }
+        }
+        when Str.to_string(lt[`kind`]) == `Decimal` or Str.to_string(rt[`kind`]) == `Decimal` {
+            <- Ty.t_decimal()
+        }
+        <- Ty.t_integer()
+    }
+    when op == `==` or op == `=` or op == `!=` or op == `<` or op == `>` or op == `<=` or op == `>=` {
+        <- Ty.t_boolean()
+    }
+    when op == `..` or op == `..=` {
+        <- Ty.t_variant()
+    }
+    when op == `and` or op == `or` {
+        <- Ty.t_boolean()
+    }
+    <- Ty.t_variant()
+}

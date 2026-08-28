@@ -1,14 +1,13 @@
 from typing import Any
+from Logging.Diagnostic import Diagnostic, Span, DiagnosticSeverity
 
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
+RED = "\033[1;31m"
+GREEN = "\033[1;32m"
+YELLOW = "\033[1;33m"
+BLUE = "\033[1;34m"
+CYAN = "\033[1;36m"
+WHITE = "\033[1;37m"
 BOLD = "\033[1m"
-UNDERLINE = "\033[4m"
 RESET = "\033[0m"
 
 
@@ -42,12 +41,11 @@ class Error(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
+        span = None
         if self.attachment:
-            return f"""[{self.name}] [{RED}Error{RESET}] {YELLOW}{self.message}{RESET}
-    {WHITE}'{self.attachment.type}': {self.attachment.line}, {self.attachment.column}{RESET}
-{WHITE}{self.source_path}:{self.attachment.line}:{self.attachment.column}{RESET}"""
-        else:
-            return f"[{self.name}] [{RED}Error{RESET}] {YELLOW}{self.message}{RESET}"
+            span = Span.from_token(self.attachment, self.source_path)
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="SyntaxError", span=span)
+        return diag.render()
 
 
 class ExpectTokenError(Exception):
@@ -61,12 +59,11 @@ class ExpectTokenError(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
+        span = None
         if self.attachment:
-            return f"""[{self.name}] [{RED}ExpectTokenError{RESET}] {YELLOW}{self.message}{RESET}
-    {WHITE}Token: {self.attachment}{RESET}
-{WHITE}{self.source_path}:{self.attachment.line}:{self.attachment.column}{RESET}"""
-        else:
-            return f"[{self.name}] [{RED}ExpectTokenError{RESET}] {YELLOW}{self.message}{RESET}"
+            span = Span.from_token(self.attachment, self.source_path, label="unexpected token here")
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="E0001: ExpectedToken", span=span)
+        return diag.render()
 
 
 class ExpectTokenValueError(Exception):
@@ -80,12 +77,11 @@ class ExpectTokenValueError(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
+        span = None
         if self.attachment:
-            return f"""[{self.name}] [{RED}ExpectTokenValueError{RESET}] {YELLOW}{self.message}{RESET}
-    {WHITE}Token: {self.attachment}{RESET}
-{WHITE}{self.source_path}:{self.attachment.line}:{self.attachment.column}{RESET}"""
-        else:
-            return f"[{self.name}] [{RED}ExpectTokenValueError{RESET}] {YELLOW}{self.message}{RESET}"
+            span = Span.from_token(self.attachment, self.source_path, label="unexpected value")
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="E0002: ExpectedTokenValue", span=span)
+        return diag.render()
 
 
 class TokenError(Exception):
@@ -99,27 +95,26 @@ class TokenError(Exception):
         super().__init__(self.__str__())
 
     def __str__(self) -> str:
+        span = None
         if self.attachment:
-            return f"""[{self.name}] [{RED}TokenError{RESET}] {YELLOW}{self.message}{RESET}
-    {WHITE}'{self.attachment.value}' at {self.attachment.line}, {self.attachment.column}{RESET}
-{WHITE}{self.source_path}:{self.attachment.line}:{self.attachment.column}{RESET}"""
-        else:
-            return (
-                f"[{self.name}] [{RED}TokenError{RESET}] {YELLOW}{self.message}{RESET}"
-            )
+            span = Span.from_token(self.attachment, self.source_path)
+        diag = Diagnostic(DiagnosticSeverity.ERROR, self.message, code="SyntaxError", span=span)
+        return diag.render()
 
 
 class ParserLogger:
-    def __init__(self, source_path: str | None = None):
+    def __init__(self, source_path: str | None = None, enabled: bool = False):
         self.name: str = "Parser"
         self.source_path: str | None = source_path
+        self.enabled: bool = enabled
         self.debugs: list[Debug] = []
         self.errors: list[
             Error | TokenError | ExpectTokenError | ExpectTokenValueError
         ] = []
 
     def debug(self, message: str, attachment: Any = None):
-        self.debugs.append(Debug(self.name, message, attachment))
+        if self.enabled:
+            self.debugs.append(Debug(self.name, self.source_path, message, attachment))
 
     def print_debugs(self):
         for debug in self.debugs:

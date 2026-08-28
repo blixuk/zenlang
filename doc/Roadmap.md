@@ -1,62 +1,257 @@
-Based on the current progress, Zenlang is now in a very strong position with a unique memory model and solid documentation. To move towards a version **0.2.0** or a "production-ready" beta, here is a prioritized list of next steps:
+# Zenlang Language & Platform Roadmap
 
-### 1. Language & Runtime Enhancements
-*   **Source Mapping for C Backend**: Currently, if the generated C code crashes or error-paints, it's hard to trace back to the original [.zl](cci:7://file:///tmp/doc_test.zl:0:0-0:0) line. Implementing a simple source-mapping system (or `#line` directives in the generated C) would drastically improve debugging.
-*   **Pattern Matching**: Zenlang's [when](cci:1://file:///mnt/personal/programming/Python/2025/zen/bootstrap/Parser/StatementHandler.py:653:4-663:24) statement is powerful, but true structural pattern matching (destructuring lists, maps, or structs) would make it feel even more "modern" and expressive.
-*   **Result/Option Types**: While we have the "Error Triad" (`^`, `?`, `!`), formalizing `Result<T, E>` and `Option<T>` types would make the type system even more robust.
+This document outlines the strategic roadmap for Zenlang's language evolution, compiler architecture, runtime systems, and developer tooling.
 
-### 2. Standard Library Expansion
-*   **`zen.sys.term` (TUI Framework)**: The foundations are there, but adding a declarative TUI layout engine (similar to Flexbox but for the terminal) would be a "killer feature" for Zenlang.
-*   **`zen.net`**: Building out a high-level HTTP client and server library using the fiber-based **Task** model we've documented.
-*   **`zen.fs`**: More ergonomic file system wrappers (recursive directory walking, watchdog/file-watching support) for modern scripting.
-
-### 3. Tooling & DX (Developer Experience)
-*   **`zen pkg` (Package Manager)**: Implementing the core logic for the package manager we've mentioned in the docs. Even a simple system that fetches git repositories would be a huge boost.
-*   **Integrated Test Runner**: A `zen test` command that automatically discovers and runs functions prefixed with `test_`.
-*   **LSP (Language Server Protocol)**: Enhancing the VS Code extension with a real LSP (using the bootstrap compiler's internal `Resolver` and `TypeChecker`) to provide go-to-definition and autocomplete.
-
-### 4. The "Self-Hosting" Milestone
-*   **Compiling the Compiler**: The ultimate test of the C backend is to have Zenlang's compiler (currently in Python) rewritten in Zenlang and successfully transpiled to a single, fast native binary.
-
-### 5. Documentation & Community
-*   **The Zen Cookbook**: A collection of "recipes" for common Unix tasks (e.g., "How to pipe a process into a Map," "Building a CLI dashboard in 50 lines").
-*   **Standard Library API Browser**: An automated tool that generates HTML documentation directly from the `/lib` files.
-
-**Which of these feels the most exciting or urgent to you?** I can help you start on any of these paths!
+Zenlang's development follows three core design tenets:
+1. **Directional Visual Flow**: Code reflects how data moves through assignments (`->`), returns (`<-`), pipelines (`|>`), and transformations.
+2. **Explicitness over Magic**: Clear semantics, deterministic memory management, and transparent control flow without hidden control transfer.
+3. **Unix-Native Power**: Native performance, first-class terminal interfaces, robust process orchestration, and seamless C interoperability.
 
 ---
 
-Type cecking, Type comparing, is type, is String, is Integer...ect
+## 1. Current Baseline (Completed Milestones)
 
-Error handling and logging
-Debug handling and logging
+| Area | Feature / Capability | Status |
+| :--- | :--- | :--- |
+| **Dual Execution Engine** | Seamless execution across interpreter VM and native `-g` C AOT compiler with 100% feature parity. | ✅ Shipped |
+| **Directional Guards & Concise Syntax** | `function f(x) <- expr`, `task t(x) <- expr`, and guard returns `when cond <- expr` / `or <- expr`. | ✅ Shipped |
+| **Extended Flow Operators** | `++` (append/prepend/concatenate) and `--` (drop end/start/decrement) across strings, lists, and numbers. | ✅ Shipped |
+| **Document Publishing Engine** | Zen Mark (`zenmark`) vector PDF generator with TOC, Callouts, Flow Diagrams, Table Zebra Shading, and 6 Themes (including official Arctic Nord Dark). | ✅ Shipped |
+| **Terminal & TUI Engine** | `zen.ui.canvas`, `zen.ui.table`, `zen.ui.spinner`, ANSI raw terminal control, and mouse/keyboard event loops. | ✅ Shipped |
+| **Task Concurrency Model** | Fibers, channels, WaitGroups, mutexes, task pools, async combinators, and timeouts. | ✅ Shipped |
+| **Reflection & Plugin System** | Dynamic reflection (`zen.reflect`), `is reflectable` types, method registration thunks, and runtime plugin loading. | ✅ Shipped |
+
+---
+
+## 2. Milestone 1: Directional Ergonomics & String Systems
+
+Focus: Eliminating boilerplate in string formatting, slicing, data pipelines, and text extraction.
+
+### 1.1 Formatted F-Strings (`f`...``) & Template Strings (`t`...``)
+- **Motivation**: Explicitness over magic. Unprefixed backtick strings (`` `...` ``) remain raw and literal, ensuring zero accidental interpolation in raw text, regexes, or Zen Mark markup (such as `{{code}}`).
+- **Formatted F-Strings (`f`...``)**: Eagerly evaluates expressions inside `{expr}` and concatenates them:
+  ```zen
+  let user -> "Alice"
+  let score -> 95
+  let msg -> f`Player {user} scored {score} points (Grade: {calc_grade(score)})`
+  ```
+- **Template Strings (`t`...``)**: Produces a deferred, reusable `Template` object:
+  ```zen
+  let card_tpl -> t`Card for {name}: Status is {status}`
+  let rendered -> card_tpl.render({ `name` -> `Alice`, `status` -> `Active` })
+  ```
+
+### 1.2 Python-Style Slicing for Strings & Lists (`[start:end:step]`)
+- **Motivation**: Ergonomic, intuitive slicing for strings and lists with negative indexing and stepping.
+- **Syntax**:
+  ```zen
+  let s -> `Zenlang`
+  let items -> [10, 20, 30, 40, 50]
+
+  // Substring & sublist slicing
+  s[0:3]       // "Zen"
+  items[1:4]   // [20, 30, 40]
+
+  // Open-ended slices
+  s[3:]        // "lang"
+  s[:3]        // "Zen"
+  items[:2]    // [10, 20]
+
+  // Negative indexing (from end)
+  s[-1]        // 'g'
+  s[:-1]       // "Zenlan"
+  items[-1]    // 50
+  items[:-1]   // [10, 20, 30, 40]
+
+  // Stepping & reversal
+  s[::-1]      // "gnalneZ"
+  items[::-1]  // [50, 40, 30, 20, 10]
+  ```
+
+### 1.3 Nullish / Sentinel Coalescing Operator (`??`)
+- **Motivation**: Simplify accessing optional fields in dynamic maps and sentinel fallbacks.
+- **Syntax**:
+  ```zen
+  let title -> opts.title ?? `Untitled`
+  let timeout -> config.timeout ?? 30
+  ```
+- **Semantics**: Evaluates the left operand; if it is `Nothing`, evaluates and returns the right operand.
+
+### 1.4 Directional Pipeline Operator (`|>`)
+- **Motivation**: Complete Zen's visual directional flow for multi-step data transformations without deeply nested function calls.
+- **Syntax**:
+  ```zen
+  let clean_output -> raw_text
+      |> Str.trim
+      |> Str.to_lower
+      |> Str.replace(`\r\n`, `\n`)
+  ```
+- **Semantics**: `x |> f` evaluates to `f(x)`, and `x |> f(y)` evaluates to `f(x, y)`.
 
 ---
 
-### 1. Semantic Text Power (`zen.text.text`)
-The manifesto mentions that Zenlang treats text as more than just byte arrays. We could implement the linguistic structures:
-- **`Word`**: Functions for stems, case manipulation, and boundaries.
-- **`Sentence`**: Utilities for punctuation handling, capitalization, and segments.
-- **`Paragraph`**: Alignment, wrapping, and flow control.
-- *Why:* This is a core "WOW" feature of the language's identity.
+## 3. Milestone 2: The Zen Trinity & `zen.text` Ecosystem Integration
 
-### 2. Modern Networking (`zen.net`)
-To move toward building networked services as mentioned in the docs:
-- **`TCP` / `UDP`**: Basic socket wrappers for connecting and listening.
-- **`HTTP` Client**: A simple wrapper for making requests (GET/POST).
-- *Why:* Essential for any modern "Unix-native" language.
+Focus: Unifying computation (**Zen Code**), structured data (**Zen Data**), and rich communication (**Zen Mark**).
 
-### 3. Advanced Terminal UI (`zen.console` / `zen.sys.term`)
-Fulfilling the "Terminal-first" philosophy:
-- **Rich Formatting**: Support for 256-color/TrueColor, bold, italics, etc.
-- **Interactive Input**: Done for basics — `raw_enter`/`raw_exit`, `read_key`/`poll_key`, resize events, cursor helpers; demo editor `examples/zedit.zl`.
-- **Progress & Spinners**: High-level components for CLI tools.
-- **Declarative layout**: Still open (flex-like TUI engine).
+```
+                 ┌──────────────────────────────────────┐
+                 │       The Zen Ecosystem Trinity      │
+                 └──────────────────┬───────────────────┘
+                                    │
+       ┌────────────────────────────┼────────────────────────────┐
+       ▼                            ▼                            ▼
+ ┌───────────────┐           ┌───────────────┐           ┌───────────────┐
+ │   Zen Code    │           │   Zen Data    │           │   Zen Mark    │
+ │    (.zl)      │           │    (.zd)      │           │    (.zm)      │
+ ├───────────────┤           ├───────────────┤           ├───────────────┤
+ │  Computation  │           │   Structure   │           │ Communication │
+ │ - 3-Layer VM  │           │ - AST Caching │           │ - Doc Comments│
+ │ - Native AOT  │           │ - Config/IPC  │           │ - zendoc / Man│
+ │ - Tooling/LSP │           │ - Package ZD  │           │ - Vector PDF  │
+ └───────────────┘           └───────────────┘           └───────────────┘
+```
 
-### 4. Concurrency & Tasks (`zen.task`)
-Fleshing out the "Everything is a Task" model:
-- **`WaitGroups` / `WaitAll`**: Coordinating multiple background tasks.
-- **Timeouts**: Cancelling tasks that take too long.
-- **Simple Channels**: Basic communication between tasks.
+### 2.1 Zen Data (`.zd`) in the Compiler & Runtime
+- **AST Caching (Incremental Selfhost Rebuilds)**: Serializing parsed ASTs into `.zd` caches so untouched modules deserialize instantly during `--multi` builds.
+- **Project & Package Manifests (`zen.zd` / `pkg.zd`)**: Native Zen data configuration replacing JSON/TOML/YAML.
+- **IPC & Task Message Passing**: Serializing `ZenValue` state across fiber channels, processes, and Unix sockets.
+
+### 2.2 Zen Mark (`.zm`) & Compiler Tooling (`zendoc`)
+- **Doc-Comment API Extraction (`zendoc`)**: Extracting `/! ... !/` doc comments from `.zl` sources to compile interactive terminal man-pages (`zen doc <mod>`), HTML references, and PDF monographs.
+- **Compiler Diagnostic Callouts**: Formatting compiler errors with Zen Mark callout badges (`Note`, `Warning`, `Caution`) and source frames.
+- **`zen.text` Linguistic Bridge**:
+  - `zm.Document.from_book(book, opts)`: 1-line conversion of `Book` / `Chapter` / `Paragraph` structures directly to vector PDF/HTML.
+  - `zm.Document.to_book(doc)`: Extracts pure semantic text for word counts and readability analysis.
+  - `Str.dedent(text)`: Strips baseline indentation from embedded Zen Mark and multiline code strings.
+  - `Str.slugify(text)`: Generates clean anchor IDs for headings and internal PDF links.
+
+### 2.3 Zen Code (`zencode` / `zen.tooling`)
+- **Canonical Code Formatter (`zen fmt`)**: Standardizes `->` assignments, `<-` returns, and block indentations.
+- **Syntax Highlighter & REPL**: Colorizes stack traces, diagnostics, and interactive terminal sessions.
+- **LSP Daemon**: Language server backend powering hover docs, autocomplete, and diagnostics in VS Code, Zed, and Sublime.
 
 ---
+
+## 4. Milestone 3: Type System & Required Surface (Host 1.0 / Phase L)
+
+Focus: Formalizing sentinels and type zero-states before self-host compiler graduation.
+
+### 3.1 `Default` Sentinel Materialization
+- **Motivation**: Distinguish absent values (`Nothing`) from type zero-states (`Default`).
+- **Materialization Table**:
+  - `Integer` $\rightarrow$ `0`
+  - `Decimal` $\rightarrow$ `0.0`
+  - `Boolean` $\rightarrow$ `False`
+  - `String` / `Rune` $\rightarrow$ `""`
+  - `List` $\rightarrow$ `[]`
+  - `Map` $\rightarrow$ `{}`
+  - Structure / Class $\rightarrow$ Zero-initialized field instance.
+- **Comparison Semantics**:
+  ```zen
+  let count : Integer -> Default   // Initialized to 0
+  when count == Default {
+      // True when count equals its type zero-value (0)
+  }
+  ```
+
+### 3.2 Canonical PascalCase Sentinels
+- Enforce `Nothing`, `Default`, `True`, `False` across all language specifications and stdlib sources, deprecating legacy lowercase variants.
+
+---
+
+## 5. Milestone 4: Pattern Matching & Structured Data
+
+Focus: Expressive destructuring and type-safe tagged union handling.
+
+### 4.1 Tagged Union / Enum Payload Binding (`is`)
+- **Syntax**:
+  ```zen
+  when response {
+      is Result.Ok(data) <- process_payload(data)
+      is Result.Err(err_msg) {
+          io.error(f`Request failed: {err_msg}`)
+          <- -1
+      }
+  }
+  ```
+
+### 4.2 Tuple & Multi-Return Destructuring
+- **Syntax**:
+  ```zen
+  function divmod(a, b) <- (a / b, a % b)
+
+  let (quotient, remainder) -> divmod(10, 3)
+  ```
+
+### 4.3 Struct & Map Pattern Destructuring
+- **Syntax**:
+  ```zen
+  let Point { x, y } -> get_cursor_position()
+  let { title, author, ...extra } -> metadata_map
+  ```
+
+---
+
+## 6. Milestone 5: Collections & Metaprogramming
+
+### 5.1 Directional List & Map Comprehensions
+- **Syntax**:
+  ```zen
+  // List comprehension
+  let squares -> [for x in 1..=10 when x % 2 == 0 -> x * x]
+
+  // Map comprehension
+  let id_map -> {for u in users -> u.id: u.name}
+  ```
+
+### 5.2 Flow Map Spread & Deep Merge
+- **Syntax**:
+  ```zen
+  let base_config -> { `timeout` -> 30, `retries` -> 3, `debug` -> False }
+  let user_config -> { ...base_config, `debug` -> True, `host` -> `localhost` }
+  ```
+
+---
+
+## 7. Milestone 6: Three-Layer Self-Hosting Architecture
+
+Tracked in detail under [selfhost/ENDGAME_PLAN.md](file:///home/blix/.grok/worktrees/2025-zen/zen/selfhost/ENDGAME_PLAN.md) and [selfhost/THREE_LAYER.md](file:///home/blix/.grok/worktrees/2025-zen/zen/selfhost/THREE_LAYER.md):
+
+1. **Layer 1: Universal ZenValue ABI**: Language values and inter-module calling conventions shared between compiled C binaries and interpreted scripts.
+2. **Layer 2: Native Compiler AST/IR**: High-speed native structs in self-hosted compiler sources (`selfhost/compiler/`) replacing Python bootstrap dictionary nodes.
+3. **Layer 3: Bytecode Script VM**: Instant startup script execution VM without dependency on Python or external toolchains.
+4. **Bootstrap Retirement**: Full transition of `bin/zen` router to the standalone self-hosted compiler binary.
+
+---
+
+## 8. Priority & Implementation Sequence
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Immediate Priority: Milestone 1 & 2                         │
+│  ├─ 1.1 Formatted F-Strings (`f`...``) & Templates (`t`...``)│
+│  ├─ 1.2 Python-Style Slicing (`s[start:end:step]`)          │
+│  ├─ 1.3 Nullish Coalescing (`??`)                           │
+│  ├─ 1.4 Pipeline Operator (`|>`)                            │
+│  └─ 2.1 Zen Text & Zen Mark Bridge (`from_book`, `dedent`)  │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Near-Term Priority: Milestone 3 (Required Surface)          │
+│  ├─ 3.1 Default Zero-State Materialization (Phase L)        │
+│  └─ 3.2 PascalCase Sentinels (Nothing, Default)             │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Medium-Term Priority: Milestone 4 & 5 (Patterns & Collects) │
+│  ├─ 4.1 Enum Payload Pattern Matching: `is Ok(val)`         │
+│  ├─ 4.2 Tuple & Struct Destructuring: `let (a, b)`          │
+│  └─ 5.1 Directional Comprehensions: `[for x in list -> x*2]`│
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+┌──────────────────────────────▼──────────────────────────────┐
+│ Long-Term Priority: Milestone 6 (Self-Host Stage Graduation)│
+│  └─ Pure Self-Hosted Three-Layer Compiler & VM Distribution  │
+└─────────────────────────────────────────────────────────────┘
+```

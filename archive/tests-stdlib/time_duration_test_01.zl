@@ -1,0 +1,47 @@
+import zen.io.io as IO
+import zen.time as Time
+import zen.text.string as Str
+
+function test_duration_literals() {
+    IO.info(`--- Testing Duration Literals ---`)
+    
+    let ms -> 500.ms
+    IO.info(`  500.ms -> ` + Str.to_string(ms))
+    
+    let s -> 2.seconds
+    IO.info(`  2.seconds -> ` + Str.to_string(s))
+    
+    let m -> 1.minutes
+    IO.info(`  1.minute -> ` + Str.to_string(m))
+    
+    let h -> 1.hours
+    IO.info(`  1.hour -> ` + Str.to_string(h))
+    
+    let d -> 1.days
+    IO.info(`  1.day -> ` + Str.to_string(d))
+}
+
+function test_time_functions() {
+    IO.info(`--- Testing Time Functions ---`)
+    
+    let start -> Time.monotonic()
+    IO.info(`  Monotonic start: ` + Str.to_string(start))
+    
+    let now -> Time.now()
+    IO.info(`  Now: ` + Str.to_string(now))
+    
+    let wall -> Time.wallclock()
+    IO.info(`  Wallclock: ` + Str.to_string(wall))
+    
+    IO.info(`  Sleeping for 500ms...`)
+    Time.sleep(500.ms)
+    
+    let end -> Time.monotonic()
+    IO.info(`  Monotonic end: ` + Str.to_string(end))
+    IO.info(`  Elapsed: ` + Str.to_string(end - start))
+}
+
+function zen_entry() {
+    test_duration_literals()
+    test_time_functions()
+}

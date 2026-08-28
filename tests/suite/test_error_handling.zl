@@ -1,0 +1,26 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+function failing_func() {
+    raise `ExpectedFailure`
+}
+
+function test_check_raise() {
+    io.write(`  - Check/Raise... `)
+    let caught -> false
+    check {
+        failing_func()
+    } or {
+        caught -> true
+    }
+    utils.assert_true(caught, `caught exception with check`)
+    
+    let result -> check failing_func() or 123
+    utils.assert_eq(result, 123, `inline check fallback`)
+    io.write(`PASS\n`)
+}
+
+function run_error_handling_tests() {
+    io.write(`Running Error Handling Tests:\n`)
+    test_check_raise()
+}

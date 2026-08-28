@@ -6,7 +6,7 @@
 # Full historical Makefile: archive/Makefile.legacy
 # Long-term: self-hosted build tool (.zbuild), not Make.
 
-.PHONY: help install install-bootstrap install-driver install-selfhost install-handoff handoff-soak selfhost-smoke multi-selfhost-smoke test test-core test-parity test-lib test-lib-native clean selfhost selfhost-driver
+.PHONY: help install install-bootstrap install-rollback install-driver install-selfhost install-handoff handoff-soak selfhost-smoke multi-selfhost-smoke test test-core test-parity test-lib test-lib-native ci ci-soak clean selfhost selfhost-driver
 
 help:
 	@bash scripts/zen help
@@ -16,6 +16,9 @@ install selfhost:
 
 install-bootstrap:
 	@bash scripts/zen install-bootstrap
+
+install-rollback:
+	@bash scripts/zen install-rollback
 
 install-driver selfhost-driver:
 	@bash scripts/zen install-driver
@@ -30,6 +33,12 @@ install-handoff:
 
 handoff-soak:
 	@bash scripts/zen handoff-soak
+
+ci:
+	@bash scripts/zen ci
+
+ci-soak:
+	@bash scripts/zen ci-soak
 
 selfhost-smoke:
 	@bash scripts/zen selfhost-smoke

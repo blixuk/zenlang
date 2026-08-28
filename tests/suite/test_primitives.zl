@@ -1,0 +1,49 @@
+import zen.io.io as io
+import tests.suite.utils as utils
+
+function test_integers() {
+    io.write(`  - Integers... `)
+    utils.assert_eq(1 + 2, 3, `addition`)
+    utils.assert_eq(10 - 5, 5, `subtraction`)
+    utils.assert_eq(4 * 3, 12, `multiplication`)
+    utils.assert_eq(20 / 4, 5, `division`)
+    utils.assert_eq(10 % 3, 1, `modulo`)
+    utils.assert_eq(2 ** 3, 8, `exponentiation`)
+    io.write(`PASS\n`)
+}
+
+function test_decimals() {
+    io.write(`  - Decimals... `)
+    utils.assert_eq(1.5 + 2.5, 4.0, `addition`)
+    utils.assert_eq(5.0 - 1.2, 3.8, `subtraction`)
+    utils.assert_eq(2.0 * 3.5, 7.0, `multiplication`)
+    utils.assert_eq(10.0 / 4.0, 2.5, `division`)
+    io.write(`PASS\n`)
+}
+
+function test_booleans() {
+    io.write(`  - Booleans... `)
+    utils.assert_true(true, `true is true`)
+    utils.assert_false(false, `false is false`)
+    utils.assert_true(true and true, `and`)
+    utils.assert_false(true and false, `and`)
+    utils.assert_true(true or false, `or`)
+    utils.assert_true(not false, `not`)
+    io.write(`PASS\n`)
+}
+
+function test_strings() {
+    io.write(`  - Strings... `)
+    utils.assert_eq(`hello` + ` world`, `hello world`, `concatenation`)
+    let name -> `Zen`
+    utils.assert_eq(`Hello ` + name, `Hello Zen`, `interpolation simulation`)
+    io.write(`PASS\n`)
+}
+
+function run_primitives_tests() {
+    io.write(`Running Primitives Tests:\n`)
+    test_integers()
+    test_decimals()
+    test_booleans()
+    test_strings()
+}

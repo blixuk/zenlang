@@ -1,0 +1,106 @@
+import zen.test as test
+import zen.collections.priority_queue as pq
+import zen.collections.lru as lru
+import zen.collections.ring_buffer as ring_buffer
+import zen.math.stats as stats
+
+function test_priority_queue() {
+    let q -> pq.create(True) // Min-Heap
+    q -> pq.push(q, 10, `task_low`)
+    q -> pq.push(q, 1, `task_high`)
+    q -> pq.push(q, 5, `task_med`)
+
+    let pass -> test.assert_equal(pq.size(q), 3, `pq size should be 3`)
+
+    let pop1 -> pq.pop(q)
+    pass -> pass and test.assert_equal(pop1[`item`], `task_high`, `first pop lowest priority number 1`)
+    q -> pop1[`queue`]
+
+    let pop2 -> pq.pop(q)
+    pass -> pass and test.assert_equal(pop2[`item`], `task_med`, `second pop priority 5`)
+    q -> pop2[`queue`]
+
+    let pop3 -> pq.pop(q)
+    pass -> pass and test.assert_equal(pop3[`item`], `task_low`, `third pop priority 10`)
+    q -> pop3[`queue`]
+
+    pass -> pass and test.assert_true(pq.is_empty(q), `pq should be empty after 3 pops`)
+    <- pass
+}
+
+function test_lru_cache() {
+    let cache -> lru.create(2)
+    cache -> lru.put(cache, `a`, 100)
+    cache -> lru.put(cache, `b`, 200)
+
+    let g1 -> lru.get(cache, `a`)
+    let pass -> test.assert_true(g1[`found`], `get 'a' found`)
+    pass -> pass and test.assert_equal(g1[`value`], 100, `get 'a' value 100`)
+    cache -> g1[`cache`]
+
+    // Inserting 'c' should evict 'b' (since 'a' was accessed recently)
+    cache -> lru.put(cache, `c`, 300)
+    pass -> pass and test.assert_true(lru.has(cache, `a`), `'a' still in cache`)
+    pass -> pass and test.assert_true(lru.has(cache, `c`), `'c' in cache`)
+    pass -> pass and test.assert_false(lru.has(cache, `b`), `'b' was evicted`)
+    pass -> pass and test.assert_equal(lru.size(cache), 2, `cache size is 2`)
+
+    <- pass
+}
+
+function test_ring_buffer() {
+    let rb -> ring_buffer.create(3)
+    rb -> ring_buffer.push(rb, `x`)
+    rb -> ring_buffer.push(rb, `y`)
+    rb -> ring_buffer.push(rb, `z`)
+
+    let pass -> test.assert_true(ring_buffer.is_full(rb), `ring buffer full`)
+    pass -> pass and test.assert_equal(ring_buffer.peek_oldest(rb), `x`, `peek oldest 'x'`)
+    pass -> pass and test.assert_equal(ring_buffer.peek_latest(rb), `z`, `peek latest 'z'`)
+
+    // Push 4th item: should evict 'x'
+    rb -> ring_buffer.push(rb, `w`)
+    let list_out -> ring_buffer.to_list(rb)
+    pass -> pass and test.assert_equal(list_out.length, 3, `ring buffer length 3`)
+    pass -> pass and test.assert_equal(list_out[0], `y`, `first element is 'y'`)
+    pass -> pass and test.assert_equal(list_out[1], `z`, `second element is 'z'`)
+    pass -> pass and test.assert_equal(list_out[2], `w`, `third element is 'w'`)
+
+    <- pass
+}
+
+function test_statistics() {
+    let data -> [10, 20, 30, 40, 50]
+    let s -> stats.sum(data)
+    let pass -> test.assert_equal(s, 150.0, `stats sum`)
+
+    let m -> stats.mean(data)
+    pass -> pass and test.assert_equal(m, 30.0, `stats mean`)
+
+    let med -> stats.median(data)
+    pass -> pass and test.assert_equal(med, 30.0, `stats median`)
+
+    let p50 -> stats.percentile(data, 50.0)
+    pass -> pass and test.assert_equal(p50, 30.0, `percentile 50`)
+
+    let summ -> stats.summary(data)
+    pass -> pass and test.assert_equal(summ[`min`], 10.0, `summary min`)
+    pass -> pass and test.assert_equal(summ[`max`], 50.0, `summary max`)
+    pass -> pass and test.assert_equal(summ[`count`], 5, `summary count`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Collections.PriorityQueue`, `fn` -> test_priority_queue },
+        { `name` -> `Collections.LRU`, `fn` -> test_lru_cache },
+        { `name` -> `Collections.RingBuffer`, `fn` -> test_ring_buffer },
+        { `name` -> `Math.Stats`, `fn` -> test_statistics }
+    ]
+    <- test.run_suite(`Collections & Stats Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

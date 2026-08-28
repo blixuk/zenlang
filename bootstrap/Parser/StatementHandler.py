@@ -191,8 +191,32 @@ class StatementHandler(
         # fallback: expression statement
         return self.expression_statement()
 
-    def expression_statement(self) -> ExpressionStatement:
+    def expression_statement(self) -> ASTNode:
         expression: ASTNode = self.expression_handler.expression()
+        
+        # Lower standalone '++' and '--' operations to ReassignmentStatement
+        from Parser.AST import BinaryOperation, Identifier, MemberExpression, IndexExpression, ReassignmentStatement, MemberReassignmentStatement, IndexReassignmentStatement
+        if isinstance(expression, BinaryOperation) and getattr(expression, "operator", None) in ("++", "--"):
+            left = expression.left
+            right = expression.right
+            scope_level = self.scope_manager.get_current_scope_level()
+            line = getattr(expression, "line", 0)
+            col = getattr(expression, "column", 0)
+            
+            target = None
+            if isinstance(left, (Identifier, MemberExpression, IndexExpression)):
+                target = left
+            elif isinstance(right, (Identifier, MemberExpression, IndexExpression)):
+                target = right
+                
+            if target is not None:
+                if isinstance(target, Identifier):
+                    return ReassignmentStatement(line, col, target.name, expression, None, True, scope_level)
+                elif isinstance(target, MemberExpression):
+                    return MemberReassignmentStatement(line, col, scope_level, target.object, target.property, expression, "MemberReassignment")
+                elif isinstance(target, IndexExpression):
+                    return IndexReassignmentStatement(line, col, scope_level, target.object, target.index, expression, "IndexReassignment")
+
         statement: ExpressionStatement = ExpressionStatement(
             getattr(expression, "line", 0),
             getattr(expression, "column", 0),

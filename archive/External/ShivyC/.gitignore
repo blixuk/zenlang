@@ -1,0 +1,18 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+out
+out.o
+out.s
+gcc_out
+a.out
+test.c
+\#*#
+tests/**/*.s
+tests/**/*.o
+shivyc.egg-info/*
+dist/*
+build/*
+gcc_output
+shivyc_output

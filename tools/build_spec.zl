@@ -1,0 +1,488 @@
+import zen.io.file as f
+import zen.io.io as io
+import zen.text.string as Str
+import zen.zenmark as zm
+
+function _chap_01() {
+    <- [
+        zm.Heading({ `id` -> `sec-intro`, `text` -> `Introduction & Language Philosophy`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang is a modern, optionally typed, Unix-native programming language designed for clarity, visual simplicity, and high-performance execution across scripts, terminal user interfaces, and networked backend services.`
+        }),
+        zm.Callout({
+            `type` -> `note`,
+            `title` -> `The Dual Execution Guarantee`,
+            `text` -> `Every valid Zenlang program executes with byte-exact behavioral equivalence in interpreted VM mode and Ahead-Of-Time (-g) native C compilation.`
+        }),
+        zm.Heading({ `id` -> `sec-principles`, `text` -> `Core Guiding Principles`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `1. Visual Data Flow: Data movement is explicit in the code syntax. Variable binding and assignment use -> (moving left-to-right into the target), while function returns, yields, and emissions use <- (returning outward to the caller).\n2. Explicitness Over Magic: No hidden type coercions, no implicit variable captures, and no silent conversions. Absence is represented by Nothing, and type zero-states are represented by Default.\n3. Dual Execution Parity: Every valid Zenlang program (.zl) executes identically in two complementary modes without code changes:\n   - Interpreted Script & Bytecode Mode: Direct AST/bytecode execution for instantaneous feedback and rapid iteration.\n   - Native Compiled Mode (-g): Ahead-Of-Time (AOT) transpilation to optimized C and native machine code, linking with the shared runtime in runtime/.\n4. Terminal as a First-Class Citizen: Sub-millisecond ANSI canvas rendering, 60 FPS redraw capabilities, interactive keyboard polling, and declarative table formatting are standard library primitives.\n5. Snapshot-by-Value Concurrency: Captured outer variables are snapshotted by value at instantiation time, eliminating data races without heavy runtime locks.\n6. Pure Native Self-Hosting Architecture: The compiler is written in Zenlang and compiles itself into a standalone native C binary with zero Python dependencies.`
+        }),
+        zm.Callout({
+            `type` -> `tip`,
+            `title` -> `Production Deployment`,
+            `text` -> `For performance-critical networked services or CLI utilities, compile with zen compile main.zl -o app to produce a zero-dependency standalone ELF machine binary.`
+        }),
+        zm.Table({
+            `headers` -> [`Concept`, `Syntax Example`, `Semantic Guarantee`],
+            `rows` -> [
+                [`Assignment`, `let x -> 42`, `Visual flow from expression into binding`],
+                [`Return`, `<- result`, `Visual flow from function back to caller`],
+                [`Guard Exit`, `when error <- 1`, `Concise single-line early return`],
+                [`Sentinels`, `Nothing, Default`, `Explicit absent and zero states`],
+                [`Range`, `0 .. 10, 0 ..= 10`, `Exclusive and inclusive numeric intervals`],
+                [`Pattern Matching`, `when val is [a, b]`, `Zero-overhead structural destructuring`]
+            ]
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_02() {
+    <- [
+        zm.Heading({ `text` -> `Lexical Grammar & Source Representation`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang source files (.zl) are UTF-8 encoded text streams. Whitespace separates tokens and has no semantic significance except within string literals and comments. Indentation is stylistic and not syntactically enforced.`
+        }),
+        zm.Heading({ `text` -> `Comments & Documentation`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Zenlang supports three distinct comment forms: single-line comments (//), multi-line block comments (/* ... */), and formal doc-comments (/! ... !/). Doc-comments are introspected by compiler tooling (zendoc) to produce structured API reference manuals.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// Single-line comment for brief annotations
+let x -> 42
+
+/*
+ * Multi-line comment for detailed
+ * algorithmic documentation.
+ */
+
+/!
+  Calculates the factorial of an integer.
+  @param n Integer The input value
+  @return Integer The calculated factorial
+!/
+function factorial(n: Integer) : Integer {
+    when n <= 1 <- 1
+    <- n * factorial(n - 1)
+}`
+        }),
+        zm.Heading({ `text` -> `Identifiers & Lexical Scopes`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Identifiers begin with an ASCII letter (a-z, A-Z) or underscore (_), followed by alphanumeric characters. Identifiers are strictly case-sensitive. Code blocks delimited by curly braces ({ ... }) create nested lexical scopes where inner scopes inherit outer bindings.`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_03() {
+    <- [
+        zm.Heading({ `id` -> `sec-trinity`, `text` -> `The Zen Trinity: Code, Data, and Mark`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang unifies computation, data serialization, and technical documentation into three deeply cohesive, mutually reinforcing formats known as The Zen Trinity:`
+        }),
+        zm.Diagram({
+            `type` -> `flow`,
+            `direction` -> `right`,
+            `nodes` -> [`Zen Code (.zl)`, `Zen Data (.zd)`, `Zen Mark (.zm)`]
+        }),
+        zm.Table({
+            `headers` -> [`Pillar`, `Extension`, `Canonical Module`, `Core Purpose`],
+            `rows` -> [
+                [`Zen Code`, `.zl`, `zen.tooling.zencode`, `Universal executable programming language (VM & AOT C)`],
+                [`Zen Data`, `.zd`, `zen.data.zendata`, `Declarative data serialization superseding JSON, TOML & YAML`],
+                [`Zen Mark`, `.zm`, `zen.text.zenmark`, `Document Object Model and publishing engine replacing Typst & Markdown`]
+            ]
+        }),
+        zm.Callout({
+            `type` -> `note`,
+            `title` -> `Shared Trinity Semantics`,
+            `text` -> `All three Trinity formats share identical token semantics, flow arrows (->), sentinels (Nothing, Default), and raw backtick string escaping.`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_04() {
+    <- [
+        zm.Heading({ `text` -> `Types, Literals & Sentinels`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang is optionally typed. You may declare types explicitly or allow the bidirectional type inference engine to resolve types at compile time.`
+        }),
+        zm.Heading({ `text` -> `First-Class Capital Sentinels`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Zenlang defines foundational sentinels with capitalized canonical spellings:\n- Nothing: Represents the complete absence of a value (assignable and comparable: val == Nothing).\n- Default: Represents the zero-state of a type (0 for integers, 0.0 for decimals, false for booleans, empty string for strings, and empty list/map for collections).\n- True / False: Standard boolean truth values.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let optional_user -> Nothing   // Explicit absent value
+let empty_buffer  -> Default   // Type zero-state (empty string, 0, [], {})
+let is_ready      -> True      // Boolean True
+let is_disabled   -> False     // Boolean False
+
+// Sentinel comparisons
+when optional_user == Nothing {
+    // Handle absent case
+}`
+        }),
+        zm.Heading({ `text` -> `Primitive & Collection Literals`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Zenlang provides expressive literal syntax for numbers, strings, lists, and flow maps:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// Numeric Literals
+let decimal_int -> 42
+let hex_val     -> 0x2A
+let binary_val  -> 0b101010
+let float_val   -> 3.14159
+
+// String Literals
+let simple_str  -> "Standard double-quoted string with \\n escapes"
+let raw_str     -> \`Raw backtick string with no escaping needed\`
+
+// Collections
+let numbers_list -> [1, 2, 3, 4, 5]
+let config_map   -> {
+    \`host\` -> \`127.0.0.1\`,
+    \`port\` -> 8080,
+    \`active\` -> True
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_05() {
+    <- [
+        zm.Heading({ `text` -> `Variables, Assignment & Flow Operators`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang uses directional flow arrows to make data movement visually unambiguous across all statements.`
+        }),
+        zm.Heading({ `text` -> `Binding (let) and Mutation (set)`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Variables are introduced into scope using the let keyword followed by an identifier, the right arrow (->), and an initializing expression. Subsequent reassignments use the set keyword to make mutability intentional and explicit.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let count -> 0           // Variable binding with initial value
+set count -> count + 1   // Reassignment using set keyword
+
+// Destructuring assignment
+let [first, second] -> [10, 20]
+let { \`name\` -> user_name, \`role\` -> user_role } -> user_record`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_06() {
+    <- [
+        zm.Heading({ `text` -> `Operators & Expressions`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang features a comprehensive suite of operators with well-defined precedence levels:`
+        }),
+        zm.Table({
+            `headers` -> [`Category`, `Operators`, `Description`],
+            `rows` -> [
+                [`Flow`, `-> , <-`, `Assignment flow into target, return flow out of scope`],
+                [`Arithmetic`, `+ , - , * , / , %`, `Standard numeric arithmetic and string concatenation`],
+                [`Comparison`, `== , != , < , <= , > , >=`, `Value equality and relational ordering`],
+                [`Logical`, `and , or , not`, `Short-circuiting boolean operations`],
+                [`Range`, `.. , ..=`, `Half-open [a, b) and closed [a, b] ranges`],
+                [`Extended`, `++ , --`, `In-place increment and decrement`]
+            ]
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_07() {
+    <- [
+        zm.Heading({ `text` -> `Control Flow & Directional Guards`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Control flow in Zenlang is unified around structured branching and iteration constructs designed for readability.`
+        }),
+        zm.Heading({ `text` -> `Branching with when / or`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Conditional branching replaces traditional if/else chains with the cleaner when / or construct:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `when status_code == 200 {
+    io.writeln("Request succeeded")
+} or when status_code == 404 {
+    io.writeln("Resource not found")
+} or {
+    io.writeln("Unexpected status code")
+}`
+        }),
+        zm.Heading({ `text` -> `Single-Line Guard Returns`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `To eliminate deep nesting and simplify error handling, Zenlang allows single-line guard exits with when condition <- return_value:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `function validate_age(age) {
+    when age < 0 <- { \`ok\` -> False, \`error\` -> \`Age cannot be negative\` }
+    when age > 150 <- { \`ok\` -> False, \`error\` -> \`Age exceeds biological limits\` }
+    
+    // Main logic executes only when all guards pass
+    <- { \`ok\` -> True, \`value\` -> age }
+}`
+        }),
+        zm.Heading({ `text` -> `Iteration Loops`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Zenlang provides three distinct loop structures: do while, do until, and collection iteration with do for item in collection:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// 1. While Loop
+let i -> 0
+do while i < 5 {
+    io.writeln("Index: " + Str.to_string(i))
+    set i -> i + 1
+}
+
+// 2. Collection Iteration
+let fruits -> ["Apple", "Banana", "Cherry"]
+do for fruit in fruits {
+    io.writeln("Fruit: " + fruit)
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_08() {
+    <- [
+        zm.Heading({ `text` -> `Functions & Snapshot Closures`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Functions are first-class values in Zenlang. Functions accept parameters, declare optional return types, and emit return values using the left arrow (<-).`
+        }),
+        zm.Heading({ `text` -> `Concise Expression Functions`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Short single-expression functions can be written on a single line using function name(params) <- expr:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// Concise single-expression functions
+function square(x) <- x * x
+function add(a, b) <- a + b
+function is_even(n) <- n % 2 == 0
+
+// Higher-order function with capture-by-value closure
+function make_multiplier(factor) {
+    // factor is snapshotted by value
+    <- function(x) <- x * factor
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_09() {
+    <- [
+        zm.Heading({ `text` -> `Data Structures & Pattern Matching`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang provides lightweight tagged data structures with the structure keyword and exhaustive pattern matching on variants:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `structure Point {
+    x: Integer
+    y: Integer
+}
+
+structure Rect {
+    origin: Point
+    width: Integer
+    height: Integer
+}
+
+// Instantiation
+let p -> Point { x -> 10, y -> 20 }
+let r -> Rect { origin -> p, width -> 100, height -> 50 }
+
+// Pattern matching and destructuring
+when r is Rect { origin -> Point { x, y }, width, height } {
+    io.writeln("Origin: " + Str.to_string(x) + ", " + Str.to_string(y))
+    io.writeln("Area: " + Str.to_string(width * height))
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_10() {
+    <- [
+        zm.Heading({ `text` -> `Object-Oriented Programming & Classes`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang supports object-oriented modeling with classes, constructors, methods, and single inheritance:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `class Animal {
+    let name
+
+    function init(name) {
+        self.name -> name
+    }
+    
+    function speak() {
+        <- "Some generic animal sound"
+    }
+}
+
+class Dog extends Animal {
+    let breed
+
+    function init(name, breed) {
+        parent.init(name)
+        self.breed -> breed
+    }
+    
+    function speak() {
+        <- "Woof! My name is " + self.name
+    }
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_11() {
+    <- [
+        zm.Heading({ `text` -> `Error Handling & Source-Mapped Diagnostics`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang eliminates unhandled runtime crashes with explicit check / or error boundaries and Rust/Clang-style source-mapped caret diagnostics:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `import zen.io.file as file
+import zen.data.zendata as zd
+
+function parse_config(filepath) {
+    check {
+        let data -> file.read(filepath)
+        let cfg  -> zd.parse(data)
+        <- { \`ok\` -> True, \`config\` -> cfg }
+    } or {
+        <- { \`ok\` -> False, \`error\` -> \`Failed to load config from \` + filepath }
+    }
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_12() {
+    <- [
+        zm.Heading({ `text` -> `Module System & Standard Library`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang provides clean hierarchical imports with the import keyword, supporting nested domain namespaces, module aliasing, and selective symbol import:`
+        }),
+        zm.Table({
+            `headers` -> [`Import Pattern`, `Example`, `Semantic Effect`],
+            `rows` -> [
+                [`Domain Import`, `import zen.io.io as io`, `Binds the io module under an explicit alias`],
+                [`Aliased Import`, `import zen.sys.term as term`, `Binds the term module under an explicit alias`],
+                [`Selective Import`, `from zen.math.math import sqrt, pow`, `Imports individual functions into local scope`],
+                [`Trinity Aliases`, `import zen.zenmark as zm`, `Binds the standard Zen Mark engine`]
+            ]
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_13() {
+    <- [
+        zm.Heading({ `text` -> `Unified Task Concurrency & Memory Arenas`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang integrates asynchronous tasks with chunk-chained bump memory arenas for deterministic, zero-GC execution:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `import zen.memory as memory
+
+function process_batch_in_arena(items) {
+    // 32MB scoped arena allocated on entry, freed on block exit in O(1)
+    with memory.create_arena(32 * 1024 * 1024) as arena {
+        do for item in items {
+            // Memory allocated within this block lives inside the arena
+            let processed -> item + "_processed"
+            io.writeln(processed)
+        }
+    }
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _chap_14() {
+    <- [
+        zm.Heading({ `id` -> `sec-runtime`, `text` -> `Three-Layer Architecture & Native Selfhost`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang achieves maximum performance and cross-platform portability through its Three-Layer execution model:`
+        }),
+        zm.Diagram({
+            `type` -> `flow`,
+            `direction` -> `right`,
+            `nodes` -> [`ZenValue ABI`, `Positional Token/AST IR`, `Bytecode VM / Native C AOT`]
+        }),
+        zm.Callout({
+            `type` -> `important`,
+            `title` -> `Unified ZenValue ABI`,
+            `text` -> `Interpreted scripts can import and call pre-compiled C modules without wrapper glue code or foreign-function overhead because both layers utilize identical ZenValue struct layouts.`
+        }),
+        zm.Table({
+            `headers` -> [`Execution Mode`, `Compiler Command`, `Target Environment`, `Primary Advantage`],
+            `rows` -> [
+                [`Interpreted / VM`, `zen script.zl`, `Development & Scripting`, `Instant sub-millisecond startup & dynamic reload`],
+                [`Native C AOT`, `zen compile main.zl -o app`, `Production Deployments`, `Bare-metal execution speed, minimal memory & standalone binary`],
+                [`Native Selfhost`, `zen-selfhost compile main.zl out.c`, `Toolchain & Host`, `Self-contained compiler with zero external dependencies`]
+            ]
+        })
+    ]
+}
+
+function main() {
+    io.writeln(`[SPEC] Compiling modular Zenlang Specification PDF with auto-heading numbering & TOC...`)
+    
+    let entry -> zm.Entry({
+        `title` -> `The Zenlang Language Specification`,
+        `author` -> `Zenlang Core Development Team`,
+        `date` -> `2026-08-27`,
+        `version` -> `1.0.0`,
+        `archetype` -> `specification`,
+        `theme` -> `antiquarian`
+    })
+    
+    let doc -> zm.Document([
+        zm.TableOfContents({ `title` -> `Table of Contents`, `max_depth` -> 2 }),
+        _chap_01(),
+        _chap_02(),
+        _chap_03(),
+        _chap_04(),
+        _chap_05(),
+        _chap_06(),
+        _chap_07(),
+        _chap_08(),
+        _chap_09(),
+        _chap_10(),
+        _chap_11(),
+        _chap_12(),
+        _chap_13(),
+        _chap_14()
+    ], entry)
+    
+    let pdf_out -> zm.render_pdf(doc, `doc/Specification/Zenlang.pdf`)
+    io.writeln(`[SPEC] Successfully generated modular doc/Specification/Zenlang.pdf (` + Str.to_string(Str.length(pdf_out)) + ` bytes)`)
+    
+    let html_out -> zm.render_html(doc)
+    f.write(`doc/Specification/Zenlang.html`, html_out)
+    io.writeln(`[SPEC] Successfully generated HTML preview doc/Specification/Zenlang.html (` + Str.to_string(Str.length(html_out)) + ` bytes)`)
+    <- 0
+}

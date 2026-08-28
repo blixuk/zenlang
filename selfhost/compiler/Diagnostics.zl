@@ -1,0 +1,113 @@
+/!
+  Diagnostics and Caret Error Reporting for the Zenlang Compiler.
+  Extracts source lines from zero-copy token spans and formats Clang/Rust-style carets.
+!/
+
+import zen.text.string as Str
+
+/!
+  Extract 1-indexed line from source text.
+!/
+function get_source_line(src, target_line) {
+    when src == Nothing or target_line <= 0 {
+        <- ``
+    }
+    let slen -> Str.length(src)
+    let cur_line -> 1
+    let line_start -> 0
+    let i -> 0
+    do while i < slen {
+        let ch -> Str.at(src, i)
+        when ch == `\n` {
+            when cur_line == target_line {
+                <- Str.substring(src, line_start, i)
+            }
+            cur_line -> cur_line + 1
+            line_start -> i + 1
+        }
+        i -> i + 1
+    }
+    when cur_line == target_line and line_start < slen {
+        <- Str.substring(src, line_start, slen)
+    }
+    <- ``
+}
+
+/!
+  Build spaces and caret underline.
+  col: 1-indexed column.
+  len: span length (min 1).
+!/
+function make_carets(col, len) {
+    let pad_count -> col - 1
+    when pad_count < 0 {
+        pad_count -> 0
+    }
+    let span_len -> len
+    when span_len <= 0 {
+        span_len -> 1
+    }
+    let out -> ``
+    let i -> 0
+    do while i < pad_count {
+        out -> out + ` `
+        i -> i + 1
+    }
+    i -> 0
+    do while i < span_len {
+        out -> out + `^`
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Format a source-mapped error with carets and code frame.
+!/
+function format_error(src, filename, message, line, col, len) {
+    <- format_diagnostic(src, filename, `error`, message, line, col, len, Nothing)
+}
+
+/!
+  Format a source-mapped diagnostic with severity, caret frame, and optional note.
+!/
+function format_diagnostic(src, filename, severity, message, line, col, len, note) {
+    let fn -> filename
+    when fn == Nothing or fn == `` {
+        fn -> `<source>`
+    }
+    let l_str -> Str.to_string(line)
+    let c_str -> Str.to_string(col)
+    let header -> severity + `: ` + message + `\n  --> ` + fn + `:` + l_str + `:` + c_str
+    
+    when src == Nothing or line <= 0 {
+        when note != Nothing and note != `` {
+            <- header + `\n   = note: ` + note
+        }
+        <- header
+    }
+    
+    let src_line -> get_source_line(src, line)
+    when src_line == `` {
+        when note != Nothing and note != `` {
+            <- header + `\n   = note: ` + note
+        }
+        <- header
+    }
+    
+    let pad_len -> Str.length(l_str)
+    let pipe_indent -> ``
+    let p -> 0
+    do while p < pad_len {
+        pipe_indent -> pipe_indent + ` `
+        p -> p + 1
+    }
+    
+    let carets -> make_carets(col, len)
+    let frame -> `\n` + pipe_indent + ` |\n` + l_str + ` | ` + src_line + `\n` + pipe_indent + ` | ` + carets
+    
+    when note != Nothing and note != `` {
+        <- header + frame + `\n` + pipe_indent + ` = note: ` + note
+    }
+    <- header + frame
+}

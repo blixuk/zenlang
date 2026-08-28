@@ -1,0 +1,223 @@
+/!
+    USTAR TAR Archive Module.
+    Supports creating and extracting POSIX standard TAR archives in pure Zenlang.
+!/
+
+import zen.text.string as Str
+
+function _to_byte_list(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _parse_octal(bytes, offset, length) {
+    let val -> 0
+    let i -> 0
+    do while i < length {
+        let b -> bytes[offset + i]
+        when (b >= 48 and b <= 55) { // '0'..'7'
+            val -> val * 8 + (b - 48)
+        }
+        i -> i + 1
+    }
+    <- val
+}
+
+function _write_octal(bytes, offset, length, num) {
+    let n -> 0 + num
+    let i -> length - 2 // Leave last byte as null/space
+    do while i >= 0 {
+        let rem -> n % 8
+        bytes[offset + i] -> 48 + rem
+        n -> (n - rem) / 8
+        i -> i - 1
+    }
+}
+
+function _write_string(bytes, offset, max_len, s) {
+    let str_val -> Str.to_string(s)
+    let s_bytes -> _to_byte_list(str_val)
+    let count -> s_bytes.length
+    when (count > max_len) { count -> max_len }
+    let i -> 0
+    do while i < count {
+        bytes[offset + i] -> s_bytes[i]
+        i -> i + 1
+    }
+}
+
+function _read_string(bytes, offset, max_len) {
+    let out_bytes -> []
+    let i -> 0
+    do while i < max_len {
+        let b -> bytes[offset + i]
+        when (b == 0) { break }
+        out_bytes.append(b)
+        i -> i + 1
+    }
+    <- __builtin.bytes_to_string(out_bytes)
+}
+
+/!
+    Creates a standard USTAR TAR archive from a list of files.
+    @param files List of maps: [{ "name" -> "file.txt", "content" -> "data" }]
+    @return Raw tar archive byte list.
+!/
+function create(files) {
+    when (files == Nothing) { <- [] }
+    let out -> []
+    let file_count -> files.length
+
+    let f_idx -> 0
+    do while f_idx < file_count {
+        let file_obj -> files[f_idx]
+        let name -> Str.to_string(file_obj[`name`])
+        let content_data -> file_obj[`content`]
+        let c_bytes -> _to_byte_list(content_data)
+        let size -> c_bytes.length
+
+        // Initialize 512-byte header block
+        let header -> []
+        let i -> 0
+        do while i < 512 {
+            header.append(0)
+            i -> i + 1
+        }
+
+        // Filename: 0..99
+        _write_string(header, 0, 100, name)
+
+        // Mode: 100..107 (0644)
+        _write_octal(header, 100, 8, 420) // 0644 octal = 420 dec
+
+        // UID: 108..115, GID: 116..123
+        _write_octal(header, 108, 8, 0)
+        _write_octal(header, 116, 8, 0)
+
+        // Size: 124..135 (12 bytes octal)
+        _write_octal(header, 124, 12, size)
+
+        // MTime: 136..147
+        _write_octal(header, 136, 12, 1700000000)
+
+        // Checksum placeholder: 148..155 (8 spaces)
+        i -> 0
+        do while i < 8 {
+            header[148 + i] -> 32 // space
+            i -> i + 1
+        }
+
+        // Typeflag: 156 ('0' = regular file)
+        header[156] -> 48 // '0'
+
+        // USTAR magic: 257..262 ("ustar\0")
+        _write_string(header, 257, 6, `ustar`)
+        _write_string(header, 263, 2, `00`)
+
+        // Calculate Header Checksum (sum of all 512 bytes with chksum field as spaces)
+        let chksum -> 0
+        i -> 0
+        do while i < 512 {
+            chksum -> chksum + header[i]
+            i -> i + 1
+        }
+
+        // Write calculated checksum: 6 octal digits + null + space
+        _write_octal(header, 148, 7, chksum)
+        header[154] -> 0
+        header[155] -> 32
+
+        // Append header to output
+        i -> 0
+        do while i < 512 {
+            out.append(header[i])
+            i -> i + 1
+        }
+
+        // Append file content
+        i -> 0
+        do while i < size {
+            out.append(c_bytes[i])
+            i -> i + 1
+        }
+
+        // Pad file content to 512-byte block boundary
+        let rem -> size % 512
+        when (rem != 0) {
+            let pad_count -> 512 - rem
+            i -> 0
+            do while i < pad_count {
+                out.append(0)
+                i -> i + 1
+            }
+        }
+
+        f_idx -> f_idx + 1
+    }
+
+    // Two 512-byte zero blocks marking end of archive
+    let z -> 0
+    do while z < 1024 {
+        out.append(0)
+        z -> z + 1
+    }
+
+    <- out
+}
+
+/!
+    Parses a TAR archive and extracts member files.
+    @param tar_data String or byte list.
+    @return List of maps: [{ "name" -> "...", "size" -> ..., "content" -> "..." }]
+!/
+function parse(tar_data) {
+    let bytes -> _to_byte_list(tar_data)
+    let total_len -> bytes.length
+    let files -> []
+
+    let offset -> 0
+    do while (offset + 512 <= total_len) {
+        // Check if block is all zeros (end of archive)
+        let name -> _read_string(bytes, offset, 100)
+        when (Str.length(name) == 0) {
+            break
+        }
+
+        let size -> _parse_octal(bytes, offset + 124, 12)
+        let content_offset -> offset + 512
+
+        when (content_offset + size > total_len) {
+            break
+        }
+
+        let c_bytes -> []
+        let i -> 0
+        do while i < size {
+            c_bytes.append(bytes[content_offset + i])
+            i -> i + 1
+        }
+
+        let content_str -> __builtin.bytes_to_string(c_bytes)
+        files.append({
+            `name` -> name,
+            `size` -> size,
+            `content` -> content_str
+        })
+
+        // Advance to next 512-byte header boundary with integer division
+        let num_512 -> size + 511
+        let rem_512 -> num_512 % 512
+        let blocks -> (num_512 - rem_512) / 512
+        offset -> content_offset + blocks * 512
+    }
+
+    <- files
+}

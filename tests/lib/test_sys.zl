@@ -1,0 +1,36 @@
+import zen.sys.sys as sys
+import zen.test as test
+
+function test_process_environment() {
+    let args -> sys.get_args()
+    let path -> sys.get_env(`PATH`)
+    let cwd -> sys.get_cwd()
+
+    let pass -> test.assert_true(args.length > 0, `get_args should include at least the script path`)
+    pass -> pass and test.assert_true(path.length >= 0, `get_env should return a string for PATH`)
+    pass -> pass and test.assert_true(cwd.length > 0, `get_cwd should return a non-empty path`)
+    <- pass
+}
+
+function test_platform_version_exec() {
+    let pass -> test.assert_true(sys.platform().length > 0, `platform should be non-empty`)
+    pass -> pass and test.assert_true(sys.version().length > 0, `version should be non-empty`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Sys.process_environment`, `fn` -> test_process_environment},
+        {`name` -> `Sys.platform_version_exec`, `fn` -> test_platform_version_exec}
+    ]
+
+    <- test.run_suite(`Sys Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

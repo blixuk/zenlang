@@ -1,0 +1,141 @@
+/!
+    Hash-based Message Authentication Code (HMAC) Module.
+    Pure Zenlang implementation of RFC 2104 compliant HMAC-SHA256.
+    Compatible with both interpreter and native backend.
+!/
+
+import zen.crypto.hash as hash
+import zen.text.string as Str
+
+function _to_byte_list(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _hex_to_bytes(hex_str) {
+    let s -> Str.to_string(hex_str)
+    let len -> Str.length(s)
+    let bytes -> []
+    let digits -> `0123456789abcdef`
+
+    let i -> 0
+    do while i < len {
+        let c1 -> Str.to_lower(Str.at(s, i))
+        let c2 -> Str.to_lower(Str.at(s, i + 1))
+        let n1 -> Str.index_of(digits, c1)
+        let n2 -> Str.index_of(digits, c2)
+        when (n1 == -1 or n2 == -1) { break }
+        bytes.append((n1 * 16) + n2)
+        i -> i + 2
+    }
+    <- bytes
+}
+
+/!
+    Computes HMAC-SHA256 digest of message using secret key.
+    @param key Secret key (string or byte list).
+    @param message Data to authenticate (string or byte list).
+    @return 64-character lowercase hex string.
+!/
+function sha256(key, message) {
+    let k_bytes -> _to_byte_list(key)
+    let msg_bytes -> _to_byte_list(message)
+
+    // If key is longer than block size (64 bytes), hash it first
+    when (k_bytes.length > 64) {
+        let key_hex -> hash.sha256(k_bytes)
+        k_bytes -> _hex_to_bytes(key_hex)
+    }
+
+    // Pad key to 64 bytes
+    let k_pad -> []
+    let i -> 0
+    let k_len -> k_bytes.length
+    do while i < k_len {
+        let b -> k_bytes[i]
+        when (b < 0) { b -> b + 256 }
+        k_pad.append(b)
+        i -> i + 1
+    }
+    do while (k_pad.length < 64) {
+        k_pad.append(0)
+    }
+
+    // XOR key with ipad (0x36) and opad (0x5c)
+    let ipad -> []
+    let opad -> []
+    i -> 0
+    do while i < 64 {
+        let b -> k_pad[i]
+        ipad.append((b ^^ 0x36) & 0xff)
+        opad.append((b ^^ 0x5c) & 0xff)
+        i -> i + 1
+    }
+
+    // Inner hash: H(ipad || message)
+    let inner_data -> []
+    i -> 0
+    do while i < 64 {
+        inner_data.append(ipad[i])
+        i -> i + 1
+    }
+    i -> 0
+    let m_len -> msg_bytes.length
+    do while i < m_len {
+        let b -> msg_bytes[i]
+        when (b < 0) { b -> b + 256 }
+        inner_data.append(b)
+        i -> i + 1
+    }
+    let inner_hex -> hash.sha256(inner_data)
+    let inner_bytes -> _hex_to_bytes(inner_hex)
+
+    // Outer hash: H(opad || inner_hash)
+    let outer_data -> []
+    i -> 0
+    do while i < 64 {
+        outer_data.append(opad[i])
+        i -> i + 1
+    }
+    i -> 0
+    let in_len -> inner_bytes.length
+    do while i < in_len {
+        outer_data.append(inner_bytes[i])
+        i -> i + 1
+    }
+
+    <- hash.sha256(outer_data)
+}
+
+/!
+    Constant-time comparison of two MAC strings to protect against timing attacks.
+!/
+function verify(mac1, mac2) {
+    let s1 -> Str.to_string(mac1)
+    let s2 -> Str.to_string(mac2)
+    let len1 -> Str.length(s1)
+    let len2 -> Str.length(s2)
+
+    when (len1 != len2) { <- False }
+
+    let diff -> 0
+    let i -> 0
+    do while i < len1 {
+        let c1 -> Str.at(s1, i)
+        let c2 -> Str.at(s2, i)
+        when (c1 != c2) {
+            diff -> diff + 1
+        }
+        i -> i + 1
+    }
+
+    <- (diff == 0)
+}

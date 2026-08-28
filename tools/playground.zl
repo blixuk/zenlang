@@ -1,0 +1,1638 @@
+/!
+  Terminal Playground & Live Code Lab — Interactive Zen environment.
+  
+  High-Performance Double-Buffered Terminal Architecture:
+    - Full-frame in-memory double-buffering: 1 single atomic I/O write per frame.
+    - Fast linear-pass syntax highlighter (no O(N^2) character re-scanning).
+    - Event-driven lazy documentation and autocomplete updates.
+    - Multi-backend execution engine: Interpreter, Native AOT (-g), and Self-host (Ctrl+E).
+    - Interactive Language Documentation Inspector & Live Hover Drawer (Ctrl+H).
+    - IDE Autocomplete Engine with floating completion menu (Tab / Ctrl+Space).
+    - Configurable Settings & Toggles modal (Ctrl+O).
+    - Template Gallery with instant runnable stdlib examples (Ctrl+P).
+    - Split-pane layout: Vertical / Horizontal toggle (Ctrl+T).
+
+  Keys:
+    arrows / Home / End     move cursor
+    printable characters    insert
+    Tab                     autocomplete completion (or indent)
+    Enter                   accept completion (or split line)
+    Backspace / Delete      delete
+    Ctrl+R                  run code
+    Ctrl+P                  template gallery
+    Ctrl+H                  toggle live documentation drawer
+    Ctrl+O                  settings & options modal
+    Ctrl+E                  toggle backend (interpret / native -g / selfhost)
+    Ctrl+T                  toggle layout (vertical / horizontal)
+    Ctrl+S                  save active file
+    Ctrl+K                  clear output
+    Ctrl+L                  redraw
+    Ctrl+Q                  quit
+!/
+
+import zen.sys.term as term
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.io.file as file
+import zen.text.string as Str
+
+// --- ANSI Escape Constants ---
+
+function ansi_move(x, y) {
+    <- "\033[" + Str.to_string(y) + ";" + Str.to_string(x) + "H"
+}
+
+function ansi_reset() { <- "\033[0m" }
+function ansi_bright_magenta() { <- "\033[1;35m" }
+function ansi_bright_cyan() { <- "\033[1;36m" }
+function ansi_bright_green() { <- "\033[1;32m" }
+function ansi_green() { <- "\033[32m" }
+function ansi_bright_yellow() { <- "\033[1;33m" }
+function ansi_bright_black() { <- "\033[90m" }
+function ansi_white() { <- "\033[37m" }
+function ansi_bright_red() { <- "\033[1;31m" }
+function ansi_top_bar() { <- "\033[30;46m" }
+function ansi_status_bar() { <- "\033[30;47m" }
+function ansi_alert_bar() { <- "\033[30;43m" }
+function ansi_modal_header() { <- "\033[30;43m" }
+function ansi_modal_item() { <- "\033[37;44m" }
+function ansi_modal_selected() { <- "\033[30;47m" }
+function ansi_doc_header() { <- "\033[30;46m" }
+function ansi_doc_body() { <- "\033[37;100m" }
+
+// --- String Utilities ---
+
+function s_len(s) {
+    when s == Nothing { <- 0 }
+    <- Str.length(s)
+}
+
+function s_insert(s, col, ch) {
+    let n -> s_len(s)
+    when col < 0 { col -> 0 }
+    when col > n { col -> n }
+    let left -> Str.substring(s, 0, col)
+    let right -> Str.substring(s, col, n)
+    <- left + ch + right
+}
+
+function s_delete_at(s, col) {
+    let n -> s_len(s)
+    when col < 0 or col >= n { <- s }
+    let left -> Str.substring(s, 0, col)
+    let right -> Str.substring(s, col + 1, n)
+    <- left + right
+}
+
+function s_slice(s, start, end) {
+    let n -> s_len(s)
+    when start < 0 { start -> 0 }
+    when end > n { end -> n }
+    when start >= end { <- "" }
+    <- Str.substring(s, start, end)
+}
+
+function s_spaces(count) {
+    when count <= 0 { <- "" }
+    <- Str.repeat(" ", count)
+}
+
+function is_ident_start(ch) {
+    <- (ch >= "a" and ch <= "z") or (ch >= "A" and ch <= "Z") or ch == "_"
+}
+
+function is_ident_part(ch) {
+    <- is_ident_start(ch) or (ch >= "0" and ch <= "9") or ch == "."
+}
+
+function is_digit(ch) {
+    <- (ch >= "0" and ch <= "9")
+}
+
+function is_keyword(w) {
+    <- w == "function" or w == "let" or w == "when" or w == "or" or w == "do" or w == "while" or w == "until" or w == "import" or w == "as" or w == "class" or w == "check" or w == "defer" or w == "nothing" or w == "Nothing" or w == "default" or w == "Default" or w == "true" or w == "True" or w == "false" or w == "False" or w == "return"
+}
+
+function is_stdlib_module(w) {
+    <- w == "io" or w == "term" or w == "sys" or w == "process" or w == "file" or w == "path" or w == "Str" or w == "String" or w == "Math" or w == "List" or w == "Map" or w == "test" or w == "hash" or w == "jwt" or w == "hmac" or w == "cron" or w == "schema" or w == "tar" or w == "ip" or w == "server" or w == "mock" or w == "bench" or w == "inspect" or w == "chart" or w == "tree" or w == "fuzzy" or w == "inflect" or w == "stats"
+}
+
+// --- Documentation Database ---
+
+function get_doc_entry(sym) {
+    // Keywords & Language Constructs
+    when sym == "function" {
+        <- {
+            "sig" -> "function name(param1, param2) { ... }",
+            "desc" -> "Defines a reusable function block. Return values using the visual `<-` operator."
+        }
+    }
+    when sym == "let" {
+        <- {
+            "sig" -> "let variable_name -> initial_value",
+            "desc" -> "Declares and binds a local variable using visual data flow (`->`)."
+        }
+    }
+    when sym == "when" {
+        <- {
+            "sig" -> "when condition { ... } or when cond2 { ... } or { ... }",
+            "desc" -> "Branching control flow. Also supports pattern matching with `is Pattern` blocks."
+        }
+    }
+    when sym == "or" {
+        <- {
+            "sig" -> "when cond { } or { }  |  a or b",
+            "desc" -> "Specifies an alternative branch in a `when` block or logical OR boolean operation."
+        }
+    }
+    when sym == "do" or sym == "while" or sym == "until" {
+        <- {
+            "sig" -> "do while condition { ... }  |  do until condition { ... }",
+            "desc" -> "Looping construct. Iterates while condition holds or until condition becomes true."
+        }
+    }
+    when sym == "import" or sym == "as" {
+        <- {
+            "sig" -> "import package.module as alias",
+            "desc" -> "Imports standard library or user modules under a namespace alias."
+        }
+    }
+    when sym == "class" {
+        <- {
+            "sig" -> "class Name { let field; function method() { ... } }",
+            "desc" -> "Defines an object-oriented class structure with state fields and methods."
+        }
+    }
+    when sym == "check" {
+        <- {
+            "sig" -> "check { risky_code() } or { handle_error() }",
+            "desc" -> "Error handling construct. Catches runtime exceptions and errors in the guarded block."
+        }
+    }
+    when sym == "defer" {
+        <- {
+            "sig" -> "defer { cleanup_action() }",
+            "desc" -> "Defers block execution until the enclosing function scope terminates."
+        }
+    }
+    when sym == "Nothing" or sym == "nothing" {
+        <- {
+            "sig" -> "Nothing (absence of value / null)",
+            "desc" -> "Canonical representation of an absent value. Comparable with `== Nothing`."
+        }
+    }
+    when sym == "Default" or sym == "default" {
+        <- {
+            "sig" -> "Default (type zero-state)",
+            "desc" -> "Canonical zero-state value (`0`, `[]`, `\"\"`, `False`). Assignable and comparable."
+        }
+    }
+    when sym == "->" {
+        <- {
+            "sig" -> "target -> expression",
+            "desc" -> "Visual data flow assignment operator. Binds the evaluated expression to target."
+        }
+    }
+    when sym == "<-" {
+        <- {
+            "sig" -> "<- return_expression",
+            "desc" -> "Visual data flow return operator. Returns value from function or block."
+        }
+    }
+
+    // Stdlib Functions
+    when sym == "io.writeln" or sym == "writeln" {
+        <- {
+            "sig" -> "io.writeln(message: String)",
+            "desc" -> "Prints a formatted string message followed by a newline to standard output."
+        }
+    }
+    when sym == "io.write" or sym == "write" {
+        <- {
+            "sig" -> "io.write(message: String)",
+            "desc" -> "Prints string message to standard output without appending a newline."
+        }
+    }
+    when sym == "chart.sparkline" or sym == "sparkline" {
+        <- {
+            "sig" -> "chart.sparkline(data: List[Number]) -> String",
+            "desc" -> "Generates a compact UTF-8 sparkline graph ( ▂▃▅▆▇█) from numeric telemetry data."
+        }
+    }
+    when sym == "chart.bar_chart_h" or sym == "bar_chart_h" {
+        <- {
+            "sig" -> "chart.bar_chart_h(label, val, max, width) -> String",
+            "desc" -> "Renders a labeled horizontal progress bar with percentage and filled blocks."
+        }
+    }
+    when sym == "tree.format_tree" or sym == "format_tree" {
+        <- {
+            "sig" -> "tree.format_tree(root: Map) -> String",
+            "desc" -> "Renders a hierarchical map tree into a formatted Unicode directory tree string."
+        }
+    }
+    when sym == "fuzzy.filter" or sym == "fuzzy.score" {
+        <- {
+            "sig" -> "fuzzy.filter(query, candidates, threshold=0.3) -> List",
+            "desc" -> "Fuzzy matches candidate strings using Levenshtein distance and ranking heuristics."
+        }
+    }
+    when sym == "inflect.slugify" or sym == "inflect.camel_case" {
+        <- {
+            "sig" -> "inflect.slugify(text) -> String  |  inflect.camel_case(text)",
+            "desc" -> "Converts text between naming conventions (camelCase, kebab-case, snake_case, slug)."
+        }
+    }
+    when sym == "lru.create" or sym == "lru.put" or sym == "lru.get" {
+        <- {
+            "sig" -> "lru.create(capacity) -> Map  |  lru.put(cache, key, val)",
+            "desc" -> "High-performance O(1) Least Recently Used cache with automatic key eviction."
+        }
+    }
+    when sym == "stats.summary" {
+        <- {
+            "sig" -> "stats.summary(data: List[Number]) -> Map",
+            "desc" -> "Calculates statistical summary: count, mean, median, min, max, variance, stdev."
+        }
+    }
+    when sym == "hash.sha256" {
+        <- {
+            "sig" -> "hash.sha256(data: String) -> String",
+            "desc" -> "Computes the standard 64-character hexadecimal SHA-256 cryptographic digest."
+        }
+    }
+    when sym == "jwt.sign" or sym == "jwt.verify" {
+        <- {
+            "sig" -> "jwt.sign(claims, secret)  |  jwt.verify(token, secret)",
+            "desc" -> "Creates and verifies HMAC-SHA256 (HS256) JSON Web Tokens with payload claims."
+        }
+    }
+    when sym == "schema.validate" {
+        <- {
+            "sig" -> "schema.validate(schema_def: Map, data_record: Map) -> Map",
+            "desc" -> "Validates nested data records against declarative type and constraint schemas."
+        }
+    }
+    when sym == "bench.run" {
+        <- {
+            "sig" -> "bench.run(name: String, fn, iterations: Int) -> Map",
+            "desc" -> "Executes micro-benchmark harness with high-precision timing and ops/sec reporting."
+        }
+    }
+
+    <- Nothing
+}
+
+// --- Autocomplete Dictionary ---
+
+function get_all_autocomplete_tokens() {
+    <- [
+        "function", "let", "when", "or", "do", "while", "until",
+        "import", "as", "class", "check", "defer", "Nothing",
+        "Default", "True", "False", "return", "self",
+        "io", "io.write", "io.writeln", "io.info", "io.warn", "io.error",
+        "term", "term.color", "term.move", "term.get_size", "term.read_key",
+        "chart", "chart.sparkline", "chart.bar_chart_h", "chart.bar_chart_v",
+        "tree", "tree.format_tree",
+        "fuzzy", "fuzzy.filter", "fuzzy.score", "fuzzy.levenshtein",
+        "inflect", "inflect.camel_case", "inflect.snake_case", "inflect.kebab_case", "inflect.slugify", "inflect.pluralize",
+        "lru", "lru.create", "lru.put", "lru.get", "lru.remove",
+        "stats", "stats.summary", "stats.mean", "stats.median", "stats.variance", "stats.stdev",
+        "hash", "hash.sha256", "hash.fnv1a_32", "hash.fnv1a_64",
+        "jwt", "jwt.sign", "jwt.verify", "jwt.decode",
+        "schema", "schema.validate",
+        "bench", "bench.run", "bench.format",
+        "file", "file.read", "file.write", "file.exists",
+        "path", "path.join", "path.dirname", "path.basename",
+        "Str", "Str.length", "Str.substring", "Str.split", "Str.join", "Str.replace", "Str.starts_with", "Str.ends_with"
+    ]
+}
+
+// --- template definitions ---
+
+function get_templates() {
+    <- [
+        {
+            "name" -> "1. Hello World & Visual Data Flow",
+            "code" -> [
+                "import zen.io.io as io",
+                "",
+                "function greet(name) {",
+                "    let msg -> \"Hello, \" + name + \"!\"",
+                "    io.writeln(msg)",
+                "    <- msg",
+                "}",
+                "",
+                "function main() {",
+                "    let greeting -> greet(\"Zen Developer\")",
+                "    io.writeln(\"Data flow: -> sets variables, <- returns\")",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "2. Terminal UI: Charts & Visual Tree",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.ui.chart as chart",
+                "import zen.ui.tree as tree",
+                "",
+                "function main() {",
+                "    io.writeln(\"=== Sparkline & Bar Chart ===\")",
+                "    let metrics -> [12, 35, 67, 89, 45, 90, 100, 78, 55, 95]",
+                "    io.writeln(\"Live Telemetry: \" + chart.sparkline(metrics))",
+                "    io.writeln(chart.bar_chart_h(\"CPU Load\", 78, 100, 24))",
+                "    io.writeln(chart.bar_chart_h(\"RAM Usage\", 54, 100, 24))",
+                "",
+                "    io.writeln(\"\")",
+                "    io.writeln(\"=== Unicode File Tree ===\")",
+                "    let root -> {",
+                "        \"name\" -> \"zen-project\",",
+                "        \"children\" -> [",
+                "            { \"name\" -> \"src/main.zl\" },",
+                "            { \"name\" -> \"lib/zen/ui/chart.zl\" },",
+                "            { \"name\" -> \"README.md\" }",
+                "        ]",
+                "    }",
+                "    io.writeln(tree.format_tree(root))",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "3. Text Algorithms: Fuzzy Search & Inflect",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.text.fuzzy as fuzzy",
+                "import zen.text.inflect as inflect",
+                "",
+                "function main() {",
+                "    let query -> \"plg\"",
+                "    let files -> [\"playground.zl\", \"parser.zl\", \"lexer.zl\", \"package.json\"]",
+                "    let matches -> fuzzy.filter(query, files, 0.3)",
+                "    io.writeln(\"Fuzzy search for '\" + query + \"': \" + matches.join(\", \"))",
+                "",
+                "    io.writeln(\"\")",
+                "    io.writeln(\"Inflections:\")",
+                "    io.writeln(\"camelCase:  \" + inflect.camel_case(\"terminal_playground_tool\"))",
+                "    io.writeln(\"kebab-case: \" + inflect.kebab_case(\"TerminalPlaygroundTool\"))",
+                "    io.writeln(\"slugify:    \" + inflect.slugify(\"Zenlang 2026: Fast & Expressive!\"))",
+                "    io.writeln(\"pluralize:  \" + inflect.pluralize(\"process\"))",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "4. Advanced Collections & Statistics",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.collections.lru as lru",
+                "import zen.math.stats as stats",
+                "",
+                "function main() {",
+                "    io.writeln(\"=== LRU Cache Demo ===\")",
+                "    let cache -> lru.create(3)",
+                "    lru.put(cache, \"a\", 100)",
+                "    lru.put(cache, \"b\", 200)",
+                "    lru.put(cache, \"c\", 300)",
+                "    lru.put(cache, \"d\", 400)",
+                "    io.writeln(\"Contains 'a' (evicted): \" + (lru.get(cache, \"a\") != Nothing))",
+                "    io.writeln(\"Contains 'd': \" + (lru.get(cache, \"d\") == 400))",
+                "",
+                "    io.writeln(\"\")",
+                "    io.writeln(\"=== Summary Statistics ===\")",
+                "    let data -> [10, 20, 25, 30, 40, 50, 95]",
+                "    let summary -> stats.summary(data)",
+                "    io.writeln(\"Count:  \" + summary[\"count\"])",
+                "    io.writeln(\"Mean:   \" + summary[\"mean\"])",
+                "    io.writeln(\"Median: \" + summary[\"median\"])",
+                "    io.writeln(\"Min:    \" + summary[\"min\"] + \" / Max: \" + summary[\"max\"])",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "5. Crypto & Security: SHA256 & JWT",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.crypto.hash as hash",
+                "import zen.crypto.jwt as jwt",
+                "",
+                "function main() {",
+                "    let text -> \"zen-security-token\"",
+                "    let digest -> hash.sha256(text)",
+                "    io.writeln(\"SHA-256 of '\" + text + \"':\")",
+                "    io.writeln(digest)",
+                "",
+                "    let secret -> \"super-secret-key-1234\"",
+                "    let claims -> { \"user\" -> \"alice\", \"role\" -> \"admin\" }",
+                "    let token -> jwt.sign(claims, secret)",
+                "    io.writeln(\"\")",
+                "    io.writeln(\"Signed JWT: \" + token)",
+                "",
+                "    let verified -> jwt.verify(token, secret)",
+                "    io.writeln(\"Token Valid: \" + verified[\"valid\"])",
+                "    io.writeln(\"User: \" + verified[\"payload\"][\"user\"])",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "6. Data Schema Validation",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.data.schema as schema",
+                "",
+                "function main() {",
+                "    let user_schema -> {",
+                "        \"type\" -> \"map\",",
+                "        \"required\" -> [\"id\", \"username\", \"age\"],",
+                "        \"properties\" -> {",
+                "            \"id\" -> { \"type\" -> \"integer\", \"min\" -> 1 },",
+                "            \"username\" -> { \"type\" -> \"string\", \"min_length\" -> 3 },",
+                "            \"age\" -> { \"type\" -> \"integer\", \"min\" -> 18 }",
+                "        }",
+                "    }",
+                "",
+                "    let user_record -> { \"id\" -> 42, \"username\" -> \"zen_master\", \"age\" -> 25 }",
+                "    let res -> schema.validate(user_schema, user_record)",
+                "    io.writeln(\"Record Valid: \" + res[\"valid\"])",
+                "    <- 0",
+                "}"
+            ]
+        },
+        {
+            "name" -> "7. Micro-Benchmarking Harness",
+            "code" -> [
+                "import zen.io.io as io",
+                "import zen.util.bench as bench",
+                "import zen.crypto.hash as hash",
+                "",
+                "function benchmark_hash() {",
+                "    hash.fnv1a_32(\"zen-micro-benchmark-sample-payload\")",
+                "}",
+                "",
+                "function main() {",
+                "    io.writeln(\"Running FNV-1a hash benchmark (5,000 iterations)...\")",
+                "    let res -> bench.run(\"FNV1a-32\", benchmark_hash, 5000)",
+                "    io.writeln(bench.format(res))",
+                "    <- 0",
+                "}"
+            ]
+        }
+    ]
+}
+
+// --- Editor State & Core Engine ---
+
+class Playground {
+    let lines
+    let row
+    let col
+    let row_off
+    let col_off
+    
+    let filename
+    let modified
+    
+    let output_lines
+    let output_scroll_y
+    
+    let backend_mode
+    let layout_mode
+    let status
+    
+    // Modal Overlays
+    let in_template_picker
+    let template_idx
+    
+    let in_settings_picker
+    let settings_idx
+    
+    // Feature Toggles (Options)
+    let opt_autocomplete
+    let opt_doc_drawer
+    let opt_highlight
+    let opt_line_numbers
+    
+    // Autocomplete State
+    let ac_active
+    let ac_items
+    let ac_idx
+    let ac_prefix
+    let ac_start_col
+
+    // Lazy Caches for performance
+    let cached_doc_word
+    let cached_doc_info
+
+    function init(initial_file) {
+        self.filename -> initial_file
+        self.modified -> False
+        
+        self.in_template_picker -> False
+        self.template_idx -> 0
+        
+        self.in_settings_picker -> False
+        self.settings_idx -> 0
+        
+        self.opt_autocomplete -> True
+        self.opt_doc_drawer -> True
+        self.opt_highlight -> True
+        self.opt_line_numbers -> True
+        
+        self.ac_active -> False
+        self.ac_items -> []
+        self.ac_idx -> 0
+        self.ac_prefix -> ""
+        self.ac_start_col -> 0
+        
+        self.cached_doc_word -> ""
+        self.cached_doc_info -> Nothing
+        
+        let loaded -> False
+        when self.filename != Nothing and self.filename != "" {
+            when file.exists(self.filename) {
+                let content -> file.read(self.filename)
+                content -> Str.replace(content, "\r\n", "\n")
+                content -> Str.replace(content, "\r", "\n")
+                self.lines -> Str.split(content, "\n")
+                loaded -> True
+                self.status -> "Loaded " + self.filename
+            }
+        }
+        
+        when not loaded {
+            self.lines -> [
+                "import zen.io.io as io",
+                "",
+                "function main() {",
+                "    io.writeln(\"Hello, Zen Playground!\")",
+                "    io.writeln(\"Press Tab to autocomplete, Ctrl+H for live docs.\")",
+                "    <- 0",
+                "}"
+            ]
+            self.status -> "Zen Playground ready (Tab: complete, ^H: docs, ^P: templates, ^R: run)"
+        }
+        
+        self.row -> 0
+        self.col -> 0
+        self.row_off -> 0
+        self.col_off -> 0
+        
+        self.output_lines -> [
+            "Zen Interactive Code Lab & Output Pane",
+            "-------------------------------------",
+            "Press Ctrl+R to run current buffer.",
+            "Press Tab / Ctrl+Space for autocompletions.",
+            "Press Ctrl+H to toggle live documentation inspector.",
+            "Press Ctrl+O for settings & feature toggles."
+        ]
+        self.output_scroll_y -> 0
+        
+        self.backend_mode -> 0
+        self.layout_mode -> "vertical"
+    }
+
+    function backend_name() {
+        when self.backend_mode == 0 { <- "Interpret (Python)" }
+        when self.backend_mode == 1 { <- "Native AOT (-g)" }
+        when self.backend_mode == 2 { <- "Selfhost (bin/zen)" }
+        <- "Interpret"
+    }
+
+    function line_count() {
+        <- self.lines.length
+    }
+
+    function current_line() {
+        when self.row < 0 or self.row >= self.lines.length {
+            <- ""
+        }
+        <- self.lines[self.row]
+    }
+
+    function set_line(r, s) {
+        let out -> []
+        let i -> 0
+        do while i < self.lines.length {
+            when i == r {
+                out.append(s)
+            } or {
+                out.append(self.lines[i])
+            }
+            i -> i + 1
+        }
+        self.lines -> out
+        self.modified -> True
+    }
+
+    function clamp_cursor() {
+        when self.row < 0 { self.row -> 0 }
+        when self.row >= self.lines.length {
+            self.row -> self.lines.length - 1
+            when self.row < 0 { self.row -> 0 }
+        }
+        let ln -> s_len(self.current_line())
+        when self.col < 0 { self.col -> 0 }
+        when self.col > ln { self.col -> ln }
+    }
+
+    function scroll(editor_rows) {
+        when self.row < self.row_off {
+            self.row_off -> self.row
+        }
+        when self.row >= self.row_off + editor_rows {
+            self.row_off -> self.row - editor_rows + 1
+        }
+        when self.row_off < 0 { self.row_off -> 0 }
+
+        when self.col < self.col_off {
+            self.col_off -> self.col
+        }
+    }
+
+    // --- Fast Word & Symbol Extraction for Docs ---
+
+    function get_word_under_cursor() {
+        let line -> self.current_line()
+        let ln -> s_len(line)
+        when ln == 0 { <- "" }
+        
+        let pos -> self.col
+        when pos >= ln { pos -> ln - 1 }
+        when pos < 0 { pos -> 0 }
+        
+        when pos + 1 < ln and Str.substring(line, pos, pos + 2) == "->" { <- "->" }
+        when pos > 0 and Str.substring(line, pos - 1, pos + 1) == "->" { <- "->" }
+        when pos + 1 < ln and Str.substring(line, pos, pos + 2) == "<-" { <- "<-" }
+        when pos > 0 and Str.substring(line, pos - 1, pos + 1) == "<-" { <- "<-" }
+
+        let start_pos -> pos
+        do while start_pos > 0 and is_ident_part(Str.at(line, start_pos - 1)) {
+            start_pos -> start_pos - 1
+        }
+        let end_pos -> pos
+        do while end_pos < ln and is_ident_part(Str.at(line, end_pos)) {
+            end_pos -> end_pos + 1
+        }
+        
+        when start_pos >= end_pos { <- "" }
+        <- Str.substring(line, start_pos, end_pos)
+    }
+
+    function get_current_doc_info() {
+        let word -> self.get_word_under_cursor()
+        when word == self.cached_doc_word {
+            <- self.cached_doc_info
+        }
+        self.cached_doc_word -> word
+        self.cached_doc_info -> get_doc_entry(word)
+        <- self.cached_doc_info
+    }
+
+    function update_autocomplete() {
+        when not self.opt_autocomplete {
+            self.ac_active -> False
+            <- Nothing
+        }
+        
+        let line -> self.current_line()
+        let pos -> self.col
+        when pos == 0 {
+            self.ac_active -> False
+            <- Nothing
+        }
+        
+        let start_pos -> pos
+        do while start_pos > 0 and is_ident_part(Str.at(line, start_pos - 1)) {
+            start_pos -> start_pos - 1
+        }
+        
+        when start_pos == pos {
+            self.ac_active -> False
+            <- Nothing
+        }
+        
+        let prefix -> Str.substring(line, start_pos, pos)
+        when s_len(prefix) < 1 {
+            self.ac_active -> False
+            <- Nothing
+        }
+        
+        let all_tokens -> get_all_autocomplete_tokens()
+        let matched -> []
+        let i -> 0
+        do while i < all_tokens.length {
+            let tok -> all_tokens[i]
+            when Str.starts_with(tok, prefix) and tok != prefix {
+                matched.append(tok)
+            }
+            i -> i + 1
+        }
+        
+        when matched.length > 0 {
+            self.ac_active -> True
+            self.ac_items -> matched
+            self.ac_idx -> 0
+            self.ac_prefix -> prefix
+            self.ac_start_col -> start_pos
+        } or {
+            self.ac_active -> False
+        }
+    }
+
+    function apply_autocomplete() {
+        when not self.ac_active or self.ac_items.length == 0 { <- False }
+        when self.ac_idx < 0 or self.ac_idx >= self.ac_items.length { <- False }
+        
+        let chosen -> self.ac_items[self.ac_idx]
+        let line -> self.current_line()
+        let left -> s_slice(line, 0, self.ac_start_col)
+        let right -> s_slice(line, self.col, s_len(line))
+        let new_line -> left + chosen + right
+        self.set_line(self.row, new_line)
+        self.col -> self.ac_start_col + s_len(chosen)
+        self.ac_active -> False
+        <- True
+    }
+
+    function insert_char(ch) {
+        let line -> self.current_line()
+        let nl -> s_insert(line, self.col, ch)
+        self.set_line(self.row, nl)
+        self.col -> self.col + 1
+        self.update_autocomplete()
+    }
+
+    function insert_newline() {
+        let line -> self.current_line()
+        let left -> s_slice(line, 0, self.col)
+        let right -> s_slice(line, self.col, s_len(line))
+        self.set_line(self.row, left)
+        
+        let out -> []
+        let i -> 0
+        do while i < self.lines.length {
+            out.append(self.lines[i])
+            when i == self.row {
+                out.append(right)
+            }
+            i -> i + 1
+        }
+        self.lines -> out
+        self.row -> self.row + 1
+        self.col -> 0
+        self.modified -> True
+        self.ac_active -> False
+    }
+
+    function backspace() {
+        when self.col > 0 {
+            let line -> self.current_line()
+            let nl -> s_delete_at(line, self.col - 1)
+            self.set_line(self.row, nl)
+            self.col -> self.col - 1
+            self.update_autocomplete()
+            <- Nothing
+        }
+        when self.row > 0 {
+            let prev -> self.lines[self.row - 1]
+            let cur -> self.current_line()
+            let joined -> prev + cur
+            let new_col -> s_len(prev)
+            
+            let out -> []
+            let i -> 0
+            do while i < self.lines.length {
+                when i == self.row - 1 {
+                    out.append(joined)
+                } or {
+                    when i != self.row {
+                        out.append(self.lines[i])
+                    }
+                }
+                i -> i + 1
+            }
+            self.lines -> out
+            self.row -> self.row - 1
+            self.col -> new_col
+            self.modified -> True
+            self.ac_active -> False
+        }
+    }
+
+    function delete_forward() {
+        let line -> self.current_line()
+        let n -> s_len(line)
+        when self.col < n {
+            let nl -> s_delete_at(line, self.col)
+            self.set_line(self.row, nl)
+            self.update_autocomplete()
+            <- Nothing
+        }
+        when self.row + 1 < self.lines.length {
+            let next -> self.lines[self.row + 1]
+            self.set_line(self.row, line + next)
+            let out -> []
+            let i -> 0
+            do while i < self.lines.length {
+                when i != self.row + 1 {
+                    out.append(self.lines[i])
+                }
+                i -> i + 1
+            }
+            self.lines -> out
+            self.modified -> True
+            self.ac_active -> False
+        }
+    }
+
+    function save_file() {
+        let dest_file -> self.filename
+        when dest_file == Nothing or dest_file == "" {
+            dest_file -> "playground_saved.zl"
+            self.filename -> dest_file
+        }
+        let body -> Str.join(self.lines, "\n")
+        file.write(dest_file, body)
+        self.modified -> False
+        self.status -> "Saved buffer to " + dest_file
+    }
+
+    function run_code() {
+        self.status -> "Running via " + self.backend_name() + "..."
+        self.draw()
+        
+        let body -> Str.join(self.lines, "\n")
+        file.write(".playground_tmp.zl", body)
+        
+        let cmd -> ""
+        when self.backend_mode == 0 {
+            cmd -> "python3 bootstrap/Zen.py .playground_tmp.zl 2>&1"
+        } or when self.backend_mode == 1 {
+            cmd -> "python3 bootstrap/Zen.py -g .playground_tmp.zl 2>&1"
+        } or {
+            cmd -> "./bin/zen .playground_tmp.zl 2>&1"
+        }
+        
+        let res -> process.result(cmd)
+        
+        let out_text -> res["stdout"]
+        when out_text == "" or out_text == Nothing {
+            out_text -> "(No output produced)"
+        }
+        out_text -> Str.replace(out_text, "\r\n", "\n")
+        out_text -> Str.replace(out_text, "\r", "\n")
+        
+        self.output_lines -> Str.split(out_text, "\n")
+        self.output_scroll_y -> 0
+        
+        when res["code"] == 0 {
+            self.status -> "Run successful (exit 0)"
+        } or {
+            self.status -> "Run failed (exit " + Str.to_string(res["code"]) + ")"
+        }
+    }
+
+    function toggle_layout() {
+        when self.layout_mode == "vertical" {
+            self.layout_mode -> "horizontal"
+        } or {
+            self.layout_mode -> "vertical"
+        }
+        self.status -> "Layout: " + self.layout_mode
+    }
+
+    function toggle_backend() {
+        self.backend_mode -> (self.backend_mode + 1) % 3
+        self.status -> "Backend: " + self.backend_name()
+    }
+
+    function clear_output() {
+        self.output_lines -> ["Output cleared."]
+        self.output_scroll_y -> 0
+        self.status -> "Output cleared"
+    }
+
+    function toggle_doc_drawer() {
+        self.opt_doc_drawer -> not self.opt_doc_drawer
+        when self.opt_doc_drawer {
+            self.status -> "Live Docs: ON"
+        } or {
+            self.status -> "Live Docs: OFF"
+        }
+    }
+
+    function open_template_picker() {
+        self.in_template_picker -> True
+        self.template_idx -> 0
+        self.status -> "Templates: Up/Down to navigate, Enter to load, Esc to cancel"
+    }
+
+    function select_template() {
+        let templates -> get_templates()
+        when self.template_idx >= 0 and self.template_idx < templates.length {
+            let t -> templates[self.template_idx]
+            self.lines -> t["code"]
+            self.row -> 0
+            self.col -> 0
+            self.row_off -> 0
+            self.col_off -> 0
+            self.modified -> True
+            self.status -> "Loaded template: " + t["name"]
+        }
+        self.in_template_picker -> False
+    }
+
+    function open_settings_picker() {
+        self.in_settings_picker -> True
+        self.settings_idx -> 0
+        self.status -> "Settings: Up/Down to navigate, Space/Enter to toggle, Esc to close"
+    }
+
+    function toggle_selected_setting() {
+        when self.settings_idx == 0 {
+            self.opt_autocomplete -> not self.opt_autocomplete
+        } or when self.settings_idx == 1 {
+            self.opt_doc_drawer -> not self.opt_doc_drawer
+        } or when self.settings_idx == 2 {
+            self.opt_highlight -> not self.opt_highlight
+        } or when self.settings_idx == 3 {
+            self.opt_line_numbers -> not self.opt_line_numbers
+        }
+    }
+
+    // --- Fast In-Memory Line Highlighter ---
+
+    function format_word_ansi(word) {
+        when word == Nothing or s_len(word) == 0 { <- "" }
+        when Str.starts_with(word, "//") {
+            <- ansi_bright_black() + word + ansi_reset()
+        } or when Str.starts_with(word, "\"") or Str.starts_with(word, "`") {
+            <- ansi_green() + word + ansi_reset()
+        } or when word == "->" or word == "<-" {
+            <- ansi_bright_green() + word + ansi_reset()
+        } or when is_keyword(word) {
+            <- ansi_bright_magenta() + word + ansi_reset()
+        } or when is_stdlib_module(word) {
+            <- ansi_bright_cyan() + word + ansi_reset()
+        } or when is_digit(Str.at(word, 0)) {
+            <- ansi_bright_yellow() + word + ansi_reset()
+        }
+        <- ansi_white() + word + ansi_reset()
+    }
+
+    function highlight_line_to_ansi(line, col_start, width) {
+        when line == Nothing or s_len(line) == 0 {
+            <- s_spaces(width)
+        }
+
+        let vis -> s_slice(line, col_start, col_start + width)
+        when not self.opt_highlight {
+            let pad -> width - s_len(vis)
+            when pad > 0 { <- vis + s_spaces(pad) }
+            <- vis
+        }
+
+        let words -> Str.split(vis, " ")
+        let out -> ""
+        let wi -> 0
+        do while wi < words.length {
+            let w -> words[wi]
+            when wi > 0 { out -> out + " " }
+            out -> out + self.format_word_ansi(w)
+            wi -> wi + 1
+        }
+
+        let pad -> width - s_len(vis)
+        when pad > 0 {
+            out -> out + s_spaces(pad)
+        }
+        <- out
+    }
+
+    // --- Line-Buffered High-Performance Frame Draw ---
+
+    function draw() {
+        let size -> term.get_size()
+        let w -> size.width
+        let h -> size.height
+        when w < 40 { w -> 40 }
+        when h < 12 { h -> 12 }
+        
+        let doc_drawer_h -> 0
+        when self.opt_doc_drawer { doc_drawer_h -> 3 }
+        
+        let ui_h -> h - 2 - doc_drawer_h
+        when ui_h < 4 { ui_h -> 4 }
+        
+        let ed_x -> 1
+        let ed_y -> 2
+        let ed_w -> w
+        let ed_h -> ui_h
+        
+        let out_x -> 1
+        let out_y -> 2
+        let out_w -> w
+        let out_h -> ui_h
+        
+        when self.layout_mode == "vertical" {
+            ed_w -> w / 2
+            out_x -> ed_w + 1
+            out_w -> w - ed_w
+        } or {
+            ed_h -> ui_h / 2
+            out_y -> ed_y + ed_h + 1
+            out_h -> ui_h - ed_h - 1
+        }
+        
+        let gutter_w -> 0
+        when self.opt_line_numbers {
+            gutter_w -> 5
+            let total_l -> self.lines.length
+            when total_l >= 1000 { gutter_w -> 7 }
+            or when total_l >= 100 { gutter_w -> 6 }
+        }
+        
+        let ed_inner_w -> ed_w - gutter_w
+        let ed_inner_h -> ed_h
+        when self.layout_mode == "vertical" {
+            ed_inner_w -> ed_inner_w - 1
+        }
+        when ed_inner_w < 5 { ed_inner_w -> 5 }
+
+        self.scroll(ed_inner_h)
+
+        when self.col < self.col_off {
+            self.col_off -> self.col
+        }
+        when self.col >= self.col_off + ed_inner_w {
+            self.col_off -> self.col - ed_inner_w + 1
+        }
+
+        term.write("\033[?25l") // Hide cursor during render
+
+        // 1. Top Header Bar
+        term.move(1, 1)
+        let doc_name -> self.filename
+        when doc_name == Nothing or doc_name == "" { doc_name -> "[untitled.zl]" }
+        let mod_tag -> ""
+        when self.modified { mod_tag -> "*" }
+        let top_left -> " ZEN PLAYGROUND — " + doc_name + mod_tag + " "
+        let top_right -> " Engine: " + self.backend_name() + " "
+        let top_pad -> w - s_len(top_left) - s_len(top_right)
+        when top_pad < 0 { top_pad -> 0 }
+        term.write(ansi_top_bar() + top_left + s_spaces(top_pad) + top_right + ansi_reset())
+        
+        // 2. Editor Rows & Output Rows (Vertical or Horizontal)
+        when self.layout_mode == "vertical" {
+            let y -> 0
+            do while y < ui_h {
+                let row_y -> 0 + ed_y + y
+                term.move(1, row_y)
+                let row_str -> ""
+                
+                // Left: Editor Cell
+                let file_row -> 0 + self.row_off + y
+                when file_row >= self.lines.length {
+                    when self.opt_line_numbers {
+                        let num_str -> Str.pad_left("~", gutter_w - 2, " ")
+                        row_str -> row_str + ansi_bright_black() + num_str + " │ " + ansi_reset()
+                    }
+                    row_str -> row_str + s_spaces(ed_inner_w)
+                } or {
+                    when self.opt_line_numbers {
+                        let line_num_str -> Str.to_string(0 + file_row + 1)
+                        let padded_num -> Str.pad_left(line_num_str, gutter_w - 2, " ")
+                        when file_row == self.row {
+                            row_str -> row_str + ansi_bright_yellow() + padded_num + " │ " + ansi_reset()
+                        } or {
+                            row_str -> row_str + ansi_bright_black() + padded_num + " │ " + ansi_reset()
+                        }
+                    }
+                    let line -> self.lines[file_row]
+                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w)
+                }
+                
+                // Middle Border
+                row_str -> row_str + ansi_bright_black() + "│" + ansi_reset()
+                
+                // Right: Output Cell
+                let out_row -> 0 + self.output_scroll_y + y
+                when out_row < self.output_lines.length {
+                    let oline -> self.output_lines[out_row]
+                    let visible -> s_slice(oline, 0, out_w)
+                    let col_tag -> ansi_white()
+                    when Str.starts_with(visible, "[ERROR]") or Str.starts_with(visible, "FAIL") {
+                        col_tag -> ansi_bright_red()
+                    } or when Str.starts_with(visible, "[INFO]") or Str.starts_with(visible, "OK") {
+                        col_tag -> ansi_bright_green()
+                    }
+                    let pad -> out_w - s_len(visible)
+                    when pad > 0 {
+                        row_str -> row_str + col_tag + visible + ansi_reset() + s_spaces(pad)
+                    } or {
+                        row_str -> row_str + col_tag + visible + ansi_reset()
+                    }
+                } or {
+                    row_str -> row_str + s_spaces(out_w)
+                }
+                
+                term.write(row_str)
+                y -> 0 + y + 1
+            }
+        } or {
+            // Horizontal layout
+            let y -> 0
+            do while y < ed_h {
+                let row_y -> 0 + ed_y + y
+                term.move(1, row_y)
+                let row_str -> ""
+                let file_row -> 0 + self.row_off + y
+                when file_row >= self.lines.length {
+                    when self.opt_line_numbers {
+                        let num_str -> Str.pad_left("~", gutter_w - 2, " ")
+                        row_str -> row_str + ansi_bright_black() + num_str + " │ " + ansi_reset()
+                    }
+                    row_str -> row_str + s_spaces(ed_inner_w)
+                } or {
+                    when self.opt_line_numbers {
+                        let line_num_str -> Str.to_string(0 + file_row + 1)
+                        let padded_num -> Str.pad_left(line_num_str, gutter_w - 2, " ")
+                        when file_row == self.row {
+                            row_str -> row_str + ansi_bright_yellow() + padded_num + " │ " + ansi_reset()
+                        } or {
+                            row_str -> row_str + ansi_bright_black() + padded_num + " │ " + ansi_reset()
+                        }
+                    }
+                    let line -> self.lines[file_row]
+                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w)
+                }
+                term.write(row_str)
+                y -> 0 + y + 1
+            }
+            
+            // Horizontal split border
+            term.move(1, 0 + ed_y + ed_h)
+            term.write(ansi_bright_black() + Str.repeat("─", w) + ansi_reset())
+            
+            // Output pane rows
+            let oy -> 0
+            do while oy < out_h {
+                term.move(1, 0 + out_y + oy)
+                let row_str -> ""
+                let out_row -> 0 + self.output_scroll_y + oy
+                when out_row < self.output_lines.length {
+                    let oline -> self.output_lines[out_row]
+                    let visible -> s_slice(oline, 0, out_w)
+                    let col_tag -> ansi_white()
+                    when Str.starts_with(visible, "[ERROR]") or Str.starts_with(visible, "FAIL") {
+                        col_tag -> ansi_bright_red()
+                    } or when Str.starts_with(visible, "[INFO]") or Str.starts_with(visible, "OK") {
+                        col_tag -> ansi_bright_green()
+                    }
+                    let pad -> out_w - s_len(visible)
+                    when pad > 0 {
+                        row_str -> row_str + col_tag + visible + ansi_reset() + s_spaces(pad)
+                    } or {
+                        row_str -> row_str + col_tag + visible + ansi_reset()
+                    }
+                } or {
+                    row_str -> row_str + s_spaces(out_w)
+                }
+                term.write(row_str)
+                oy -> 0 + oy + 1
+            }
+        }
+
+        // 3. Live Documentation Drawer (if enabled)
+        when self.opt_doc_drawer {
+            let drawer_y -> 0 + h - doc_drawer_h
+            let doc_info -> self.get_current_doc_info()
+            let cur_word -> self.cached_doc_word
+            
+            let doc_title -> " 📖 DOC INSPECTOR: " + cur_word + " "
+            when doc_info == Nothing {
+                doc_title -> " 📖 DOC INSPECTOR (Cursor on keyword/function for live reference) "
+            }
+            term.move(1, drawer_y)
+            term.write(ansi_doc_header() + Str.pad_right(doc_title, w, " ") + ansi_reset())
+            
+            let doc_body_str -> "  Navigate cursor over keywords (function, when, ->) or stdlib calls (chart.sparkline)."
+            when doc_info != Nothing {
+                doc_body_str -> "  ▶ " + doc_info["sig"] + " — " + doc_info["desc"]
+            }
+            term.move(1, 0 + drawer_y + 1)
+            term.write(ansi_doc_body() + Str.pad_right(doc_body_str, w, " ") + ansi_reset())
+        }
+
+        // 4. Autocomplete Floating Popup (if active)
+        when self.ac_active and self.ac_items.length > 0 {
+            let ac_max_show -> 5
+            let ac_count -> self.ac_items.length
+            when ac_count > ac_max_show { ac_count -> ac_max_show }
+            
+            let ac_w -> 28
+            let ac_x -> 0 + ed_x + gutter_w + (self.col - self.col_off)
+            let ac_y -> 0 + ed_y + (self.row - self.row_off) + 1
+            
+            when ac_x + ac_w > w { ac_x -> 0 + w - ac_w - 1 }
+            when ac_x < 1 { ac_x -> 1 }
+            when ac_y + ac_count > h - 2 { ac_y -> 0 + ac_y - ac_count - 2 }
+            
+            let ai -> 0
+            do while ai < ac_count {
+                let item -> self.ac_items[ai]
+                term.move(ac_x, 0 + ac_y + ai)
+                when ai == self.ac_idx {
+                    term.write("\033[30;106m" + Str.pad_right(" ▶ " + item, ac_w, " ") + ansi_reset())
+                } or {
+                    term.write("\033[37;40m" + Str.pad_right("   " + item, ac_w, " ") + ansi_reset())
+                }
+                ai -> 0 + ai + 1
+            }
+        }
+
+        // 5. Settings / Options Modal Overlay (if active)
+        when self.in_settings_picker {
+            let modal_w -> 52
+            let modal_h -> 8
+            let modal_x -> (w - modal_w) / 2
+            let modal_y -> (h - modal_h) / 2
+            when modal_x < 1 { modal_x -> 1 }
+            when modal_y < 1 { modal_y -> 1 }
+            
+            term.move(modal_x, modal_y)
+            term.write(ansi_modal_header() + Str.pad_right(" ── PLAYGROUND OPTIONS (Space: toggle, Esc: done) ──", modal_w, " ") + ansi_reset())
+            
+            let opts -> [
+                { "name" -> "Auto-Complete Engine", "val" -> self.opt_autocomplete },
+                { "name" -> "Live Doc Drawer", "val" -> self.opt_doc_drawer },
+                { "name" -> "Syntax Highlighting", "val" -> self.opt_highlight },
+                { "name" -> "Line Numbers Gutter", "val" -> self.opt_line_numbers }
+            ]
+            
+            let oi -> 0
+            do while oi < opts.length {
+                let opt -> opts[oi]
+                let state_str -> "[OFF]"
+                when opt["val"] { state_str -> "[ON]" }
+                term.move(modal_x, 0 + modal_y + 1 + oi)
+                when oi == self.settings_idx {
+                    term.write(ansi_modal_selected() + Str.pad_right(" ▶ " + opt["name"] + "  " + state_str, modal_w, " ") + ansi_reset())
+                } or {
+                    term.write(ansi_modal_item() + Str.pad_right("    " + opt["name"] + "  " + state_str, modal_w, " ") + ansi_reset())
+                }
+                oi -> 0 + oi + 1
+            }
+            term.move(modal_x, 0 + modal_y + 1 + opts.length)
+            term.write(ansi_modal_item() + s_spaces(modal_w) + ansi_reset())
+        }
+
+        // 6. Template Picker Overlay Modal (if active)
+        when self.in_template_picker {
+            let templates -> get_templates()
+            let modal_w -> 56
+            let modal_h -> templates.length + 4
+            let modal_x -> (w - modal_w) / 2
+            let modal_y -> (h - modal_h) / 2
+            when modal_x < 1 { modal_x -> 1 }
+            when modal_y < 1 { modal_y -> 1 }
+            
+            term.move(modal_x, modal_y)
+            term.write(ansi_modal_header() + Str.pad_right(" ── TEMPLATE GALLERY (Enter: load, Esc: cancel) ──", modal_w, " ") + ansi_reset())
+            
+            let ti -> 0
+            do while ti < templates.length {
+                let t -> templates[ti]
+                term.move(modal_x, 0 + modal_y + 1 + ti)
+                when ti == self.template_idx {
+                    term.write(ansi_modal_selected() + Str.pad_right("  ▶ " + t["name"], modal_w, " ") + ansi_reset())
+                } or {
+                    term.write(ansi_modal_item() + Str.pad_right("    " + t["name"], modal_w, " ") + ansi_reset())
+                }
+                ti -> 0 + ti + 1
+            }
+            term.move(modal_x, 0 + modal_y + 1 + templates.length)
+            term.write(ansi_modal_item() + s_spaces(modal_w) + ansi_reset())
+        }
+
+        // 7. Bottom Status Bar & Action Hints
+        term.move(1, h)
+        let cur_info -> " Ln " + Str.to_string(self.row + 1) + ", Col " + Str.to_string(self.col + 1) + " "
+        let hint_info -> " ^R Run  ^P Templates  ^H Doc  ^O Options  ^E Backend  ^T Layout  ^S Save  ^Q Quit "
+        
+        when self.status != "" {
+            let alert_text -> " ✦ " + self.status + " "
+            let alert_pad -> w - s_len(alert_text)
+            when alert_pad < 0 { alert_pad -> 0 }
+            term.write(ansi_alert_bar() + alert_text + s_spaces(alert_pad) + ansi_reset())
+        } or {
+            let bot_pad -> w - s_len(cur_info) - s_len(hint_info)
+            when bot_pad < 0 {
+                let max_h -> w - s_len(cur_info)
+                when max_h > 0 { hint_info -> s_slice(hint_info, 0, max_h) } or { hint_info -> "" }
+                bot_pad -> 0
+            }
+            term.write(ansi_status_bar() + cur_info + s_spaces(bot_pad) + hint_info + ansi_reset())
+        }
+
+        // 8. Place Hardware Cursor
+        let cx -> ed_x + gutter_w + (self.col - self.col_off)
+        let cy -> ed_y + (self.row - self.row_off)
+        when cx < ed_x + gutter_w { cx -> ed_x + gutter_w }
+        when cy < ed_y { cy -> ed_y }
+        when cx >= ed_x + gutter_w + ed_inner_w { cx -> ed_x + gutter_w + ed_inner_w - 1 }
+        when cy >= ed_y + ed_inner_h { cy -> ed_y + ed_inner_h - 1 }
+        
+        term.move(cx, cy)
+        when not self.in_template_picker and not self.in_settings_picker {
+            term.write("\033[?25h") // Show cursor
+        }
+        
+        term.flush()
+        
+        self.status -> ""
+    }
+
+    // --- Key Input Handling ---
+
+    function handle_key(k) {
+        let kind -> k.kind
+        let name -> k.name
+        let ch -> k.ch
+
+        when kind == "none" {
+            <- True
+        }
+        when kind == "resize" {
+            self.status -> "Resized"
+            <- False
+        }
+
+        // Settings Modal Keys
+        when self.in_settings_picker {
+            when kind == "special" {
+                when name == "up" {
+                    when self.settings_idx > 0 {
+                        self.settings_idx -> self.settings_idx - 1
+                    }
+                    <- False
+                }
+                when name == "down" {
+                    when self.settings_idx < 3 {
+                        self.settings_idx -> self.settings_idx + 1
+                    }
+                    <- False
+                }
+                when name == "enter" or name == "space" {
+                    self.toggle_selected_setting()
+                    <- False
+                }
+                when name == "esc" or name == "ctrl_o" or name == "ctrl_q" {
+                    self.in_settings_picker -> False
+                    self.status -> "Options saved"
+                    <- False
+                }
+            }
+            when kind == "char" and ch == " " {
+                self.toggle_selected_setting()
+                <- False
+            }
+            <- False
+        }
+
+        // Template Picker Modal Keys
+        when self.in_template_picker {
+            let templates -> get_templates()
+            when kind == "special" {
+                when name == "up" {
+                    when self.template_idx > 0 {
+                        self.template_idx -> self.template_idx - 1
+                    }
+                    <- False
+                }
+                when name == "down" {
+                    when self.template_idx + 1 < templates.length {
+                        self.template_idx -> self.template_idx + 1
+                    }
+                    <- False
+                }
+                when name == "enter" {
+                    self.select_template()
+                    <- False
+                }
+                when name == "esc" or name == "ctrl_p" or name == "ctrl_q" {
+                    self.in_template_picker -> False
+                    self.status -> "Template selection cancelled"
+                    <- False
+                }
+            }
+            <- False
+        }
+
+        // Autocomplete Popup Navigation
+        when self.ac_active {
+            when kind == "special" {
+                when name == "up" {
+                    when self.ac_idx > 0 {
+                        self.ac_idx -> self.ac_idx - 1
+                    }
+                    <- False
+                }
+                when name == "down" {
+                    when self.ac_idx + 1 < self.ac_items.length {
+                        self.ac_idx -> self.ac_idx + 1
+                    }
+                    <- False
+                }
+                when name == "tab" or name == "enter" {
+                    self.apply_autocomplete()
+                    <- False
+                }
+                when name == "esc" {
+                    self.ac_active -> False
+                    <- False
+                }
+            }
+        }
+
+        when kind == "special" {
+            when name == "up" {
+                self.row -> self.row - 1
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "down" {
+                self.row -> self.row + 1
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "left" {
+                when self.col > 0 {
+                    self.col -> self.col - 1
+                } or {
+                    when self.row > 0 {
+                        self.row -> self.row - 1
+                        self.col -> s_len(self.current_line())
+                    }
+                }
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "right" {
+                let ln -> s_len(self.current_line())
+                when self.col < ln {
+                    self.col -> self.col + 1
+                } or {
+                    when self.row + 1 < self.lines.length {
+                        self.row -> self.row + 1
+                        self.col -> 0
+                    }
+                }
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "home" {
+                self.col -> 0
+                self.ac_active -> False
+                <- False
+            }
+            when name == "end" {
+                self.col -> s_len(self.current_line())
+                self.ac_active -> False
+                <- False
+            }
+            when name == "pageup" {
+                let size -> term.get_size()
+                let h -> size.height - 4
+                when h < 1 { h -> 1 }
+                self.row -> self.row - (h / 2)
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "pagedown" {
+                let size -> term.get_size()
+                let h -> size.height - 4
+                when h < 1 { h -> 1 }
+                self.row -> self.row + (h / 2)
+                self.clamp_cursor()
+                self.ac_active -> False
+                <- False
+            }
+            when name == "backspace" {
+                self.backspace()
+                <- False
+            }
+            when name == "delete" {
+                self.delete_forward()
+                <- False
+            }
+            when name == "enter" {
+                self.insert_newline()
+                <- False
+            }
+            when name == "tab" {
+                self.update_autocomplete()
+                when self.ac_active {
+                    self.apply_autocomplete()
+                } or {
+                    self.insert_char(" ")
+                    self.insert_char(" ")
+                    self.insert_char(" ")
+                    self.insert_char(" ")
+                }
+                <- False
+            }
+            when name == "ctrl_r" {
+                self.run_code()
+                <- False
+            }
+            when name == "ctrl_p" or name == "ctrl_n" {
+                self.open_template_picker()
+                <- False
+            }
+            when name == "ctrl_h" {
+                self.toggle_doc_drawer()
+                <- False
+            }
+            when name == "ctrl_o" {
+                self.open_settings_picker()
+                <- False
+            }
+            when name == "ctrl_s" {
+                self.save_file()
+                <- False
+            }
+            when name == "ctrl_t" {
+                self.toggle_layout()
+                <- False
+            }
+            when name == "ctrl_e" {
+                self.toggle_backend()
+                <- False
+            }
+            when name == "ctrl_k" {
+                self.clear_output()
+                <- False
+            }
+            when name == "ctrl_l" {
+                self.status -> "Redraw"
+                <- False
+            }
+            when name == "ctrl_q" {
+                <- True
+            }
+            <- False
+        }
+        when kind == "char" {
+            when ch != "" and ch != Nothing {
+                self.insert_char(ch)
+            }
+            <- False
+        }
+        <- False
+    }
+}
+
+function main() {
+    let args -> sys.get_args()
+    let initial_file -> Nothing
+    when args.length > 1 {
+        initial_file -> args[1]
+    }
+
+    let pg -> Playground(initial_file)
+    
+    term.raw_enter()
+    term.alt_screen_enter()
+
+    let done -> False
+    check {
+        do {
+            pg.draw()
+            let k -> term.read_key()
+            done -> pg.handle_key(k)
+        } until done
+    } or {
+        pg.status -> "Error — exiting"
+    }
+
+    term.show_cursor()
+    term.alt_screen_exit()
+    term.raw_exit()
+    term.reset()
+    term.clear()
+    
+    when file.exists(".playground_tmp.zl") {
+        process.shell("rm -f .playground_tmp.zl")
+    }
+    
+    <- 0
+}

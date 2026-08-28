@@ -1,0 +1,13 @@
+import `selfhost/Lexer` as Lexer
+import `lib/zen/io` as IO
+
+function main() {
+    let source : String -> `import lib.zen.io as IO`
+    let tokens : List -> Lexer.tokenize(source, `test.zl`)
+    let i : Integer -> 0
+    while i < tokens.length {
+        let t -> tokens[i]
+        IO.write(`Token: ` + t.kind + ` ` + t.value + `\n`)
+        i -> i + 1
+    }
+}

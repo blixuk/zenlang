@@ -1,0 +1,69 @@
+/!
+  zen.ui.canvas dual-path.
+  Run:
+    python3 bootstrap/Zen.py tests/lib/test_canvas.zl
+    python3 bootstrap/Zen.py -g tests/lib/test_canvas.zl
+!/
+
+use zen.ui.canvas as canvas
+use zen.text.string as Str
+use zen.test as test
+
+function test_canvas_basic() {
+    let c -> canvas.create(20, 10)
+    canvas.clear(c, `.`, `bright_black`, `black`)
+
+    canvas.draw_rect(c, 2, 2, 6, 4, `#`, `green`, `black`)
+    canvas.draw_text(c, 5, 5, `Zenlang`, `yellow`, `blue`)
+
+    let pass -> test.assert_equal(c[`buffer`][2][2], `#`, `rect top-left`)
+    pass -> pass and test.assert_equal(c[`buffer`][5][5], `Z`, `text start`)
+    pass -> pass and test.assert_equal(c[`buffer`][5][6], `e`, `text next`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 5, 5), `Z`, `get_cell`)
+    <- pass
+}
+
+function test_fill_and_row() {
+    let c -> canvas.create(8, 3)
+    canvas.clear(c, ` `, `white`, `black`)
+    canvas.fill_rect(c, 1, 1, 4, 1, `x`, `red`, `black`)
+    let pass -> test.assert_equal(canvas.get_cell(c, 1, 1), `x`, `fill start`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 4, 1), `x`, `fill end`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 5, 1), ` `, `outside fill`)
+
+    let row -> canvas.row_string(c, 1)
+    pass -> pass and test.assert_equal(Str.length(row), 8, `row width`)
+    // " xxxx  " with leading space
+    pass -> pass and test.assert_equal(row[1], `x`, `row char`)
+    <- pass
+}
+
+function test_node_helpers() {
+    let c -> canvas.create(10, 5)
+    canvas.clear(c, ` `, `white`, `black`)
+    let node -> {`x` -> 2, `y` -> 1, `w` -> 5, `h` -> 2}
+    canvas.fill_node(c, node, `#`, `cyan`, `black`)
+    canvas.text_node(c, node, `Hi`, `white`, `black`)
+    let pass -> test.assert_equal(canvas.get_cell(c, 2, 1), `H`, `text_node H`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 3, 1), `i`, `text_node i`)
+    pass -> pass and test.assert_equal(canvas.get_cell(c, 4, 1), `#`, `fill remains`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Canvas.basic`, `fn` -> test_canvas_basic},
+        {`name` -> `Canvas.fill_row`, `fn` -> test_fill_and_row},
+        {`name` -> `Canvas.node_helpers`, `fn` -> test_node_helpers}
+    ]
+
+    <- test.run_suite(`UI.Canvas Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

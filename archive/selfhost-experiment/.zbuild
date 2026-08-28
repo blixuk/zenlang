@@ -1,0 +1,4 @@
+name: zen_compiler
+entry: main.zl
+output: ../bin/zen_new
+source_map: true

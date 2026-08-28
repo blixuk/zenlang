@@ -1,0 +1,216 @@
+/!
+  zwc — visual `wc` (lines, words, bytes) with relative bars.
+
+  Run:
+    python3 bootstrap/Zen.py examples/zwc.zl [file ...]
+    ./bin/zen examples/zwc.zl README.md tests/hello.zl
+    ./bin/zen -g examples/zwc.zl lib/zen/sys/term.zl
+!/
+
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.io.file as file
+import zen.io.io as io
+import zen.text.string as Str
+
+function count_words(text) {
+    let t -> Str.replace(text, `\n`, ` `)
+    t -> Str.replace(t, `\t`, ` `)
+    t -> Str.replace(t, `\r`, ` `)
+    let parts -> Str.split(t, ` `)
+    let n -> 0
+    let i -> 0
+    do while i < parts.length {
+        when parts[i] != `` {
+            n -> n + 1
+        }
+        i -> i + 1
+    }
+    <- n
+}
+
+function count_lines(text) {
+    when text == `` { <- 0 }
+    let parts -> Str.split(text, `\n`)
+    let n -> parts.length
+    // trailing newline produces final empty segment
+    when n > 0 {
+        when parts[n - 1] == `` {
+            n -> n - 1
+        }
+    }
+    when n == 0 and text != `` { n -> 1 }
+    <- n
+}
+
+function pad_left(s, w) {
+    let out -> s
+    do while Str.length(out) < w {
+        out -> ` ` + out
+    }
+    <- out
+}
+
+function pad_right(s, w) {
+    let out -> s
+    do while Str.length(out) < w {
+        out -> out + ` `
+    }
+    <- out
+}
+
+// Integer bar: how many of `width` cells should fill for val/maxv
+function bar_cells(val, maxv, width) {
+    when maxv <= 0 { <- 0 }
+    when val <= 0 { <- 0 }
+    when val >= maxv { <- width }
+    let filled -> 0
+    let i -> 0
+    do while i < width {
+        // i/width < val/maxv  <=>  i * maxv < val * width
+        when i * maxv < val * width {
+            filled -> filled + 1
+        }
+        i -> i + 1
+    }
+    <- filled
+}
+
+function draw_bar(val, maxv, width, color_name) {
+    let filled -> bar_cells(val, maxv, width)
+    let i -> 0
+    term.color(color_name, `black`)
+    do while i < filled {
+        term.write(`█`)
+        i -> i + 1
+    }
+    term.color(`white`, `black`)
+    do while i < width {
+        term.write(`░`)
+        i -> i + 1
+    }
+    term.reset()
+}
+
+function analyze(path) {
+    let text -> file.read(path)
+    let lines -> count_lines(text)
+    let words -> count_words(text)
+    let bytes -> Str.length(text)
+    <- {`path` -> path, `lines` -> lines, `words` -> words, `bytes` -> bytes}
+}
+
+function usage() {
+    io.writeln(`zwc — visual word/line/byte counts`)
+    io.writeln(`usage: zwc <file> [file ...]`)
+}
+
+function main() {
+    let args -> sys.get_args()
+    when args.length < 2 {
+        usage()
+        <- 1
+    }
+
+    let rows -> []
+    let i -> 1
+    let max_lines -> 0
+    let max_words -> 0
+    let max_bytes -> 0
+    let sum_lines -> 0
+    let sum_words -> 0
+    let sum_bytes -> 0
+    let name_w -> 8
+
+    do while i < args.length {
+        let p -> args[i]
+        i -> i + 1
+        when not file.exists(p) {
+            term.color(`red`, `black`)
+            io.writeln(`zwc: no such file: ` + p)
+            term.reset()
+        } or {
+            when file.is_dir(p) {
+                term.color(`red`, `black`)
+                io.writeln(`zwc: is a directory: ` + p)
+                term.reset()
+            } or {
+                let row -> analyze(p)
+                rows.append(row)
+                when row.lines > max_lines { max_lines -> row.lines }
+                when row.words > max_words { max_words -> row.words }
+                when row.bytes > max_bytes { max_bytes -> row.bytes }
+                sum_lines -> sum_lines + row.lines
+                sum_words -> sum_words + row.words
+                sum_bytes -> sum_bytes + row.bytes
+                when Str.length(p) > name_w { name_w -> Str.length(p) }
+            }
+        }
+    }
+
+    when rows.length == 0 {
+        <- 1
+    }
+
+    when name_w > 40 { name_w -> 40 }
+    let bar_w -> 24
+
+    // header
+    term.color(`black`, `white`)
+    term.write(` ` + pad_right(`file`, name_w) + ` `)
+    term.write(pad_left(`lines`, 8) + ` `)
+    term.write(pad_left(`words`, 8) + ` `)
+    term.write(pad_left(`bytes`, 8) + ` `)
+    term.write(` lines bar` + pad_right(``, bar_w - 9))
+    term.reset()
+    io.writeln(``)
+
+    let r -> 0
+    do while r < rows.length {
+        let row -> rows[r]
+        term.write(` `)
+        term.color(`cyan`, `black`)
+        term.write(pad_right(row.path, name_w))
+        term.reset()
+        term.write(` `)
+        term.write(pad_left(Str.to_string(row.lines), 8))
+        term.write(` `)
+        term.write(pad_left(Str.to_string(row.words), 8))
+        term.write(` `)
+        term.write(pad_left(Str.to_string(row.bytes), 8))
+        term.write(` `)
+        draw_bar(row.lines, max_lines, bar_w, `green`)
+        io.writeln(``)
+
+        // secondary bars for words / bytes (compact)
+        term.write(` ` + pad_right(``, name_w) + ` `)
+        term.write(pad_left(``, 8) + ` `)
+        term.color(`yellow`, `black`)
+        term.write(pad_left(`w`, 8))
+        term.reset()
+        term.write(` `)
+        term.color(`magenta`, `black`)
+        term.write(pad_left(`b`, 8))
+        term.reset()
+        term.write(` `)
+        let half -> 12
+        draw_bar(row.words, max_words, half, `yellow`)
+        term.write(` `)
+        draw_bar(row.bytes, max_bytes, half, `magenta`)
+        io.writeln(``)
+
+        r -> r + 1
+    }
+
+    // totals
+    term.color(`black`, `cyan`)
+    term.write(` ` + pad_right(`total`, name_w) + ` `)
+    term.write(pad_left(Str.to_string(sum_lines), 8) + ` `)
+    term.write(pad_left(Str.to_string(sum_words), 8) + ` `)
+    term.write(pad_left(Str.to_string(sum_bytes), 8) + ` `)
+    term.write(pad_right(``, bar_w))
+    term.reset()
+    io.writeln(``)
+
+    <- 0
+}

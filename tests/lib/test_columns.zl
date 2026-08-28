@@ -1,0 +1,33 @@
+import zen.text.columns as col
+import zen.test as test
+
+function test_columns_parsing() {
+    let data -> `name | age | city
+                alice | 30 | London
+                bob | 25 | Paris`
+    
+    let table -> col.Columns(data, `|`)
+    let pass -> test.assert_equal(table.count(), 3, `should have 3 rows`)
+    
+    let row1 -> table.row(1)
+    pass -> pass and test.assert_equal(row1[0], `alice`, `row 1 col 0 should be alice`)
+    pass -> pass and test.assert_equal(row1[1], `30`, `row 1 col 1 should be 30`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Columns.parsing`, `fn` -> test_columns_parsing}
+    ]
+
+    <- test.run_suite(`Text Columns Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

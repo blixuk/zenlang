@@ -1,0 +1,139 @@
+/!
+  Todo and issue tracker module for Zenlang project tooling.
+  Scans project source files for // TODO, // FIXME, // BUG, // NOTE,
+  and // HACK annotations, producing formatted terminal summaries.
+!/
+
+import zen.io.file as file
+import zen.io.path as path
+import zen.io.io as io
+import zen.text.string as Str
+
+/!
+  Scans a single file for TODO/FIXME/BUG annotations.
+!/
+export function scan_file(file_path, filter_tag) {
+    when not file.exists(file_path) {
+        <- []
+    }
+    let content -> file.read(file_path)
+    let lines -> Str.split(content, `\n`)
+    let items -> []
+    let line_num -> 1
+
+    do for line in lines {
+        let trimmed -> Str.trim(line)
+        when Str.starts_with(trimmed, `//`) {
+            let comment -> Str.trim(Str.substring(trimmed, 2, Str.length(trimmed)))
+            let tags -> [`TODO`, `FIXME`, `BUG`, `NOTE`, `HACK`, `WARN`, `XXX`]
+            do for t in tags {
+                let tag_colon -> t + `:`
+                let tag_space -> t + ` `
+                let match_tag -> Str.starts_with(comment, tag_colon) or Str.starts_with(comment, tag_space) or (comment == t)
+                when match_tag {
+                    let allow_tag -> (filter_tag == Nothing or filter_tag == `` or Str.to_upper(filter_tag) == t)
+                    when allow_tag {
+                        let msg -> Str.trim(Str.replace(comment, tag_colon, ``))
+                        when msg == comment {
+                            msg -> Str.trim(Str.substring(comment, Str.length(t), Str.length(comment)))
+                        }
+                        items.append({
+                            `file` -> file_path,
+                            `line` -> line_num,
+                            `tag` -> t,
+                            `message` -> msg,
+                            `raw` -> trimmed
+                        })
+                    }
+                }
+            }
+        }
+        line_num -> line_num + 1
+    }
+    <- items
+}
+
+/!
+  Scans all source files in a project for comment annotations.
+!/
+export function scan_project(proj, filter_tag) {
+    let root -> proj[`root`]
+    let manifest_map -> proj[`manifest`]
+
+    let dirs -> [
+        path.join(root, `src`),
+        path.join(root, `tests`),
+        path.join(root, `lib`)
+    ]
+
+    let all_items -> []
+    do for d in dirs {
+        when file.exists(d) {
+            let files -> file.find_files(d, `.zl`)
+            do for f in files {
+                let items -> scan_file(f, filter_tag)
+                do for item in items {
+                    all_items.append(item)
+                }
+            }
+        }
+    }
+
+    <- all_items
+}
+
+/!
+  Prints a formatted report of scanned TODO/FIXME items.
+!/
+export function print_todos(proj, filter_tag) {
+    let root -> proj[`root`]
+    let items -> scan_project(proj, filter_tag)
+
+    io.writeln(`==============================================`)
+    io.writeln(`  Codebase Annotations: ` + proj[`manifest`][`name`] + ` (` + Str.to_string(items.length) + ` items)`)
+    io.writeln(`==============================================`)
+
+    when items.length == 0 {
+        io.writeln(`No matching TODO / FIXME annotations found. Clean codebase!`)
+        io.writeln(`==============================================`)
+        <- { `count` -> 0, `items` -> [] }
+    }
+
+    let tag_counts -> {}
+    let last_file -> ``
+
+    do for item in items {
+        let t -> item[`tag`]
+        when not tag_counts.has(t) {
+            tag_counts[t] -> 0
+        }
+        tag_counts[t] -> tag_counts[t] + 1
+
+        let rel_path -> item[`file`].replace(root + `/`, ``)
+        when rel_path != last_file {
+            io.writeln(``)
+            io.writeln(`File: ` + rel_path)
+            last_file -> rel_path
+        }
+
+        let badge -> `[` + item[`tag`] + `]`
+        let pad -> `  `
+        io.writeln(pad + badge + ` Line ` + Str.to_string(item[`line`]) + `: ` + item[`message`])
+    }
+
+    io.writeln(`----------------------------------------------`)
+    io.write(`Summary: `)
+    let tag_keys -> tag_counts.keys()
+    let parts -> []
+    do for k in tag_keys {
+        parts.append(k + `: ` + Str.to_string(tag_counts[k]))
+    }
+    io.writeln(Str.join(parts, ` | `))
+    io.writeln(`==============================================`)
+
+    <- {
+        `count` -> items.length,
+        `items` -> items,
+        `counts` -> tag_counts
+    }
+}

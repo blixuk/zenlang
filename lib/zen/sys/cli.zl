@@ -1,0 +1,324 @@
+/!
+  Command Line Interface parsing module.
+  High-level API for building Unix-style CLI tools (dual-path safe).
+
+  Class style:
+    let p -> cli.Parser(`app`, `description`)
+    p.flag(`v`, `verbose`, `Verbose`)
+    p.option(`o`, `output`, `Out file`, `out.txt`)
+    p.argument(`input`, `Input path`)
+    let values -> p.parse(sys.get_args())
+
+  Free-function style (map specs, no class mutation):
+    let values -> cli.parse_args(args, flags, options, positionals)
+
+  Supports:
+  - `-v` / `--verbose` flags
+  - `-o val` / `--output val` / `--output=val` options
+  - positional arguments in order
+  - leftover tokens under `_rest` (list)
+!/
+
+use zen.io.io as IO
+use zen.text.string as Str
+use zen.math.range as Range
+
+/!
+  Internal representation of a CLI option (flag or valued option).
+!/
+class ArgSpec {
+    let short: String
+    let long: String
+    let help: String
+    let default_val: Variant
+    let is_flag: Bool
+
+    function init(short, long, help, default_val, is_flag) {
+        self.short -> short
+        self.long -> long
+        self.help -> help
+        self.default_val -> default_val
+        self.is_flag -> is_flag
+    }
+}
+
+/!
+  Main CLI Parser class.
+!/
+class Parser {
+    let name: String
+    let description: String
+    let _specs: List
+    let _arguments: List
+    let _commands: Map
+    let _values: Map
+
+    function init(name, description) {
+        self.name -> name
+        self.description -> description
+        self._specs -> []
+        self._arguments -> []
+        self._commands -> {}
+        self._values -> {}
+    }
+
+    /!
+      Adds a boolean flag to the parser.
+    !/
+    function flag(short, long, help) {
+        self._specs.append(ArgSpec(short, long, help, false, true))
+    }
+
+    /!
+      Adds an option that takes a value.
+    !/
+    function option(short, long, help, default_val) {
+        self._specs.append(ArgSpec(short, long, help, default_val, false))
+    }
+
+    /!
+      Adds a positional argument.
+    !/
+    function argument(name, help) {
+        self._arguments.append({`name` -> name, `help` -> help})
+    }
+
+    /!
+      Prints the help message for the parser.
+    !/
+    function help() {
+        IO.writeln(self.name + `: ` + self.description)
+        IO.writeln(``)
+        IO.writeln(`Usage: ` + self.name + ` [options] [arguments]`)
+        IO.writeln(``)
+        IO.writeln(`Options:`)
+        do for spec: ArgSpec in self._specs {
+            let line: String -> `  `
+            when spec.short != Nothing and spec.short != `` {
+                line -> line + `-` + spec.short
+                when spec.long != Nothing and spec.long != `` {
+                    line -> line + `, `
+                }
+            }
+            when spec.long != Nothing and spec.long != `` {
+                line -> line + `--` + spec.long
+            }
+            when spec.is_flag == false {
+                line -> line + ` <value>`
+            }
+            IO.writeln(line + `  ` + spec.help)
+        }
+        when self._arguments.length > 0 {
+            IO.writeln(``)
+            IO.writeln(`Arguments:`)
+            do for a in self._arguments {
+                IO.writeln(`  ` + a[`name`] + `  ` + a[`help`])
+            }
+        }
+    }
+
+    /!
+      Parses the provided list of arguments.
+      @param args Usually from sys.get_args() (index 0 may be program name).
+      @return Map of parsed values; leftover tokens under `_rest`.
+    !/
+    function parse(args) {
+        // Initialize with defaults (both short and long keys when present)
+        do for spec: ArgSpec in self._specs {
+            when spec.long != Nothing and spec.long != `` {
+                self._values[spec.long] -> spec.default_val
+            }
+            when spec.short != Nothing and spec.short != `` {
+                self._values[spec.short] -> spec.default_val
+            }
+        }
+
+        let i -> 1 // skip argv[0] program name
+        let pos_args -> []
+
+        do while i < args.length {
+            let arg -> args[i]
+
+            when arg == `--` {
+                // rest is positional
+                i -> i + 1
+                do while i < args.length {
+                    pos_args.append(args[i])
+                    i -> i + 1
+                }
+            } or when Str.starts_with(arg, `--`) {
+                // Parse --name / --name=value without UAM under -g (avoid reusing moved temps)
+                let name -> Str.substring(arg, 2, Str.length(arg))
+                let inline_val -> Nothing
+                let eq -> Str.index_of(name, `=`)
+                when eq >= 0 {
+                    // name=value → slice from original `arg` (indices relative to after `--`)
+                    let name_end -> 2 + eq
+                    let val_start -> name_end + 1
+                    name -> Str.substring(arg, 2, name_end)
+                    inline_val -> Str.substring(arg, val_start, Str.length(arg))
+                }
+                let found -> false
+                do for spec: ArgSpec in self._specs {
+                    when spec.long == name {
+                        when spec.is_flag {
+                            self._values[name] -> true
+                            when spec.short != Nothing and spec.short != `` {
+                                self._values[spec.short] -> true
+                            }
+                        } or {
+                            let val -> inline_val
+                            when val == Nothing {
+                                i -> i + 1
+                                when i < args.length {
+                                    val -> args[i]
+                                } or {
+                                    val -> ``
+                                }
+                            }
+                            self._values[name] -> val
+                            when spec.short != Nothing and spec.short != `` {
+                                self._values[spec.short] -> val
+                            }
+                        }
+                        found -> true
+                        break
+                    }
+                }
+                when found == false {
+                    IO.warn(`Unknown option: ` + arg)
+                }
+                i -> i + 1
+            } or when Str.starts_with(arg, `-`) and Str.length(arg) > 1 {
+                // Short option(s): -v or -o value (not clustered multi-flags for simplicity)
+                let name -> Str.substring(arg, 1, Str.length(arg))
+                let found -> false
+                do for spec: ArgSpec in self._specs {
+                    when spec.short == name {
+                        let key -> name
+                        when spec.long != Nothing and spec.long != `` {
+                            key -> spec.long
+                        }
+                        when spec.is_flag {
+                            self._values[key] -> true
+                            when spec.short != Nothing {
+                                self._values[spec.short] -> true
+                            }
+                        } or {
+                            i -> i + 1
+                            let val -> ``
+                            when i < args.length {
+                                val -> args[i]
+                            }
+                            self._values[key] -> val
+                            when spec.short != Nothing {
+                                self._values[spec.short] -> val
+                            }
+                        }
+                        found -> true
+                        break
+                    }
+                }
+                when found == false {
+                    IO.warn(`Unknown option: ` + arg)
+                }
+                i -> i + 1
+            } or {
+                pos_args.append(arg)
+                i -> i + 1
+            }
+        }
+
+        // Map positional arguments
+        let j -> 0
+        do while j < self._arguments.length {
+            when j < pos_args.length {
+                let arg_name -> self._arguments[j][`name`]
+                self._values[arg_name] -> pos_args[j]
+            }
+            j -> j + 1
+        }
+
+        // Leftover positionals beyond declared arguments
+        let rest -> []
+        let k -> self._arguments.length
+        do while k < pos_args.length {
+            rest.append(pos_args[k])
+            k -> k + 1
+        }
+        self._values[`_rest`] -> rest
+
+        <- self._values
+    }
+}
+
+/!
+  Look up a parsed value with a Default when missing/Nothing.
+!/
+function get(values, key, default_val) {
+    when values == Nothing { <- default_val }
+    when values.has(key) {
+        let v -> values[key]
+        when v == Nothing { <- default_val }
+        <- v
+    }
+    <- default_val
+}
+
+/!
+  True when a flag is set (truthy).
+!/
+function flag_set(values, key) {
+    let v -> get(values, key, false)
+    <- v == true
+}
+
+/!
+  Free-function parser (no class). Dual-path friendly.
+
+  @param args Full argv (index 0 = program name).
+  @param flags List of maps `{short, long, help}` (boolean).
+  @param options List of maps `{short, long, help, default_val}`.
+  @param positionals List of maps `{name, help}`.
+  @return Values map including `_rest`.
+!/
+function parse_args(args, flags, options, positionals) {
+    let p -> Parser(`app`, ``)
+    let i -> 0
+    do while i < flags.length {
+        let f -> flags[i]
+        let sh -> ``
+        let lo -> ``
+        let hp -> ``
+        when f.has(`short`) { sh -> f[`short`] }
+        when f.has(`long`) { lo -> f[`long`] }
+        when f.has(`help`) { hp -> f[`help`] }
+        p.flag(sh, lo, hp)
+        i -> i + 1
+    }
+    i -> 0
+    do while i < options.length {
+        let o -> options[i]
+        let sh -> ``
+        let lo -> ``
+        let hp -> ``
+        let def -> ``
+        when o.has(`short`) { sh -> o[`short`] }
+        when o.has(`long`) { lo -> o[`long`] }
+        when o.has(`help`) { hp -> o[`help`] }
+        when o.has(`default_val`) { def -> o[`default_val`] }
+        p.option(sh, lo, hp, def)
+        i -> i + 1
+    }
+    i -> 0
+    do while i < positionals.length {
+        let a -> positionals[i]
+        let nm -> ``
+        let hp -> ``
+        when a.has(`name`) { nm -> a[`name`] }
+        when a.has(`help`) { hp -> a[`help`] }
+        p.argument(nm, hp)
+        i -> i + 1
+    }
+    <- p.parse(args)
+}

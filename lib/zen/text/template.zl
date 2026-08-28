@@ -1,0 +1,192 @@
+/!
+    String templating and interpolation engine.
+    Supports variable substitution `{{ var }}`, conditionals `{{#if condition}}`,
+    `{{#unless condition}}`, and loops `{{#each list}}`.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+
+function _get_value(ctx, path) {
+    let key -> Str.trim(path)
+    when ctx == Nothing or key == `` {
+        <- ``
+    }
+
+    // Support dot-notation access (e.g. user.name)
+    when Str.contains(key, `.`) {
+        let parts -> Str.split(key, `.`)
+        let current -> ctx
+        let i -> 0
+        let len -> parts.length
+        do while i < len {
+            let part -> Str.trim(parts[i])
+            when current != Nothing and current.has(part) {
+                current -> current[part]
+            } or {
+                <- ``
+            }
+            i -> i + 1
+        }
+        when current != Nothing {
+            <- Str.to_string(current)
+        }
+        <- ``
+    }
+
+    when ctx.has(key) {
+        let val -> ctx[key]
+        when val != Nothing {
+            <- Str.to_string(val)
+        }
+    }
+    <- ``
+}
+
+function _is_truthy(ctx, path) {
+    let key -> Str.trim(path)
+    when ctx == Nothing or key == `` {
+        <- false
+    }
+
+    let val -> Nothing
+    when Str.contains(key, `.`) {
+        let parts -> Str.split(key, `.`)
+        let current -> ctx
+        let i -> 0
+        let len -> parts.length
+        do while i < len {
+            let part -> Str.trim(parts[i])
+            when current != Nothing and current.has(part) {
+                current -> current[part]
+            } or {
+                current -> Nothing
+            }
+            i -> i + 1
+        }
+        val -> current
+    } or when ctx.has(key) {
+        val -> ctx[key]
+    }
+
+    when val == Nothing or val == false or val == `` or val == 0 {
+        <- false
+    }
+    when val.kind == `List` and val.length == 0 {
+        <- false
+    }
+    <- true
+}
+
+/!
+    Renders a template string using the provided context map.
+    @param template_str Template with {{ placeholder }} syntax.
+    @param context Map of variables to inject.
+    @return Fully rendered string.
+!/
+function render(template_str, context) {
+    when template_str == Nothing or template_str == `` {
+        <- ``
+    }
+    when context == Nothing {
+        context -> {}
+    }
+
+    let res -> ``
+    let rem -> template_str
+
+    do while Str.length(rem) > 0 {
+        let open_tag -> Str.index_of(rem, `{{`)
+        when open_tag == -1 {
+            res -> res + rem
+            rem -> ``
+        } or {
+            // Append static prefix
+            when open_tag > 0 {
+                res -> res + Str.substring(rem, 0, open_tag)
+            }
+
+            let after_open -> Str.substring(rem, open_tag + 2, Str.length(rem))
+            let close_tag -> Str.index_of(after_open, `}}`)
+            when close_tag == -1 {
+                res -> res + Str.substring(rem, open_tag, Str.length(rem))
+                rem -> ``
+            } or {
+                let tag_content -> Str.trim(Str.substring(after_open, 0, close_tag))
+                let next_rem -> Str.substring(after_open, close_tag + 2, Str.length(after_open))
+
+                // Conditionals: {{#if key}}
+                when Str.starts_with(tag_content, `#if `) {
+                    let cond_var -> Str.trim(Str.substring(tag_content, 4, Str.length(tag_content)))
+                    let end_if_str -> `{{/if}}`
+                    let end_idx -> Str.index_of(next_rem, end_if_str)
+                    when end_idx != -1 {
+                        let block_body -> Str.substring(next_rem, 0, end_idx)
+                        rem -> Str.substring(next_rem, end_idx + Str.length(end_if_str), Str.length(next_rem))
+                        when _is_truthy(context, cond_var) {
+                            res -> res + render(block_body, context)
+                        }
+                    } or {
+                        rem -> next_rem
+                    }
+                } or when Str.starts_with(tag_content, `#unless `) {
+                    let cond_var -> Str.trim(Str.substring(tag_content, 8, Str.length(tag_content)))
+                    let end_unless_str -> `{{/unless}}`
+                    let end_idx -> Str.index_of(next_rem, end_unless_str)
+                    when end_idx != -1 {
+                        let block_body -> Str.substring(next_rem, 0, end_idx)
+                        rem -> Str.substring(next_rem, end_idx + Str.length(end_unless_str), Str.length(next_rem))
+                        when not _is_truthy(context, cond_var) {
+                            res -> res + render(block_body, context)
+                        }
+                    } or {
+                        rem -> next_rem
+                    }
+                } or when Str.starts_with(tag_content, `#each `) {
+                    let list_var -> Str.trim(Str.substring(tag_content, 6, Str.length(tag_content)))
+                    let end_each_str -> `{{/each}}`
+                    let end_idx -> Str.index_of(next_rem, end_each_str)
+                    when end_idx != -1 {
+                        let block_body -> Str.substring(next_rem, 0, end_idx)
+                        rem -> Str.substring(next_rem, end_idx + Str.length(end_each_str), Str.length(next_rem))
+                        let items -> Nothing
+                        when context.has(list_var) {
+                            items -> context[list_var]
+                        }
+                        when items != Nothing and items.kind == `List` {
+                            let item_i -> 0
+                            let item_len -> items.length
+                            do while item_i < item_len {
+                                let it -> items[item_i]
+                                let sub_ctx -> {}
+                                when it.kind == `Map` {
+                                    // Clone map entries
+                                    let item_keys -> it.keys()
+                                    let ki -> 0
+                                    do while ki < item_keys.length {
+                                        let k -> item_keys[ki]
+                                        sub_ctx[k] -> it[k]
+                                        ki -> ki + 1
+                                    }
+                                }
+                                sub_ctx[`this`] -> Str.to_string(it)
+                                sub_ctx[`@index`] -> Str.to_string(item_i)
+                                res -> res + render(block_body, sub_ctx)
+                                item_i -> item_i + 1
+                            }
+                        }
+                    } or {
+                        rem -> next_rem
+                    }
+                } or {
+                    // Normal variable interpolation
+                    let val_str -> _get_value(context, tag_content)
+                    res -> res + val_str
+                    rem -> next_rem
+                }
+            }
+        }
+    }
+
+    <- res
+}

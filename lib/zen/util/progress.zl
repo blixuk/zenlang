@@ -1,0 +1,118 @@
+/!
+    Terminal Progress & Spinner Utilities.
+    Provides customizable progress bars, percentage calculators, and spinner animation frames.
+!/
+
+import zen.text.string as Str
+
+/!
+    Calculates the completion percentage (0.0 to 100.0).
+    @param current Current progress count.
+    @param total Total expected count.
+    @return Percentage as float.
+!/
+function percentage(current, total) {
+    when total <= 0 { <- 100.0 }
+    let pct -> (0.0 + current) / (0.0 + total) * 100.0
+    when pct < 0.0 { pct -> 0.0 }
+    when pct > 100.0 { pct -> 100.0 }
+    <- pct
+}
+
+/!
+    Formats percentage as a string, e.g. "75.0%".
+!/
+function format_percentage(current, total) {
+    let p -> percentage(current, total)
+    let p_str -> Str.to_string(p)
+    let dot_idx -> Str.index_of(p_str, `.`)
+    when dot_idx != -1 {
+        let whole -> Str.substring(p_str, 0, dot_idx)
+        let frac -> Str.substring(p_str, dot_idx + 1, dot_idx + 2)
+        when Str.length(frac) == 0 { frac -> `0` }
+        <- whole + `.` + frac + `%`
+    }
+    <- p_str + `.0%`
+}
+
+/!
+    Renders a progress bar string.
+    @param current Current items completed.
+    @param total Total items.
+    @param width Character width of the progress bar itself (default 20).
+    @param style Bar style: "block", "ascii", "dots".
+    @return Formatted bar string e.g. "[████░░░░] 50.0% (5/10)".
+!/
+function render_bar(current, total, width, style) {
+    let bar_width -> width
+    when bar_width <= 0 { bar_width -> 20 }
+    let bar_style -> style
+    when bar_style == Nothing { bar_style -> `block` }
+
+    let p -> percentage(current, total)
+    let filled_slots -> 0 + (0.0 + p / 100.0 * bar_width)
+    when filled_slots > bar_width { filled_slots -> 0 + bar_width }
+    let empty_slots -> 0 + bar_width - filled_slots
+
+    let filled_char -> `█`
+    let empty_char -> `░`
+
+    when bar_style == `ascii` {
+        let body -> ``
+        when filled_slots > 0 {
+            body -> Str.repeat(`=`, filled_slots - 1) + `>`
+        }
+        let rest -> Str.repeat(` `, empty_slots)
+        let bar_str -> `[` + body + rest + `]`
+        let pct_str -> format_percentage(current, total)
+        let count_str -> `(` + Str.to_string(current) + `/` + Str.to_string(total) + `)`
+        <- bar_str + ` ` + pct_str + ` ` + count_str
+    } or when bar_style == `dots` {
+        filled_char -> `#`
+        empty_char -> `.`
+    }
+
+    let bar_str -> `[` + Str.repeat(filled_char, filled_slots) + Str.repeat(empty_char, empty_slots) + `]`
+    let pct_str -> format_percentage(current, total)
+    let count_str -> `(` + Str.to_string(current) + `/` + Str.to_string(total) + `)`
+    <- bar_str + ` ` + pct_str + ` ` + count_str
+}
+
+/!
+    Returns an array of spinner frames for a given style.
+    @param style "dots", "line", "arrows", "bounce".
+    @return List of frame strings.
+!/
+function spinner_frames(style) {
+    when style == `line` or style == `ascii` {
+        <- [`-`, `\\`, `|`, `/`]
+    } or when style == `arrows` {
+        <- [`←`, `↖`, `↑`, `↗`, `→`, `↘`, `↓`, `↙`]
+    } or when style == `bounce` {
+        <- [`⠁`, `⠂`, `⠄`, `⠂`]
+    } or {
+        // default "dots" (braille)
+        <- [`⠋`, `⠙`, `⠹`, `⠸`, `⠼`, `⠴`, `⠦`, `⠧`, `⠇`, `⠏`]
+    }
+}
+
+/!
+    Gets the current frame and computes the next frame index.
+    @param frame_idx Current frame index.
+    @param style Spinner style name.
+    @return Map with `frame` string and `next` index.
+!/
+function spinner_next(frame_idx, style) {
+    let frames -> spinner_frames(style)
+    let count -> frames.length
+    let idx -> 0 + frame_idx
+    when idx < 0 or idx >= count {
+        idx -> 0
+    }
+    let current_frame -> frames[idx]
+    let next_idx -> 0 + (idx + 1) % count
+    <- {
+        `frame` -> current_frame,
+        `next` -> next_idx
+    }
+}

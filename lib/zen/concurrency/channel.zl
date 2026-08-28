@@ -1,0 +1,258 @@
+/!
+  Channel and message passing subsystem for Zenlang concurrency.
+  Provides FIFO communication between tasks with support for buffered/unbuffered queues,
+  safe channel closure, non-blocking try operations, and multi-channel select multiplexing.
+!/
+
+import zen.time.time as time
+import zen.text.string as Str
+
+/!
+  Creates a new Channel instance.
+  @param capacity Maximum items in the buffer (0 for unbuffered, > 0 for buffered).
+  @return Channel map object.
+!/
+export function create_channel(capacity) {
+    let cap -> capacity
+    when cap == Nothing or cap < 0 {
+        cap -> 0
+    }
+    <- {
+        `kind` -> `CHANNEL`,
+        `capacity` -> cap,
+        `buffer` -> [],
+        `closed` -> false,
+        `send_count` -> 0,
+        `recv_count` -> 0
+    }
+}
+
+/!
+  Checks if the channel is closed.
+!/
+export function is_closed(ch) {
+    when ch == Nothing { <- true }
+    <- ch[`closed`] == true
+}
+
+/!
+  Returns the current number of elements waiting in the channel.
+!/
+export function length(ch) {
+    when ch == Nothing { <- 0 }
+    <- ch[`buffer`].length
+}
+
+/!
+  Returns the buffer capacity of the channel.
+!/
+export function capacity(ch) {
+    when ch == Nothing { <- 0 }
+    <- ch[`capacity`]
+}
+
+/!
+  Checks if the channel buffer is empty.
+!/
+export function is_empty(ch) {
+    when ch == Nothing { <- true }
+    <- ch[`buffer`].length == 0
+}
+
+/!
+  Checks if the channel buffer is at capacity.
+!/
+export function is_full(ch) {
+    when ch == Nothing { <- true }
+    let cap -> ch[`capacity`]
+    when cap == 0 {
+        <- ch[`buffer`].length >= 1
+    }
+    <- ch[`buffer`].length >= cap
+}
+
+/!
+  Closes the channel. Subsequent sends will fail.
+  Pending buffered values can still be received until empty.
+!/
+export function close(ch) {
+    when ch == Nothing { <- false }
+    when ch[`closed`] == true { <- false }
+    ch[`closed`] -> true
+    <- true
+}
+
+/!
+  Sends a value into the channel.
+  @param ch The channel.
+  @param value Value to send.
+  @return Map { ok: bool, error: String }
+!/
+export function send(ch, value) {
+    when ch == Nothing {
+        <- { `ok` -> false, `error` -> `Null channel` }
+    }
+    when ch[`closed`] == true {
+        <- { `ok` -> false, `error` -> `Cannot send to closed channel` }
+    }
+    ch[`buffer`].append(value)
+    ch[`send_count`] -> ch[`send_count`] + 1
+    <- { `ok` -> true, `error` -> Nothing }
+}
+
+/!
+  Non-blocking attempt to send a value.
+  Fails if closed or buffer is full.
+!/
+export function try_send(ch, value) {
+    when ch == Nothing {
+        <- { `ok` -> false, `error` -> `Null channel` }
+    }
+    when ch[`closed`] == true {
+        <- { `ok` -> false, `error` -> `Cannot send to closed channel` }
+    }
+    let cap -> ch[`capacity`]
+    when cap > 0 and ch[`buffer`].length >= cap {
+        <- { `ok` -> false, `error` -> `Channel buffer full` }
+    }
+    ch[`buffer`].append(value)
+    ch[`send_count`] -> ch[`send_count`] + 1
+    <- { `ok` -> true, `error` -> Nothing }
+}
+
+/!
+  Receives the next value from the channel.
+  @param ch The channel.
+  @return Map { ok: bool, value: Any, closed: bool, error: String }
+!/
+export function receive(ch) {
+    when ch == Nothing {
+        <- { `ok` -> false, `value` -> Nothing, `closed` -> true, `error` -> `Null channel` }
+    }
+    when ch[`buffer`].length > 0 {
+        let val -> ch[`buffer`][0]
+        ch[`buffer`].remove_at(0)
+        ch[`recv_count`] -> ch[`recv_count`] + 1
+        <- { `ok` -> true, `value` -> val, `closed` -> false, `error` -> Nothing }
+    }
+    when ch[`closed`] == true {
+        <- { `ok` -> false, `value` -> Nothing, `closed` -> true, `error` -> `Channel closed and empty` }
+    }
+    <- { `ok` -> false, `value` -> Nothing, `closed` -> false, `error` -> `Channel empty` }
+}
+
+/!
+  Non-blocking attempt to receive a value.
+!/
+export function try_receive(ch) {
+    <- receive(ch)
+}
+
+/!
+  Drains all remaining buffered elements from a channel into a list.
+!/
+export function drain(ch) {
+    when ch == Nothing { <- [] }
+    let items -> []
+    do while ch[`buffer`].length > 0 {
+        let val -> ch[`buffer`][0]
+        ch[`buffer`].remove_at(0)
+        ch[`recv_count`] -> ch[`recv_count`] + 1
+        items.append(val)
+    }
+    <- items
+}
+
+/!
+  Channel Multiplexer (select).
+  Evaluates a list of channel operations and returns the result of the first ready operation.
+  
+  Each case is a map:
+    - { op: "recv", channel: ch }
+    - { op: "send", channel: ch, value: val }
+    - { op: "default" }
+  
+  @param cases List of operation maps.
+  @return Map { index: Int, op: String, channel: Channel, value: Any, ok: bool, default: bool }
+!/
+export function select(cases) {
+    when cases == Nothing or cases.length == 0 {
+        <- { `ok` -> false, `error` -> `Empty select cases` }
+    }
+
+    let default_idx -> -1
+    let n -> cases.length
+    do for idx in 0..n {
+        let c -> cases[idx]
+        let op -> c[`op`]
+        when op == `recv` or op == `receive` {
+            let ch -> c[`channel`]
+            when ch != Nothing and ch[`buffer`].length > 0 {
+                let res -> receive(ch)
+                <- {
+                    `ok` -> true,
+                    `index` -> idx,
+                    `op` -> `recv`,
+                    `channel` -> ch,
+                    `value` -> res[`value`],
+                    `closed` -> res[`closed`],
+                    `default` -> false
+                }
+            } or when ch != Nothing and ch[`closed`] == true {
+                let res -> receive(ch)
+                <- {
+                    `ok` -> false,
+                    `index` -> idx,
+                    `op` -> `recv`,
+                    `channel` -> ch,
+                    `value` -> Nothing,
+                    `closed` -> true,
+                    `default` -> false
+                }
+            }
+        } or when op == `send` {
+            let ch -> c[`channel`]
+            when ch != Nothing and not is_full(ch) and not is_closed(ch) {
+                let s_res -> try_send(ch, c[`value`])
+                when s_res[`ok`] == true {
+                    <- {
+                        `ok` -> true,
+                        `index` -> idx,
+                        `op` -> `send`,
+                        `channel` -> ch,
+                        `value` -> c[`value`],
+                        `closed` -> false,
+                        `default` -> false
+                    }
+                }
+            }
+        } or when op == `default` {
+            default_idx -> idx
+        }
+    }
+
+    // If no channel is immediately ready and a default branch exists, trigger default
+    when default_idx >= 0 {
+        <- {
+            `ok` -> true,
+            `index` -> default_idx,
+            `op` -> `default`,
+            `channel` -> Nothing,
+            `value` -> Nothing,
+            `closed` -> false,
+            `default` -> true
+        }
+    }
+
+    // No operations ready and no default
+    <- {
+        `ok` -> false,
+        `index` -> -1,
+        `op` -> `none`,
+        `channel` -> Nothing,
+        `value` -> Nothing,
+        `closed` -> false,
+        `default` -> false,
+        `error` -> `No channel ready`
+    }
+}

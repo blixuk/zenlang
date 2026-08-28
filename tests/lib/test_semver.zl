@@ -1,0 +1,69 @@
+import zen.test as test
+import zen.data.semver as semver
+
+function test_semver_parse_and_format() {
+    let v1 -> semver.parse(`1.2.3`)
+    let pass -> test.assert_equal(v1[`major`], 1, `semver v1 major`)
+    pass -> pass and test.assert_equal(v1[`minor`], 2, `semver v1 minor`)
+    pass -> pass and test.assert_equal(v1[`patch`], 3, `semver v1 patch`)
+    pass -> pass and test.assert_equal(semver.to_string(v1), `1.2.3`, `semver format v1`)
+
+    let v2 -> semver.parse(`v2.0.1-beta.2+build.42`)
+    pass -> pass and test.assert_equal(v2[`major`], 2, `semver v2 major`)
+    pass -> pass and test.assert_equal(v2[`minor`], 0, `semver v2 minor`)
+    pass -> pass and test.assert_equal(v2[`patch`], 1, `semver v2 patch`)
+    pass -> pass and test.assert_equal(v2[`prerelease`], `beta.2`, `semver v2 prerelease`)
+    pass -> pass and test.assert_equal(v2[`build`], `build.42`, `semver v2 build`)
+    pass -> pass and test.assert_equal(semver.to_string(v2), `2.0.1-beta.2+build.42`, `semver format v2`)
+
+    <- pass
+}
+
+function test_semver_comparison_and_bumping() {
+    let pass -> test.assert_true(semver.gt(`2.0.0`, `1.9.9`), `2.0.0 > 1.9.9`)
+    pass -> pass and test.assert_true(semver.lt(`1.0.0`, `1.0.1`), `1.0.0 < 1.0.1`)
+    pass -> pass and test.assert_true(semver.eq(`1.2.3`, `1.2.3`), `1.2.3 == 1.2.3`)
+    pass -> pass and test.assert_true(semver.gt(`1.0.0`, `1.0.0-alpha`), `1.0.0 > 1.0.0-alpha`)
+
+    // Bumping
+    let v -> semver.parse(`1.2.3`)
+    let next_patch -> semver.bump_patch(v)
+    pass -> pass and test.assert_equal(semver.to_string(next_patch), `1.2.4`, `bump patch`)
+
+    let next_minor -> semver.bump_minor(v)
+    pass -> pass and test.assert_equal(semver.to_string(next_minor), `1.3.0`, `bump minor`)
+
+    let next_major -> semver.bump_major(v)
+    pass -> pass and test.assert_equal(semver.to_string(next_major), `2.0.0`, `bump major`)
+
+    <- pass
+}
+
+function test_semver_satisfies_ranges() {
+    let v -> `1.2.3`
+    let pass -> test.assert_true(semver.satisfies(v, `^1.2.0`), `satisfies ^1.2.0`)
+    pass -> pass and test.assert_true(semver.satisfies(v, `~1.2.0`), `satisfies ~1.2.0`)
+    pass -> pass and test.assert_true(semver.satisfies(v, `>=1.0.0 <2.0.0`), `satisfies >=1.0.0 <2.0.0`)
+    pass -> pass and test.assert_true(not semver.satisfies(v, `>=2.0.0`), `not satisfies >=2.0.0`)
+    pass -> pass and test.assert_true(semver.satisfies(v, `*`), `satisfies wildcard *`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `SemVer.parse_and_format`, `fn` -> test_semver_parse_and_format},
+        {`name` -> `SemVer.comparison_and_bumping`, `fn` -> test_semver_comparison_and_bumping},
+        {`name` -> `SemVer.satisfies_ranges`, `fn` -> test_semver_satisfies_ranges}
+    ]
+
+    <- test.run_suite(`SemVer Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

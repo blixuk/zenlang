@@ -1,0 +1,166 @@
+/!
+ Module path resolver — Stage 3.
+ Parity target: bootstrap/Module/Resolver.py
+ Dual-path free functions + map state.
+ Note: init_paths builds a fixed search list (roots argument appended via
+ path-only API without do-while copy loops — those break -g return typing).
+ !/
+
+import zen.text.string as Str
+import zen.io.path as Path
+
+let R -> {
+    `paths` -> [],
+    `ready` -> false
+}
+
+function fs_is_file(path) {
+    <- __builtin_file.is_file(path)
+}
+
+function apply_alias(import_path) {
+    when import_path == `zen.string` or import_path == `lib/zen/string` {
+        <- `zen.text.string`
+    }
+    when import_path == `zen.file` or import_path == `lib/zen/file` {
+        <- `zen.io.file`
+    }
+    when import_path == `zen.path` or import_path == `lib/zen/path` {
+        <- `zen.io.path`
+    }
+    when import_path == `zen.io` or import_path == `lib/zen/io` {
+        <- `zen.io.io`
+    }
+    when import_path == `zen.process` or import_path == `lib/zen/process` {
+        <- `zen.sys.process`
+    }
+    when import_path == `zen.term` or import_path == `lib/zen/term` {
+        <- `zen.sys.term`
+    }
+    when import_path == `zen.random` or import_path == `lib/zen/random` {
+        <- `zen.math.random`
+    }
+    when import_path == `zen.list` or import_path == `lib/zen/list` {
+        <- `zen.collections.list`
+    }
+    when import_path == `zen.json` or import_path == `lib/zen/json` {
+        <- `zen.data.json`
+    }
+    when import_path == `zen.lorem` or import_path == `lib/zen/lorem` {
+        <- `zen.text.lorem`
+    }
+    when import_path == `zen.color` or import_path == `lib/zen/color` {
+        <- `zen.color.color`
+    }
+    when import_path == `zen.zendata` or import_path == `lib/zen/zendata` {
+        <- `zen.data.zendata.zendata`
+    }
+    when import_path == `zen.zencode` or import_path == `lib/zen/zencode` {
+        <- `zen.tooling.zencode.zencode`
+    }
+    when import_path == `zen.zenmark` or import_path == `lib/zen/zenmark` {
+        <- `zen.text.zenmark.zenmark`
+    }
+    <- import_path
+}
+
+/!
+ Install search paths. Optional r0..r3 roots (use `` to skip).
+ Always ends with ., lib, selfhost, tests/self_hosting.
+ !/
+function configure_search(r0, r1, r2, r3) {
+    let paths -> []
+    when r0 != Nothing and r0 != `` {
+        paths.append(r0)
+    }
+    when r1 != Nothing and r1 != `` {
+        paths.append(r1)
+    }
+    when r2 != Nothing and r2 != `` {
+        paths.append(r2)
+    }
+    when r3 != Nothing and r3 != `` {
+        paths.append(r3)
+    }
+    paths.append(`.`)
+    paths.append(`lib`)
+    paths.append(`selfhost`)
+    paths.append(`tests/self_hosting`)
+    R[`paths`] -> paths
+    R[`ready`] -> true
+    <- `ok`
+}
+
+function ensure_paths() {
+    when R[`ready`] == true {
+        <- `ok`
+    }
+    <- configure_search(``, ``, ``, ``)
+}
+
+function search_paths() {
+    let status -> ensure_paths()
+    <- R[`paths`]
+}
+
+function to_relative(import_path) {
+    let p -> apply_alias(import_path)
+    when Str.contains(p, `/`) {
+        <- p
+    }
+    <- Str.replace(p, `.`, `/`)
+}
+
+function try_base(base_path, relative_path) {
+    let c1 -> Path.join(base_path, relative_path + `.zl`)
+    when fs_is_file(c1) {
+        <- c1
+    }
+    let last -> Path.basename(relative_path)
+    let c2 -> Path.join(Path.join(base_path, relative_path), last + `.zl`)
+    when fs_is_file(c2) {
+        <- c2
+    }
+    let c3 -> Path.join(base_path, relative_path)
+    when fs_is_file(c3) {
+        <- c3
+    }
+    <- ``
+}
+
+function resolve(import_path, base_dir) {
+    let _paths -> ensure_paths()
+    let relative_path -> to_relative(import_path)
+
+    when base_dir != Nothing and base_dir != `` {
+        let hit -> try_base(base_dir, relative_path)
+        when hit != `` {
+            <- hit
+        }
+        let parent_dir -> Path.dirname(base_dir)
+        when parent_dir != base_dir {
+            let hit2 -> try_base(parent_dir, relative_path)
+            when hit2 != `` {
+                <- hit2
+            }
+        }
+    }
+
+    let paths -> R[`paths`]
+    <- resolve_in_list(paths, 0, relative_path)
+}
+
+function resolve_in_list(paths, i, relative_path) {
+    when i >= paths.length {
+        <- ``
+    }
+    let hit -> try_base(paths[i], relative_path)
+    when hit != `` {
+        <- hit
+    }
+    <- resolve_in_list(paths, i + 1, relative_path)
+}
+
+function resolve_or_empty(import_path, base_dir) {
+    <- resolve(import_path, base_dir)
+}

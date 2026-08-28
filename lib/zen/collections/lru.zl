@@ -1,0 +1,140 @@
+/!
+    Least Recently Used (LRU) Cache implementation.
+    Maintains a fixed capacity cache that evicts oldest unaccessed entries.
+!/
+
+import zen.text.string as Str
+
+/!
+    Creates an LRU cache with fixed maximum capacity.
+!/
+function create(capacity) {
+    let cap -> capacity
+    when (cap == Nothing or cap <= 0) { cap -> 128 }
+    <- {
+        `capacity` -> cap,
+        `entries` -> {},
+        `order` -> []
+    }
+}
+
+/!
+    Returns number of entries in cache.
+!/
+function size(cache) {
+    when (cache == Nothing or not cache.has(`order`)) { <- 0 }
+    let order -> cache[`order`]
+    <- order.length
+}
+
+/!
+    Checks if a key exists in cache without updating its access order.
+!/
+function has(cache, key) {
+    when (cache == Nothing or not cache.has(`entries`)) { <- False }
+    let entries -> cache[`entries`]
+    let k_str -> Str.to_string(key)
+    <- entries.has(k_str)
+}
+
+/!
+    Internal helper: moves key to the front of the order list.
+!/
+function move_to_front(order, key) {
+    let k_str -> Str.to_string(key)
+    let new_order -> [k_str]
+    let count -> order.length
+    let i -> 0
+    do while i < count {
+        let cur -> order[i]
+        when (cur != k_str) {
+            new_order.append(cur)
+        }
+        i -> i + 1
+    }
+    <- new_order
+}
+
+/!
+    Gets value for key from cache and marks it as most recently used.
+    @return Map with "found" (boolean), "value" (any), and updated "cache".
+!/
+function get(cache, key) {
+    when (cache == Nothing) {
+        <- { `found` -> False, `value` -> Nothing, `cache` -> cache }
+    }
+    let k_str -> Str.to_string(key)
+    let entries -> cache[`entries`]
+    when (not entries.has(k_str)) {
+        <- { `found` -> False, `value` -> Nothing, `cache` -> cache }
+    }
+
+    let val -> entries[k_str]
+    let order -> cache[`order`]
+    cache[`order`] -> move_to_front(order, k_str)
+
+    <- {
+        `found` -> True,
+        `value` -> val,
+        `cache` -> cache
+    }
+}
+
+/!
+    Puts key-value pair into cache. Evicts oldest entry if capacity is exceeded.
+    @return Updated cache map.
+!/
+function put(cache, key, value) {
+    when (cache == Nothing) { <- cache }
+    let k_str -> Str.to_string(key)
+    let entries -> cache[`entries`]
+    let order -> cache[`order`]
+    let cap -> cache[`capacity`]
+
+    entries[k_str] -> value
+    order -> move_to_front(order, k_str)
+
+    // Evict oldest if exceeding capacity
+    when (order.length > cap) {
+        let oldest_idx -> order.length - 1
+        
+        let trimmed_order -> []
+        let i -> 0
+        do while i < oldest_idx {
+            trimmed_order.append(order[i])
+            i -> i + 1
+        }
+        order -> trimmed_order
+
+        // Remove from entries map
+        let new_entries -> {}
+        i -> 0
+        let new_count -> order.length
+        do while i < new_count {
+            let k -> order[i]
+            new_entries[k] -> entries[k]
+            i -> i + 1
+        }
+        entries -> new_entries
+    }
+
+    cache[`entries`] -> entries
+    cache[`order`] -> order
+    <- cache
+}
+
+/!
+    Returns list of keys in order from most recently used to oldest.
+!/
+function keys(cache) {
+    when (cache == Nothing or not cache.has(`order`)) { <- [] }
+    let order -> cache[`order`]
+    let result -> []
+    let i -> 0
+    let count -> order.length
+    do while i < count {
+        result.append(order[i])
+        i -> i + 1
+    }
+    <- result
+}

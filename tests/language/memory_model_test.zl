@@ -1,0 +1,66 @@
+from zen.io import write_line
+
+function assert_eq(a, b, message) {
+    when a != b {
+        write_line("[FAIL] " + message + ": Expected " + a + ", got " + b)
+        raise "AssertionFailed"
+    }
+}
+
+function test_pointer_referencing() {
+    write_line("--- Testing Referencing ---")
+    
+    let x -> 100
+    
+    // Test 'source' keyword referencing
+    let px : Pointer<Integer> -> source x
+    assert_eq(target px, 100, "source px reads x value")
+    
+    // Test '&' symbol referencing
+    let py : Pointer<Integer> -> &x
+    assert_eq(target py, 100, "&x referencing matches target read")
+}
+
+function test_pointer_dereferencing() {
+    write_line("--- Testing Dereferencing & Writing ---")
+    
+    let score -> 50
+    let addr -> source score
+    
+    // Read dereferenced target
+    let current_score -> target addr
+    assert_eq(current_score, 50, "Read score through target addr")
+    
+    // Write via target dereference assignment
+    target addr -> 150
+    assert_eq(score, 150, "Mutated score through target addr -> 150")
+    {}
+    
+    // Write via * symbol dereference assignment
+    *addr -> 300
+    assert_eq(score, 300, "Mutated score through *addr -> 300")
+}
+
+function test_ownership_qualifiers() {
+    write_line("--- Testing Ownership Qualifiers ---")
+    
+    let score -> 100
+    
+    // Test explicit 'borrowed' type qualifier
+    let borrow_ptr : borrowed Pointer<Integer> -> source score
+    assert_eq(target borrow_ptr, 100, "borrowed pointer works")
+    
+    // Test explicit 'owned' type qualifier
+    let own_ptr : owned Pointer<Integer> -> source score
+    assert_eq(target own_ptr, 100, "owned pointer works")
+}
+
+function run_tests() {
+    write_line("Running Memory Model & Pointer Syntax Tests...")
+    test_pointer_referencing()
+    test_pointer_dereferencing()
+    test_ownership_qualifiers()
+    write_line("All Memory Model & Pointer Syntax Tests Passed!")
+}
+
+run_tests()

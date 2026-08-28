@@ -1,0 +1,123 @@
+/!
+ Semantic text ladder demo: Word → Sentence → Paragraph → Chapter → Book.
+
+ Run:
+   ./scripts/zen run examples/semantic_text_book.zl
+   ./scripts/zen run -g examples/semantic_text_book.zl
+ !/
+
+import zen.io.io as io
+import zen.text.string as Str
+import zen.text.text as text
+
+/!
+ Build one sentence string from a list of Word structures.
+ !/
+function words_to_sentence_text(words) {
+    let out -> ``
+    let i -> 0
+    do for w in words {
+        when i == 0 {
+            out -> w.text
+        } or {
+            out -> out + ` ` + w.text
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+ Join sentence strings into one paragraph body (space-separated for wrap demo).
+ !/
+function sentences_to_paragraph_text(sentences) {
+    let out -> ``
+    let i -> 0
+    do for s in sentences {
+        when i == 0 {
+            out -> s
+        } or {
+            out -> out + ` ` + s
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+function main() {
+    io.writeln(`=== Semantic text ladder: Word → Sentence → Paragraph → Chapter → Book ===`)
+    io.writeln(``)
+
+    // --- Word ---
+    let w_zen -> text.Word { text -> `zen` }
+    let w_lang -> text.Word { text -> `lang` }
+    let w_loves -> text.Word { text -> `loves` }
+    let w_clear -> text.Word { text -> `clear` }
+    let w_text -> text.Word { text -> `text` }
+    let w_caps -> text.Word.capitalize(w_zen)
+
+    io.writeln(`1. Word`)
+    io.writeln(`   raw:      "` + w_zen.text + `"`)
+    io.writeln(`   capitalize("` + w_zen.text + `") → "` + w_caps.text + `"`)
+    io.writeln(`   is_uppercase("ZEN") → ` + Str.to_string(text.Word.is_uppercase(text.Word { text -> `ZEN` })))
+    io.writeln(``)
+
+    // --- Sentence (from words) ---
+    let sent1_words -> [w_caps, w_lang, w_loves, w_clear, w_text]
+    let sent1_body -> words_to_sentence_text(sent1_words)
+    let sentence1 -> text.Sentence { text -> sent1_body }
+    let sentence2 -> text.Sentence { text -> `Composition keeps structure explicit` }
+    let back_to_words -> text.Sentence.to_words(sentence1)
+
+    io.writeln(`2. Sentence`)
+    io.writeln(`   from words → "` + sentence1.text + `"`)
+    io.writeln(`   count_words → ` + Str.to_string(text.Sentence.count_words(sentence1)))
+    io.writeln(`   to_words[2] → "` + back_to_words[2].text + `"`)
+    io.writeln(``)
+
+    // --- Paragraph (from sentences) ---
+    let para1_body -> sentences_to_paragraph_text([sentence1.text, sentence2.text])
+    let para1 -> text.Paragraph { text -> para1_body }
+    let para2 -> text.Paragraph { text -> `Books are stacks of chapters. Chapters are stacks of paragraphs.` }
+    let para1_wrapped -> text.Paragraph.wrap(para1, 28)
+
+    io.writeln(`3. Paragraph`)
+    io.writeln(`   body:`)
+    io.writeln(`   ` + para1.text)
+    io.writeln(`   wrap(28):`)
+    io.writeln(para1_wrapped.text)
+    io.writeln(``)
+
+    // --- Chapter (from paragraphs) ---
+    let chapter1 -> text.Chapter.from_paragraphs(`Chapter 1 — Beginnings`, [para1])
+    let chapter1b -> text.Chapter.append_paragraph(chapter1, para2)
+    let chapter2 -> text.Chapter.from_paragraphs(
+        `Chapter 2 — Structure`,
+        [
+            text.Paragraph { text -> `Each layer only knows the one below it.` },
+            text.Paragraph { text -> `That keeps tools small and composable.` }
+        ]
+    )
+
+    io.writeln(`4. Chapter`)
+    io.writeln(`   title: "` + chapter1b.title + `"`)
+    io.writeln(`   paragraphs: ` + Str.to_string(text.Chapter.count_paragraphs(chapter1b)))
+    io.writeln(`   to_text:`)
+    io.writeln(text.Chapter.to_text(chapter1b))
+    io.writeln(``)
+
+    // --- Book (from chapters) ---
+    let book -> text.Book.from_chapters(`A Tiny Zen Book`, [chapter1b])
+    let book_full -> text.Book.append_chapter(book, chapter2)
+
+    io.writeln(`5. Book`)
+    io.writeln(`   title: "` + book_full.title + `"`)
+    io.writeln(`   chapters: ` + Str.to_string(text.Book.count_chapters(book_full)))
+    io.writeln(`   paragraphs (all): ` + Str.to_string(text.Book.count_paragraphs(book_full)))
+    io.writeln(``)
+    io.writeln(`--- full book ---`)
+    io.writeln(text.Book.to_text(book_full))
+    io.writeln(`--- end ---`)
+
+    <- 0
+}

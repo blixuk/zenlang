@@ -1,0 +1,26 @@
+import zen.geometry.point as point
+
+/!
+ Class representing a 2D circle.
+ !/
+class Circle {
+    let center: Point
+    let r: Decimal
+
+    /!
+     Initializes a new Circle.
+     @param center The center point of the circle.
+     @param r The radius of the circle.
+     !/
+    function init(center, r) {
+        self.center -> center
+        self.r -> r
+    }
+
+    /!
+     Checks if the circle contains a point.
+     !/
+    function contains(p: Point) {
+        <- self.center.distance(p) <= self.r
+    }
+}

@@ -1,0 +1,31 @@
+/!
+ Stage class MVP fixture: map-backed instance + Type_method free fns.
+ Exit 0 iff Counter(0).inc().inc() == 2.
+ !/
+
+class Counter {
+    let n
+
+    function init(v) {
+        self.n -> v
+    }
+
+    function inc() {
+        self.n -> self.n + 1
+        <- self.n
+    }
+
+    function get() {
+        <- self.n
+    }
+}
+
+function main() {
+    let c -> Counter(0)
+    let a -> c.inc()
+    let b -> c.inc()
+    when b == 2 {
+        <- 0
+    }
+    <- 1
+}

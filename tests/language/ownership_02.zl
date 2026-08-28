@@ -1,0 +1,16 @@
+import zen.io.io as io
+
+structure Point { x, y }
+
+function zen_entry() {
+    let p1 -> Point(1, 2)
+    let p_ref -> &p1 // Borrow p1
+    
+    io.write_line("p_ref.x: " + p_ref.x)
+    
+    let p2 -> p1 // Move p1 to p2
+    io.write_line("p2.x: " + p2.x)
+    
+    // This should trigger an error because p1 was moved
+    io.write_line("p_ref.x: " + p_ref.x) 
+}

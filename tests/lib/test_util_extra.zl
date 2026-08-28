@@ -1,0 +1,75 @@
+import zen.test as test
+import zen.util.table as table
+import zen.util.progress as progress
+import zen.text.string as Str
+
+function test_table_render_styles() {
+    let headers -> [`ID`, `Name`, `Status`]
+    let rows -> [
+        [`1`, `Web Server`, `RUNNING`],
+        [`2`, `Database`, `STOPPED`]
+    ]
+
+    // Unicode style
+    let unicode_out -> table.render_table(headers, rows, {`style` -> `unicode`})
+    let pass -> test.assert_true(Str.contains(unicode_out, `┌`), `table unicode top border`)
+    pass -> pass and test.assert_true(Str.contains(unicode_out, `Web Server`), `table cell content`)
+    pass -> pass and test.assert_true(Str.contains(unicode_out, `└`), `table unicode bottom border`)
+
+    // ASCII style
+    let ascii_out -> table.render_table(headers, rows, {`style` -> `ascii`})
+    pass -> pass and test.assert_true(Str.contains(ascii_out, `+`), `table ascii border`)
+    pass -> pass and test.assert_true(Str.contains(ascii_out, `| Web Server`), `table ascii cell`)
+
+    // Markdown style
+    let md_out -> table.render_table(headers, rows, {`style` -> `markdown`})
+    pass -> pass and test.assert_true(Str.contains(md_out, `| ID`), `table md header`)
+    pass -> pass and test.assert_true(Str.contains(md_out, `---`), `table md separator`)
+    pass -> pass and test.assert_true(Str.contains(md_out, `Web Server`), `table md cell`)
+
+    // Table builder
+    let tbl -> table.create([`Key`, `Value`])
+    table.add_row(tbl, [`port`, `8080`])
+    table.add_row(tbl, [`host`, `localhost`])
+    let rendered -> table.render(tbl, {`style` -> `unicode`})
+    pass -> pass and test.assert_true(Str.contains(rendered, `8080`), `table builder render`)
+
+    <- pass
+}
+
+function test_progress_bar_and_spinner() {
+    let bar_block -> progress.render_bar(50, 100, 20, `block`)
+    let pass -> test.assert_true(Str.contains(bar_block, `█`), `progress bar filled block`)
+    pass -> pass and test.assert_true(Str.contains(bar_block, `50.0%`), `progress percentage`)
+    pass -> pass and test.assert_true(Str.contains(bar_block, `(50/100)`), `progress count`)
+
+    let bar_ascii -> progress.render_bar(3, 10, 10, `ascii`)
+    pass -> pass and test.assert_true(Str.contains(bar_ascii, `=>`), `progress bar ascii arrow`)
+
+    // Spinners
+    let frames -> progress.spinner_frames(`dots`)
+    pass -> pass and test.assert_true(frames.length == 10, `spinner frames count`)
+
+    let step -> progress.spinner_next(0, `dots`)
+    pass -> pass and test.assert_equal(step[`frame`], `⠋`, `spinner frame 0`)
+    pass -> pass and test.assert_equal(step[`next`], 1, `spinner next index 1`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Util.table_render_styles`, `fn` -> test_table_render_styles},
+        {`name` -> `Util.progress_bar_and_spinner`, `fn` -> test_progress_bar_and_spinner}
+    ]
+
+    <- test.run_suite(`Util Extra Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

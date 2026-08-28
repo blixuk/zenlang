@@ -1,0 +1,436 @@
+/!
+    Zenlang Interactive Terminal File Manager & Code Explorer (zenfm).
+    A high-performance split-pane terminal file manager with live
+    syntax-highlighted code previews, search filtering, and playground integration.
+!/
+
+use zen.sys.sys as sys
+use zen.sys.term as term
+use zen.sys.process as process
+use zen.io.io as io
+use zen.io.file as file
+use zen.io.path as path
+use zen.text.string as Str
+
+function s_len(s) {
+    when s == Nothing { <- 0 }
+    <- Str.length(s)
+}
+
+function s_spaces(count) {
+    when count <= 0 { <- `` }
+    <- Str.repeat(` `, count)
+}
+
+function s_slice(s, start, end) {
+    let n -> s_len(s)
+    when start < 0 { start -> 0 }
+    when end > n { end -> n }
+    when start >= end { <- `` }
+    <- Str.substring(s, start, end)
+}
+
+function format_file_size(size_bytes) {
+    when size_bytes == Nothing or size_bytes < 0 { <- `-` }
+    when size_bytes < 1024 {
+        <- Str.to_string(size_bytes) + ` B`
+    }
+    when size_bytes < 1048576 {
+        let kb -> size_bytes / 1024
+        <- Str.to_string(kb) + ` KB`
+    }
+    let mb -> size_bytes / 1048576
+    <- Str.to_string(mb) + ` MB`
+}
+
+function get_file_icon(name, is_dir) {
+    when is_dir { <- `📁` }
+    when Str.ends_with(name, `.zl`) { <- `⚡` }
+    when Str.ends_with(name, `.md`) or Str.ends_with(name, `.txt`) { <- `📝` }
+    when Str.ends_with(name, `.c`) or Str.ends_with(name, `.h`) { <- `🔧` }
+    when Str.ends_with(name, `.json`) or Str.ends_with(name, `.yaml`) or Str.ends_with(name, `.toml`) { <- `⚙ ` }
+    when Str.ends_with(name, `.sh`) or Str.ends_with(name, `.py`) { <- `📜` }
+    <- `📄`
+}
+
+// --- Syntax Highlighting Helpers ---
+
+function is_keyword(w) {
+    <- w == `function` or w == `let` or w == `when` or w == `or` or w == `do` or w == `while` or w == `until` or w == `import` or w == `as` or w == `class` or w == `check` or w == `defer` or w == `Nothing` or w == `Default` or w == `true` or w == `false` or w == `return`
+}
+
+function is_stdlib_module(w) {
+    <- w == `io` or w == `term` or w == `sys` or w == `process` or w == `file` or w == `path` or w == `Str` or w == `String` or w == `Math` or w == `List` or w == `Map` or w == `test` or w == `hash` or w == `jwt` or w == `table` or w == `spinner` or w == `chart` or w == `tree`
+}
+
+function is_digit(ch) {
+    <- (ch >= `0` and ch <= `9`)
+}
+
+function format_token_ansi(word) {
+    when word == Nothing or s_len(word) == 0 { <- `` }
+    when Str.starts_with(word, `//`) {
+        <- `\033[90m` + word + `\033[0m`
+    } or when Str.starts_with(word, `"`) or Str.starts_with(word, `\``) {
+        <- `\033[32m` + word + `\033[0m`
+    } or when word == `->` or word == `<-` {
+        <- `\033[1;32m` + word + `\033[0m`
+    } or when is_keyword(word) {
+        <- `\033[1;35m` + word + `\033[0m`
+    } or when is_stdlib_module(word) {
+        <- `\033[1;36m` + word + `\033[0m`
+    } or when is_digit(Str.at(word, 0)) {
+        <- `\033[1;33m` + word + `\033[0m`
+    }
+    <- `\033[37m` + word + `\033[0m`
+}
+
+function highlight_preview_line(line, width) {
+    when line == Nothing or s_len(line) == 0 {
+        <- s_spaces(width)
+    }
+
+    let vis -> s_slice(line, 0, width)
+    let words -> Str.split(vis, ` `)
+    let out -> ``
+    let wi -> 0
+    do while wi < words.length {
+        let w -> words[wi]
+        when wi > 0 { out -> out + ` ` }
+        out -> out + format_token_ansi(w)
+        wi -> 0 + wi + 1
+    }
+
+    let pad -> width - s_len(vis)
+    when pad > 0 {
+        out -> out + s_spaces(pad)
+    }
+    <- out
+}
+
+class FileManager {
+    let current_dir: String
+    let entries: List
+    let selected_idx: Integer
+    let scroll_top: Integer
+    let search_query: String
+    let in_search: Boolean
+    let preview_lines: List
+    let preview_path: String
+    let preview_scroll_y: Integer
+    let status_msg: String
+    let should_exit: Boolean
+
+    function init(initial_dir) {
+        self.current_dir -> initial_dir
+        when self.current_dir == Nothing or self.current_dir == `` {
+            self.current_dir -> `.`
+        }
+        self.entries -> []
+        self.selected_idx -> 0
+        self.scroll_top -> 0
+        self.search_query -> ``
+        self.in_search -> false
+        self.preview_lines -> []
+        self.preview_path -> ``
+        self.preview_scroll_y -> 0
+        self.status_msg -> `Ready`
+        self.should_exit -> false
+
+        self.refresh_entries()
+    }
+
+    function refresh_entries() {
+        self.entries -> []
+        self.selected_idx -> 0
+        self.scroll_top -> 0
+
+        // Add parent directory navigation if not at root
+        when self.current_dir != `/` and self.current_dir != `.` {
+            self.entries.append({
+                `name` -> `..`,
+                `display` -> `.. (Parent Directory)`,
+                `is_dir` -> true,
+                `path` -> path.dirname(self.current_dir),
+                `icon` -> `📁`
+            })
+        }
+
+        let names -> file.list_dir(self.current_dir)
+        when names != Nothing {
+            // First collect directories
+            let i -> 0
+            do while i < names.length {
+                let name -> names[i]
+                let full_p -> path.join(self.current_dir, name)
+                when file.is_dir(full_p) {
+                    self.entries.append({
+                        `name` -> name,
+                        `display` -> name + `/`,
+                        `is_dir` -> true,
+                        `path` -> full_p,
+                        `icon` -> `📁`
+                    })
+                }
+                i -> 0 + i + 1
+            }
+
+            // Next collect regular files
+            i -> 0
+            do while i < names.length {
+                let name -> names[i]
+                let full_p -> path.join(self.current_dir, name)
+                when not file.is_dir(full_p) {
+                    let icon -> get_file_icon(name, false)
+                    self.entries.append({
+                        `name` -> name,
+                        `display` -> name,
+                        `is_dir` -> false,
+                        `path` -> full_p,
+                        `icon` -> icon
+                    })
+                }
+                i -> 0 + i + 1
+            }
+        }
+
+        self.load_preview()
+    }
+
+    function load_preview() {
+        self.preview_lines -> []
+        self.preview_scroll_y -> 0
+
+        when self.entries.length == 0 or self.selected_idx >= self.entries.length {
+            self.preview_path -> ``
+            <- Nothing
+        }
+
+        let item -> self.entries[self.selected_idx]
+        self.preview_path -> item[`path`]
+
+        when item[`is_dir`] {
+            let sub_items -> file.list_dir(item[`path`])
+            let count -> 0
+            when sub_items != Nothing { count -> sub_items.length }
+            self.preview_lines.append(`Directory: ` + item[`name`])
+            self.preview_lines.append(`Contains ` + Str.to_string(count) + ` items.`)
+            self.preview_lines.append(``)
+            self.preview_lines.append(`[Press ENTER to open folder]`)
+            <- Nothing
+        }
+
+        let lines -> file.read_lines(item[`path`])
+        when lines != Nothing {
+            let max_preview -> 200
+            let count -> lines.length
+            when count > max_preview { count -> max_preview }
+            let i -> 0
+            do while i < count {
+                self.preview_lines.append(lines[i])
+                i -> 0 + i + 1
+            }
+        } or {
+            self.preview_lines.append(`[Unable to preview binary or unreadable file]`)
+        }
+    }
+
+    function draw() {
+        let size -> term.get_size()
+        let w -> size.width
+        let h -> size.height
+        when w == Nothing or w < 40 { w -> 80 }
+        when h == Nothing or h < 12 { h -> 24 }
+
+        term.write(`\033[?25l`) // Hide cursor
+
+        // 1. Top Header Bar
+        term.move(1, 1)
+        let top_title -> ` 📁 ZEN FILE MANAGER — ` + self.current_dir + ` `
+        let top_count -> ` [` + Str.to_string(self.entries.length) + ` items] `
+        let top_pad -> w - s_len(top_title) - s_len(top_count)
+        when top_pad < 0 { top_pad -> 0 }
+        term.write(`\033[30;104m` + top_title + s_spaces(top_pad) + top_count + `\033[0m`)
+
+        let body_h -> h - 3
+        let left_w -> w / 2
+        let right_w -> w - left_w - 1
+
+        // Adjust scroll view
+        when self.selected_idx < self.scroll_top {
+            self.scroll_top -> self.selected_idx
+        }
+        when self.selected_idx >= self.scroll_top + body_h {
+            self.scroll_top -> self.selected_idx - body_h + 1
+        }
+
+        // 2. Dual Pane Body
+        let y -> 0
+        do while y < body_h {
+            let row_y -> 0 + 2 + y
+            term.move(1, row_y)
+            let row_str -> ``
+
+            // Left Pane: File Entry
+            let item_idx -> 0 + self.scroll_top + y
+            when item_idx < self.entries.length {
+                let entry -> self.entries[item_idx]
+                let is_sel -> (item_idx == self.selected_idx)
+                let name_label -> ` ` + entry[`icon`] + ` ` + entry[`display`]
+                let vis_name -> s_slice(name_label, 0, left_w)
+                let left_pad -> left_w - s_len(vis_name)
+                when left_pad < 0 { left_pad -> 0 }
+
+                when is_sel {
+                    row_str -> row_str + `\033[30;106m` + vis_name + s_spaces(left_pad) + `\033[0m`
+                } or {
+                    when entry[`is_dir`] {
+                        row_str -> row_str + `\033[1;34m` + vis_name + `\033[0m` + s_spaces(left_pad)
+                    } or {
+                        row_str -> row_str + `\033[37m` + vis_name + `\033[0m` + s_spaces(left_pad)
+                    }
+                }
+            } or {
+                row_str -> row_str + s_spaces(left_w)
+            }
+
+            // Middle Divider
+            row_str -> row_str + `\033[90m│\033[0m`
+
+            // Right Pane: File Preview
+            let prev_idx -> 0 + self.preview_scroll_y + y
+            when prev_idx < self.preview_lines.length {
+                let pline -> self.preview_lines[prev_idx]
+                let line_num -> Str.pad_left(Str.to_string(0 + prev_idx + 1), 3, ` `)
+                let inner_prev_w -> right_w - 5
+                when inner_prev_w < 5 { inner_prev_w -> 5 }
+                let highlighted -> highlight_preview_line(pline, inner_prev_w)
+                row_str -> row_str + `\033[90m` + line_num + ` │\033[0m` + highlighted
+            } or {
+                row_str -> row_str + s_spaces(right_w)
+            }
+
+            term.write(row_str)
+            y -> 0 + y + 1
+        }
+
+        // 3. Status Bar & Shortcut Legend
+        term.move(1, h - 1)
+        let status_text -> ` ` + self.status_msg + ` `
+        when self.in_search {
+            status_text -> ` SEARCH: ` + self.search_query + `_ `
+        }
+        let shortcuts -> ` ↑/↓:Nav  Enter:Open  Bksp:Parent  P:Playground  Q:Quit `
+        let bot_pad -> w - s_len(status_text) - s_len(shortcuts)
+        when bot_pad < 0 { bot_pad -> 0 }
+        term.write(`\033[30;47m` + status_text + s_spaces(bot_pad) + shortcuts + `\033[0m`)
+
+        term.flush()
+    }
+
+    function handle_key(key) {
+        let name -> key[`name`]
+        let ch -> key[`ch`]
+
+        when name == `ctrl_c` or name == `ctrl_q` or ch == `q` or ch == `Q` {
+            self.should_exit -> true
+            <- Nothing
+        }
+
+        when name == `up` or ch == `k` {
+            when self.selected_idx > 0 {
+                self.selected_idx -> 0 + self.selected_idx - 1
+                self.load_preview()
+            }
+            <- Nothing
+        }
+
+        when name == `down` or ch == `j` {
+            when self.selected_idx + 1 < self.entries.length {
+                self.selected_idx -> 0 + self.selected_idx + 1
+                self.load_preview()
+            }
+            <- Nothing
+        }
+
+        when name == `pageup` {
+            self.selected_idx -> 0 + self.selected_idx - 10
+            when self.selected_idx < 0 { self.selected_idx -> 0 }
+            self.load_preview()
+            <- Nothing
+        }
+
+        when name == `pagedown` {
+            self.selected_idx -> 0 + self.selected_idx + 10
+            when self.selected_idx >= self.entries.length {
+                self.selected_idx -> 0 + self.entries.length - 1
+            }
+            self.load_preview()
+            <- Nothing
+        }
+
+        when name == `enter` {
+            when self.entries.length > 0 and self.selected_idx < self.entries.length {
+                let item -> self.entries[self.selected_idx]
+                when item[`is_dir`] {
+                    self.current_dir -> item[`path`]
+                    self.refresh_entries()
+                    self.status_msg -> `Entered: ` + self.current_dir
+                }
+            }
+            <- Nothing
+        }
+
+        when name == `backspace` or ch == `h` {
+            when self.current_dir != `/` and self.current_dir != `.` {
+                self.current_dir -> path.dirname(self.current_dir)
+                self.refresh_entries()
+                self.status_msg -> `Moved to parent directory`
+            }
+            <- Nothing
+        }
+
+        when ch == `p` or ch == `P` {
+            when self.entries.length > 0 and self.selected_idx < self.entries.length {
+                let item -> self.entries[self.selected_idx]
+                when not item[`is_dir`] and Str.ends_with(item[`name`], `.zl`) {
+                    term.raw_exit()
+                    term.clear()
+                    term.show_cursor()
+                    io.writeln(`Launching Zen Playground for ` + item[`path`] + `...`)
+                    process.shell(`python3 bootstrap/Zen.py tools/playground.zl ` + item[`path`])
+                    term.raw_enter()
+                    self.refresh_entries()
+                }
+            }
+            <- Nothing
+        }
+    }
+
+    function run() {
+        term.raw_enter()
+        term.clear()
+
+        do while not self.should_exit {
+            self.draw()
+            let key -> term.read_key()
+            self.handle_key(key)
+        }
+
+        term.raw_exit()
+        term.clear()
+        term.show_cursor()
+        io.writeln(`Zen File Manager closed.`)
+    }
+}
+
+function main() {
+    let args -> sys.get_args()
+    let start_dir -> `.`
+    when args != Nothing and args.length > 1 {
+        start_dir -> args[1]
+    }
+    let fm -> FileManager(start_dir)
+    fm.run()
+    <- 0
+}

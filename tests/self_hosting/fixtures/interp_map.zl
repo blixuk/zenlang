@@ -1,0 +1,15 @@
+/!
+ Phase A2: map literal + index/field assign roundtrip.
+ Exit 0 iff m[`a`] stays 1 and m[`b`] becomes 5.
+ !/
+
+function main() {
+    let m -> { a -> 1, b -> 2 }
+    m.b -> 5
+    when m.a == 1 {
+        when m.b == 5 {
+            <- 0
+        }
+    }
+    <- 1
+}

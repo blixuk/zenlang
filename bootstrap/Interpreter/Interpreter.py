@@ -53,7 +53,8 @@ class Interpreter(
 
         self.execution_arguments: list = []
         self.global_environment: Environment = Environment(file_path=source_path)
-        self._thread_local = threading.local()
+        self._depth: int = 0
+        self._node_stack: list = []
         self.modules: dict[str, any] = {} # path -> ModuleObject
         self.memory_manager = MemoryManager()
 
@@ -72,13 +73,11 @@ class Interpreter(
 
     @property
     def depth(self):
-        if not hasattr(self._thread_local, 'depth'):
-            self._thread_local.depth = 0
-        return self._thread_local.depth
+        return self._depth
 
     @depth.setter
     def depth(self, value):
-        self._thread_local.depth = value
+        self._depth = value
 
     def _build_dispatch_table(self) -> None:
         self.dispatch_table: Dict[str, Callable] = {
@@ -319,14 +318,12 @@ class Interpreter(
         return self._evaluate(node, environment)
 
     def _evaluate(self, node: Any, environment: Environment) -> any:
-        self.depth += 1
-        if not hasattr(self._thread_local, 'node_stack'):
-             self._thread_local.node_stack = []
-        self._thread_local.node_stack.append((node, environment))
+        self._depth += 1
+        self._node_stack.append((node, environment))
         
         # Guard against extreme recursion
-        if self.depth > 1000000:
-             raise RuntimeError(f"Interpreter: Maximum recursion depth exceeded (depth={self.depth})")
+        if self._depth > 100000:
+             raise RuntimeError(f"Interpreter: Maximum recursion depth exceeded (depth={self._depth})")
 
         try:
             return self._evaluate_node(node, environment)
@@ -334,7 +331,7 @@ class Interpreter(
             if not hasattr(e, '_zen_trace_printed') and not isinstance(e, (ReturnException, RaiseException, RuntimeBreak, RuntimeContinue)):
                 e._zen_trace_printed = True
                 print("=== ZENSTACK TRACE ===")
-                for stack_node, env in self._thread_local.node_stack:
+                for stack_node, env in self._node_stack:
                     fn_name = getattr(env, 'file_path', 'unknown')
                     node_cls = stack_node.__class__.__name__
                     line_num = getattr(stack_node, 'line', 'unknown')
@@ -347,8 +344,8 @@ class Interpreter(
                 print("======================")
             raise
         finally:
-            self._thread_local.node_stack.pop()
-            self.depth -= 1
+            self._node_stack.pop()
+            self._depth -= 1
 
     def _evaluate_node(self, node: ASTNode, environment: Environment) -> any:
         if node is None:

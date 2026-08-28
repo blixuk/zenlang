@@ -1,0 +1,5 @@
+import fixtures.mod_c as C
+
+function value() {
+    <- C.answer()
+}

@@ -1,0 +1,201 @@
+/!
+    Descriptive Statistics and Numerical Analysis.
+    Provides sum, mean, median, variance, standard deviation, percentiles, and summary stats.
+!/
+
+import zen.math.math as Math
+import zen.text.string as Str
+
+function parse_int(s) {
+    when (s == Nothing or Str.length(s) == 0) { <- 0 }
+    let val -> 0
+    let idx -> 0
+    let len -> Str.length(s)
+    do while idx < len {
+        let ch -> Str.at(s, idx)
+        when (ch >= `0` and ch <= `9`) {
+            let digit -> 0
+            when (ch == `1`) { digit -> 1 }
+            or when (ch == `2`) { digit -> 2 }
+            or when (ch == `3`) { digit -> 3 }
+            or when (ch == `4`) { digit -> 4 }
+            or when (ch == `5`) { digit -> 5 }
+            or when (ch == `6`) { digit -> 6 }
+            or when (ch == `7`) { digit -> 7 }
+            or when (ch == `8`) { digit -> 8 }
+            or when (ch == `9`) { digit -> 9 }
+            val -> val * 10 + digit
+        }
+        idx -> idx + 1
+    }
+    <- val
+}
+
+function float_to_int(f) {
+    let s -> Str.to_string(f)
+    let dot -> Str.index_of(s, `.`)
+    when (dot != -1) {
+        s -> Str.substring(s, 0, dot)
+    }
+    <- parse_int(s)
+}
+
+/!
+    Internal helper: sorts a list of numbers in ascending order.
+!/
+function sort_nums(nums) {
+    let count -> nums.length
+    let arr -> []
+    let i -> 0
+    do while i < count {
+        arr.append(0.0 + nums[i])
+        i -> i + 1
+    }
+
+    i -> 0
+    do while i < count {
+        let j -> 0
+        do while j < count - i - 1 {
+            let a -> arr[j]
+            let b -> arr[j + 1]
+            when (a > b) {
+                arr[j] -> b
+                arr[j + 1] -> a
+            }
+            j -> j + 1
+        }
+        i -> i + 1
+    }
+    <- arr
+}
+
+/!
+    Calculates the sum of a list of numbers.
+!/
+function sum(nums) {
+    when (nums == Nothing or nums.length == 0) { <- 0.0 }
+    let total -> 0.0
+    let count -> nums.length
+    let i -> 0
+    do while i < count {
+        total -> total + (0.0 + nums[i])
+        i -> i + 1
+    }
+    <- total
+}
+
+/!
+    Calculates the arithmetic mean (average).
+!/
+function mean(nums) {
+    when (nums == Nothing or nums.length == 0) { <- 0.0 }
+    let s -> sum(nums)
+    <- s / (0.0 + nums.length)
+}
+
+/!
+    Calculates the median value of a list of numbers.
+!/
+function median(nums) {
+    when (nums == Nothing or nums.length == 0) { <- 0.0 }
+    let sorted -> sort_nums(nums)
+    let n -> sorted.length
+    let mid -> (n - (n % 2)) / 2
+
+    when ((n % 2) == 1) {
+        <- sorted[mid]
+    }
+    <- (sorted[mid - 1] + sorted[mid]) / 2.0
+}
+
+/!
+    Calculates population variance.
+!/
+function variance(nums) {
+    when (nums == Nothing or nums.length == 0) { <- 0.0 }
+    let count -> nums.length
+    let avg -> mean(nums)
+
+    let sum_sq -> 0.0
+    let i -> 0
+    do while i < count {
+        let diff -> (0.0 + nums[i]) - avg
+        sum_sq -> sum_sq + (diff * diff)
+        i -> i + 1
+    }
+    <- sum_sq / (0.0 + count)
+}
+
+/!
+    Calculates standard deviation.
+!/
+function stdev(nums) {
+    let v -> variance(nums)
+    <- Math.sqrt(v)
+}
+
+/!
+    Calculates the p-th percentile (0.0 to 100.0) of a list of numbers.
+!/
+function percentile(nums, p) {
+    when (nums == Nothing or nums.length == 0) { <- 0.0 }
+    let sorted -> sort_nums(nums)
+    let n -> sorted.length
+
+    let pct -> 0.0 + p
+    when (pct <= 0.0) { <- sorted[0] }
+    when (pct >= 100.0) { <- sorted[n - 1] }
+
+    let rank -> (pct / 100.0) * (0.0 + n - 1)
+    let lower_idx -> float_to_int(rank)
+    when (lower_idx < 0) { lower_idx -> 0 }
+    let upper_idx -> lower_idx + 1
+    when (upper_idx >= n) { upper_idx -> n - 1 }
+
+    let weight -> rank - (0.0 + lower_idx)
+    <- sorted[lower_idx] * (1.0 - weight) + sorted[upper_idx] * weight
+}
+
+/!
+    Computes a comprehensive statistical summary map.
+    @return Map with min, max, sum, mean, median, stdev, and count.
+!/
+function summary(nums) {
+    when (nums == Nothing or nums.length == 0) {
+        <- {
+            `count` -> 0,
+            `min` -> 0.0,
+            `max` -> 0.0,
+            `sum` -> 0.0,
+            `mean` -> 0.0,
+            `median` -> 0.0,
+            `stdev` -> 0.0
+        }
+    }
+
+    let count -> nums.length
+    let min_val -> 0.0 + nums[0]
+    let max_val -> 0.0 + nums[0]
+    let i -> 1
+    do while i < count {
+        let v -> 0.0 + nums[i]
+        min_val -> Math.min(min_val, v)
+        max_val -> Math.max(max_val, v)
+        i -> i + 1
+    }
+
+    let total -> sum(nums)
+    let avg -> total / (0.0 + count)
+    let med -> median(nums)
+    let sd -> stdev(nums)
+
+    <- {
+        `count` -> count,
+        `min` -> min_val,
+        `max` -> max_val,
+        `sum` -> total,
+        `mean` -> avg,
+        `median` -> med,
+        `stdev` -> sd
+    }
+}

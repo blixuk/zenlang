@@ -1,0 +1,16 @@
+/!
+ Multi-file entry: imports multi_lib (resolved via fixtures.*).
+ After dep merge, multi_lib_val is a free function in the same C unit.
+ Exit 0 iff multi_lib_add(multi_lib_val(), 4) == 7.
+ !/
+
+import fixtures.multi_lib as Lib
+
+function main() {
+    let v -> multi_lib_val()
+    let s -> multi_lib_add(v, 4)
+    when s == 7 {
+        <- 0
+    }
+    <- 1
+}

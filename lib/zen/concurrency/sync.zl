@@ -1,0 +1,339 @@
+/!
+  Synchronization primitives for Zenlang concurrency.
+  Provides WaitGroup, Mutex, Atomic integer/boolean, Barrier,
+  Counting Semaphore, and Once execution guards.
+!/
+
+// =========================================================================
+// 1. WaitGroup
+// =========================================================================
+
+/!
+  Creates a new WaitGroup.
+  @param initial_count Optional initial counter value (default 0).
+!/
+export function create_waitgroup(initial_count) {
+    let cnt -> initial_count
+    when cnt == Nothing or cnt < 0 {
+        cnt -> 0
+    }
+    <- {
+        `kind` -> `WAIT_GROUP`,
+        `counter` -> cnt,
+        `completed` -> (cnt == 0)
+    }
+}
+
+/!
+  Increments or decrements the WaitGroup counter.
+!/
+export function wg_add(wg, delta) {
+    when wg == Nothing { <- false }
+    let d -> delta
+    when d == Nothing { d -> 1 }
+    wg[`counter`] -> wg[`counter`] + d
+    when wg[`counter`] <= 0 {
+        wg[`counter`] -> 0
+        wg[`completed`] -> true
+    } or {
+        wg[`completed`] -> false
+    }
+    <- true
+}
+
+/!
+  Decrements the WaitGroup counter by 1.
+!/
+export function wg_done(wg) {
+    <- wg_add(wg, -1)
+}
+
+/!
+  Returns the current counter value of the WaitGroup.
+!/
+export function wg_count(wg) {
+    when wg == Nothing { <- 0 }
+    <- wg[`counter`]
+}
+
+/!
+  Checks if all counter tasks in the WaitGroup have completed.
+!/
+export function wg_is_done(wg) {
+    when wg == Nothing { <- true }
+    <- wg[`counter`] == 0
+}
+
+/!
+  Waits until the counter reaches zero.
+!/
+export function wg_wait(wg) {
+    when wg == Nothing { <- true }
+    <- wg[`counter`] == 0
+}
+
+// =========================================================================
+// 2. Mutex (Mutual Exclusion Lock)
+// =========================================================================
+
+/!
+  Creates a new Mutex.
+!/
+export function create_mutex() {
+    <- {
+        `kind` -> `MUTEX`,
+        `locked` -> false,
+        `owner` -> Nothing,
+        `lock_count` -> 0
+    }
+}
+
+/!
+  Acquires the mutex lock.
+!/
+export function mutex_acquire(m) {
+    when m == Nothing { <- false }
+    when m[`locked`] == true {
+        <- false
+    }
+    m[`locked`] -> true
+    m[`lock_count`] -> m[`lock_count`] + 1
+    <- true
+}
+
+/!
+  Non-blocking attempt to acquire the lock.
+!/
+export function mutex_try_acquire(m) {
+    <- mutex_acquire(m)
+}
+
+/!
+  Releases the mutex lock.
+!/
+export function mutex_release(m) {
+    when m == Nothing { <- false }
+    when m[`locked`] == false {
+        <- false
+    }
+    m[`locked`] -> false
+    m[`owner`] -> Nothing
+    <- true
+}
+
+/!
+  Checks if the mutex is currently locked.
+!/
+export function mutex_is_locked(m) {
+    when m == Nothing { <- false }
+    <- m[`locked`] == true
+}
+
+/!
+  Executes a function protected by the mutex lock, ensuring release upon exit.
+!/
+export function with_lock(m, fn) {
+    when m == Nothing or fn == Nothing { <- Nothing }
+    mutex_acquire(m)
+    let res -> fn()
+    mutex_release(m)
+    <- res
+}
+
+// =========================================================================
+// 3. Atomic Values
+// =========================================================================
+
+/!
+  Creates an Atomic variable with an initial value.
+!/
+export function create_atomic(initial_value) {
+    let v -> initial_value
+    when v == Nothing { v -> 0 }
+    <- {
+        `kind` -> `ATOMIC`,
+        `value` -> v
+    }
+}
+
+/!
+  Gets the current atomic value.
+!/
+export function atomic_get(a) {
+    when a == Nothing { <- 0 }
+    <- a[`value`]
+}
+
+/!
+  Sets the atomic value.
+!/
+export function atomic_set(a, new_value) {
+    when a == Nothing { <- Nothing }
+    a[`value`] -> new_value
+    <- new_value
+}
+
+/!
+  Atomically adds a delta and returns the new value.
+!/
+export function atomic_add(a, delta) {
+    when a == Nothing { <- 0 }
+    let d -> delta
+    when d == Nothing { d -> 1 }
+    a[`value`] -> a[`value`] + d
+    <- a[`value`]
+}
+
+/!
+  Atomically subtracts a delta and returns the new value.
+!/
+export function atomic_sub(a, delta) {
+    when a == Nothing { <- 0 }
+    let d -> delta
+    when d == Nothing { d -> 1 }
+    a[`value`] -> a[`value`] - d
+    <- a[`value`]
+}
+
+/!
+  Atomically compares current value with expected; if equal, sets to new_val.
+  @return Map { ok: bool, old_value: Any, current_value: Any }
+!/
+export function atomic_compare_and_swap(a, expected, new_val) {
+    when a == Nothing {
+        <- { `ok` -> false, `old_value` -> Nothing, `current_value` -> Nothing }
+    }
+    let cur -> a[`value`]
+    when cur == expected {
+        a[`value`] -> new_val
+        <- { `ok` -> true, `old_value` -> cur, `current_value` -> new_val }
+    }
+    <- { `ok` -> false, `old_value` -> cur, `current_value` -> cur }
+}
+
+// =========================================================================
+// 4. Barrier
+// =========================================================================
+
+/!
+  Creates a Barrier for synchronizing a fixed number of parties.
+!/
+export function create_barrier(parties) {
+    let p -> parties
+    when p == Nothing or p < 1 { p -> 1 }
+    <- {
+        `kind` -> `BARRIER`,
+        `parties` -> p,
+        `waiting` -> 0,
+        `generation` -> 0
+    }
+}
+
+/!
+  Signals arrival at the barrier.
+  @return Map { ok: bool, is_last: bool, generation: Int }
+!/
+export function barrier_arrive(b) {
+    when b == Nothing {
+        <- { `ok` -> false, `is_last` -> false, `generation` -> 0 }
+    }
+    b[`waiting`] -> b[`waiting`] + 1
+    when b[`waiting`] >= b[`parties`] {
+        b[`waiting`] -> 0
+        b[`generation`] -> b[`generation`] + 1
+        <- { `ok` -> true, `is_last` -> true, `generation` -> b[`generation`] }
+    }
+    <- { `ok` -> true, `is_last` -> false, `generation` -> b[`generation`] }
+}
+
+/!
+  Resets the barrier to its initial un-waited state.
+!/
+export function barrier_reset(b) {
+    when b == Nothing { <- false }
+    b[`waiting`] -> 0
+    <- true
+}
+
+// =========================================================================
+// 5. Semaphore
+// =========================================================================
+
+/!
+  Creates a counting semaphore.
+!/
+export function create_semaphore(permits) {
+    let p -> permits
+    when p == Nothing or p < 0 { p -> 1 }
+    <- {
+        `kind` -> `SEMAPHORE`,
+        `permits` -> p,
+        `initial` -> p
+    }
+}
+
+/!
+  Acquires a permit from the semaphore.
+!/
+export function sem_acquire(s) {
+    when s == Nothing { <- false }
+    when s[`permits`] <= 0 {
+        <- false
+    }
+    s[`permits`] -> s[`permits`] - 1
+    <- true
+}
+
+/!
+  Releases a permit back to the semaphore.
+!/
+export function sem_release(s) {
+    when s == Nothing { <- false }
+    s[`permits`] -> s[`permits`] + 1
+    <- true
+}
+
+/!
+  Returns the number of available permits.
+!/
+export function sem_available(s) {
+    when s == Nothing { <- 0 }
+    <- s[`permits`]
+}
+
+// =========================================================================
+// 6. Once (Single-execution guard)
+// =========================================================================
+
+/!
+  Creates an execution guard that only allows a block to run once.
+!/
+export function create_once() {
+    <- {
+        `kind` -> `ONCE`,
+        `executed` -> false,
+        `result` -> Nothing
+    }
+}
+
+/!
+  Executes the function if and only if it has not been executed yet.
+!/
+export function do_once(once, fn) {
+    when once == Nothing or fn == Nothing { <- Nothing }
+    when once[`executed`] == true {
+        <- once[`result`]
+    }
+    once[`executed`] -> true
+    let res -> fn()
+    once[`result`] -> res
+    <- res
+}
+
+/!
+  Checks if the Once guard has already run.
+!/
+export function once_is_done(once) {
+    when once == Nothing { <- true }
+    <- once[`executed`] == true
+}

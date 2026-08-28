@@ -1,0 +1,27 @@
+/!
+ Phase B1: list and map bind patterns in `when x is …`.
+ Exit 0 iff [10,20,30] unpacks to 60 and map {x,y} sums to 3.
+ !/
+
+function main() {
+    let xs -> [10, 20, 30]
+    when xs is [a, b, c] {
+        when a + b + c != 60 {
+            <- 1
+        }
+        when a != 10 {
+            <- 2
+        }
+    } or {
+        <- 3
+    }
+    let m -> { x -> 1, y -> 2 }
+    when m is { x -> px, y -> py } {
+        when px + py != 3 {
+            <- 4
+        }
+    } or {
+        <- 5
+    }
+    <- 0
+}

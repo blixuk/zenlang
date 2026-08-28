@@ -1,0 +1,105 @@
+/!
+    Parser and serializer for .env environment variable files.
+    Pure Zenlang implementation compatible with interpreter and native backends.
+!/
+
+import zen.text.string as Str
+
+function _unquote(val) {
+    let s -> Str.trim(val)
+    let len -> Str.length(s)
+    when len >= 2 {
+        let first -> Str.at(s, 0)
+        let last -> Str.at(s, len - 1)
+        when (first == `"` and last == `"`) or (first == `'` and last == `'`) {
+            let inner -> Str.substring(s, 1, len - 1)
+            when first == `"` {
+                inner -> Str.replace(inner, `\\n`, `\n`)
+                inner -> Str.replace(inner, `\\t`, `\t`)
+                inner -> Str.replace(inner, `\\"`, `"`)
+            }
+            <- inner
+        }
+    }
+    <- s
+}
+
+/!
+    Parses dotenv (.env) file content into a Map of key-value pairs.
+    @param content Raw .env text content.
+    @return Map of parsed environment variables.
+!/
+function parse(content) {
+    let result -> {}
+    when content == Nothing or content == `` {
+        <- result
+    }
+
+    let lines -> Str.split(content, `\n`)
+    let i -> 0
+    let len -> lines.length
+
+    do while i < len {
+        let line -> Str.trim(lines[i])
+
+        // Skip empty lines and comment lines
+        when Str.length(line) > 0 and not Str.starts_with(line, `#`) {
+            // Strip leading "export " if present
+            when Str.starts_with(line, `export `) {
+                line -> Str.trim(Str.substring(line, 7, Str.length(line)))
+            }
+
+            let eq_idx -> Str.index_of(line, `=`)
+            when eq_idx != -1 {
+                let key -> Str.trim(Str.substring(line, 0, eq_idx))
+                let val -> Str.trim(Str.substring(line, eq_idx + 1, Str.length(line)))
+
+                // Strip inline comment only if not quoted
+                when not Str.starts_with(val, `"`) and not Str.starts_with(val, `'`) {
+                    let comment_idx -> Str.index_of(val, ` #`)
+                    when comment_idx != -1 {
+                        val -> Str.trim(Str.substring(val, 0, comment_idx))
+                    }
+                }
+
+                when Str.length(key) > 0 {
+                    result[key] -> _unquote(val)
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    <- result
+}
+
+/!
+    Serializes a map of environment variables into .env format.
+    @param env_map Key-value map.
+    @return Formatted .env string.
+!/
+function stringify(env_map) {
+    when env_map == Nothing { <- `` }
+
+    let keys -> env_map.keys()
+    let lines -> []
+    let i -> 0
+    let len -> keys.length
+
+    do while i < len {
+        let k -> keys[i]
+        let v -> Str.to_string(env_map[k])
+
+        // Quote value if it contains spaces or newlines
+        when Str.contains(v, ` `) or Str.contains(v, `\n`) or Str.contains(v, `#`) {
+            v -> Str.replace(v, `"`, `\\"`)
+            v -> Str.replace(v, `\n`, `\\n`)
+            lines.append(k + `="` + v + `"`)
+        } or {
+            lines.append(k + `=` + v)
+        }
+        i -> i + 1
+    }
+
+    <- Str.join(lines, `\n`)
+}
