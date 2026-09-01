@@ -1,0 +1,89 @@
+// Test suite for first-class type casting (<:) and type constructors
+
+function test_operator_casting() {
+    let a -> `123` <: Integer
+    when a != 123 { <- 1 }
+
+    let b -> 456 <: String
+    when b != `456` { <- 2 }
+
+    let c -> `3.14` <: Decimal
+    when c != 3.14 { <- 3 }
+
+    let d -> 1 <: Boolean
+    when d != true { <- 4 }
+
+    let e -> 0 <: Boolean
+    when e != false { <- 5 }
+
+    let f -> true <: Integer
+    when f != 1 { <- 6 }
+
+    let g -> false <: String
+    when g != `False` { <- 7 }
+
+    let h -> 65 <: Rune
+    when h != `A` { <- 8 }
+
+    let i -> `A` <: Integer
+    when i != 65 { <- 9 }
+
+    let j -> `hello` <: Bytes
+    when j.length != 5 { <- 10 }
+
+    let k -> [1, 2, 2, 3] <: Set
+    when k.length != 3 { <- 11 }
+
+    <- 0
+}
+
+function test_constructor_casting() {
+    let a -> Integer(`789`)
+    when a != 789 { <- 12 }
+
+    let b -> String(999)
+    when b != `999` { <- 13 }
+
+    let c -> Decimal(`2.5`)
+    when c != 2.5 { <- 14 }
+
+    let d -> Boolean(`True`)
+    when d != true { <- 15 }
+
+    let e -> Rune(66)
+    when e != `B` { <- 16 }
+
+    let f -> Bytes(`zen`)
+    when f.length != 3 { <- 17 }
+
+    let g -> Set([1, 1, 2])
+    when g.length != 2 { <- 18 }
+
+    <- 0
+}
+
+function test_precedence_and_expressions() {
+    let res -> `10` <: Integer + `20` <: Integer
+    when res != 30 { <- 19 }
+
+    let s -> `Result: ` + (42 <: String)
+    when s != `Result: 42` { <- 20 }
+
+    let mult -> `5` <: Integer * `6` <: Integer
+    when mult != 30 { <- 21 }
+
+    <- 0
+}
+
+function main() {
+    let r1 -> test_operator_casting()
+    when r1 != 0 { <- r1 }
+
+    let r2 -> test_constructor_casting()
+    when r2 != 0 { <- r2 }
+
+    let r3 -> test_precedence_and_expressions()
+    when r3 != 0 { <- r3 }
+
+    <- 0
+}

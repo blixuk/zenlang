@@ -77,6 +77,10 @@ export function read_line() {
     <- __builtin_input.read_line()
 }
 
+export function readln() {
+    <- __builtin_input.read_line()
+}
+
 /!
   Reads exactly count bytes from standard input.
   @param count Number of bytes to read.

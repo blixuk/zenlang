@@ -1,0 +1,166 @@
+/!
+  Test suite for Zenlang Stateful Interactive REPL (lib/zen/tooling/repl.zl).
+!/
+
+import zen.test.test as test
+import zen.tooling.repl as repl
+import zen.io.file as file
+import zen.io.path as path
+import zen.text.string as Str
+
+function test_state_creation() {
+    let state -> repl.create_repl_state()
+    test.assert_equal(state[`eval_count`], 0, `initial eval count is 0`)
+    test.assert_true(state[`running`], `state is running`)
+    test.assert_equal(state[`mode`], `vm`, `default mode is vm`)
+    test.assert_equal(state[`timing`], false, `timing initially false`)
+    test.assert_true(state[`vars`] is Map, `vars is map`)
+    <- true
+}
+
+function test_delimiter_balancing() {
+    // Balanced cases
+    test.assert_true(repl.is_balanced(`1 + 2`), `simple expr is balanced`)
+    test.assert_true(repl.is_balanced(`let x -> [1, 2, 3]`), `bracketed list is balanced`)
+    test.assert_true(repl.is_balanced(`function add(a, b) { <- a + b }`), `function block is balanced`)
+    test.assert_true(repl.is_balanced(`let s -> "{ hello }" // comment`), `braces in string balanced`)
+
+    // Unbalanced multi-line cases
+    test.assert_true(not repl.is_balanced(`function add(a, b) {`), `open brace is unbalanced`)
+    test.assert_true(not repl.is_balanced(`let lst -> [1, 2,`), `open bracket is unbalanced`)
+    test.assert_true(not repl.is_balanced(`let x -> (10 +`), `open paren is unbalanced`)
+    test.assert_true(not repl.is_balanced(`let s -> "hello`), `unclosed string is unbalanced`)
+    <- true
+}
+
+function list_has(lst, item) {
+    when lst == Nothing { <- false }
+    do for x in lst {
+        when x == item { <- true }
+    }
+    <- false
+}
+
+function test_autocompletion() {
+    let state -> repl.create_repl_state()
+    state[`vars`][`custom_variable`] -> 42
+    state[`functions`][`calculate_total`] -> true
+
+    // Complete keyword
+    let kw_matches -> repl.complete_token(`fun`, state)
+    test.assert_true(list_has(kw_matches, `function`), `completes function keyword`)
+
+    // Complete base type
+    let type_matches -> repl.complete_token(`Inte`, state)
+    test.assert_true(list_has(type_matches, `Integer`), `completes Integer type`)
+
+    // Complete stdlib module
+    let mod_matches -> repl.complete_token(`zen.math`, state)
+    test.assert_true(list_has(mod_matches, `zen.math.math`), `completes zen.math.math`)
+
+    // Complete session variable
+    let var_matches -> repl.complete_token(`custom_`, state)
+    test.assert_true(list_has(var_matches, `custom_variable`), `completes session variable`)
+
+    // Complete session function
+    let fn_matches -> repl.complete_token(`calc`, state)
+    test.assert_true(list_has(fn_matches, `calculate_total`), `completes session function`)
+    <- true
+}
+
+function test_expression_eval_and_history() {
+    let state -> repl.create_repl_state()
+
+    // 1. Evaluate basic arithmetic
+    let r1 -> repl.eval_repl_input(`10 + 20`, state)
+    test.assert_true(r1[`ok`], `eval 10 + 20 succeeded`)
+    test.assert_equal(r1[`value`], 30, `value is 30`)
+    test.assert_equal(state[`last_result`], 30, `state last_result is 30`)
+    test.assert_equal(state[`eval_count`], 1, `eval_count incremented to 1`)
+    test.assert_equal(state[`vars`][`_1`], 30, `_1 is 30`)
+
+    // 2. Evaluate string concatenation
+    let r2 -> repl.eval_repl_input(`"Hello " + "Zen"`, state)
+    test.assert_true(r2[`ok`], `eval string concat succeeded`)
+    test.assert_equal(r2[`value`], `Hello Zen`, `value is Hello Zen`)
+    test.assert_equal(state[`eval_count`], 2, `eval_count incremented to 2`)
+    test.assert_equal(state[`vars`][`_2`], `Hello Zen`, `_2 is Hello Zen`)
+
+    // 3. Evaluate type cast
+    let r3 -> repl.eval_repl_input(`"42" <: Integer`, state)
+    test.assert_true(r3[`ok`], `eval type cast succeeded`)
+    test.assert_equal(r3[`value`], 42, `cast value is 42`)
+    <- true
+}
+
+function test_meta_commands() {
+    let state -> repl.create_repl_state()
+
+    // 1. :help
+    let h_res -> repl.eval_repl_input(`:help`, state)
+    test.assert_true(h_res[`ok`], `:help succeeded`)
+    test.assert_true(Str.contains(h_res[`output`], `Interactive REPL Commands`), `help output contains banner`)
+
+    // 2. :time
+    let t_res -> repl.eval_repl_input(`:time on`, state)
+    test.assert_true(t_res[`ok`], `:time on succeeded`)
+    test.assert_equal(state[`timing`], true, `timing enabled`)
+
+    // 3. :mode
+    let m_res -> repl.eval_repl_input(`:mode interp`, state)
+    test.assert_true(m_res[`ok`], `:mode interp succeeded`)
+    test.assert_equal(state[`mode`], `interp`, `mode set to interp`)
+
+    // 4. :quit
+    let q_res -> repl.eval_repl_input(`:quit`, state)
+    test.assert_true(q_res[`ok`], `:quit succeeded`)
+    test.assert_equal(state[`running`], false, `running set to false`)
+    <- true
+}
+
+function test_state_snapshotting() {
+    let state -> repl.create_repl_state()
+    state[`vars`][`user_id`] -> 101
+    state[`vars`][`user_name`] -> `Alice`
+    state[`imports`].append(`zen.math as math`)
+
+    let snap_path -> `/tmp/zen_repl_test_snap.zd`
+    when file.exists(snap_path) {
+        file.remove(snap_path)
+    }
+
+    // 1. Save state
+    let save_res -> repl.eval_repl_input(`:save ` + snap_path, state)
+    test.assert_true(save_res[`ok`], `:save succeeded`)
+    test.assert_true(file.exists(snap_path), `snapshot file created`)
+    let saved_content -> file.read(snap_path)
+    test.assert_true(Str.contains(saved_content, `ReplStateSnapshot`), `contains struct header`)
+    test.assert_true(Str.contains(saved_content, `user_id`), `contains user_id`)
+
+    // 2. Reset state
+    repl.eval_repl_input(`:reset`, state)
+    test.assert_equal(state[`vars`].keys().length, 0, `vars cleared on reset`)
+
+    // 3. Restore state
+    let load_res -> repl.eval_repl_input(`:load ` + snap_path, state)
+    test.assert_true(load_res[`ok`], `:load succeeded`)
+    test.assert_equal(state[`vars`][`user_id`], 101, `user_id restored`)
+    test.assert_equal(state[`vars`][`user_name`], `Alice`, `user_name restored`)
+
+    file.remove(snap_path)
+    <- true
+}
+
+function main() {
+    let suite -> [
+        { `name` -> `test_state_creation`, `fn` -> test_state_creation },
+        { `name` -> `test_delimiter_balancing`, `fn` -> test_delimiter_balancing },
+        { `name` -> `test_autocompletion`, `fn` -> test_autocompletion },
+        { `name` -> `test_expression_eval_and_history`, `fn` -> test_expression_eval_and_history },
+        { `name` -> `test_meta_commands`, `fn` -> test_meta_commands },
+        { `name` -> `test_state_snapshotting`, `fn` -> test_state_snapshotting }
+    ]
+    let ok -> test.run_suite(`Zenlang Stateful REPL Suite`, suite)
+    when ok { <- 0 }
+    <- 1
+}

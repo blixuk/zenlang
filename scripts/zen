@@ -4,7 +4,6 @@
 set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-cd "$ROOT"
 export ZEN_PATH="${ZEN_PATH:-$ROOT:$ROOT/selfhost:$ROOT/lib}"
 BOOTSTRAP="${ZEN_BOOTSTRAP:-python3 $ROOT/bootstrap/Zen.py}"
 BIN_DIR="$ROOT/bin"
@@ -94,8 +93,17 @@ EOF
 }
 
 cmd_install() {
-  # Default install (Host-1.0): hybrid handoff with native selfhost primary and bootstrap fallback
-  cmd_install_handoff
+  # Default install: standalone pure native selfhost compiler with Three-Layer execution
+  cmd_install_bootstrap
+  cmd_install_selfhost
+  cp -f "$BIN_DIR/zen-selfhost" "$BIN_DIR/zen"
+  chmod +x "$BIN_DIR/zen"
+  echo "Installed standalone native $BIN_DIR/zen (selfhost primary, zero bootstrap fallback)"
+  echo "  $BIN_DIR/zen help"
+  echo "  $BIN_DIR/zen <file.zl>      (run via Bytecode VM)"
+  echo "  $BIN_DIR/zen <file.zbc>     (run packaged bytecode)"
+  echo "  $BIN_DIR/zen bundle <file>  (package bytecode)"
+  echo "  $BIN_DIR/zen build <file>   (compile native binary)"
 }
 
 cmd_install_driver() {
@@ -190,10 +198,16 @@ case "$cmd" in
   selfhost-smoke) bash "$ROOT/scripts/selfhost_smoke.sh" ;;
   test-golden) bash "$ROOT/scripts/run_golden.sh" ;;
   multi-selfhost-smoke) bash "$ROOT/scripts/multi_selfhost_smoke.sh" ;;
-  run) cmd_run "$@" ;;
+  run)
+    if [ -f "zen.pkg.zd" ] || [ -f ".zbuild" ] || [ -f "../zen.pkg.zd" ] || [ -f "../.zbuild" ]; then
+      # shellcheck disable=SC2086
+      exec "$ROOT/bin/zen" "$ROOT/tools/zenpm.zl" run "$@"
+    fi
+    exec "$ROOT/bin/zen" "$@"
+    ;;
   check)
     # shellcheck disable=SC2086
-    exec $BOOTSTRAP --check "$@"
+    exec "$ROOT/bin/zen" check "$@"
     ;;
   playground)
     # shellcheck disable=SC2086
@@ -218,14 +232,21 @@ case "$cmd" in
     # shellcheck disable=SC2086
     exec "$ROOT/bin/zen" lsp "$@"
     ;;
+  repl)
+    if [ -x "$ROOT/output/zenrepl" ]; then
+      exec "$ROOT/output/zenrepl" "$@"
+    fi
+    # shellcheck disable=SC2086
+    exec "$ROOT/bin/zen" "$ROOT/tools/zenrepl.zl" "$@"
+    ;;
   init|new|watch|dash|dashboard|graph|todo|doc|pkg|bump|publish|benchmark|bench|profile)
     # shellcheck disable=SC2086
-    exec "$ROOT/bin/zen" tools/zenpm.zl "$cmd" "$@"
+    exec "$ROOT/bin/zen" "$ROOT/tools/zenpm.zl" "$cmd" "$@"
     ;;
   build)
-    if [ -f ".zbuild" ] || [ -f "../.zbuild" ] || [ "$#" -eq 0 ]; then
+    if [ -f "zen.pkg.zd" ] || [ -f ".zbuild" ] || [ -f "../zen.pkg.zd" ] || [ -f "../.zbuild" ] || [ "$#" -eq 0 ]; then
       # shellcheck disable=SC2086
-      exec "$ROOT/bin/zen" tools/zenpm.zl build "$@"
+      exec "$ROOT/bin/zen" "$ROOT/tools/zenpm.zl" build "$@"
     fi
     # shellcheck disable=SC2086
     exec "$ROOT/bin/zen" build "$@"

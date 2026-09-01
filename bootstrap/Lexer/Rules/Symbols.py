@@ -136,6 +136,21 @@ class Symbols:
             self.column_number,
         )
 
+    def make_type_cast(self) -> None:
+        start_line: int = self.line_number
+        start_column: int = self.column_number
+
+        self.advance()
+        self.advance()
+        self.add_token(
+            TokenType.TYPE_CAST,
+            "<:",
+            start_line,
+            start_column,
+            self.line_number,
+            self.column_number,
+        )
+
     def make_check_symbol(self) -> None:
         start_line: int = self.line_number
         start_column: int = self.column_number

@@ -61,6 +61,9 @@ function apply_alias(import_path) {
     when import_path == `zen.zenmark` or import_path == `lib/zen/zenmark` {
         <- `zen.text.zenmark.zenmark`
     }
+    when import_path == `zen.test` or import_path == `lib/zen/test` {
+        <- `zen.test.test`
+    }
     <- import_path
 }
 
@@ -68,7 +71,7 @@ function apply_alias(import_path) {
  Install search paths. Optional r0..r3 roots (use `` to skip).
  Always ends with ., lib, selfhost, tests/self_hosting.
  !/
-function configure_search(r0, r1, r2, r3) {
+export function configure_search(r0, r1, r2, r3) {
     let paths -> []
     when r0 != Nothing and r0 != `` {
         paths.append(r0)
@@ -98,12 +101,12 @@ function ensure_paths() {
     <- configure_search(``, ``, ``, ``)
 }
 
-function search_paths() {
+export function search_paths() {
     let status -> ensure_paths()
     <- R[`paths`]
 }
 
-function to_relative(import_path) {
+export function to_relative(import_path) {
     let p -> apply_alias(import_path)
     when Str.contains(p, `/`) {
         <- p
@@ -111,7 +114,7 @@ function to_relative(import_path) {
     <- Str.replace(p, `.`, `/`)
 }
 
-function try_base(base_path, relative_path) {
+export function try_base(base_path, relative_path) {
     let c1 -> Path.join(base_path, relative_path + `.zl`)
     when fs_is_file(c1) {
         <- c1
@@ -128,7 +131,7 @@ function try_base(base_path, relative_path) {
     <- ``
 }
 
-function resolve(import_path, base_dir) {
+export function resolve(import_path, base_dir) {
     let _paths -> ensure_paths()
     let relative_path -> to_relative(import_path)
 
@@ -161,6 +164,6 @@ function resolve_in_list(paths, i, relative_path) {
     <- resolve_in_list(paths, i + 1, relative_path)
 }
 
-function resolve_or_empty(import_path, base_dir) {
+export function resolve_or_empty(import_path, base_dir) {
     <- resolve(import_path, base_dir)
 }

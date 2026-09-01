@@ -225,7 +225,7 @@ function collect_from_node(node) {
 /!
   Build graph. r0..r3 optional search roots (`` to skip).
 !/
-function build_from_file_roots(entry_path, r0, r1, r2, r3) {
+export function build_from_file_roots(entry_path, r0, r1, r2, r3) {
     let status -> Resolver.configure_search(r0, r1, r2, r3)
     let g -> Graph.create()
     B[`graph`] -> g
@@ -278,7 +278,7 @@ function walk_file(path) {
     }
 }
 
-function compilation_order(entry_path, r0, r1, r2, r3) {
+export function compilation_order(entry_path, r0, r1, r2, r3) {
     let g -> build_from_file_roots(entry_path, r0, r1, r2, r3)
     <- Graph.get_compilation_order(g)
 }

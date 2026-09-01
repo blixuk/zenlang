@@ -11,7 +11,9 @@ import compiler.Codegen as Codegen
 import compiler.CLink as CLink
 import compiler.Interpreter as Interp
 import compiler.Bytecode as Bytecode
+import compiler.Extensions as Extensions
 import compiler.Daemon as Daemon
+import compiler.Plugin as Plugin
 import compiler.Module.GraphBuilder as GraphBuilder
 import compiler.Module.DependencyGraph as Graph
 import compiler.Module.Resolver as Resolver
@@ -33,11 +35,15 @@ function fs_is_file(path) {
     <- __builtin_file.is_file(path)
 }
 
+function fs_is_dir(path) {
+    <- __builtin_file.is_dir(path)
+}
+
+function fs_list_dir(path) {
+    <- __builtin_file.list_dir(path)
+}
+
 function parse_file_cached(path) {
-    let hit -> GraphBuilder.parse_cached(path)
-    when hit != Nothing {
-        <- hit
-    }
     let src -> fs_read(path)
     <- Parser.parse_source(src)
 }
@@ -201,6 +207,9 @@ function module_fn_prefix(path) {
     when Str.ends_with(path, `/Server.zl`) or Str.contains(path, `/lsp/Server`) {
         <- `LspServer`
     }
+    when Str.ends_with(path, `/ui/color.zl`) or Str.ends_with(path, `ui/color.zl`) {
+        <- `ui_color`
+    }
     when Str.ends_with(path, `/file.zl`) or Str.ends_with(path, `io/file.zl`) {
         <- `File`
     }
@@ -270,10 +279,64 @@ function collect_local_fn_names(stmts, i, n, acc) {
         <- acc
     }
     let s -> stmts[i]
-    when AST.ast_kind(s) == AST.K_FUNCTION {
+    let k -> AST.ast_kind(s)
+    when k == AST.K_FUNCTION {
         let fname -> Str.to_string(AST.fn_name(s))
         when fname != `main` and fname != `` {
             acc.append(fname)
+        }
+    }
+    when k == AST.K_LET {
+        let vname -> Str.to_string(AST.let_name(s))
+        when vname != `` {
+            acc.append(vname)
+        }
+    }
+    when k == AST.K_STRUCTURE {
+        let sname -> Str.to_string(AST.struct_name(s))
+        when sname != `` {
+            acc.append(sname)
+        }
+    }
+    when k == AST.K_CLASS {
+        let cname -> Str.to_string(AST.class_name(s))
+        when cname != `` {
+            acc.append(cname)
+        }
+    }
+    when k == AST.K_ENUMERATOR {
+        let ename -> Str.to_string(AST.enum_name(s))
+        when ename != `` and ename != `Option` and ename != `Result` and ename != `Ordering` {
+            acc.append(ename)
+        }
+    }
+    when k == AST.K_SCOPE {
+        let scname -> Str.to_string(AST.scope_name(s))
+        when scname != `` {
+            acc.append(scname)
+        }
+        let sc_body -> AST.scope_body(s)
+        let sc_stmts -> []
+        when sc_body != Nothing and sc_body is List {
+            when sc_body.length > 3 and sc_body[0] == 20 {
+                sc_stmts -> sc_body[3]
+            } or {
+                sc_stmts -> sc_body
+            }
+        }
+        when sc_stmts != Nothing {
+            let si -> 0
+            let sn -> sc_stmts.length
+            do while si < sn {
+                let sm -> sc_stmts[si]
+                when sm != Nothing and AST.ast_kind(sm) == AST.K_FUNCTION {
+                    let sfname -> Str.to_string(AST.fn_name(sm))
+                    when sfname != `` {
+                        acc.append(scname + `_` + sfname)
+                    }
+                }
+                si -> si + 1
+            }
         }
     }
     <- collect_local_fn_names(stmts, i + 1, n, acc)
@@ -283,11 +346,106 @@ function collect_local_fn_names(stmts, i, n, acc) {
  Rewrite bare free-fn calls inside a node to Prefix_name for same-file linkage.
  Only touch known AST kinds (never probe missing map keys).
  !/
+function collect_declared_let_names_node(node, acc) {
+    when node == Nothing { <- acc }
+    let k -> AST.ast_kind(node)
+    when k == AST.K_LET {
+        let vname -> Str.to_string(AST.let_name(node))
+        when vname != `` {
+            acc.append(vname)
+        }
+    }
+    when k == AST.K_BLOCK {
+        let stmts -> AST.block_stmts(node)
+        when stmts != Nothing and (stmts is List) {
+            let i -> 0
+            let n -> stmts.length
+            do while i < n {
+                collect_declared_let_names_node(stmts[i], acc)
+                i -> i + 1
+            }
+        }
+    }
+    when k == AST.K_WHEN {
+        let cases -> AST.when_cases(node)
+        when cases != Nothing and (cases is List) {
+            let i -> 0
+            let n -> cases.length
+            do while i < n {
+                let c -> cases[i]
+                when c != Nothing {
+                    collect_declared_let_names_node(AST.case_body(c), acc)
+                }
+                i -> i + 1
+            }
+        }
+    }
+    when k == AST.K_WHILE {
+        collect_declared_let_names_node(AST.while_body(node), acc)
+    }
+    when k == AST.K_DO_WHILE {
+        collect_declared_let_names_node(AST.do_while_body(node), acc)
+    }
+    when k == AST.K_FOR {
+        let vname -> Str.to_string(AST.for_var(node))
+        when vname != `` {
+            acc.append(vname)
+        }
+        collect_declared_let_names_node(AST.for_body(node), acc)
+    }
+    <- acc
+}
+
+function filter_names_excluding_params(names, params, body) {
+    when names == Nothing or names.length == 0 {
+        <- names
+    }
+    let pmap -> {}
+    when params != Nothing {
+        let pi -> 0
+        let pn -> params.length
+        do while pi < pn {
+            let p -> params[pi]
+            when p != Nothing {
+                pmap[Str.to_string(AST.param_name(p))] -> true
+            }
+            pi -> pi + 1
+        }
+    }
+    when body != Nothing {
+        let declared -> collect_declared_let_names_node(body, [])
+        let di -> 0
+        let dn -> declared.length
+        do while di < dn {
+            pmap[declared[di]] -> true
+            di -> di + 1
+        }
+    }
+    let res -> []
+    let ni -> 0
+    let nn -> names.length
+    do while ni < nn {
+        let nm -> names[ni]
+        when pmap[nm] != true {
+            res.append(nm)
+        }
+        ni -> ni + 1
+    }
+    <- res
+}
+
 function rewrite_calls_node(node, local_names, prefix) {
     when node == Nothing or prefix == `` {
         <- node
     }
     let k -> AST.ast_kind(node)
+    when k == AST.K_VARIABLE {
+        let nm -> Str.to_string(AST.var_name(node))
+        when names_has(local_names, nm) {
+            AST.set_var_name(node, prefix + `_` + nm)
+        }
+        <- node
+    }
     when k == AST.K_CALL {
         let callee -> AST.call_callee(node)
         when callee != Nothing {
@@ -305,7 +463,13 @@ function rewrite_calls_node(node, local_names, prefix) {
         <- node
     }
     when k == AST.K_FUNCTION {
-        rewrite_calls_node(AST.fn_body(node), local_names, prefix)
+        let fn_names -> filter_names_excluding_params(local_names, AST.fn_params(node), AST.fn_body(node))
+        rewrite_calls_node(AST.fn_body(node), fn_names, prefix)
+        <- node
+    }
+    when k == AST.K_FUNC_EXPR {
+        let fn_names -> filter_names_excluding_params(local_names, AST.func_expr_params(node), AST.func_expr_body(node))
+        rewrite_calls_node(AST.func_expr_body(node), fn_names, prefix)
         <- node
     }
     when k == AST.K_BLOCK {
@@ -333,6 +497,17 @@ function rewrite_calls_node(node, local_names, prefix) {
         rewrite_calls_node(AST.case_body(node), local_names, prefix)
         <- node
     }
+    when k == AST.K_CHECK_STMT {
+        rewrite_calls_node(AST.check_stmt_expr(node), local_names, prefix)
+        rewrite_calls_list(AST.check_stmt_cases(node), local_names, prefix)
+        rewrite_calls_node(AST.check_stmt_or_block(node), local_names, prefix)
+        rewrite_calls_node(AST.check_stmt_raise(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_CHECK {
+        rewrite_calls_node(AST.check_expr_expr(node), local_names, prefix)
+        <- node
+    }
     when k == AST.K_WHILE or k == AST.K_DO_WHILE {
         rewrite_calls_node(AST.while_cond(node), local_names, prefix)
         rewrite_calls_node(AST.while_body(node), local_names, prefix)
@@ -357,6 +532,10 @@ function rewrite_calls_node(node, local_names, prefix) {
         <- node
     }
     when k == AST.K_ASSIGN {
+        let aname -> Str.to_string(AST.assign_name(node))
+        when names_has(local_names, aname) {
+            AST.set_assign_name(node, prefix + `_` + aname)
+        }
         rewrite_calls_node(AST.assign_val(node), local_names, prefix)
         <- node
     }
@@ -400,6 +579,10 @@ function rewrite_calls_node(node, local_names, prefix) {
         rewrite_calls_node(AST.defer_body(node), local_names, prefix)
         <- node
     }
+    when k == AST.K_RAISE {
+        rewrite_calls_node(AST.raise_expr(node), local_names, prefix)
+        <- node
+    }
     when k == AST.K_SCOPE {
         rewrite_calls_node(AST.scope_body(node), local_names, prefix)
         <- node
@@ -412,6 +595,13 @@ function rewrite_calls_node(node, local_names, prefix) {
     when k == AST.K_WITH {
         rewrite_calls_node(AST.with_expr(node), local_names, prefix)
         rewrite_calls_node(AST.with_body(node), local_names, prefix)
+        <- node
+    }
+    when k == AST.K_VARIABLE {
+        let nm -> Str.to_string(AST.var_name(node))
+        when names_has(local_names, nm) {
+            AST.set_var_name(node, prefix + `_` + nm)
+        }
         <- node
     }
     <- node
@@ -440,19 +630,35 @@ function collect_import_alias_pairs(stmts, i, n, acc) {
     }
     let s -> stmts[i]
     let k -> AST.ast_kind(s)
-    when k == AST.K_IMPORT or k == AST.K_FROM_IMPORT {
+    when k == AST.K_FROM_IMPORT {
+        let path -> Str.to_string(AST.from_import_mod(s))
+        let names -> AST.from_import_names(s)
+        when import_should_rewrite(path) and names != Nothing {
+            let pfx -> prefix_for_import_path(path)
+            when pfx != `` {
+                let ni -> 0
+                let nn -> names.length
+                do while ni < nn {
+                    let nm -> Str.to_string(names[ni])
+                    when nm != `` {
+                        acc.append({`a` -> nm, `p` -> pfx + `_` + nm, `from_import` -> true})
+                    }
+                    ni -> ni + 1
+                }
+            }
+        }
+    }
+    when k == AST.K_IMPORT {
         let path -> Str.to_string(AST.import_path(s))
         let alias -> AST.import_alias(s)
         when alias == Nothing or alias == `` {
             alias -> import_path_stem(path)
         }
         let als -> Str.to_string(alias)
-        when als != `TokenType` and Str.contains(path, `Token`) == false {
-            when import_should_rewrite(path) {
-                let pfx -> prefix_for_import_path(path)
-                when pfx != `` and pfx != als {
-                    acc.append({`a` -> als, `p` -> pfx})
-                }
+        when import_should_rewrite(path) {
+            let pfx -> prefix_for_import_path(path)
+            when pfx != `` {
+                acc.append({`a` -> als, `p` -> pfx, `from_import` -> false})
             }
         }
     }
@@ -486,6 +692,9 @@ function import_should_rewrite(path) {
 
 function prefix_for_import_path(path) {
     let s -> Str.to_string(path)
+    when Str.ends_with(s, `ui.color`) or Str.ends_with(s, `ui/color`) or Str.ends_with(s, `ui.color.zl`) or Str.ends_with(s, `ui/color.zl`) {
+        <- `ui_color`
+    }
     <- module_fn_prefix(`/` + import_path_stem(s) + `.zl`)
 }
 
@@ -498,6 +707,17 @@ function alias_prefix_at(pairs, name, i, n) {
         <- p[`p`]
     }
     <- alias_prefix_at(pairs, name, i + 1, n)
+}
+
+function from_alias_prefix_at(pairs, name, i, n) {
+    when pairs == Nothing or i >= n {
+        <- Nothing
+    }
+    let p -> pairs[i]
+    when p[`a`] == name and p[`from_import`] == true {
+        <- p[`p`]
+    }
+    <- from_alias_prefix_at(pairs, name, i + 1, n)
 }
 
 function rewrite_alias_calls_node(node, pairs) {
@@ -517,7 +737,29 @@ function rewrite_alias_calls_node(node, pairs) {
                 let nm -> Str.to_string(AST.var_name(obj))
                 let pfx -> alias_prefix_at(pairs, nm, 0, pn)
                 when pfx != Nothing and pfx != `` {
-                    AST.set_var_name(obj, pfx)
+                    let field_name -> Str.to_string(AST.get_name(node))
+                    let merged_name -> pfx + `_` + field_name
+                    AST.set_ast_kind(node, AST.K_VARIABLE)
+                    AST.set_var_name(node, merged_name)
+                    <- node
+                }
+            } or when okind == AST.K_GET {
+                let inner_obj -> AST.get_obj(obj)
+                when inner_obj != Nothing and AST.ast_kind(inner_obj) == AST.K_VARIABLE {
+                    let nm -> Str.to_string(AST.var_name(inner_obj))
+                    let pfx -> alias_prefix_at(pairs, nm, 0, pn)
+                    when pfx != Nothing and pfx != `` {
+                        let mid_name -> Str.to_string(AST.get_name(obj))
+                        let field_name -> Str.to_string(AST.get_name(node))
+                        let full_name -> pfx + `_` + mid_name + `_` + field_name
+                        AST.set_ast_kind(node, AST.K_VARIABLE)
+                        AST.set_var_name(node, full_name)
+                        <- node
+                    } or {
+                        rewrite_alias_calls_node(obj, pairs)
+                    }
+                } or {
+                    rewrite_alias_calls_node(obj, pairs)
                 }
             } or {
                 rewrite_alias_calls_node(obj, pairs)
@@ -543,6 +785,11 @@ function rewrite_alias_calls_node(node, pairs) {
         <- node
     }
     when k == AST.K_ASSIGN {
+        let aname -> Str.to_string(AST.assign_name(node))
+        let pfx -> from_alias_prefix_at(pairs, aname, 0, pn)
+        when pfx != Nothing and pfx != `` {
+            AST.set_assign_name(node, pfx)
+        }
         rewrite_alias_calls_node(AST.assign_val(node), pairs)
         <- node
     }
@@ -565,6 +812,17 @@ function rewrite_alias_calls_node(node, pairs) {
     }
     when k == AST.K_EXPR_STMT or k == AST.K_ASSERT {
         rewrite_alias_calls_node(AST.expr_stmt_expr(node), pairs)
+        <- node
+    }
+    when k == AST.K_CHECK_STMT {
+        rewrite_alias_calls_node(AST.check_stmt_expr(node), pairs)
+        rewrite_alias_calls_list(AST.check_stmt_cases(node), pairs)
+        rewrite_alias_calls_node(AST.check_stmt_or_block(node), pairs)
+        rewrite_alias_calls_node(AST.check_stmt_raise(node), pairs)
+        <- node
+    }
+    when k == AST.K_CHECK {
+        rewrite_alias_calls_node(AST.check_expr_expr(node), pairs)
         <- node
     }
     when k == AST.K_WHEN {
@@ -599,6 +857,10 @@ function rewrite_alias_calls_node(node, pairs) {
         rewrite_alias_calls_node(AST.grp_expr(node), pairs)
         <- node
     }
+    when k == AST.K_RAISE {
+        rewrite_alias_calls_node(AST.raise_expr(node), pairs)
+        <- node
+    }
     when k == AST.K_INDEX_ASSIGN {
         rewrite_alias_calls_node(AST.idx_assign_obj(node), pairs)
         rewrite_alias_calls_node(AST.idx_assign_expr(node), pairs)
@@ -618,6 +880,29 @@ function rewrite_alias_calls_node(node, pairs) {
     when k == AST.K_WITH {
         rewrite_alias_calls_node(AST.with_expr(node), pairs)
         rewrite_alias_calls_node(AST.with_body(node), pairs)
+        <- node
+    }
+    when k == AST.K_STRUCT_INIT {
+        let sname -> Str.to_string(AST.struct_init_name(node))
+        when Str.contains(sname, `.`) {
+            let parts -> Str.split(sname, `.`)
+            when parts.length >= 2 {
+                let pfx -> alias_prefix_at(pairs, Str.to_string(parts[0]), 0, pn)
+                when pfx != Nothing and pfx != `` {
+                    let full_sname -> pfx + `_` + Str.to_string(parts[1])
+                    AST.set_struct_init_name(node, full_sname)
+                }
+            }
+        }
+        rewrite_alias_calls_list(AST.struct_init_fields(node), pairs)
+        <- node
+    }
+    when k == AST.K_VARIABLE {
+        let nm -> Str.to_string(AST.var_name(node))
+        let pfx -> from_alias_prefix_at(pairs, nm, 0, pn)
+        when pfx != Nothing and pfx != `` {
+            AST.set_var_name(node, pfx)
+        }
         <- node
     }
     <- node
@@ -679,7 +964,8 @@ function prepare_file_chunk(stmts, path, entry_path) {
                 rewrite_alias_calls_node(s, alias_pairs)
             }
             when skip == false and prefix != `` and fname != `main` {
-                rewrite_calls_node(AST.fn_body(s), local_names, prefix)
+                let fn_names -> filter_names_excluding_params(local_names, AST.fn_params(s), AST.fn_body(s))
+                rewrite_calls_node(AST.fn_body(s), fn_names, prefix)
                 AST.set_fn_name(s, prefix + `_` + fname)
             }
         }
@@ -687,6 +973,79 @@ function prepare_file_chunk(stmts, path, entry_path) {
             rewrite_alias_calls_node(s, alias_pairs)
             when prefix != `` {
                 rewrite_calls_node(s, local_names, prefix)
+                when k == AST.K_LET {
+                    let vname -> Str.to_string(AST.let_name(s))
+                    when vname != `` {
+                        AST.set_let_name(s, prefix + `_` + vname)
+                    }
+                }
+                when k == AST.K_STRUCTURE {
+                    let sname -> Str.to_string(AST.struct_name(s))
+                    when sname != `` {
+                        AST.set_struct_name(s, prefix + `_` + sname)
+                    }
+                }
+                when k == AST.K_CLASS {
+                    let cname -> Str.to_string(AST.class_name(s))
+                    when cname != `` {
+                        AST.set_class_name(s, prefix + `_` + cname)
+                    }
+                }
+                when k == AST.K_ENUMERATOR {
+                    let ename -> Str.to_string(AST.enum_name(s))
+                    when ename != `` and ename != `Option` and ename != `Result` and ename != `Ordering` {
+                        AST.set_enum_name(s, prefix + `_` + ename)
+                    }
+                }
+            }
+            when k == AST.K_SCOPE {
+                let scname -> Str.to_string(AST.scope_name(s))
+                let sc_body -> AST.scope_body(s)
+                let sc_stmts -> []
+                when sc_body != Nothing and sc_body is List {
+                    when sc_body.length > 3 and sc_body[0] == 20 {
+                        sc_stmts -> sc_body[3]
+                    } or {
+                        sc_stmts -> sc_body
+                    }
+                }
+                when sc_stmts != Nothing {
+                    let scope_fn_names -> []
+                    let si0 -> 0
+                    let sn0 -> sc_stmts.length
+                    do while si0 < sn0 {
+                        let sm0 -> sc_stmts[si0]
+                        when sm0 != Nothing and AST.ast_kind(sm0) == AST.K_FUNCTION {
+                            let sfn0 -> Str.to_string(AST.fn_name(sm0))
+                            when sfn0 != `` {
+                                scope_fn_names.append(sfn0)
+                            }
+                        }
+                        si0 -> si0 + 1
+                    }
+                    let si -> 0
+                    let sn -> sc_stmts.length
+                    do while si < sn {
+                        let sm -> sc_stmts[si]
+                        when sm != Nothing and AST.ast_kind(sm) == AST.K_FUNCTION {
+                            let sfname -> Str.to_string(AST.fn_name(sm))
+                            when sfname != `` {
+                                let scoped_name -> scname + `_` + sfname
+                                AST.set_fn_name(sm, scoped_name)
+                                let scoped_fn_names -> filter_names_excluding_params(scope_fn_names, AST.fn_params(sm), AST.fn_body(sm))
+                                rewrite_calls_node(AST.fn_body(sm), scoped_fn_names, scname)
+                                rewrite_alias_calls_node(sm, alias_pairs)
+                                when prefix != `` {
+                                    let local_fn_names -> filter_names_excluding_params(local_names, AST.fn_params(sm), AST.fn_body(sm))
+                                    rewrite_calls_node(AST.fn_body(sm), local_fn_names, prefix)
+                                    AST.set_fn_name(sm, prefix + `_` + scoped_name)
+                                }
+                                file_stmts.append(sm)
+                            }
+                        }
+                        si -> si + 1
+                    }
+                }
             }
         }
         when skip == false {
@@ -1182,13 +1541,13 @@ function is_cli_token(s) {
     when s == `help` or s == `-h` or s == `--help` {
         <- true
     }
-    when s == `daemon` or s == `check` or s == `deps` or s == `compile` or s == `build` or s == `run` or s == `interpret` or s == `eval` or s == `vm` or s == `test` or s == `--test` or s == `lsp` {
+    when s == `daemon` or s == `check` or s == `deps` or s == `compile` or s == `build` or s == `bundle` or s == `package` or s == `plugin` or s == `todo` or s == `lint` or s == `run` or s == `interpret` or s == `eval` or s == `vm` or s == `test` or s == `--test` or s == `lsp` {
         <- true
     }
     when s == `-g` or s == `--generate` {
         <- true
     }
-    when Str.ends_with(s, `.zl`) {
+    when Str.ends_with(s, `.zl`) or Str.ends_with(s, `.zbc`) {
         <- true
     }
     <- false
@@ -1328,7 +1687,7 @@ function run_args(args) {
             sub -> Str.to_string(args[i0 + 1])
         }
         when sub == `start` {
-            let sock -> Daemon.DEFAULT_SOCKET_PATH
+            let sock -> `/tmp/zen_compiler.sock`
             when i0 + 2 < n {
                 sock -> Str.to_string(args[i0 + 2])
             }
@@ -1336,7 +1695,7 @@ function run_args(args) {
             <- {`code` -> code, `message` -> ``}
         }
         when sub == `stop` or sub == `status` or sub == `clear` or sub == `ping` {
-            let sock -> Daemon.DEFAULT_SOCKET_PATH
+            let sock -> `/tmp/zen_compiler.sock`
             let resp -> Daemon.try_proxy_request(sock, sub, [])
             when resp == Nothing {
                 <- {`code` -> 1, `message` -> `zen daemon is not running`}
@@ -1355,7 +1714,7 @@ function run_args(args) {
                 proxy_args.append(args[pi])
                 pi -> pi + 1
             }
-            let proxy_resp -> Daemon.try_proxy_request(Daemon.DEFAULT_SOCKET_PATH, cmd, proxy_args)
+            let proxy_resp -> Daemon.try_proxy_request(`/tmp/zen_compiler.sock`, cmd, proxy_args)
             when proxy_resp != Nothing {
                 <- proxy_resp
             }
@@ -1367,10 +1726,59 @@ function run_args(args) {
 
 export function run_args_local(args, i0, n, cmd) {
     when cmd == `help` or cmd == `-h` or cmd == `--help` {
+        when i0 + 1 < n {
+            let target_sub -> Str.to_string(args[i0 + 1])
+            let sub_help -> command_help(target_sub)
+            when sub_help != Nothing {
+                <- {`code` -> 0, `message` -> sub_help}
+            }
+        }
         <- {
             `code` -> 0,
             `message` -> usage_text()
         }
+    }
+
+    when cmd == `info` or cmd == `version` or cmd == `--version` or cmd == `-v` {
+        <- Extensions.compiler_info()
+    }
+
+    // Check if subcommand was called with --help or -h (e.g. zen build --help)
+    when i0 + 1 < n {
+        let flag_help -> Str.to_string(args[i0 + 1])
+        when flag_help == `--help` or flag_help == `-h` {
+            let specific_help -> command_help(cmd)
+            when specific_help != Nothing {
+                <- {`code` -> 0, `message` -> specific_help}
+            }
+        }
+    }
+
+    when cmd == `completion` {
+        let sh -> `bash`
+        when i0 + 1 < n {
+            sh -> Str.to_string(args[i0 + 1])
+        }
+        when sh == `bash` {
+            <- Extensions.bash_completion_script()
+        }
+        <- {`code` -> 1, `message` -> `unknown shell: ` + sh + ` (supported: bash)`}
+    }
+
+    when cmd == `disasm` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `disasm: missing file (.zbc or .zl)\n\nUsage: zen disasm <file>`}
+        }
+        let t_file -> Str.to_string(args[i0 + 1])
+        <- Extensions.disasm_file(t_file)
+    }
+
+    when cmd == `ast` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `ast: missing file (.zl)\n\nUsage: zen ast <file.zl>`}
+        }
+        let t_file -> Str.to_string(args[i0 + 1])
+        <- Extensions.ast_file(t_file)
     }
 
     when cmd == `check` {
@@ -1404,7 +1812,7 @@ export function run_args_local(args, i0, n, cmd) {
 
     when cmd == `compile` {
         when i0 + 1 >= n {
-            <- {`code` -> 1, `message` -> `compile: missing file`}
+            <- {`code` -> 1, `message` -> `compile: missing file\n\nSee 'zen compile --help' for options.`}
         }
         let src_path -> Str.to_string(args[i0 + 1])
         <- compile_cli(src_path, args, i0 + 2, n)
@@ -1412,7 +1820,7 @@ export function run_args_local(args, i0, n, cmd) {
 
     when cmd == `build` {
         when i0 + 1 >= n {
-            <- {`code` -> 1, `message` -> `build: missing file`}
+            <- {`code` -> 1, `message` -> `build: missing file\n\nSee 'zen build --help' for options.`}
         }
         let src_path -> Str.to_string(args[i0 + 1])
         <- build_cli(src_path, args, i0 + 2, n)
@@ -1459,25 +1867,126 @@ export function run_args_local(args, i0, n, cmd) {
         }
     }
 
-    when Str.ends_with(cmd, `.zl`) {
-        // bare file.zl [out] [--typecheck] → C emit only (legacy)
-        <- compile_cli(cmd, args, i0 + 1, n)
+    when Plugin.has_command(cmd) {
+        <- Plugin.dispatch_command(cmd, args)
     }
 
+    when cmd == `plugin` {
+        let sub -> `list`
+        when i0 + 1 < n {
+            sub -> Str.to_string(args[i0 + 1])
+        }
+        when sub == `list` {
+            let plist -> Plugin.get_registered_plugins()
+            let pn -> plist.length
+            let pmsg -> Extensions.style_bold(`Registered plugins (` + Str.to_string(pn) + `):\n`)
+            let pi -> 0
+            do while pi < pn {
+                let pl -> plist[pi]
+                pmsg -> pmsg + `  - ` + Extensions.style_cyan(Str.to_string(pl[`name`])) + ` (v` + Str.to_string(pl[`version`]) + `): ` + Str.to_string(pl[`description`]) + `\n`
+                pi -> pi + 1
+            }
+            <- {`code` -> 0, `message` -> pmsg}
+        }
+        when sub == `run` {
+            when i0 + 2 >= n {
+                <- {`code` -> 1, `message` -> `plugin run: missing script path`}
+            }
+            let pscript -> Str.to_string(args[i0 + 2])
+            <- Plugin.run_plugin_script(pscript, [])
+        }
+        <- {`code` -> 1, `message` -> `unknown plugin subcommand: ` + sub + ` (supported: list, run)`}
+    }
+
+    when cmd == `bundle` or cmd == `package` {
+        when i0 + 1 >= n {
+            <- {`code` -> 1, `message` -> `bundle: missing file\n\nUsage: zen bundle <file.zl> [-o out.zbc]`}
+        }
+        let src_path -> Str.to_string(args[i0 + 1])
+        let out_path -> Bytecode.get_cache_path(src_path)
+        when i0 + 2 < n {
+            let flag -> Str.to_string(args[i0 + 2])
+            when (flag == `-o` or flag == `--out` or flag == `--output`) and i0 + 3 < n {
+                out_path -> Str.to_string(args[i0 + 3])
+            } or when Str.starts_with(flag, `--output=`) {
+                out_path -> Str.substring(flag, 9, Str.length(flag))
+            } or {
+                out_path -> flag
+            }
+        }
+        let base -> Path.dirname(src_path)
+        let order -> ensure_compile_order(src_path, base)
+        let prog -> merge_program_files(order, src_path)
+        when prog == Nothing or AST.prog_err(prog) != Nothing {
+            let err -> AST.prog_err(prog)
+            when err == Nothing { err -> `parse error` }
+            <- {`code` -> 1, `message` -> `bundle failed: ` + Str.to_string(err)}
+        }
+        let b_res -> Bytecode.compile_program(prog)
+        when b_res[`ok`] != true {
+            <- {`code` -> 1, `message` -> `bundle failed: bytecode compilation error`}
+        }
+        let chunk -> b_res[`chunk`]
+        let src_content -> fs_read(src_path)
+        Bytecode.write_bytecode_file(chunk, out_path, Str.length(src_content))
+        <- {`code` -> 0, `message` -> `bundled bytecode: ` + out_path}
+    }
+
+    when Str.ends_with(cmd, `.zbc`) or Bytecode.is_bytecode_file(cmd) {
+        let globals -> Bytecode.create_vm_prelude()
+        let v -> Bytecode.eval_bytecode_file(cmd, globals)
+        when v == Nothing or v == 0 {
+            <- {`code` -> 0, `message` -> ``}
+        }
+        when v == 1 {
+            <- {`code` -> 1, `message` -> ``}
+        }
+        let s -> Str.to_string(v)
+        when s == `0` {
+            <- {`code` -> 0, `message` -> ``}
+        }
+        <- {`code` -> 0, `message` -> s}
+    }
+
+    when Str.ends_with(cmd, `.zl`) {
+        // Run bare script on the fly via fast Bytecode VM with automated .zbc caching
+        <- vm_cli(cmd)
+    }
+
+    let sug -> Extensions.get_command_suggestion(cmd)
+    let err_msg -> `error: unknown command '` + cmd + `'\n`
+    when sug != Nothing {
+        err_msg -> err_msg + `\n  Did you mean '` + Extensions.style_cyan(sug) + `'?\n`
+    }
+    err_msg -> err_msg + `\nSee 'zen --help' for available commands.`
     <- {
         `code` -> 1,
-        `message` -> `unknown command: ` + cmd + `\n` + usage_text()
+        `message` -> err_msg
     }
 }
 
-/!
- Execute script directly via fast Bytecode VM.
- !/
 function vm_cli(src_path) {
     when not fs_is_file(src_path) {
         <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
     }
-    let prog -> parse_file_cached(src_path)
+    when Str.ends_with(src_path, `.zbc`) or Bytecode.is_bytecode_file(src_path) {
+        let globals -> Bytecode.create_vm_prelude()
+        let v -> Bytecode.eval_bytecode_file(src_path, globals)
+        when v == Nothing or v == 0 {
+            <- {`code` -> 0, `message` -> ``}
+        }
+        when v == 1 {
+            <- {`code` -> 1, `message` -> ``}
+        }
+        let s -> Str.to_string(v)
+        when s == `0` {
+            <- {`code` -> 0, `message` -> ``}
+        }
+        <- {`code` -> 0, `message` -> s}
+    }
+    let base -> Path.dirname(src_path)
+    let order -> ensure_compile_order(src_path, base)
+    let prog -> merge_program_files(order, src_path)
     when prog == Nothing or AST.prog_err(prog) != Nothing {
         let err -> AST.prog_err(prog)
         when err == Nothing {
@@ -1495,7 +2004,8 @@ function vm_cli(src_path) {
         <- {`code` -> 1, `message` -> `vm: ` + msg}
     }
     let chunk -> b_res[`chunk`]
-    let v -> Bytecode.eval_chunk(chunk, {})
+    let globals -> Bytecode.create_vm_prelude()
+    let v -> Bytecode.eval_chunk(chunk, globals)
     when v == Nothing or v == 0 {
         <- {`code` -> 0, `message` -> ``}
     }
@@ -1542,37 +2052,11 @@ function interpret_cli(src_path) {
     <- {`code` -> 0, `message` -> s}
 }
 
-function vm_cli(src_path) {
-    when not fs_is_file(src_path) {
-        <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
-    }
-    let prog -> parse_file_cached(src_path)
-    when prog != Nothing and AST.prog_err(prog) == Nothing {
-        let b_res -> Bytecode.compile_program(prog)
-        when b_res[`ok`] == true {
-            let chunk -> b_res[`chunk`]
-            let v -> Bytecode.eval_chunk(chunk, {})
-            when v == Nothing or v == 0 {
-                <- {`code` -> 0, `message` -> ``}
-            }
-            when v == 1 {
-                <- {`code` -> 1, `message` -> ``}
-            }
-            let s -> Str.to_string(v)
-            when s == `0` {
-                <- {`code` -> 0, `message` -> ``}
-            }
-            <- {`code` -> 0, `message` -> s}
-        }
-    }
-    <- {`code` -> 1, `message` -> `vm failed`}
-}
-
 /!
  Discover test_* functions in src_path and run them under Interpreter,
  or execute main() if no test_* functions exist (e.g. test suites using zen.test).
  !/
-function test_cli(src_path) {
+function test_single_file(src_path) {
     when not fs_is_file(src_path) {
         <- {`code` -> 1, `message` -> `test: not found ` + src_path}
     }
@@ -1586,7 +2070,7 @@ function test_cli(src_path) {
     }
     let env -> res[`env`]
     let prog -> res[`program`]
-    let test_fns -> collect_test_fn_names(AST.prog_stmts(prog))
+    let test_fns -> collect_test_fn_names(AST.flatten_stmts(AST.prog_stmts(prog)))
     let count -> test_fns.length
     when count == 0 {
         // No explicit test_* functions; run main() if present (e.g. test_*.zl test suites)
@@ -1618,6 +2102,44 @@ function test_cli(src_path) {
     <- {`code` -> 1, `message` -> `some tests failed in ` + src_path}
 }
 
+function test_cli(src_path) {
+    when fs_is_dir(src_path) {
+        let entries -> fs_list_dir(src_path)
+        when entries == Nothing {
+            <- {`code` -> 1, `message` -> `test: cannot list directory ` + src_path}
+        }
+        let total_files -> 0
+        let total_passed -> 0
+        let total_failed -> 0
+        let i -> 0
+        let n -> entries.length
+        do while i < n {
+            let ent -> entries[i]
+            let ent_name -> Str.to_string(ent)
+            when Str.starts_with(ent_name, `test_`) and Str.ends_with(ent_name, `.zl`) {
+                let full_path -> Path.join(src_path, ent_name)
+                total_files -> total_files + 1
+                let res -> test_single_file(full_path)
+                when res[`code`] == 0 {
+                    total_passed -> total_passed + 1
+                } or {
+                    total_failed -> total_failed + 1
+                }
+            }
+            i -> i + 1
+        }
+        when total_files == 0 {
+            <- {`code` -> 0, `message` -> `test: no test_*.zl files found in ` + src_path}
+        }
+        io.writeln(`=== Summary: ` + Str.to_string(total_passed) + `/` + Str.to_string(total_files) + ` test files passed ===`)
+        when total_failed == 0 {
+            <- {`code` -> 0, `message` -> ``}
+        }
+        <- {`code` -> 1, `message` -> Str.to_string(total_failed) + ` test file(s) failed in ` + src_path}
+    }
+    <- test_single_file(src_path)
+}
+
 function collect_test_fn_names(stmts) {
     let acc -> []
     when stmts == Nothing {
@@ -1627,7 +2149,7 @@ function collect_test_fn_names(stmts) {
     let i -> 0
     do while i < n {
         let s -> stmts[i]
-        when s != Nothing and AST.ast_kind(s) == AST.K_FUNCTION {
+        when s != Nothing and (AST.is_function(s) or AST.ast_kind(s) == 21) {
             let name -> Str.to_string(AST.fn_name(s))
             when Str.starts_with(name, `test_`) {
                 acc.append(name)
@@ -1759,6 +2281,15 @@ function parse_build_opts(args, k, n, exe_path, workdir, do_check) {
     when a == `--typecheck` or a == `-t` {
         <- parse_build_opts(args, k + 1, n, exe_path, workdir, true)
     }
+    when a == `-o` or a == `--output` or a == `--out` {
+        when k + 1 < n {
+            <- parse_build_opts(args, k + 2, n, Str.to_string(args[k + 1]), workdir, do_check)
+        }
+    }
+    when Str.starts_with(a, `--output=`) {
+        let val -> Str.substring(a, 9, Str.length(a))
+        <- parse_build_opts(args, k + 1, n, val, workdir, do_check)
+    }
     when a == `--workdir` {
         when k + 1 >= n {
             <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check)
@@ -1824,12 +2355,20 @@ function parse_compile_opts(args, k, n, out_path, do_check, multi) {
         }
     }
     let a -> Str.to_string(args[k])
-    // Note: bootstrap Zen.py claims `--check`; use --typecheck for the selfhost driver.
     when a == `--typecheck` or a == `-t` {
         <- parse_compile_opts(args, k + 1, n, out_path, true, multi)
     }
     when a == `--multi` or a == `-m` {
         <- parse_compile_opts(args, k + 1, n, out_path, do_check, true)
+    }
+    when a == `-o` or a == `--output` or a == `--out` {
+        when k + 1 < n {
+            <- parse_compile_opts(args, k + 2, n, Str.to_string(args[k + 1]), do_check, multi)
+        }
+    }
+    when Str.starts_with(a, `--output=`) {
+        let val -> Str.substring(a, 9, Str.length(a))
+        <- parse_compile_opts(args, k + 1, n, val, do_check, multi)
     }
     when not Str.starts_with(a, `-`) {
         <- parse_compile_opts(args, k + 1, n, a, do_check, multi)
@@ -1837,35 +2376,143 @@ function parse_compile_opts(args, k, n, out_path, do_check, multi) {
     <- parse_compile_opts(args, k + 1, n, out_path, do_check, multi)
 }
 
+function command_help(cmd) {
+    when cmd == `build` {
+        let h -> Extensions.style_bold(`zen build`) + ` — Compile and link Zen source into a standalone native binary\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen build <file.zl> [OPTIONS]\n\n`
+        h -> h + Extensions.style_bold(`OPTIONS:\n`)
+        h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output binary executable path\n`
+        h -> h + `  ` + Extensions.style_cyan(`-O, --opt <0..3|s>`) + `    Optimization level (default: 2)\n`
+        h -> h + `  ` + Extensions.style_cyan(`-m, --multi`) + `           Compile modules into separate C translation units\n`
+        h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Run type checker before code generation\n`
+        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n\n`
+        h -> h + Extensions.style_bold(`EXAMPLES:\n`)
+        h -> h + `  zen build src/main.zl -o bin/app\n`
+        h -> h + `  zen build server.zl -O 3 --typecheck\n`
+        <- h
+    }
+    when cmd == `bundle` or cmd == `package` {
+        let h -> Extensions.style_bold(`zen bundle`) + ` — Package Zen source into a standalone bytecode binary (.zbc)\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen bundle <file.zl> [OPTIONS]\n\n`
+        h -> h + Extensions.style_bold(`OPTIONS:\n`)
+        h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output .zbc file path (default: __zcache__/<stem>.zbc)\n`
+        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n\n`
+        h -> h + Extensions.style_bold(`EXAMPLES:\n`)
+        h -> h + `  zen bundle scripts/task.zl -o dist/task.zbc\n`
+        h -> h + `  zen dist/task.zbc                  ` + Extensions.style_dim(`# run without source code`) + `\n`
+        <- h
+    }
+    when cmd == `run` {
+        let h -> Extensions.style_bold(`zen run`) + ` — Execute a Zen script or packaged bytecode (.zbc)\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen run <file.zl|file.zbc> [OPTIONS] [-- SCRIPT_ARGS...]\n\n`
+        h -> h + Extensions.style_bold(`OPTIONS:\n`)
+        h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Enforce type checking\n`
+        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n\n`
+        h -> h + Extensions.style_bold(`EXAMPLES:\n`)
+        h -> h + `  zen run app.zl\n`
+        h -> h + `  zen run app.zbc -- --port 8080\n`
+        <- h
+    }
+    when cmd == `compile` {
+        let h -> Extensions.style_bold(`zen compile`) + ` — Transpile Zen source code to C\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen compile <file.zl> [OPTIONS] [out.c]\n\n`
+        h -> h + Extensions.style_bold(`OPTIONS:\n`)
+        h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output C source file path\n`
+        h -> h + `  ` + Extensions.style_cyan(`-m, --multi`) + `           Emit separate C files per module\n`
+        h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Enforce strict type checking\n`
+        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n`
+        <- h
+    }
+    when cmd == `check` {
+        let h -> Extensions.style_bold(`zen check`) + ` — Typecheck and validate Zen source without compiling\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen check <file.zl>\n`
+        <- h
+    }
+    when cmd == `disasm` {
+        let h -> Extensions.style_bold(`zen disasm`) + ` — Disassemble and inspect bytecode instructions & constants\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen disasm <file.zbc|file.zl>\n`
+        <- h
+    }
+    when cmd == `ast` {
+        let h -> Extensions.style_bold(`zen ast`) + ` — Pretty-print parsed Abstract Syntax Tree hierarchy\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen ast <file.zl>\n`
+        <- h
+    }
+    when cmd == `info` {
+        let h -> Extensions.style_bold(`zen info`) + ` — Print compiler version and environment diagnostics\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen info\n`
+        <- h
+    }
+    when cmd == `completion` {
+        let h -> Extensions.style_bold(`zen completion`) + ` — Generate shell tab-completion script\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen completion [bash]\n\n`
+        h -> h + Extensions.style_bold(`INSTALLATION:\n`)
+        h -> h + `  source <(zen completion bash)      ` + Extensions.style_dim(`# add to ~/.bashrc`) + `\n`
+        <- h
+    }
+    when cmd == `plugin` {
+        let h -> Extensions.style_bold(`zen plugin`) + ` — Manage compiler plugins and run extension scripts\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`)
+        h -> h + `  zen plugin list                    ` + Extensions.style_dim(`# list registered plugins`) + `\n`
+        h -> h + `  zen plugin run <script.zl>         ` + Extensions.style_dim(`# execute a dynamic plugin script`) + `\n`
+        <- h
+    }
+    when cmd == `test` {
+        let h -> Extensions.style_bold(`zen test`) + ` — Discover and execute test suites natively\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen test <file.zl>\n`
+        <- h
+    }
+    when cmd == `daemon` {
+        let h -> Extensions.style_bold(`zen daemon`) + ` — Manage background resident compiler service\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`)
+        h -> h + `  zen daemon start [socket_path]\n`
+        h -> h + `  zen daemon stop\n`
+        h -> h + `  zen daemon status\n`
+        h -> h + `  zen daemon clear\n`
+        <- h
+    }
+    <- Nothing
+}
+
 function usage_text() {
-    <- `selfhost driver (toward full Zen host)
+    let u -> Extensions.style_bold(`Zenlang Standalone Self-Hosted Compiler (v0.7.0)`) + `\n`
+    u -> u + Extensions.style_dim(`Fast, visual data-flow language with three-layer execution (AOT C + Bytecode VM)\n\n`)
+    
+    u -> u + Extensions.style_bold(`USAGE:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`zen`) + ` [COMMAND] [OPTIONS] [FILE]\n`
+    u -> u + `  ` + Extensions.style_cyan(`zen`) + ` ` + Extensions.style_green(`<file.zl>`) + ` [ARGS...]            ` + Extensions.style_dim(`# Run script via Bytecode VM`) + `\n`
+    u -> u + `  ` + Extensions.style_cyan(`zen`) + ` ` + Extensions.style_green(`<file.zbc>`) + ` [ARGS...]           ` + Extensions.style_dim(`# Run packaged bytecode directly`) + `\n\n`
+    
+    u -> u + Extensions.style_bold(`PRIMARY COMMANDS:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`run`) + `       <file>                 Execute script or packaged bytecode\n`
+    u -> u + `  ` + Extensions.style_cyan(`build`) + `     <file> [-o exe]        Compile & link to native binary executable\n`
+    u -> u + `  ` + Extensions.style_cyan(`bundle`) + `    <file> [-o out.zbc]    Package script into standalone .zbc binary\n`
+    u -> u + `  ` + Extensions.style_cyan(`check`) + `     <file>                 Typecheck and validate source\n`
+    u -> u + `  ` + Extensions.style_cyan(`test`) + `      <file>                 Discover and run test suites natively\n\n`
 
-Usage:
-  compile   <file.zl> [out.c|outdir] [--typecheck|-t] [--multi|-m]
-  build     <file.zl> [exe] [--typecheck|-t] [--workdir dir]
-  run|-g    <file.zl> [--typecheck|-t] [--workdir dir] [--] [prog args...]
-  interpret <file.zl>
-  vm        <file.zl>
-  test      <file.zl>
-  check     <file.zl>
-  deps      <file.zl>
-  lsp
-  help
+    u -> u + Extensions.style_bold(`COMPILER & TOOLS:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`compile`) + `   <file> [out.c]         Transpile Zen source to C source\n`
+    u -> u + `  ` + Extensions.style_cyan(`deps`) + `      <file>                 Compute module dependency order and graph\n`
+    u -> u + `  ` + Extensions.style_cyan(`disasm`) + `    <file.zbc|file.zl>     Disassemble bytecode opcodes & constants\n`
+    u -> u + `  ` + Extensions.style_cyan(`ast`) + `       <file.zl>              Print formatted Abstract Syntax Tree\n`
+    u -> u + `  ` + Extensions.style_cyan(`info`) + `                             Display compiler diagnostics & environment\n`
+    u -> u + `  ` + Extensions.style_cyan(`daemon`) + `    <start|stop|status>    Manage resident compiler service\n`
+    u -> u + `  ` + Extensions.style_cyan(`completion`) + ` [bash]                Generate shell tab-completion script\n\n`
 
-  compile     Zen → C only (merge Default; --multi = one TU per module)
-  build       Zen → C → gcc/runtime → binary
-  run / -g    Zen → C → gcc/runtime → run (bootstrap -g equivalent)
-  interpret   Run via Bytecode VM (with AST walk fallback)
-  vm          Direct Bytecode VM execution (no C/gcc)
-  test        Run test_* functions or test suites natively
-  lsp         (not in zen-selfhost) → tools/zenlsp.zl / hybrid ./bin/zen lsp
+    u -> u + Extensions.style_bold(`EXTENSIONS & PLUGINS:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`plugin`) + `    <list|run <script>>    Manage plugins or run extension script\n`
+    u -> u + `  ` + Extensions.style_cyan(`todo`) + `                             Scan codebase for TODO/FIXME annotations\n`
+    u -> u + `  ` + Extensions.style_cyan(`lint`) + `                             Run Zenlang style and convention linter\n\n`
 
-Endgame: drop Python bootstrap; selfhost owns compile, recompile, run, and
-interpret. See selfhost/PARITY.md (Full selfhost endgame).
-
-Note: --typecheck (not --check); bootstrap CLI still uses --check.
-Native: bin/zen-selfhost (./scripts/zen install-selfhost)
-`
+    u -> u + Extensions.style_bold(`GLOBAL FLAGS:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `             Specify output binary, bytecode, or C file\n`
+    u -> u + `  ` + Extensions.style_cyan(`-O, --opt <0..3|s>`) + `              Set optimization level (default: 2)\n`
+    u -> u + `  ` + Extensions.style_cyan(`-m, --multi`) + `                    Emit separate C translation units\n`
+    u -> u + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `                Enforce strict type checking\n`
+    u -> u + `  ` + Extensions.style_cyan(`-q, --quiet`) + `                    Suppress banner and non-error diagnostics\n`
+    u -> u + `  ` + Extensions.style_cyan(`-v, --version`) + `                  Show compiler version\n`
+    u -> u + `  ` + Extensions.style_cyan(`-h, --help`) + `                     Show help (use 'zen <cmd> --help' for details)\n`
+    <- u
 }
 
 function join_errs(errs) {

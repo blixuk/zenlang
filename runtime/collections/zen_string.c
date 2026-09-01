@@ -95,6 +95,14 @@ ZenValue ZenValue_to_string(ZenValue value) {
         case ZEN_NOTHING: return ZenValue_make_string("Nothing");
         case ZEN_ERROR: return ZenValue_make_string("Error");
         case ZEN_ARENA: return ZenValue_make_string("Arena");
+        case ZEN_SET: {
+            if (!value.as.set) return ZenValue_make_string("Set([])");
+            ZenValue l = ZenSet_to_list(value);
+            ZenValue s = ZenValue_to_string(l);
+            char buf_s[256];
+            snprintf(buf_s, sizeof(buf_s), "Set(%s)", (s.type == ZEN_STRING && s.as.string) ? s.as.string : "[]");
+            return ZenValue_make_string(buf_s);
+        }
         case ZEN_VARIANT: {
             if (!value.as.variant) return ZenValue_make_string("Variant(null)");
             char buf_v[256];
@@ -259,11 +267,11 @@ ZenValue ZenString_ends_with(ZenValue string, ZenValue suffix) {
 }
 
 ZenValue ZenString_get_substring(ZenValue string, ZenValue start_v, ZenValue end_v) {
-    int start = (int)start_v.as.integer;
-    int end = (int)end_v.as.integer;
     const char* s = ZenString_get_pointer(string);
     if (!s) return ZenValue_make_string("");
     int len = strlen(s);
+    int start = (start_v.type == ZEN_INTEGER) ? (int)start_v.as.integer : 0;
+    int end = (end_v.type == ZEN_INTEGER) ? (int)end_v.as.integer : len;
     if (start < 0) start = 0;
     if (end > len) end = len;
     if (start >= end) return ZenValue_make_string("");

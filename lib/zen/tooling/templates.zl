@@ -258,13 +258,15 @@ export function get_gitignore() {
 }
 
 /!
-  Generates README.md for new projects.
+  Generates README.zm (Zen Mark format) for new projects.
 !/
 export function get_readme(name, description) {
     let desc -> description
     when desc == Nothing or desc == `` { desc -> `A Zenlang application` }
     let out -> `# ` + name + `\n\n`
     out -> out + desc + `\n\n`
+    out -> out + `> [!NOTE]\n`
+    out -> out + `> Built with Zenlang. View this document in your terminal with \`zen view README.zm\`.\n\n`
     out -> out + `## Quick Start\n\n`
     out -> out + `### Build Project\n`
     out -> out + `\`\`\`bash\n`

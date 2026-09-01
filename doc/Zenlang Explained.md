@@ -148,7 +148,51 @@ let r -> 10..15
 
 ---
 
-## 3.5 Anonymous Functions (Lambdas)
+## 3.5 First-Class Type Casting (`<:` and `Type(val)`)
+
+Zenlang supports both the visual cast operator `<:` and constructor call syntax `Type(val)` for safe, explicit value transformations across types.
+
+### Dual Syntax
+
+```zl
+// Operator syntax: <expr> <: <Type>
+let count: Integer -> `42` <: Integer
+let text: String -> 100 <: String
+let is_valid: Boolean -> 1 <: Boolean
+let codepoint: Integer -> `A` <: Integer
+
+// Constructor syntax: <Type>(<expr>)
+let total -> Integer(`120`)
+let greeting -> String(2026)
+let flags -> Set([1, 2, 2, 3])
+```
+
+### Operator Precedence
+
+The `<:` cast operator evaluates at high precedence (binding right after call expressions and before arithmetic operations):
+```zl
+let sum -> `10` <: Integer + `20` <: Integer  // 30 (evaluated as ("10" <: Integer) + ("20" <: Integer))
+let msg -> `Score: ` + (95 <: String)         // "Score: 95"
+```
+
+### Type Cast Matrix
+
+| Source Type | Target: `Integer` / `Int` | Target: `Decimal` / `Float` | Target: `String` / `Str` | Target: `Boolean` / `Bool` | Target: `Rune` / `Char` | Target: `Bytes` / `Buffer` | Target: `List` | Target: `Set` | Target: `Map` |
+|:---|:---|:---|:---|:---|:---|:---|:---|:---|
+| **`Integer`** | Identity (`n`) | Float value (`n.0`) | String digits (`"42"`) | `n != 0` | Unicode character from codepoint (`65` → `"A"`) | 1-element list (`[n]`) | 1-element list (`[n]`) | 1-element set (`[n]`) | `{}` |
+| **`Decimal`** | Truncated int (`3.14` → `3`) | Identity (`d`) | String representation (`"3.14"`) | `d != 0.0` | UTF-8 char of int codepoint | 1-element list | 1-element list | 1-element set | `{}` |
+| **`String`** | Parsed int / single-char ASCII (`"42"` → `42`, `"A"` → `65`) | Parsed float (`"3.14"` → `3.14`) | Identity (`s`) | `"True"` / `"true"` / `"1"` → `True`, else `False` | 1st character (`"Zen"` → `"Z"`) | List of UTF-8 byte integers (`[122, 108]`) | List of 1-char strings | Set of unique chars | `{}` |
+| **`Boolean`** | `True` → `1`, `False` → `0` | `True` → `1.0`, `False` → `0.0` | `"True"` / `"False"` | Identity (`b`) | `""` | `[1]` / `[0]` | `[True]` / `[False]` | `[True]` / `[False]` | `{}` |
+| **`Rune` / `Char`** | Unicode codepoint (`"A"` → `65`) | Float of codepoint | String of character | Non-empty | Identity | UTF-8 byte list | `[char]` | `[char]` | `{}` |
+| **`Bytes` / `Buffer`** | Byte count (`len`) | `len.0` | Decoded UTF-8 / ASCII string | `len > 0` | 1st byte character | Identity | Byte integer list | Unique byte list | `{}` |
+| **`List`** | Element count (`len`) | `len.0` | String representation (`"[1, 2]"`) | `len > 0` | 1st element as char | Byte integers if numeric list | Identity | Deduplicated list | `{}` |
+| **`Set`** | Element count (`len`) | `len.0` | String representation | `len > 0` | `""` | Byte list | List of unique elements | Identity | `{}` |
+| **`Map`** | Entry count (`len`) | `len.0` | String representation | `len > 0` | `""` | `[]` | List of keys | Set of keys | Identity |
+| **`Nothing`** | `0` | `0.0` | `""` | `False` | `""` | `[]` | `[]` | `[]` | `{}` |
+
+---
+
+## 3.6 Anonymous Functions (Lambdas)
 
 Zenlang anonymous functions use the `function` keyword as a value expression (not a separate `lambda` keyword).
 
@@ -477,4 +521,71 @@ do {
 } until false
 term.alt_screen_exit()
 term.raw_exit()
+```
+
+---
+
+## 9. Interactive Stateful REPL (`zen repl`)
+
+Zenlang features a rich interactive development shell accessible with `zen repl` (or running `zen` with no arguments in a terminal).
+
+### 9.1 Features & Workflow
+
+1. **Persistent Session State**:
+   - Variables, constants, functions, classes, and imported modules persist throughout the interactive session.
+2. **Automatic Result Sentinels (`_` and `_N`)**:
+   - `_` always stores the output of the most recent evaluated expression.
+   - `_1`, `_2`, `_3`... retain numbered historical evaluation results.
+3. **State Snapshotting (`:save` and `:load`)**:
+   - Save active session variables and imports to a formatted **Zen Data (`.zd`)** file.
+   - Restore saved states instantly.
+4. **Multi-Line Continuation**:
+   - Unbalanced delimiters (`{`, `(`, `[`) automatically switch to the continuation prompt (`... `).
+5. **Tab Autocompletion**:
+   - Pressing `<Tab>` suggests keywords, base types, standard library module paths, and in-scope session bindings.
+6. **Live Execution Timing**:
+   - Toggle millisecond benchmarking with `:time on` / `:time off`.
+
+### 9.2 REPL Meta-Commands
+
+| Command | Action |
+|:---|:---|
+| `:help`, `:h` | Displays the interactive command manual and shortcuts |
+| `:vars`, `:state` | Lists all active session variables and their values |
+| `:save <file.zd>` | Serializes active session state to a Zen Data snapshot |
+| `:load <file.zd>` | Restores session state from a Zen Data snapshot |
+| `:time [on\|off]` | Toggles millisecond execution duration profiling |
+| `:mode [vm\|interp]` | Switches execution backend between Bytecode VM and Interpreter |
+| `:reset` | Clears all session variables back to an empty environment |
+| `:clear`, `:cls` | Clears the terminal screen |
+| `:quit`, `:exit` | Exits the REPL session (or `Ctrl+D`) |
+
+### 9.3 Interactive Example
+
+```zl
+$ zen repl
+Zenlang Interactive REPL (Type :help for commands, :quit to exit)
+Visual Data Flow (-> / <-) • Pure Native Execution • Zen Trinity (.zl, .zd, .zm)
+
+zen> 10 + 20
+30
+
+zen> _ * 2
+60
+
+zen> let msg: String -> "Hello REPL!"
+zen> msg
+"Hello REPL!"
+
+zen> "123" <: Integer
+123
+
+zen> :save session.zd
+[STATE] Saved 4 variables to session.zd
+
+zen> :reset
+[STATE] Session environment reset.
+
+zen> :load session.zd
+[STATE] Restored 4 variables from session.zd
 ```

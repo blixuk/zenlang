@@ -29,7 +29,7 @@ function to_html(text) {
         
         // Unordered List
         when processed.starts_with(`- `) or processed.starts_with(`* `) {
-            when in_list = False {
+            when in_list == False {
                 html -> html + `<ul>\n`
                 in_list -> True
             }

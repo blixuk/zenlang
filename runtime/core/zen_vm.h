@@ -47,6 +47,7 @@ typedef enum {
     OP_SET_INDEX = 0x53,
     OP_GET_PROP = 0x54,     /* u16 name_const_idx */
     OP_SET_PROP = 0x55,     /* u16 name_const_idx */
+    OP_CAST = 0x56,         /* u16 type_name_const_idx */
     
     OP_JUMP = 0x60,         /* i16 offset */
     OP_JUMP_IF_FALSE = 0x61,/* i16 offset */
@@ -118,5 +119,10 @@ void ZenVM_register_global(ZenVM* vm, const char* name, ZenValue val);
 void ZenVM_register_native_func(ZenVM* vm, const char* name, void* fn);
 ZenValue ZenVM_load_native_module(ZenVM* vm, const char* path);
 ZenValue ZenVM_call_named(ZenVM* vm, const char* func_name, int argc, ZenValue* args);
+
+/* Bytecode Binary Serialization & Packaging (.zbc) */
+int ZenChunk_save_file(ZenChunk* chunk, const char* path, uint64_t src_hash);
+ZenChunk* ZenChunk_load_file(const char* path, uint64_t* out_src_hash);
+ZenValue ZenVM_run_bytecode_file(ZenVM* vm, const char* path);
 
 #endif /* ZEN_VM_H */

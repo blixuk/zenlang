@@ -80,7 +80,7 @@ else
 fi
 
 echo "--- hybrid: help (selfhost surface) ---"
-if out="$("$ROOT/bin/zen" help 2>&1)" && printf '%s\n' "$out" | grep -q 'selfhost driver\|Usage'; then
+if out="$("$ROOT/bin/zen" help 2>&1)" && printf '%s\n' "$out" | grep -qi 'selfhost driver\|usage'; then
   ok "bin/zen help → selfhost"
 else
   bad "bin/zen help"

@@ -1,4 +1,5 @@
 #include "zen_reflect.h"
+#include "zen_ops.h"
 #include "zen_dispatch.h"
 #include "zen_closure.h"
 #include "../collections/zen_map.h"
@@ -28,6 +29,7 @@ static ZenReflectMethodEntry g_methods[ZEN_REFLECT_METHOD_CAP];
 static int g_method_count = 0;
 
 void ZenReflect_runtime_init(void) {
+    if (g_reflect_registry.type == ZEN_MAP) return;
     g_reflect_registry = ZenMap_make_from_arguments(0);
     g_tag_count = 0;
     g_method_count = 0;
@@ -44,6 +46,7 @@ void ZenReflect_runtime_init(void) {
 
 void ZenReflect_tag_object(void* ptr, const char* type_name) {
     if (!ptr || !type_name) return;
+    ZenReflect_runtime_init();
     for (int i = 0; i < g_tag_count; i++) {
         if (g_tag_ptrs[i] == ptr) {
             g_tag_names[i] = type_name;
@@ -67,6 +70,7 @@ static const char* ZenReflect_object_type_cstr(void* ptr) {
 void ZenReflect_register_method(const char* type_name, const char* method_name,
                                 ZenReflectMethodFn fn) {
     if (!type_name || !method_name || !fn) return;
+    ZenReflect_runtime_init();
     for (int i = 0; i < g_method_count; i++) {
         if (g_methods[i].type_name && g_methods[i].method_name &&
             strcmp(g_methods[i].type_name, type_name) == 0 &&
@@ -268,19 +272,32 @@ ZenValue ZenReflect_apply(ZenValue fn, ZenValue args) {
 }
 
 ZenValue ZenReflect_call(ZenValue receiver, ZenValue name, ZenValue args) {
-    /* Map plugin table: receiver[name] is a function */
+    /* Map plugin table or tagged class instance */
     if (receiver.type == ZEN_MAP && name.type == ZEN_STRING) {
-        if (!ZenMap_has_key(receiver, name).as.boolean) {
-            fprintf(stderr, "reflect.call: map has no key '%s'\n",
-                    ZenString_get_pointer(name) ? ZenString_get_pointer(name) : "?");
-            return ZenValue_make_nothing();
-        }
-        ZenValue fn = ZenMap_get_value_at_key(receiver, name);
-        if (fn.type != ZEN_FUNCTION) {
+        if (ZenMap_has_key(receiver, name).as.boolean) {
+            ZenValue fn = ZenMap_get_value_at_key(receiver, name);
+            if (fn.type == ZEN_FUNCTION) {
+                return apply_fn_with_list(fn, args);
+            }
             fprintf(stderr, "reflect.call: map entry is not a function\n");
             return ZenValue_make_nothing();
         }
-        return apply_fn_with_list(fn, args);
+        ZenValue tn = type_name_of_value(receiver);
+        const char* tn_str = ZenString_get_pointer(tn);
+        const char* mn = ZenString_get_pointer(name);
+        if (tn_str && mn) {
+            ZenReflectMethodFn mfn = find_method(tn_str, mn);
+            if (mfn) {
+                ZenValue arg_list = args;
+                if (arg_list.type != ZEN_LIST) {
+                    arg_list = empty_list();
+                }
+                return mfn((void*)receiver.as.map, arg_list);
+            }
+        }
+        fprintf(stderr, "reflect.call: map has no key '%s'\n",
+                ZenString_get_pointer(name) ? ZenString_get_pointer(name) : "?");
+        return ZenValue_make_nothing();
     }
 
     /* Tagged class instances: method tables registered for `is reflectable` types */

@@ -1,0 +1,95 @@
+/!
+ Selfhost Bytecode Serialization, Caching (.zbc), and Packaging Tests.
+ Verifies:
+ 1. Bytecode Chunk Serialization & Deserialization
+ 2. Standalone Bytecode Packaging (.zbc file generation)
+ 3. Source-Free Bytecode Execution
+ 4. Cache Path Resolution
+!/
+
+import compiler.Bytecode as Bytecode
+import compiler.Parser as Parser
+import zen.test as test
+import zen.text.string as Str
+
+function test_bytecode_serialize_roundtrip() {
+    let src -> `
+        let a -> 10
+        let b -> 20
+        let sum -> a + b
+        <- sum
+    `
+    let prog -> Parser.parse_source(src)
+    let b_res -> Bytecode.compile_program(prog)
+    let pass -> test.assert_equal(b_res[`ok`], True, `compile_program ok`)
+    let chunk -> b_res[`chunk`]
+    
+    // Serialize
+    let serialized -> Bytecode.serialize_chunk(chunk, 12345)
+    pass -> pass and test.assert_equal(Str.starts_with(serialized, `ZENB:1:`), True, `magic ZENB header present`)
+    pass -> pass and test.assert_equal(Str.contains(serialized, `CONSTANTS:`), True, `CONSTANTS section present`)
+    pass -> pass and test.assert_equal(Str.contains(serialized, `CODE:`), True, `CODE section present`)
+    
+    // Deserialize
+    let d_res -> Bytecode.deserialize_chunk(serialized)
+    pass -> pass and test.assert_equal(d_res[`ok`], True, `deserialize_chunk ok`)
+    pass -> pass and test.assert_equal(d_res[`src_hash`], `12345`, `src_hash preserved`)
+    
+    let d_chunk -> d_res[`chunk`]
+    pass -> pass and test.assert_equal(d_chunk[`code`].length, chunk[`code`].length, `code length matches`)
+    pass -> pass and test.assert_equal(d_chunk[`constants`].length, chunk[`constants`].length, `consts length matches`)
+    
+    // Evaluate deserialized chunk directly
+    let res -> Bytecode.eval_chunk(d_chunk, {})
+    pass -> pass and test.assert_equal(res, 30, `evaluating deserialized chunk returns 30`)
+    <- pass
+}
+
+function test_bytecode_file_packaging_and_exec() {
+    let src -> `
+        let x -> 5
+        let y -> 7
+        <- x * y
+    `
+    let prog -> Parser.parse_source(src)
+    let b_res -> Bytecode.compile_program(prog)
+    let chunk -> b_res[`chunk`]
+    
+    let tmp_path -> `/tmp/zen_test_package.zbc`
+    let wrote -> Bytecode.write_bytecode_file(chunk, tmp_path, 999)
+    let pass -> test.assert_equal(Bytecode.is_bytecode_file(tmp_path), True, `is_bytecode_file on .zbc`)
+    
+    // Read and evaluate packaged bytecode without source
+    let r_res -> Bytecode.read_bytecode_file(tmp_path)
+    pass -> pass and test.assert_equal(r_res[`ok`], True, `read_bytecode_file ok`)
+    
+    let val -> Bytecode.eval_bytecode_file(tmp_path, {})
+    pass -> pass and test.assert_equal(val, 35, `eval_bytecode_file without source returns 35`)
+    <- pass
+}
+
+function test_bytecode_cache_path() {
+    let p1 -> Bytecode.get_cache_path(`main.zl`)
+    let pass -> test.assert_equal(p1, `__zcache__/main.zbc`, `cache path for simple file`)
+    
+    let p2 -> Bytecode.get_cache_path(`src/app/driver.zl`)
+    pass -> pass and test.assert_equal(p2, `src/app/__zcache__/driver.zbc`, `cache path for nested file`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Bytecode.serialize_roundtrip`, `fn` -> test_bytecode_serialize_roundtrip},
+        {`name` -> `Bytecode.file_packaging_exec`, `fn` -> test_bytecode_file_packaging_and_exec},
+        {`name` -> `Bytecode.cache_path`, `fn` -> test_bytecode_cache_path}
+    ]
+    <- test.run_suite(`Bytecode Caching and Packaging (.zbc)`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

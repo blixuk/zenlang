@@ -79,6 +79,7 @@ Default section order:
 When the user requests a durable behavior change, record it here or in the relevant child AGENTS.md
 
 - **Nothing / Default (required language surface):** `Nothing` = absent value; `Default` = type zero-state (`0`, `[]`, empty string, `False`, …). Both assignable and comparable (`== Nothing`, `== Default`). Canonical spelling is **capitalized** (like types); lowercase `nothing` is legacy. Tracked in [selfhost/ENDGAME_PLAN.md](selfhost/ENDGAME_PLAN.md) Phase L; required before host-1.0.
+- **Type Casting (`<:` and `Type(val)`):** Dual syntax: visual operator `<:` (`val <: Integer`) and constructor syntax `Type(val)` (`Integer(val)`). Supported across base types (`Integer`, `Decimal`, `String`, `Boolean`), aliases (`Int`, `Str`, `Float`, `Bool`), character/binary types (`Rune`/`Char`, `Bytes`/`Buffer`), collections (`List`, `Set`, `Map`), and `Nothing`. Implemented with full parity across runtime (`ZenValue_cast`), AST/Parser, C Codegen, Bytecode VM (`OP_CAST`), and Interpreter.
 
 - Prefer `selfhost/` (not `src/`) for self-hosted compiler sources.
 - Prefer top-level `runtime/` shared by bootstrap and self-host (not a private copy only under bootstrap).

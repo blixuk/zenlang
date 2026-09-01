@@ -1,5 +1,6 @@
 #include "zen_vm.h"
 #include "zen_ops.h"
+#include "zen_dispatch.h"
 #include "zen_closure.h"
 #include "../collections/zen_list.h"
 #include "../collections/zen_map.h"
@@ -171,6 +172,7 @@ int ZenChunk_disassemble_instruction(ZenChunk* chunk, int offset) {
         case OP_SET_INDEX: return simple_instruction("OP_SET_INDEX", offset);
         case OP_GET_PROP: return const_instruction("OP_GET_PROP", chunk, offset);
         case OP_SET_PROP: return const_instruction("OP_SET_PROP", chunk, offset);
+        case OP_CAST: return const_instruction("OP_CAST", chunk, offset);
         case OP_JUMP: return i16_instruction("OP_JUMP", chunk, offset);
         case OP_JUMP_IF_FALSE: return i16_instruction("OP_JUMP_IF_FALSE", chunk, offset);
         case OP_JUMP_IF_TRUE: return i16_instruction("OP_JUMP_IF_TRUE", chunk, offset);
@@ -261,6 +263,10 @@ static ZenValue zen_invoke_native_fn(void* fn, int total, ZenValue* args) {
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define ZEN_VM_DIRECT_THREADED 1
+#endif
+
 ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
     if (!vm || !chunk) return ZEN_NOTHING_VAL;
 
@@ -274,23 +280,81 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
         push(vm, ZEN_NOTHING_VAL);
     }
 
+#if ZEN_VM_DIRECT_THREADED
+    static const void* const dispatch_table[256] = {
+        [0 ... 255] = &&do_OP_UNKNOWN,
+        [OP_NOP] = &&do_OP_NOP,
+        [OP_CONST] = &&do_OP_CONST,
+        [OP_NOTHING] = &&do_OP_NOTHING,
+        [OP_DEFAULT] = &&do_OP_DEFAULT,
+        [OP_TRUE] = &&do_OP_TRUE,
+        [OP_FALSE] = &&do_OP_FALSE,
+        [OP_INT_SMALL] = &&do_OP_INT_SMALL,
+        [OP_POP] = &&do_OP_POP,
+        [OP_DUP] = &&do_OP_DUP,
+        [OP_SWAP] = &&do_OP_SWAP,
+        [OP_LOAD_LOCAL] = &&do_OP_LOAD_LOCAL,
+        [OP_STORE_LOCAL] = &&do_OP_STORE_LOCAL,
+        [OP_LOAD_GLOBAL] = &&do_OP_LOAD_GLOBAL,
+        [OP_STORE_GLOBAL] = &&do_OP_STORE_GLOBAL,
+        [OP_ADD] = &&do_OP_ADD,
+        [OP_SUB] = &&do_OP_SUB,
+        [OP_MUL] = &&do_OP_MUL,
+        [OP_DIV] = &&do_OP_DIV,
+        [OP_MOD] = &&do_OP_MOD,
+        [OP_NEG] = &&do_OP_NEG,
+        [OP_NOT] = &&do_OP_NOT,
+        [OP_EQ] = &&do_OP_EQ,
+        [OP_NEQ] = &&do_OP_NEQ,
+        [OP_LT] = &&do_OP_LT,
+        [OP_LTE] = &&do_OP_LTE,
+        [OP_GT] = &&do_OP_GT,
+        [OP_GTE] = &&do_OP_GTE,
+        [OP_MAKE_LIST] = &&do_OP_MAKE_LIST,
+        [OP_MAKE_MAP] = &&do_OP_MAKE_MAP,
+        [OP_GET_INDEX] = &&do_OP_GET_INDEX,
+        [OP_SET_INDEX] = &&do_OP_SET_INDEX,
+        [OP_GET_PROP] = &&do_OP_GET_PROP,
+        [OP_SET_PROP] = &&do_OP_SET_PROP,
+        [OP_CAST] = &&do_OP_CAST,
+        [OP_JUMP] = &&do_OP_JUMP,
+        [OP_JUMP_IF_FALSE] = &&do_OP_JUMP_IF_FALSE,
+        [OP_JUMP_IF_TRUE] = &&do_OP_JUMP_IF_TRUE,
+        [OP_POP_JUMP_IF_FALSE] = &&do_OP_POP_JUMP_IF_FALSE,
+        [OP_CALL] = &&do_OP_CALL,
+        [OP_RETURN] = &&do_OP_RETURN,
+        [OP_MAKE_CLOSURE] = &&do_OP_MAKE_CLOSURE,
+        [OP_PRINT] = &&do_OP_PRINT,
+        [OP_HALT] = &&do_OP_HALT,
+    };
+    #define DISPATCH() goto *dispatch_table[READ_BYTE(frame)]
+    #define TARGET(op) do_##op:
+    #define NEXT() DISPATCH()
+    
+    DISPATCH();
+#else
+    #define TARGET(op) case op:
+    #define NEXT() break
+
     while (1) {
         uint8_t instruction = READ_BYTE(frame);
         switch (instruction) {
-            case OP_NOP:
-                break;
+#endif
+            TARGET(OP_NOP)
+                NEXT();
                 
-            case OP_CONST: {
+            TARGET(OP_CONST) {
                 ZenValue constant = READ_CONST(frame);
                 push(vm, constant);
-                break;
+                NEXT();
             }
             
-            case OP_NOTHING:
+            TARGET(OP_NOTHING) {
                 push(vm, ZEN_NOTHING_VAL);
-                break;
-                
-            case OP_DEFAULT: {
+                NEXT();
+            }
+            
+            TARGET(OP_DEFAULT) {
                 uint16_t type_id = READ_U16(frame);
                 switch (type_id) {
                     case ZEN_INTEGER: push(vm, ZenValue_make_integer(0)); break;
@@ -301,210 +365,298 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     case ZEN_MAP: push(vm, ZenValue_from_map(ZenMap_new())); break;
                     default: push(vm, ZEN_NOTHING_VAL); break;
                 }
-                break;
+                NEXT();
             }
             
-            case OP_TRUE:
+            TARGET(OP_TRUE) {
                 push(vm, ZenValue_make_boolean(true));
-                break;
-                
-            case OP_FALSE:
+                NEXT();
+            }
+            
+            TARGET(OP_FALSE) {
                 push(vm, ZenValue_make_boolean(false));
-                break;
-                
-            case OP_INT_SMALL: {
+                NEXT();
+            }
+            
+            TARGET(OP_INT_SMALL) {
                 int16_t val = READ_I16(frame);
                 push(vm, ZenValue_make_integer(val));
-                break;
+                NEXT();
             }
             
-            case OP_POP:
+            TARGET(OP_POP) {
                 pop(vm);
-                break;
-                
-            case OP_DUP:
+                NEXT();
+            }
+            
+            TARGET(OP_DUP) {
                 push(vm, peek(vm, 0));
-                break;
-                
-            case OP_SWAP: {
+                NEXT();
+            }
+            
+            TARGET(OP_SWAP) {
                 ZenValue a = pop(vm);
                 ZenValue b = pop(vm);
                 push(vm, a);
                 push(vm, b);
-                break;
+                NEXT();
             }
             
-            case OP_LOAD_LOCAL: {
+            TARGET(OP_LOAD_LOCAL) {
                 uint16_t slot = READ_U16(frame);
                 push(vm, frame->slots[slot]);
-                break;
+                NEXT();
             }
             
-            case OP_STORE_LOCAL: {
+            TARGET(OP_STORE_LOCAL) {
                 uint16_t slot = READ_U16(frame);
                 frame->slots[slot] = pop(vm);
-                break;
+                NEXT();
             }
             
-            case OP_LOAD_GLOBAL: {
+            TARGET(OP_LOAD_GLOBAL) {
                 ZenValue name = READ_CONST(frame);
                 ZenValue val = ZenMap_get_value_at_key(ZenValue_from_map(vm->globals), name);
                 push(vm, val);
-                break;
+                NEXT();
             }
             
-            case OP_STORE_GLOBAL: {
+            TARGET(OP_STORE_GLOBAL) {
                 ZenValue name = READ_CONST(frame);
                 ZenValue val = pop(vm);
                 ZenMap_set_value_at_key(ZenValue_from_map(vm->globals), name, val);
-                break;
+                NEXT();
             }
             
-            case OP_ADD: {
+            TARGET(OP_ADD) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_add(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_integer(a.as.integer + b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_decimal(a.as.decimal + b.as.decimal));
+                } else {
+                    push(vm, ZenValue_add(a, b));
+                }
+                NEXT();
             }
             
-            case OP_SUB: {
+            TARGET(OP_SUB) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_subtract(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_integer(a.as.integer - b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_decimal(a.as.decimal - b.as.decimal));
+                } else {
+                    push(vm, ZenValue_subtract(a, b));
+                }
+                NEXT();
             }
             
-            case OP_MUL: {
+            TARGET(OP_MUL) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_multiply(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_integer(a.as.integer * b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_decimal(a.as.decimal * b.as.decimal));
+                } else {
+                    push(vm, ZenValue_multiply(a, b));
+                }
+                NEXT();
             }
             
-            case OP_DIV: {
+            TARGET(OP_DIV) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_divide(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER && b.as.integer != 0 && (a.as.integer % b.as.integer == 0)) {
+                    push(vm, ZenValue_make_integer(a.as.integer / b.as.integer));
+                } else {
+                    push(vm, ZenValue_divide(a, b));
+                }
+                NEXT();
             }
             
-            case OP_MOD: {
+            TARGET(OP_MOD) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_modulo(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER && b.as.integer != 0) {
+                    push(vm, ZenValue_make_integer(a.as.integer % b.as.integer));
+                } else {
+                    push(vm, ZenValue_modulo(a, b));
+                }
+                NEXT();
             }
             
-            case OP_NEG: {
+            TARGET(OP_NEG) {
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_negate(a));
-                break;
+                if (a.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_integer(-a.as.integer));
+                } else if (a.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_decimal(-a.as.decimal));
+                } else {
+                    push(vm, ZenValue_negate(a));
+                }
+                NEXT();
             }
             
-            case OP_NOT: {
+            TARGET(OP_NOT) {
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_not(a));
-                break;
+                if (a.type == ZEN_BOOLEAN) {
+                    push(vm, ZenValue_make_boolean(!a.as.boolean));
+                } else {
+                    push(vm, ZenValue_not(a));
+                }
+                NEXT();
             }
             
-            case OP_EQ: {
+            TARGET(OP_EQ) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_equal(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer == b.as.integer));
+                } else if (a.type == ZEN_BOOLEAN && b.type == ZEN_BOOLEAN) {
+                    push(vm, ZenValue_make_boolean(a.as.boolean == b.as.boolean));
+                } else {
+                    push(vm, ZenValue_equal(a, b));
+                }
+                NEXT();
             }
             
-            case OP_NEQ: {
+            TARGET(OP_NEQ) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_not_equal(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer != b.as.integer));
+                } else if (a.type == ZEN_BOOLEAN && b.type == ZEN_BOOLEAN) {
+                    push(vm, ZenValue_make_boolean(a.as.boolean != b.as.boolean));
+                } else {
+                    push(vm, ZenValue_not_equal(a, b));
+                }
+                NEXT();
             }
             
-            case OP_LT: {
+            TARGET(OP_LT) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_less_than(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer < b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_boolean(a.as.decimal < b.as.decimal));
+                } else {
+                    push(vm, ZenValue_less_than(a, b));
+                }
+                NEXT();
             }
             
-            case OP_LTE: {
+            TARGET(OP_LTE) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_less_than_or_equal(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer <= b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_boolean(a.as.decimal <= b.as.decimal));
+                } else {
+                    push(vm, ZenValue_less_than_or_equal(a, b));
+                }
+                NEXT();
             }
             
-            case OP_GT: {
+            TARGET(OP_GT) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_greater_than(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer > b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_boolean(a.as.decimal > b.as.decimal));
+                } else {
+                    push(vm, ZenValue_greater_than(a, b));
+                }
+                NEXT();
             }
             
-            case OP_GTE: {
+            TARGET(OP_GTE) {
                 ZenValue b = pop(vm);
                 ZenValue a = pop(vm);
-                push(vm, ZenValue_greater_than_or_equal(a, b));
-                break;
+                if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
+                    push(vm, ZenValue_make_boolean(a.as.integer >= b.as.integer));
+                } else if (a.type == ZEN_DECIMAL && b.type == ZEN_DECIMAL) {
+                    push(vm, ZenValue_make_boolean(a.as.decimal >= b.as.decimal));
+                } else {
+                    push(vm, ZenValue_greater_than_or_equal(a, b));
+                }
+                NEXT();
             }
             
-            case OP_MAKE_LIST: {
+            TARGET(OP_MAKE_LIST) {
                 uint16_t count = READ_U16(frame);
                 ZenList* list = ZenList_new();
                 ZenValue lval = ZenValue_from_list(list);
-                // Stack contains items in push order: item0, item1, ...
                 ZenValue* start = vm->stack_top - count;
                 for (int i = 0; i < count; i++) {
                     ZenList_append_value(lval, start[i]);
                 }
                 vm->stack_top = start;
                 push(vm, lval);
-                break;
+                NEXT();
             }
             
-            case OP_MAKE_MAP: {
+            TARGET(OP_MAKE_MAP) {
                 uint16_t count = READ_U16(frame);
                 ZenMap* map = ZenMap_new();
                 ZenValue mval = ZenValue_from_map(map);
-                // Stack contains k0, v0, k1, v1, ...
                 ZenValue* start = vm->stack_top - (count * 2);
                 for (int i = 0; i < count * 2; i += 2) {
                     ZenMap_set_value_at_key(mval, start[i], start[i + 1]);
                 }
                 vm->stack_top = start;
                 push(vm, mval);
-                break;
+                NEXT();
             }
             
-            case OP_GET_INDEX: {
+            TARGET(OP_GET_INDEX) {
                 ZenValue key = pop(vm);
                 ZenValue target = pop(vm);
-                push(vm, ZenValue_get_at(target, key));
-                break;
+                if (target.type == ZEN_LIST && key.type == ZEN_INTEGER) {
+                    push(vm, ZenList_get_value_at_index(target, key));
+                } else if (target.type == ZEN_MAP) {
+                    push(vm, ZenMap_get_value_at_key(target, key));
+                } else {
+                    push(vm, ZenValue_get_at(target, key));
+                }
+                NEXT();
             }
             
-            case OP_SET_INDEX: {
+            TARGET(OP_SET_INDEX) {
                 ZenValue val = pop(vm);
                 ZenValue key = pop(vm);
                 ZenValue target = pop(vm);
-                ZenValue_set_at(target, key, val);
+                if (target.type == ZEN_LIST && key.type == ZEN_INTEGER) {
+                    ZenList_set_value_at_index(target, key, val);
+                } else if (target.type == ZEN_MAP) {
+                    ZenMap_set_value_at_key(target, key, val);
+                } else {
+                    ZenValue_set_at(target, key, val);
+                }
                 push(vm, val);
-                break;
+                NEXT();
             }
             
-            case OP_GET_PROP: {
+            TARGET(OP_GET_PROP) {
                 ZenValue key = READ_CONST(frame);
                 ZenValue target = pop(vm);
                 if (target.type == ZEN_MAP) {
                     push(vm, ZenMap_get_value_at_key(target, key));
+                } else if (key.type == ZEN_STRING && key.as.string) {
+                    push(vm, ZenValue_get_field(target, key.as.string));
                 } else {
                     push(vm, ZEN_NOTHING_VAL);
                 }
-                break;
+                NEXT();
             }
             
-            case OP_SET_PROP: {
+            TARGET(OP_SET_PROP) {
                 ZenValue key = READ_CONST(frame);
                 ZenValue val = pop(vm);
                 ZenValue target = pop(vm);
@@ -512,41 +664,49 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     ZenMap_set_value_at_key(target, key, val);
                 }
                 push(vm, val);
-                break;
+                NEXT();
             }
             
-            case OP_JUMP: {
+            TARGET(OP_CAST) {
+                ZenValue target_type = READ_CONST(frame);
+                ZenValue val = pop(vm);
+                const char* type_str = (target_type.type == ZEN_STRING && target_type.as.string) ? target_type.as.string : "";
+                push(vm, ZenValue_cast(val, type_str));
+                NEXT();
+            }
+            
+            TARGET(OP_JUMP) {
                 int16_t offset = READ_I16(frame);
                 frame->ip += offset;
-                break;
+                NEXT();
             }
             
-            case OP_JUMP_IF_FALSE: {
+            TARGET(OP_JUMP_IF_FALSE) {
                 int16_t offset = READ_I16(frame);
                 if (!is_truthy(peek(vm, 0))) {
                     frame->ip += offset;
                 }
-                break;
+                NEXT();
             }
             
-            case OP_JUMP_IF_TRUE: {
+            TARGET(OP_JUMP_IF_TRUE) {
                 int16_t offset = READ_I16(frame);
                 if (is_truthy(peek(vm, 0))) {
                     frame->ip += offset;
                 }
-                break;
+                NEXT();
             }
             
-            case OP_POP_JUMP_IF_FALSE: {
+            TARGET(OP_POP_JUMP_IF_FALSE) {
                 int16_t offset = READ_I16(frame);
                 ZenValue val = pop(vm);
                 if (!is_truthy(val)) {
                     frame->ip += offset;
                 }
-                break;
+                NEXT();
             }
             
-            case OP_CALL: {
+            TARGET(OP_CALL) {
                 uint8_t argc = (uint8_t)READ_U16(frame);
                 ZenValue callee = peek(vm, argc);
                 
@@ -602,10 +762,10 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     vm->stack_top -= (argc + 1);
                     push(vm, ZEN_NOTHING_VAL);
                 }
-                break;
+                NEXT();
             }
             
-            case OP_RETURN: {
+            TARGET(OP_RETURN) {
                 ZenValue result = pop(vm);
                 vm->frame_count--;
                 if (vm->frame_count == 0) {
@@ -614,10 +774,33 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 vm->stack_top = frame->slots - 1; /* Discard frame & callee */
                 push(vm, result);
                 frame = &vm->frames[vm->frame_count - 1];
-                break;
+                NEXT();
+            }
+
+            TARGET(OP_MAKE_CLOSURE) {
+                uint16_t proto_idx = READ_U16(frame);
+                uint8_t n_caps = READ_BYTE(frame);
+                ZenValue proto_val = frame->chunk->constants[proto_idx];
+                ZenChunk* proto_chunk = (ZenChunk*)proto_val.as.object;
+                ZenClosureData* c = (ZenClosureData*)calloc(1, sizeof(ZenClosureData));
+                if (!c) {
+                    push(vm, ZEN_NOTHING_VAL);
+                } else {
+                    c->fn = (void*)proto_chunk;
+                    c->n_caps = n_caps;
+                    c->arity = proto_chunk ? proto_chunk->num_locals : 0;
+                    for (int i = n_caps - 1; i >= 0; i--) {
+                        c->caps[i] = pop(vm);
+                    }
+                    ZenValue z;
+                    z.type = ZEN_FUNCTION;
+                    z.as.object = c;
+                    push(vm, z);
+                }
+                NEXT();
             }
             
-            case OP_PRINT: {
+            TARGET(OP_PRINT) {
                 uint8_t argc = (uint8_t)READ_U16(frame);
                 for (int i = argc - 1; i >= 0; i--) {
                     ZenValue val = pop(vm);
@@ -631,18 +814,25 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 }
                 printf("\n");
                 push(vm, ZEN_NOTHING_VAL);
-                break;
+                NEXT();
             }
             
-            case OP_HALT:
+            TARGET(OP_HALT)
                 return pop(vm);
                 
+#if ZEN_VM_DIRECT_THREADED
+        do_OP_UNKNOWN:
+            fprintf(stderr, "VM Error: Unknown opcode at %s:%d\n",
+                    frame->chunk->name, (int)(frame->ip - frame->chunk->code - 1));
+            return ZEN_NOTHING_VAL;
+#else
             default:
                 fprintf(stderr, "VM Error: Unknown opcode 0x%02X at %s:%d\n",
                         instruction, frame->chunk->name, (int)(frame->ip - frame->chunk->code - 1));
                 return ZEN_NOTHING_VAL;
         }
     }
+#endif
 }
 
 /* Mixed Execution ABI & Embed API (Phase 4) */
@@ -735,3 +925,230 @@ ZenValue ZenVM_call_named(ZenVM* vm, const char* func_name, int argc, ZenValue* 
     
     return ZEN_NOTHING_VAL;
 }
+
+/* --- Bytecode Binary Serialization & Packaging (.zbc) --- */
+
+#define ZEN_BYTECODE_MAGIC 0x424E455A /* 'Z' 'E' 'N' 'B' in little endian */
+#define ZEN_BYTECODE_VERSION 1
+
+int ZenChunk_save_file(ZenChunk* chunk, const char* path, uint64_t src_hash) {
+    if (!chunk || !path) return 0;
+    FILE* fp = fopen(path, "wb");
+    if (!fp) return 0;
+
+    uint32_t magic = ZEN_BYTECODE_MAGIC;
+    uint16_t version = ZEN_BYTECODE_VERSION;
+    fwrite(&magic, sizeof(uint32_t), 1, fp);
+    fwrite(&version, sizeof(uint16_t), 1, fp);
+    fwrite(&src_hash, sizeof(uint64_t), 1, fp);
+
+    uint16_t num_locals = (uint16_t)chunk->num_locals;
+    uint16_t const_count = (uint16_t)chunk->const_count;
+    fwrite(&num_locals, sizeof(uint16_t), 1, fp);
+    fwrite(&const_count, sizeof(uint16_t), 1, fp);
+
+    // Write Constants Pool
+    for (int i = 0; i < chunk->const_count; i++) {
+        ZenValue cv = chunk->constants[i];
+        uint8_t tag = (uint8_t)cv.type;
+        fwrite(&tag, sizeof(uint8_t), 1, fp);
+        switch (cv.type) {
+            case ZEN_BOOLEAN: {
+                uint8_t b = cv.as.boolean ? 1 : 0;
+                fwrite(&b, sizeof(uint8_t), 1, fp);
+                break;
+            }
+            case ZEN_INTEGER: {
+                int64_t iv = (int64_t)cv.as.integer;
+                fwrite(&iv, sizeof(int64_t), 1, fp);
+                break;
+            }
+            case ZEN_DECIMAL: {
+                double dv = cv.as.decimal;
+                fwrite(&dv, sizeof(double), 1, fp);
+                break;
+            }
+            case ZEN_STRING: {
+                const char* str = cv.as.string ? cv.as.string : "";
+                uint16_t slen = (uint16_t)strlen(str);
+                fwrite(&slen, sizeof(uint16_t), 1, fp);
+                if (slen > 0) fwrite(str, 1, slen, fp);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    // Write Code
+    uint32_t code_count = (uint32_t)chunk->count;
+    fwrite(&code_count, sizeof(uint32_t), 1, fp);
+    if (code_count > 0) {
+        fwrite(chunk->code, sizeof(uint8_t), code_count, fp);
+    }
+
+    // Write Debug Lines
+    if (code_count > 0 && chunk->lines) {
+        for (uint32_t i = 0; i < code_count; i++) {
+            int32_t line = (int32_t)chunk->lines[i];
+            fwrite(&line, sizeof(int32_t), 1, fp);
+        }
+    }
+
+    // Write Chunk Name
+    const char* cname = chunk->name ? chunk->name : "<script>";
+    uint16_t nlen = (uint16_t)strlen(cname);
+    fwrite(&nlen, sizeof(uint16_t), 1, fp);
+    if (nlen > 0) fwrite(cname, 1, nlen, fp);
+
+    fclose(fp);
+    return 1;
+}
+
+ZenChunk* ZenChunk_load_file(const char* path, uint64_t* out_src_hash) {
+    if (!path) return NULL;
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return NULL;
+
+    uint32_t magic = 0;
+    uint16_t version = 0;
+    if (fread(&magic, sizeof(uint32_t), 1, fp) != 1 || magic != ZEN_BYTECODE_MAGIC) {
+        fclose(fp);
+        return NULL;
+    }
+    if (fread(&version, sizeof(uint16_t), 1, fp) != 1 || version != ZEN_BYTECODE_VERSION) {
+        fclose(fp);
+        return NULL;
+    }
+    uint64_t src_hash = 0;
+    if (fread(&src_hash, sizeof(uint64_t), 1, fp) != 1) {
+        fclose(fp);
+        return NULL;
+    }
+    if (out_src_hash) *out_src_hash = src_hash;
+
+    uint16_t num_locals = 0;
+    uint16_t const_count = 0;
+    if (fread(&num_locals, sizeof(uint16_t), 1, fp) != 1 ||
+        fread(&const_count, sizeof(uint16_t), 1, fp) != 1) {
+        fclose(fp);
+        return NULL;
+    }
+
+    ZenChunk* chunk = ZenChunk_new(NULL);
+    chunk->num_locals = num_locals;
+
+    // Read Constants Pool
+    for (int i = 0; i < const_count; i++) {
+        uint8_t tag = 0;
+        if (fread(&tag, sizeof(uint8_t), 1, fp) != 1) {
+            ZenChunk_free(chunk);
+            fclose(fp);
+            return NULL;
+        }
+        ZenValue cv = ZEN_NOTHING_VAL;
+        switch (tag) {
+            case ZEN_NOTHING:
+                cv = ZEN_NOTHING_VAL;
+                break;
+            case ZEN_BOOLEAN: {
+                uint8_t b = 0;
+                if (fread(&b, sizeof(uint8_t), 1, fp) == 1) {
+                    cv = ZenValue_make_boolean(b != 0);
+                }
+                break;
+            }
+            case ZEN_INTEGER: {
+                int64_t iv = 0;
+                if (fread(&iv, sizeof(int64_t), 1, fp) == 1) {
+                    cv = ZenValue_make_integer(iv);
+                }
+                break;
+            }
+            case ZEN_DECIMAL: {
+                double dv = 0.0;
+                if (fread(&dv, sizeof(double), 1, fp) == 1) {
+                    cv = ZenValue_make_decimal(dv);
+                }
+                break;
+            }
+            case ZEN_STRING: {
+                uint16_t slen = 0;
+                if (fread(&slen, sizeof(uint16_t), 1, fp) == 1) {
+                    char* str_buf = (char*)malloc(slen + 1);
+                    if (slen > 0) {
+                        size_t read_bytes = fread(str_buf, 1, slen, fp);
+                        (void)read_bytes;
+                    }
+                    str_buf[slen] = '\0';
+                    cv = ZenValue_make_string(str_buf);
+                    free(str_buf);
+                }
+                break;
+            }
+            default:
+                cv = ZEN_NOTHING_VAL;
+                break;
+        }
+        ZenChunk_add_constant(chunk, cv);
+    }
+
+    // Read Code
+    uint32_t code_count = 0;
+    if (fread(&code_count, sizeof(uint32_t), 1, fp) != 1) {
+        ZenChunk_free(chunk);
+        fclose(fp);
+        return NULL;
+    }
+    for (uint32_t i = 0; i < code_count; i++) {
+        uint8_t byte = 0;
+        if (fread(&byte, sizeof(uint8_t), 1, fp) == 1) {
+            ZenChunk_emit_byte(chunk, byte, 0);
+        }
+    }
+
+    // Read Debug Lines
+    for (uint32_t i = 0; i < code_count; i++) {
+        int32_t line = 0;
+        if (fread(&line, sizeof(int32_t), 1, fp) == 1) {
+            chunk->lines[i] = (int)line;
+        }
+    }
+
+    // Read Chunk Name
+    uint16_t nlen = 0;
+    if (fread(&nlen, sizeof(uint16_t), 1, fp) == 1) {
+        char* name_buf = (char*)malloc(nlen + 1);
+        if (nlen > 0) {
+            size_t read_bytes = fread(name_buf, 1, nlen, fp);
+            (void)read_bytes;
+        }
+        name_buf[nlen] = '\0';
+        if (chunk->name) free(chunk->name);
+        chunk->name = name_buf;
+    }
+
+    fclose(fp);
+    return chunk;
+}
+
+ZenValue ZenVM_run_bytecode_file(ZenVM* vm, const char* path) {
+    if (!path) return ZEN_NOTHING_VAL;
+    ZenChunk* chunk = ZenChunk_load_file(path, NULL);
+    if (!chunk) {
+        fprintf(stderr, "VM Error: Failed to load bytecode file: %s\n", path);
+        return ZEN_NOTHING_VAL;
+    }
+    bool free_vm = false;
+    if (!vm) {
+        vm = ZenVM_new();
+        free_vm = true;
+    }
+    ZenValue result = ZenVM_run_chunk(vm, chunk);
+    ZenChunk_free(chunk);
+    if (free_vm) {
+        ZenVM_free(vm);
+    }
+    return result;
+}
+

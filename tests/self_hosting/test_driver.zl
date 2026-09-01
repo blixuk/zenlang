@@ -62,7 +62,7 @@ function test_run_args_help() {
     let args -> [`help`]
     let r -> Driver.run_args(args)
     let pass -> test.assert_equal(r[`code`], 0, `help exit 0`)
-    pass -> pass and test.assert_equal(Str.contains(r[`message`], `Usage`), true, `usage text`)
+    pass -> pass and test.assert_equal(Str.contains(r[`message`], `USAGE`), true, `usage text`)
     <- pass
 }
 

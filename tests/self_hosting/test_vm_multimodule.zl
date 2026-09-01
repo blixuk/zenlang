@@ -1,0 +1,112 @@
+import compiler.Parser as Parser
+import compiler.Bytecode as Bytecode
+import compiler.AST as AST
+import zen.test as test
+import zen.io.io as io
+import zen.io.file as file
+import zen.text.string as Str
+
+function test_vm_multimodule_linking() {
+    let src_mod_b -> `
+        export function compute_tax(amount, rate) {
+            <- amount * rate / 100
+        }
+    `
+    let src_mod_a -> `
+        import mod_b as B
+        function main() {
+            let tax -> B.compute_tax(500, 20)
+            <- tax
+        }
+    `
+    let prog_b -> Parser.parse_source(src_mod_b)
+    let prog_a -> Parser.parse_source(src_mod_a)
+    when prog_b == Nothing or prog_a == Nothing {
+        <- test.assert_equal(false, true, `test_vm_multimodule_linking (parse)`)
+    }
+    
+    // Compile chunk b and chunk a
+    let res_b -> Bytecode.compile_program(prog_b)
+    let res_a -> Bytecode.compile_program(prog_a)
+    
+    let globals -> Bytecode.create_vm_prelude()
+    // Run chunk b to register exports in globals
+    Bytecode.eval_chunk(res_b[`chunk`], globals)
+    // Run chunk a
+    Bytecode.eval_chunk(res_a[`chunk`], globals)
+    
+    let main_fn -> globals[`main`]
+    when main_fn == Nothing {
+        <- test.assert_equal(false, true, `test_vm_multimodule_linking (main found)`)
+    }
+    let tax_val -> Bytecode.eval_chunk_fn(main_fn, [], globals)
+    <- test.assert_equal(tax_val, 100, `test_vm_multimodule_linking`)
+}
+
+function test_vm_builtins_interop() {
+    let src -> `
+        let now -> time.now()
+        let s -> Str.to_string(now)
+        let is_ok -> Str.length(s) > 0
+        <- is_ok
+    `
+    let prog -> Parser.parse_source(src)
+    let res -> Bytecode.compile_program(prog)
+    let globals -> Bytecode.create_vm_prelude()
+    let val -> Bytecode.eval_chunk(res[`chunk`], globals)
+    <- test.assert_equal(val, true, `test_vm_builtins_interop`)
+}
+
+function test_vm_zbc_bundling() {
+    let src -> `
+        function calc(x, y) {
+            <- (x * 2) + (y * 3)
+        }
+        let res -> calc(10, 20)
+        <- res
+    `
+    let prog -> Parser.parse_source(src)
+    let b_res -> Bytecode.compile_program(prog)
+    let chunk -> b_res[`chunk`]
+    
+    let tmp_path -> `output/test_bundle_run.zbc`
+    Bytecode.write_bytecode_file(chunk, tmp_path, Str.length(src))
+    
+    let globals -> Bytecode.create_vm_prelude()
+    let eval_res -> Bytecode.eval_bytecode_file(tmp_path, globals)
+    <- test.assert_equal(eval_res, 80, `test_vm_zbc_bundling`)
+}
+
+function test_vm_for_in_loop() {
+    let src -> `
+        let nums -> [5, 10, 15, 20]
+        let sum -> 0
+        do for n in nums {
+            sum -> sum + n
+        }
+        <- sum
+    `
+    let prog -> Parser.parse_source(src)
+    let b_res -> Bytecode.compile_program(prog)
+    let globals -> Bytecode.create_vm_prelude()
+    let val -> Bytecode.eval_chunk(b_res[`chunk`], globals)
+    <- test.assert_equal(val, 50, `test_vm_for_in_loop`)
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `VM.MultiModuleLinking`, `fn` -> test_vm_multimodule_linking},
+        {`name` -> `VM.BuiltinsInterop`, `fn` -> test_vm_builtins_interop},
+        {`name` -> `VM.ZbcBundling`, `fn` -> test_vm_zbc_bundling},
+        {`name` -> `VM.ForInLoop`, `fn` -> test_vm_for_in_loop}
+    ]
+    <- test.run_suite(`Selfhost Bytecode VM Multi-Module & Bundling`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

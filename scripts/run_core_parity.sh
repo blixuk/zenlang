@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-ZEN="${ZEN:-python3 bootstrap/Zen.py}"
+ZEN="${ZEN:-$ROOT/bin/zen}"
 
 CORE=(
   tests/01_primitives.zl
@@ -32,6 +32,10 @@ normalize() {
     -e 's/\x1B\[[0-9;]*[A-Za-z]//g' \
     -e 's/Compiled successfully\. Running program://g' \
     -e 's/Running program://g' \
+    -e 's/ran output\/build\/.*\(exit [0-9]+\)//g' \
+    -e 's/\[INFO\] //g' \
+    -e 's/\[ERROR\] //g' \
+    -e 's/\[WARN\] //g' \
     -e '/^DEBUG:/d' \
     -e '/^DEBUG /d' \
     -e '/^!!! C COMPILE FAILED/d' \

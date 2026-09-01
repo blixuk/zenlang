@@ -28,6 +28,7 @@ Part of `selfhost/` parity effort.
   - **C1:** class method table; `Class()` ctor type; `obj.meth` resolution; arity; unknown method.
   - **C2:** with-alias typed from resource; soft `notes` if resource is not an arena.
   - **C3:** `owned`/`borrowed` type qualifiers; use-after-move; borrowed escape from `with` (untyped Variant aliases are not borrowed).
+- **Type Casting & Type Constructors:** `AST.K_CAST` (47), `AST.cast(expr, target_type, l, c)`, `<:` operator token (`TokenType.TYPE_CAST`), and type constructor calls (`Integer(val)`). Evaluates with high precedence via `parse_cast`. Emits `ZenValue_cast(val, "Type")` in C Codegen, `OP_CAST` (0x56) in Bytecode VM, and `eval_cast` in Interpreter. Full Type Cast Matrix documented in `doc/Zenlang Explained.md`.
 - **Stage 2.x / 7.x parser:** exact `is_kind`; map literals; `export`/`from import`; soft-keyword names (`scope`/`self`); kind-only operators; `with` / enum / lambda / `is`.
 - **Stage 5 / 5.x / 7.x:** `Codegen.zl` — functions, module lets→globals+init, lists/maps, for-in, builtins→ZenIO_*.
   - API: `transpile_source` / `transpile_program` (single unit + host main)
@@ -61,12 +62,20 @@ Part of `selfhost/` parity effort.
   - **Phase L:** `Default` sentinel materializes from a TypeAnn (`Integer`→0, `Boolean`→False, `String`→``, `List`→[]); `== Default` compares to that zero; `Nothing` is distinct. Lexer accepts lowercase aliases.
   - **Phase D:** classes/`extends`/`self`/`parent.meth`; closures by-value snapshot; enums + payload `is`; `with` + software MEM arena; `__builtin_memory` / real standard output. Guest `.length` must not hit `.has` on lists; never `Str.to_string` cyclic env maps (native overflow).
 - **Interpreter.zl** — endgame Phase A+D+E AST walk; tests: `test_interpreter.zl` (22 dual-path)
-- **Bytecode.zl & Mixed ABI:** `compile_program`, `eval_chunk`, `eval_chunk_fn`, `invoke_callable` — compiles AST directly to compact bytecode chunks for fast evaluation without GCC. `OP_CALL` dispatches seamlessly between bytecode chunks, native Zen functions, closures with captured environments, and host APIs. Tests: `test_vm.zl` (7 dual-path), `test_mixed_abi.zl` (6 dual-path).
+- **Bytecode.zl & Standalone Packaging (.zbc):** `compile_program`, `serialize_chunk`, `deserialize_chunk`, `write_bytecode_file`, `read_bytecode_file`, `compile_file_to_bundle`, `eval_bytecode_file`, `invoke_callable`, `create_vm_prelude` — compiles AST to compact bytecode chunks for immediate VM evaluation without GCC. Supports cross-module imports, namespaced member resolution, standard library prelude capabilities (`io`, `IO`, `output`, `input`, `file`, `term`, `sys`, `time`, `Str`, `zd`), bounds-safe local registers (`OP_LOAD_LOCAL`, `OP_STORE_LOCAL`), loop constructs (`K_FOR`, `K_WHILE`), and `.zbc` standalone binary bytecode caching and packaging (`zen bundle <file.zl>`), allowing source-free execution (`zen <file.zbc>`). Tests: `test_vm.zl` (7 dual-path), `test_vm_multimodule.zl` (4 dual-path), `test_mixed_abi.zl` (6 dual-path), `test_bytecode_cache.zl` (3 dual-path).
+- **Plugin.zl & Compiler Extension Subsystem:** `register_plugin`, `reset_plugins`, `dispatch_on_ast`, `dispatch_on_check`, `dispatch_on_codegen`, `dispatch_command`, `report_issue` — provides a modular extension ecosystem for developer tooling (linters, AST inspectors, comment/TODO trackers, custom CLI commands) keeping the compiler core lean and extensible. Default plugins: `TodoTracker`, `Linter`. Tests: `test_plugins.zl` (4 dual-path).
+- **Extensions.zl & Baked-in Developer Tooling:** `compiler_info`, `disasm_file`, `disasm_chunk`, `ast_file`, `bash_completion_script`, `get_command_suggestion`, `style_*` ANSI helpers — baked into `bin/zen` as native modules for zero runtime overhead.
+  - ANSI terminal styling functions respect `NO_COLOR` and `TERM=dumb`.
+  - Bytecode disassembler (`zen disasm`) formats chunk headers, constant pools, opcodes, and operands.
+  - AST inspector (`zen ast`) pretty-prints hierarchical AST structure with source line/column positions.
+  - Bash completion generator (`zen completion bash`) provides comprehensive CLI flag, subcommand, and file (`*.zl`, `*.zbc`) tab completion.
+  - Command typo suggestion engine matches prefix/substring/Levenshtein approximations ("Did you mean 'build'?"). Tests: `test_cli_modern.zl` (4 dual-path).
 - **Daemon.zl & Resident Compiler Service:** `zen daemon start|stop|status|clear` manages background compilation service over Unix Domain Socket (`/tmp/zen_compiler.sock`) with descriptor multiplexing via `ZenNet_poll`.
   - Integrates Linux `inotify` kernel watchers with debouncing for sub-millisecond incremental cache invalidation (`GraphBuilder.invalidate_cache`).
   - CLI commands (`compile`, `build`, `check`) transparently proxy requests to the daemon when active, falling back seamlessly to in-process compilation if unreachable.
-- **Stage 7:** Native + E2E + namespaced self-rebuild.
-  - `selfhost-smoke` → fixtures + class + enum/closure/with + native interpret + multi-unit; self-rebuild of `selfhost/zen.zl` (`ZEN_SELFHOST_REBUILD=1`) is 100% green (native selfhost parses and emits selfhost compiler to C, gcc links secondary binary `zen_from_self`, which executes help and compiles fixtures to working binaries with zero Python involvement).
+- **Stage 7:** Standalone Native Compiler + E2E + Self-Rebuild.
+  - Standalone `bin/zen` is pure native selfhost compiler with zero Python fallback (`./scripts/zen install`). Python bootstrap compiler is retained only as an initial seed / emergency rollback (`./scripts/zen install-rollback`).
+  - `selfhost-smoke` → 50/50 tests passed; self-rebuild of `selfhost/zen.zl` (`ZEN_SELFHOST_REBUILD=1`) is 100% green (native selfhost parses and emits selfhost compiler to C, gcc links secondary binary `zen_from_self`, which executes help, lists plugins, bundles bytecode, and compiles fixtures to working binaries with zero Python involvement).
   - Codegen file emit: `transpile_program_to_file` / `CG.out_path` buffers in-memory for single-pass file emission (`io.write_file`); `do`/`while` → `while (1)` + `break` so emit_expr temps stay in scope
   - **STRING/RUNE token_kind** stay C strings (`emit_literal_node`); `looks_int("0")` is true and would turn `` `0` `` into `ZenValue_make_integer(0LL)`
   - Driver merge uses in-place `StmtChunk` pointer linking (`AST.stmt_chunk` / `AST.set_stmt_chunk_next`) for $O(1)$ zero-copy module merging.
@@ -89,7 +98,7 @@ Part of `selfhost/` parity effort.
 - **Compiler IR:** Token and AST representations are native positional structs `[kind, ...]` with zero string dictionary overhead ([THREE_LAYER.md](../THREE_LAYER.md) Phase 1 Steps 1 & 2 complete).
 - **Bytecode Compiler & Evaluator:** `Bytecode.zl` — Three-Layer Phase 3 bytecode emitter (`compile_program`, `eval_chunk`, `eval_chunk_fn`). Compiles positional AST structs to bytecode chunks targeting the C runtime VM (`zen_vm.c`) or in-memory evaluator; tested in `tests/self_hosting/test_vm.zl` under dual execution (interpreter & native `-g`).
 - Memory: default automatic via runtime; opt-in `with`/arena → Codegen push/pop; checker scopes with-alias (ownership rules later).
-- Production handoff: hybrid via `install` (selfhost compile/run/interpret/test; bare `.zl` still bootstrap). Soak: `./scripts/zen ci-soak`. Emergency: `./scripts/zen install-rollback`.
+- Production install: standalone pure native compiler `bin/zen` (`./scripts/zen install`). Soak: `./scripts/zen ci-soak`. Emergency rollback: `./scripts/zen install-rollback`.
 
 # Work Guidance
 
@@ -115,7 +124,7 @@ Part of `selfhost/` parity effort.
 
 ```bash
 export ZEN_PATH=$PWD:$PWD/selfhost:$PWD/lib
-for t in test_lexer test_parser test_module test_checker test_codegen test_driver test_interpreter; do
+for t in test_lexer test_parser test_module test_checker test_codegen test_driver test_interpreter test_plugins test_bytecode_cache; do
   python3 bootstrap/Zen.py tests/self_hosting/${t}.zl
   python3 bootstrap/Zen.py -g tests/self_hosting/${t}.zl
 done
@@ -123,6 +132,7 @@ python3 bootstrap/Zen.py selfhost/zen.zl help
 python3 bootstrap/Zen.py selfhost/zen.zl interpret tests/self_hosting/fixtures/stage7_add.zl
 ./scripts/zen install-selfhost
 ./scripts/zen selfhost-smoke
+./scripts/zen install
 ```
 
 # Child DOX Index
@@ -135,6 +145,7 @@ python3 bootstrap/Zen.py selfhost/zen.zl interpret tests/self_hosting/fixtures/s
 - Codegen.zl — Stage 5+; CTranspiler.zl legacy
 - CLink.zl — Zen→C link/run (gcc/runtime)
 - Interpreter.zl — endgame #5 AST interpret MVP
-- Bytecode.zl — Three-Layer Phase 3 bytecode compiler & VM chunk evaluator
+- Bytecode.zl — Three-Layer Phase 3 bytecode compiler, caching (`.zbc`), and VM chunk evaluator
+- Plugin.zl — Compiler plugin & extension manager with lifecycle hooks
 - Driver.zl, main.zl — Stage 6/7+ CLI; ../zen.zl entry
 - Builder.zl, host_main.c — legacy

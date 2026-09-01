@@ -1,0 +1,6 @@
+import zen.io.io as io
+
+function main() {
+    io.writeln(`Hello from VM multi-module!`)
+    <- 0
+}

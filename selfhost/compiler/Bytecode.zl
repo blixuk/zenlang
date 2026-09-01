@@ -31,6 +31,12 @@ function op_div() { <- 51 }
 function op_mod() { <- 52 }
 function op_neg() { <- 53 }
 function op_not() { <- 54 }
+function op_bit_not() { <- 55 }
+function op_bit_and() { <- 56 }
+function op_bit_or() { <- 57 }
+function op_bit_xor() { <- 58 }
+function op_shl() { <- 59 }
+function op_shr() { <- 60 }
 
 function op_eq() { <- 64 }
 function op_neq() { <- 65 }
@@ -56,8 +62,43 @@ function op_return() { <- 113 }
 function op_halt() { <- 255 }
 
 function set_index(obj, key, val) {
+    when obj is List {
+        let kidx -> parse_int_str(key)
+        when kidx >= 0 and kidx < obj.length {
+            obj[kidx] -> val
+        }
+        <- val
+    }
     obj[key] -> val
     <- val
+}
+
+function vm_list_append(l, item) {
+    let arr -> []
+    arr -> l
+    arr.append(item)
+    <- arr
+}
+function vm_list_pop(l) {
+    let arr -> []
+    arr -> l
+    <- arr.pop()
+}
+function vm_map_has(m, key) {
+    let map_obj -> {}
+    map_obj -> m
+    when map_obj == Nothing { <- false }
+    <- map_obj[key] != Nothing
+}
+function vm_map_keys(m) {
+    let map_obj -> {}
+    map_obj -> m
+    <- map_obj.keys()
+}
+function vm_map_values(m) {
+    let map_obj -> {}
+    map_obj -> m
+    <- map_obj.values()
 }
 
 // --- Chunk Constructor & Helpers ---
@@ -67,6 +108,29 @@ function looks_int_str(s) {
     let n -> Str.length(s_str)
     when n == 0 {
         <- false
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `x` or Str.at(s_str, 1) == `X`) {
+        let hex_digits -> `0123456789abcdefABCDEF`
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when Str.index_of(hex_digits, ch) == -1 {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `b` or Str.at(s_str, 1) == `B`) {
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `0` and ch != `1` {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
     }
     let digits -> `0123456789`
     let i -> 0
@@ -87,12 +151,51 @@ function looks_int_str(s) {
 }
 
 function parse_int_str(s) {
+    when s == Nothing {
+        <- 0
+    }
+    when s is Integer {
+        <- s
+    }
     let s_str -> Str.to_string(s)
+    let n -> Str.length(s_str)
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `x` or Str.at(s_str, 1) == `X`) {
+        let hex_digits -> `0123456789abcdef`
+        let hex_lower -> Str.to_lower(s_str)
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(hex_lower, i)
+            let d -> Str.index_of(hex_digits, ch)
+            when d != -1 {
+                acc -> (acc * 16) + d
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `b` or Str.at(s_str, 1) == `B`) {
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch == `1` {
+                acc -> (acc * 2) + 1
+            } or when ch == `0` {
+                acc -> acc * 2
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
     let dot -> Str.index_of(s_str, `.`)
     when dot != -1 {
         s_str -> Str.substring(s_str, 0, dot)
+        n -> Str.length(s_str)
     }
-    let n -> Str.length(s_str)
+    when n == 0 {
+        <- 0
+    }
     let i -> 0
     let neg -> false
     when Str.at(s_str, 0) == `-` {
@@ -104,7 +207,9 @@ function parse_int_str(s) {
     do while i < n {
         let ch -> Str.at(s_str, i)
         let d -> Str.index_of(digits, ch)
-        acc -> acc * 10 + d
+        when d != -1 {
+            acc -> acc * 10 + d
+        }
         i -> i + 1
     }
     when neg {
@@ -114,7 +219,14 @@ function parse_int_str(s) {
 }
 
 function int_to_u8(n) {
-    <- parse_int_str(n) % 256
+    when n is Integer {
+        let v -> n % 256
+        when v < 0 { <- v + 256 }
+        <- v
+    }
+    let v -> parse_int_str(n) % 256
+    when v < 0 { <- v + 256 }
+    <- v
 }
 
 function make_chunk(name) {
@@ -135,7 +247,12 @@ function emit_byte(ctx, byte, line) {
 }
 
 function emit_u16(ctx, val, line) {
-    let u -> parse_int_str(val)
+    let u -> 0
+    when (val is Integer) {
+        u -> val
+    } or {
+        u -> parse_int_str(val)
+    }
     let lo -> u % 256
     let hi -> (u - lo) / 256
     emit_byte(ctx, hi, line)
@@ -183,9 +300,33 @@ function patch_jump(ctx, offset) {
     let c -> ctx[`chunk`]
     let code -> c[`code`]
     let jump -> code.length - (offset + 2)
-    let u -> parse_int_str(jump)
+    let u -> 0
+    when (jump is Integer) {
+        u -> jump
+    } or {
+        u -> parse_int_str(jump)
+    }
     when u < 0 {
-        u -> 65536 + jump
+        u -> 65536 + u
+    }
+    let lo -> u % 256
+    let hi -> (u - lo) / 256
+    code[offset] -> int_to_u8(hi)
+    code[offset + 1] -> int_to_u8(lo)
+}
+
+function patch_jump_target(ctx, offset, target_ip) {
+    let c -> ctx[`chunk`]
+    let code -> c[`code`]
+    let jump -> target_ip - (offset + 2)
+    let u -> 0
+    when (jump is Integer) {
+        u -> jump
+    } or {
+        u -> parse_int_str(jump)
+    }
+    when u < 0 {
+        u -> 65536 + u
     }
     let lo -> u % 256
     let hi -> (u - lo) / 256
@@ -199,10 +340,31 @@ function make_compiler(name) {
     <- {
         `chunk` -> make_chunk(name),
         `locals` -> [],
+        `captures` -> [],
+        `parent` -> Nothing,
         `scope_depth` -> 0,
         `max_locals` -> 0,
         `functions` -> {},
-        `errors` -> []
+        `variables` -> {},
+        `errors` -> [],
+        `breaks` -> [],
+        `continues` -> []
+    }
+}
+
+function make_compiler_child(name, parent_ctx) {
+    <- {
+        `chunk` -> make_chunk(name),
+        `locals` -> [],
+        `captures` -> [],
+        `parent` -> parent_ctx,
+        `scope_depth` -> 0,
+        `max_locals` -> 0,
+        `functions` -> {},
+        `variables` -> parent_ctx[`variables`],
+        `errors` -> [],
+        `breaks` -> [],
+        `continues` -> []
     }
 }
 
@@ -218,7 +380,6 @@ function exit_scope(ctx, line) {
         let last -> locals[locals.length - 1]
         when last[`depth`] > cur_depth {
             locals.pop()
-            emit_byte(ctx, 16, line) // OP_POP
         } or {
             break
         }
@@ -227,10 +388,11 @@ function exit_scope(ctx, line) {
 
 function resolve_local(ctx, name) {
     let locals -> ctx[`locals`]
+    let s_name -> Str.to_string(name)
     let i -> locals.length - 1
     do while i >= 0 {
         let loc -> locals[i]
-        when loc[`name`] == name {
+        when Str.to_string(loc[`name`]) == s_name {
             <- loc[`slot`]
         }
         i -> i - 1
@@ -238,11 +400,37 @@ function resolve_local(ctx, name) {
     <- -1
 }
 
+function resolve_or_capture_local(ctx, name) {
+    let slot -> resolve_local(ctx, name)
+    when slot >= 0 {
+        <- { `type` -> `local`, `index` -> slot }
+    }
+    when ctx[`parent`] != Nothing {
+        let p_slot -> resolve_local(ctx[`parent`], name)
+        when p_slot >= 0 {
+            let caps -> ctx[`captures`]
+            let ci -> 0
+            let s_name -> Str.to_string(name)
+            do while ci < caps.length {
+                when Str.to_string(caps[ci][`name`]) == s_name {
+                    <- { `type` -> `capture`, `index` -> ci }
+                }
+                ci -> ci + 1
+            }
+            let new_idx -> caps.length
+            caps.append({ `name` -> s_name, `parent_slot` -> p_slot })
+            <- { `type` -> `capture`, `index` -> new_idx }
+        }
+    }
+    <- Nothing
+}
+
 function declare_local(ctx, name) {
     let locals -> ctx[`locals`]
     let slot -> locals.length
+    let s_name -> Str.to_string(name)
     locals.append({
-        `name` -> name,
+        `name` -> s_name,
         `depth` -> ctx[`scope_depth`],
         `slot` -> slot
     })
@@ -254,16 +442,15 @@ function declare_local(ctx, name) {
 
 // --- AST Bytecode Compilation ---
 
-function compile_program(prog) {
+export function compile_program(prog) {
     let ctx -> make_compiler(`<main>`)
-    enter_scope(ctx)
     let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
     let n -> stmts.length
     let has_main -> false
     let i -> 0
     do while i < n {
         let s -> stmts[i]
-        when s != Nothing and s.length > 3 and s[0] == 21 and s[3] == `main` {
+        when s != Nothing and (AST.is_function(s) or s[0] == 21) and Str.to_string(AST.fn_name(s)) == `main` {
             has_main -> true
         }
         compile_statement(ctx, stmts[i])
@@ -271,7 +458,7 @@ function compile_program(prog) {
     }
     when has_main == true {
         let m_idx -> add_constant(ctx, `main`)
-        emit_byte(ctx, 33, 0) // OP_LOAD_GLOBAL
+        emit_byte(ctx, 34, 0) // OP_LOAD_GLOBAL
         emit_u16(ctx, m_idx, 0)
         emit_byte(ctx, 112, 0) // OP_CALL
         emit_u16(ctx, 0, 0)   // 0 args
@@ -294,31 +481,84 @@ function compile_statement(ctx, stmt) {
 
     when kind == 19 { // K_LET
         let name -> stmt[3]
+        when name != Nothing and (name is List) and name.length > 3 and name[0] == 45 { // K_TYPE_ANN
+            name -> name[3]
+        }
+        name -> Str.to_string(name)
         let init -> stmt[4]
         when init != Nothing {
             compile_expression(ctx, init)
         } or {
             emit_byte(ctx, 2, line) // OP_NOTHING
         }
-        let slot -> declare_local(ctx, name)
-        emit_byte(ctx, 33, line) // OP_STORE_LOCAL
-        emit_u16(ctx, slot, line)
+        when ctx[`scope_depth`] == 0 {
+            when ctx[`variables`] != Nothing {
+                ctx[`variables`][name] -> true
+            }
+            let name_idx -> add_constant(ctx, name)
+            emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+            emit_u16(ctx, name_idx, line)
+        } or {
+            let slot -> declare_local(ctx, name)
+            emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+            emit_u16(ctx, slot, line)
+        }
         <- Nothing
     }
 
     when kind == 9 { // K_ASSIGN
-        let name -> stmt[3]
+        let tgt -> stmt[3]
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 3 and tgt[0] == 45 { // K_TYPE_ANN
+            tgt -> tgt[3]
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 3 and (tgt[0] == 4 or tgt[0] == 30) { // K_VARIABLE or K_IDENTIFIER
+            tgt -> tgt[3]
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 4 and (tgt[0] == 8 or tgt[0] == 5) { // K_INDEX: obj[key] -> val
+            compile_expression(ctx, tgt[3]) // obj
+            compile_expression(ctx, tgt[4]) // key
+            compile_expression(ctx, stmt[4])   // val
+            emit_byte(ctx, 83, line)           // OP_SET_INDEX
+            emit_byte(ctx, 16, line)           // OP_POP
+            <- Nothing
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 4 and tgt[0] == 6 { // K_GET: obj.prop -> val
+            compile_expression(ctx, tgt[3]) // obj
+            let prop_name -> Str.to_string(tgt[4])
+            let name_idx -> add_constant(ctx, prop_name)
+            emit_byte(ctx, 1, line)            // OP_CONST
+            emit_u16(ctx, name_idx, line)
+            compile_expression(ctx, stmt[4])   // val
+            emit_byte(ctx, 83, line)           // OP_SET_INDEX
+            emit_byte(ctx, 16, line)           // OP_POP
+            <- Nothing
+        }
+        let name -> Str.to_string(tgt)
         let val -> stmt[4]
         compile_expression(ctx, val)
-        let slot -> resolve_local(ctx, name)
-        when slot >= 0 {
-            emit_byte(ctx, 33, line) // OP_STORE_LOCAL
-            emit_u16(ctx, slot, line)
+        let resolved -> resolve_or_capture_local(ctx, name)
+        when resolved != Nothing {
+            when resolved[`type`] == `local` {
+                emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+                emit_u16(ctx, resolved[`index`], line)
+            } or when resolved[`type`] == `capture` {
+                emit_byte(ctx, 39, line) // OP_STORE_CAPTURE
+                emit_u16(ctx, resolved[`index`], line)
+            }
         } or {
             let name_idx -> add_constant(ctx, name)
             emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
             emit_u16(ctx, name_idx, line)
         }
+        <- Nothing
+    }
+
+    when kind == 44 { // K_INDEX_ASSIGN: obj[key] -> val
+        compile_expression(ctx, stmt[3]) // obj
+        compile_expression(ctx, stmt[4]) // key
+        compile_expression(ctx, stmt[5]) // val
+        emit_byte(ctx, 83, line)         // OP_SET_INDEX
+        emit_byte(ctx, 16, line)         // OP_POP
         <- Nothing
     }
 
@@ -334,6 +574,20 @@ function compile_statement(ctx, stmt) {
     }
 
     when kind == 18 { // K_EXPR_STMT
+        let inner -> stmt[3]
+        when inner != Nothing and (inner is List) and inner.length > 3 and (inner[0] == 2 or inner[0] == 4) { // K_LITERAL or K_VARIABLE
+            let lval -> inner[3]
+            when lval == `break` and ctx[`breaks`] != Nothing {
+                let bj -> emit_jump(ctx, 96, line) // OP_JUMP
+                ctx[`breaks`].append(bj)
+                <- Nothing
+            }
+            when lval == `continue` and ctx[`continues`] != Nothing {
+                let cj -> emit_jump(ctx, 96, line) // OP_JUMP
+                ctx[`continues`].append(cj)
+                <- Nothing
+            }
+        }
         compile_expression(ctx, stmt[3])
         emit_byte(ctx, 16, line) // OP_POP
         <- Nothing
@@ -350,7 +604,20 @@ function compile_statement(ctx, stmt) {
             let cond -> c[3]
             let body -> c[4]
             
-            when cond == Nothing or cond == `else` {
+            let is_pat -> cond != Nothing and (cond is List) and cond.length > 4 and cond[0] == 38 and
+                          cond[4] != Nothing and (cond[4] is List) and cond[4].length > 3 and
+                          (cond[4][0] == 11 or cond[4][0] == 12 or cond[4][0] == 13 or cond[4][0] == 5)
+            when is_pat {
+                let val_expr -> cond[3]
+                let pat_expr -> cond[4]
+                enter_scope(ctx)
+                compile_expression(ctx, val_expr)
+                let val_slot -> declare_local(ctx, `__pat_subj_` + Str.to_string(line))
+                emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+                emit_u16(ctx, val_slot, line)
+                compile_pattern_case(ctx, val_slot, pat_expr, body, Nothing, end_jumps, line)
+                exit_scope(ctx, line)
+            } or when cond == Nothing or cond == `else` {
                 // Else fallback branch
                 enter_scope(ctx)
                 compile_block(ctx, body)
@@ -380,26 +647,308 @@ function compile_statement(ctx, stmt) {
         <- Nothing
     }
 
-    when kind == 25 or kind == 26 { // K_WHILE or K_DO_WHILE
+    when kind == 24 { // K_CHECK_STMT
+        let expr_node -> stmt[3]
+        let cases -> stmt[4]
+        let or_block -> stmt[5]
+        let raise_expr -> stmt[6]
+        
+        enter_scope(ctx)
+        compile_expression(ctx, expr_node)
+        let val_slot -> declare_local(ctx, `__check_subj_` + Str.to_string(line))
+        emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+        emit_u16(ctx, val_slot, line)
+        
+        let end_jumps -> []
+        let ci -> 0
+        let cn -> 0
+        when cases != Nothing { cn -> cases.length }
+        do while ci < cn {
+            let c -> cases[ci]
+            let pat -> c[3]
+            let body -> c[4]
+            let guard -> Nothing
+            when c.length > 5 { guard -> c[5] }
+            compile_pattern_case(ctx, val_slot, pat, body, guard, end_jumps, line)
+            ci -> ci + 1
+        }
+        
+        when cn == 0 and (or_block != Nothing or raise_expr != Nothing) {
+            emit_byte(ctx, 32, line) // OP_LOAD_LOCAL val_slot
+            emit_u16(ctx, val_slot, line)
+            let err_idx -> add_constant(ctx, `Error`)
+            emit_byte(ctx, 85, line) // OP_IS_TYPE Error
+            emit_u16(ctx, err_idx, line)
+            let j_not_err -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+            when or_block != Nothing {
+                compile_block(ctx, or_block)
+            }
+            when raise_expr != Nothing {
+                compile_expression(ctx, raise_expr)
+                emit_byte(ctx, 94, line) // OP_RAISE
+            }
+            patch_jump(ctx, j_not_err)
+        } or when or_block != Nothing or raise_expr != Nothing {
+            when or_block != Nothing {
+                compile_block(ctx, or_block)
+            }
+            when raise_expr != Nothing {
+                compile_expression(ctx, raise_expr)
+                emit_byte(ctx, 94, line) // OP_RAISE
+            }
+        }
+        
+        let ji -> 0
+        let jn -> end_jumps.length
+        do while ji < jn {
+            patch_jump(ctx, end_jumps[ji])
+            ji -> ji + 1
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+
+    when kind == 25 { // K_WHILE (while cond { body } or do while cond { body })
         let loop_start -> ctx[`chunk`][`code`].length
         let cond -> stmt[3]
         let body -> stmt[4]
-        when kind == 26 {
-            body -> stmt[3]
-            cond -> stmt[4]
-        }
         
+        let old_breaks -> ctx[`breaks`]
+        let old_conts -> ctx[`continues`]
+        let my_breaks -> []
+        let my_conts -> []
+        ctx[`breaks`] -> my_breaks
+        ctx[`continues`] -> my_conts
+
         compile_expression(ctx, cond)
         let exit_jump -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
         enter_scope(ctx)
         compile_block(ctx, body)
         exit_scope(ctx, line)
         
+        let ci -> 0
+        do while ci < my_conts.length {
+            patch_jump_target(ctx, my_conts[ci], loop_start)
+            ci -> ci + 1
+        }
+
         // Loop back
-        let back_jump -> loop_start - (ctx[`chunk`][`code`].length + 3)
         emit_byte(ctx, 96, line) // OP_JUMP
+        let back_jump -> loop_start - (ctx[`chunk`][`code`].length + 2)
         emit_i16(ctx, back_jump, line)
         patch_jump(ctx, exit_jump)
+
+        let bi -> 0
+        do while bi < my_breaks.length {
+            patch_jump(ctx, my_breaks[bi])
+            bi -> bi + 1
+        }
+        ctx[`breaks`] -> old_breaks
+        ctx[`continues`] -> old_conts
+        <- Nothing
+    }
+
+    when kind == 26 { // K_DO_WHILE
+        let body -> stmt[3]
+        let cond -> stmt[4]
+        let test_first -> true
+        when stmt.length > 5 and stmt[5] != Nothing {
+            test_first -> stmt[5]
+        }
+        
+        when test_first == true {
+            let loop_start -> ctx[`chunk`][`code`].length
+            let old_breaks -> ctx[`breaks`]
+            let old_conts -> ctx[`continues`]
+            let my_breaks -> []
+            let my_conts -> []
+            ctx[`breaks`] -> my_breaks
+            ctx[`continues`] -> my_conts
+
+            compile_expression(ctx, cond)
+            let exit_jump -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+
+            enter_scope(ctx)
+            compile_block(ctx, body)
+            exit_scope(ctx, line)
+
+            let cont_target -> ctx[`chunk`][`code`].length
+            let ci -> 0
+            do while ci < my_conts.length {
+                patch_jump_target(ctx, my_conts[ci], cont_target)
+                ci -> ci + 1
+            }
+
+            emit_byte(ctx, 96, line) // OP_JUMP
+            let back_jump -> loop_start - (ctx[`chunk`][`code`].length + 2)
+            emit_i16(ctx, back_jump, line)
+            patch_jump(ctx, exit_jump)
+
+            let bi -> 0
+            do while bi < my_breaks.length {
+                patch_jump(ctx, my_breaks[bi])
+                bi -> bi + 1
+            }
+            ctx[`breaks`] -> old_breaks
+            ctx[`continues`] -> old_conts
+            <- Nothing
+        } or {
+            let loop_start -> ctx[`chunk`][`code`].length
+            let old_breaks -> ctx[`breaks`]
+            let old_conts -> ctx[`continues`]
+            let my_breaks -> []
+            let my_conts -> []
+            ctx[`breaks`] -> my_breaks
+            ctx[`continues`] -> my_conts
+
+            enter_scope(ctx)
+            compile_block(ctx, body)
+            exit_scope(ctx, line)
+
+            let cont_target -> ctx[`chunk`][`code`].length
+            let ci -> 0
+            do while ci < my_conts.length {
+                patch_jump_target(ctx, my_conts[ci], cont_target)
+                ci -> ci + 1
+            }
+
+            compile_expression(ctx, cond)
+            // If cond is true, loop back to loop_start
+            emit_byte(ctx, 100, line) // OP_POP_JUMP_IF_TRUE
+            let back_jump -> loop_start - (ctx[`chunk`][`code`].length + 2)
+            emit_i16(ctx, back_jump, line)
+
+            let bi -> 0
+            do while bi < my_breaks.length {
+                patch_jump(ctx, my_breaks[bi])
+                bi -> bi + 1
+            }
+            ctx[`breaks`] -> old_breaks
+            ctx[`continues`] -> old_conts
+            <- Nothing
+        }
+    }
+
+    when kind == 28 { // K_ASSERT (! cond)
+        let cond -> stmt[3]
+        compile_expression(ctx, cond)
+        let pass_jump -> emit_jump(ctx, 100, line) // OP_POP_JUMP_IF_TRUE
+        // Assert failed: halt with error
+        emit_byte(ctx, 255, line) // OP_HALT
+        patch_jump(ctx, pass_jump)
+        <- Nothing
+    }
+
+    when kind == 31 { // K_CASE (is pattern arm)
+        let cond -> stmt[3]
+        let body -> stmt[4]
+        when cond == Nothing or cond == `else` {
+            enter_scope(ctx)
+            compile_block(ctx, body)
+            exit_scope(ctx, line)
+        } or {
+            compile_expression(ctx, cond)
+            let skip_jump -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+            enter_scope(ctx)
+            compile_block(ctx, body)
+            exit_scope(ctx, line)
+            patch_jump(ctx, skip_jump)
+        }
+        <- Nothing
+    }
+
+    when kind == 27 { // K_FOR (do for item in collection { body })
+        let raw_var -> stmt[3]
+        let var_name -> ``
+        when raw_var != Nothing and (raw_var is List) and raw_var.length > 3 {
+            var_name -> Str.to_string(raw_var[3])
+        } or when raw_var != Nothing {
+            var_name -> Str.to_string(raw_var)
+        }
+        let iter_expr -> stmt[4]
+        let body -> stmt[5]
+        
+        let old_breaks -> ctx[`breaks`]
+        let old_conts -> ctx[`continues`]
+        let my_breaks -> []
+        let my_conts -> []
+        ctx[`breaks`] -> my_breaks
+        ctx[`continues`] -> my_conts
+
+        // Evaluate collection expression and store in hidden local
+        compile_expression(ctx, iter_expr)
+        enter_scope(ctx)
+        let iter_slot -> declare_local(ctx, `__iter_obj_` + Str.to_string(line))
+        emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+        emit_u16(ctx, iter_slot, line)
+        
+        // Declare hidden index counter = 0
+        let zero_idx -> add_constant(ctx, 0)
+        emit_byte(ctx, 1, line) // OP_CONST
+        emit_u16(ctx, zero_idx, line)
+        let idx_slot -> declare_local(ctx, `__iter_idx_` + Str.to_string(line))
+        emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+        emit_u16(ctx, idx_slot, line)
+        
+        let loop_start -> ctx[`chunk`][`code`].length
+        
+        // Condition: idx < iter_obj.length
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL idx
+        emit_u16(ctx, idx_slot, line)
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL iter_obj
+        emit_u16(ctx, iter_slot, line)
+        let len_prop_idx -> add_constant(ctx, `length`)
+        emit_byte(ctx, 84, line) // OP_GET_PROP .length
+        emit_u16(ctx, len_prop_idx, line)
+        emit_byte(ctx, 66, line) // OP_LT
+        
+        let exit_jump -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+        
+        // Loop Body: var_name = iter_obj[idx]
+        enter_scope(ctx)
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL iter_obj
+        emit_u16(ctx, iter_slot, line)
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL idx
+        emit_u16(ctx, idx_slot, line)
+        emit_byte(ctx, 82, line) // OP_GET_INDEX
+        let var_slot -> declare_local(ctx, var_name)
+        emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+        emit_u16(ctx, var_slot, line)
+        
+        compile_block(ctx, body)
+        exit_scope(ctx, line)
+        
+        let cont_target -> ctx[`chunk`][`code`].length
+        let ci -> 0
+        do while ci < my_conts.length {
+            patch_jump_target(ctx, my_conts[ci], cont_target)
+            ci -> ci + 1
+        }
+
+        // Increment idx: idx = idx + 1
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL idx
+        emit_u16(ctx, idx_slot, line)
+        let one_idx -> add_constant(ctx, 1)
+        emit_byte(ctx, 1, line) // OP_CONST
+        emit_u16(ctx, one_idx, line)
+        emit_byte(ctx, 48, line) // OP_ADD
+        emit_byte(ctx, 33, line) // OP_STORE_LOCAL idx
+        emit_u16(ctx, idx_slot, line)
+        
+        // Loop back
+        emit_byte(ctx, 96, line) // OP_JUMP
+        let back_jump -> loop_start - (ctx[`chunk`][`code`].length + 2)
+        emit_i16(ctx, back_jump, line)
+        patch_jump(ctx, exit_jump)
+
+        let bi -> 0
+        do while bi < my_breaks.length {
+            patch_jump(ctx, my_breaks[bi])
+            bi -> bi + 1
+        }
+        ctx[`breaks`] -> old_breaks
+        ctx[`continues`] -> old_conts
+        exit_scope(ctx, line)
         <- Nothing
     }
 
@@ -441,6 +990,287 @@ function compile_statement(ctx, stmt) {
         <- Nothing
     }
 
+    when kind == 32 { // K_STRUCTURE
+        let s_name -> stmt[3]
+        let s_members -> stmt[4]
+        
+        let fn_ctx -> make_compiler(s_name)
+        enter_scope(fn_ctx)
+        
+        // Members become constructor parameters
+        let mi -> 0
+        let mn -> 0
+        when s_members != Nothing {
+            mn -> s_members.length
+        }
+        let entries -> []
+        entries.append([14, line, 0, [2, line, 0, `__type__`], [2, line, 0, s_name]])
+        
+        do while mi < mn {
+            let m -> s_members[mi]
+            let mname -> ``
+            when m != Nothing and m.length > 3 {
+                mname -> Str.to_string(m[3])
+            } or when m != Nothing {
+                mname -> Str.to_string(m)
+            }
+            when mname != `` {
+                declare_local(fn_ctx, mname)
+                entries.append([14, line, 0, [2, line, 0, mname], [4, line, 0, mname]])
+            }
+            mi -> mi + 1
+        }
+        
+        let map_node -> [12, line, 0, entries] // K_MAP
+        compile_expression(fn_ctx, map_node)
+        emit_byte(fn_ctx, 113, line) // OP_RETURN
+        
+        let fn_chunk -> fn_ctx[`chunk`]
+        fn_chunk[`num_locals`] -> fn_ctx[`max_locals`]
+        
+        let const_idx -> add_constant(ctx, fn_chunk)
+        emit_byte(ctx, 1, line) // OP_CONST
+        emit_u16(ctx, const_idx, line)
+        let gname_idx -> add_constant(ctx, s_name)
+        emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+        emit_u16(ctx, gname_idx, line)
+        <- Nothing
+    }
+
+    when kind == 35 { // K_ENUMERATOR
+        let e_name -> Str.to_string(stmt[3])
+        let e_members -> stmt[4]
+        let entries -> []
+        let mi -> 0
+        let mn -> 0
+        when e_members != Nothing {
+            mn -> e_members.length
+        }
+        do while mi < mn {
+            let m -> e_members[mi]
+            let m_name -> ``
+            let m_val -> Nothing
+            when m != Nothing and m.length > 3 {
+                m_name -> Str.to_string(m[3])
+                when m.length > 4 and m[4] != Nothing {
+                    m_val -> m[4]
+                } or {
+                    m_val -> [12, line, 0, [
+                        [14, line, 0, [2, line, 0, `enum_name`], [2, line, 0, e_name]],
+                        [14, line, 0, [2, line, 0, `variant_name`], [2, line, 0, m_name]],
+                        [14, line, 0, [2, line, 0, `data`], [11, line, 0, []]],
+                        [14, line, 0, [2, line, 0, `__type__`], [2, line, 0, e_name]]
+                    ]]
+                }
+            } or when m != Nothing {
+                m_name -> Str.to_string(m)
+                m_val -> [12, line, 0, [
+                    [14, line, 0, [2, line, 0, `enum_name`], [2, line, 0, e_name]],
+                    [14, line, 0, [2, line, 0, `variant_name`], [2, line, 0, m_name]],
+                    [14, line, 0, [2, line, 0, `data`], [11, line, 0, []]],
+                    [14, line, 0, [2, line, 0, `__type__`], [2, line, 0, e_name]]
+                ]]
+            }
+            when m_name != `` {
+                entries.append([14, line, 0, [2, line, 0, m_name], m_val])
+                // Direct global for enum member: e_name + "_" + m_name
+                compile_expression(ctx, m_val)
+                let direct_idx -> add_constant(ctx, e_name + `_` + m_name)
+                emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+                emit_u16(ctx, direct_idx, line)
+            }
+            mi -> mi + 1
+        }
+        let map_node -> [12, line, 0, entries] // K_MAP
+        compile_expression(ctx, map_node)
+        let gname_idx -> add_constant(ctx, e_name)
+        emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+        emit_u16(ctx, gname_idx, line)
+        <- Nothing
+    }
+
+    when kind == 7 { // K_SET (obj.name -> val)
+        compile_expression(ctx, stmt)
+        emit_byte(ctx, 16, line) // OP_POP
+        <- Nothing
+    }
+
+    when kind == 34 { // K_CLASS (class Name { members, methods })
+        let c_name -> Str.to_string(stmt[3])
+        let c_base -> stmt[4]
+        let c_members -> stmt[5]
+        let c_methods -> stmt[6]
+
+        // 1. Compile each method with `self` as the first parameter
+        let mi -> 0
+        let mn -> 0
+        when c_methods != Nothing {
+            mn -> c_methods.length
+        }
+        let init_method -> Nothing
+        do while mi < mn {
+            let m -> c_methods[mi]
+            let m_name -> Str.to_string(m[3])
+            let m_params -> m[4]
+            let m_body -> m[5]
+
+            // Prepend 'self' parameter
+            let full_params -> [[30, line, 0, `self`]]
+            let pi -> 0
+            let pn -> 0
+            when m_params != Nothing {
+                pn -> m_params.length
+            }
+            do while pi < pn {
+                full_params.append(m_params[pi])
+                pi -> pi + 1
+            }
+
+            let full_fn_name -> c_name + `_` + m_name
+            let m_ctx -> make_compiler(full_fn_name)
+            enter_scope(m_ctx)
+
+            let ppi -> 0
+            let ppn -> full_params.length
+            do while ppi < ppn {
+                let p -> full_params[ppi]
+                when p != Nothing and (p is List) and p.length > 3 and p[0] == 30 {
+                    declare_local(m_ctx, p[3])
+                } or {
+                    declare_local(m_ctx, p)
+                }
+                ppi -> ppi + 1
+            }
+
+            compile_block(m_ctx, m_body)
+            emit_byte(m_ctx, 2, line) // OP_NOTHING
+            emit_byte(m_ctx, 113, line) // OP_RETURN
+
+            let m_chunk -> m_ctx[`chunk`]
+            m_chunk[`num_locals`] -> m_ctx[`max_locals`]
+
+            let m_const_idx -> add_constant(ctx, m_chunk)
+            emit_byte(ctx, 1, line) // OP_CONST
+            emit_u16(ctx, m_const_idx, line)
+            let m_gname_idx -> add_constant(ctx, full_fn_name)
+            emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+            emit_u16(ctx, m_gname_idx, line)
+
+            when m_name == `init` {
+                init_method -> m
+            }
+            mi -> mi + 1
+        }
+
+        // 2. Compile Constructor function for ClassName
+        let ctor_params -> []
+        when init_method != Nothing and init_method[4] != Nothing {
+            ctor_params -> init_method[4]
+        }
+        let ctor_ctx -> make_compiler(c_name)
+        enter_scope(ctor_ctx)
+
+        let cpi -> 0
+        let cpn -> ctor_params.length
+        do while cpi < cpn {
+            let cp -> ctor_params[cpi]
+            when cp != Nothing and (cp is List) and cp.length > 3 and cp[0] == 30 {
+                declare_local(ctor_ctx, cp[3])
+            } or {
+                declare_local(ctor_ctx, cp)
+            }
+            cpi -> cpi + 1
+        }
+
+        // Build self = { __type__ -> c_name, ...member fields }
+        let entries -> []
+        entries.append([14, line, 0, [2, line, 0, `__type__`], [2, line, 0, c_name]])
+        let memi -> 0
+        let memn -> 0
+        when c_members != Nothing {
+            memn -> c_members.length
+        }
+        do while memi < memn {
+            let mem -> c_members[memi]
+            let memname -> ``
+            when mem != Nothing and (mem is List) and mem.length > 3 {
+                memname -> Str.to_string(mem[3])
+            } or when mem != Nothing {
+                memname -> Str.to_string(mem)
+            }
+            when memname != `` {
+                entries.append([14, line, 0, [2, line, 0, memname], [2, line, 0, Nothing]])
+            }
+            memi -> memi + 1
+        }
+
+        let self_map -> [12, line, 0, entries] // K_MAP
+        compile_expression(ctor_ctx, self_map)
+        let self_slot -> declare_local(ctor_ctx, `self`)
+        emit_byte(ctor_ctx, 33, line) // OP_STORE_LOCAL self
+        emit_u16(ctor_ctx, self_slot, line)
+
+        // If init exists, call ClassName_init(self, args)
+        when init_method != Nothing {
+            let init_gidx -> add_constant(ctor_ctx, c_name + `_init`)
+            emit_byte(ctor_ctx, 34, line) // OP_LOAD_GLOBAL
+            emit_u16(ctor_ctx, init_gidx, line)
+            emit_byte(ctor_ctx, 32, line) // OP_LOAD_LOCAL self
+            emit_u16(ctor_ctx, self_slot, line)
+            let ipi -> 0
+            do while ipi < cpn {
+                let iparam -> ctor_params[ipi]
+                let ipname -> ``
+                when iparam != Nothing and (iparam is List) and iparam.length > 3 and iparam[0] == 30 {
+                    ipname -> Str.to_string(iparam[3])
+                } or {
+                    ipname -> Str.to_string(iparam)
+                }
+                let resolved -> resolve_or_capture_local(ctor_ctx, ipname)
+                when resolved != Nothing {
+                    emit_byte(ctor_ctx, 32, line) // OP_LOAD_LOCAL
+                    emit_u16(ctor_ctx, resolved[`index`], line)
+                }
+                ipi -> ipi + 1
+            }
+            emit_byte(ctor_ctx, 112, line) // OP_CALL (argc = 1 + cpn)
+            emit_u16(ctor_ctx, 1 + cpn, line)
+            emit_byte(ctor_ctx, 16, line) // OP_POP
+        }
+
+        // Return self
+        emit_byte(ctor_ctx, 32, line) // OP_LOAD_LOCAL self
+        emit_u16(ctor_ctx, self_slot, line)
+        emit_byte(ctor_ctx, 113, line) // OP_RETURN
+
+        let ctor_chunk -> ctor_ctx[`chunk`]
+        ctor_chunk[`num_locals`] -> ctor_ctx[`max_locals`]
+
+        let ctor_const_idx -> add_constant(ctx, ctor_chunk)
+        emit_byte(ctx, 1, line) // OP_CONST
+        emit_u16(ctx, ctor_const_idx, line)
+        let ctor_gname_idx -> add_constant(ctx, c_name)
+        emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+        emit_u16(ctx, ctor_gname_idx, line)
+        <- Nothing
+    }
+
+    when kind == 16 { // K_RAISE
+        let rexpr -> stmt[3]
+        let err_fn_idx -> add_constant(ctx, `__builtin_error`)
+        emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL __builtin_error
+        emit_u16(ctx, err_fn_idx, line)
+        when rexpr != Nothing {
+            compile_expression(ctx, rexpr)
+        } or {
+            emit_byte(ctx, 2, line) // OP_NOTHING
+        }
+        emit_byte(ctx, 112, line) // OP_CALL (1 arg)
+        emit_u16(ctx, 1, line)
+        emit_byte(ctx, 113, line) // OP_RETURN
+        <- Nothing
+    }
+
     <- Nothing
 }
 
@@ -458,12 +1288,405 @@ function compile_block(ctx, node_or_stmts) {
         }
         <- Nothing
     }
-    let n -> node_or_stmts.length
-    let i -> 0
-    do while i < n {
-        compile_statement(ctx, node_or_stmts[i])
-        i -> i + 1
+    when node_or_stmts.length > 0 and (node_or_stmts[0] is List) { // List of statements
+        let n -> node_or_stmts.length
+        let i -> 0
+        do while i < n {
+            compile_statement(ctx, node_or_stmts[i])
+            i -> i + 1
+        }
+        <- Nothing
     }
+    when node_or_stmts.length > 0 and (node_or_stmts[0] is Integer) { // Single statement node
+        compile_statement(ctx, node_or_stmts)
+        <- Nothing
+    }
+    <- Nothing
+}
+
+function compile_block_expr(ctx, node_or_stmts) {
+    when node_or_stmts == Nothing {
+        emit_byte(ctx, 2, ctx[`line`])
+        <- Nothing
+    }
+    let stmts -> node_or_stmts
+    when (node_or_stmts is List) and node_or_stmts.length > 3 and node_or_stmts[0] == 20 { // K_BLOCK
+        stmts -> node_or_stmts[3]
+    }
+    when stmts != Nothing and (stmts is List) and stmts.length > 0 {
+        let first -> stmts[0]
+        when first is List {
+            let n -> stmts.length
+            let i -> 0
+            do while i < n {
+                let s -> stmts[i]
+                when i == n - 1 {
+                    when s != Nothing and (s is List) and s.length > 3 and s[0] == 18 {
+                        compile_expression(ctx, s[3])
+                    } or when s != Nothing and (s is List) and s.length > 3 and s[0] == 22 {
+                        compile_expression(ctx, s[3])
+                    } or when s != Nothing and (s is List) and s.length > 0 and s[0] != 18 and s[0] != 19 and s[0] != 22 and s[0] != 23 and s[0] != 24 and s[0] != 25 and s[0] != 26 and s[0] != 27 and s[0] != 28 and s[0] != 34 and s[0] != 35 and s[0] != 36 {
+                        compile_expression(ctx, s)
+                    } or {
+                        compile_statement(ctx, s)
+                    }
+                } or {
+                    compile_statement(ctx, s)
+                }
+                i -> i + 1
+            }
+            <- Nothing
+        } or when first is Integer {
+            when stmts[0] == 18 or stmts[0] == 22 {
+                compile_expression(ctx, stmts[3])
+            } or when stmts[0] != 19 and stmts[0] != 23 and stmts[0] != 24 and stmts[0] != 25 and stmts[0] != 26 and stmts[0] != 27 and stmts[0] != 28 and stmts[0] != 34 and stmts[0] != 35 and stmts[0] != 36 {
+                compile_expression(ctx, stmts)
+            } or {
+                compile_statement(ctx, stmts)
+            }
+            <- Nothing
+        }
+    }
+    emit_byte(ctx, 2, ctx[`line`])
+    <- Nothing
+}
+
+function compile_pattern_case(ctx, val_slot, pat, body, guard, end_jumps, line) {
+    when pat == Nothing {
+        enter_scope(ctx)
+        compile_block(ctx, body)
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    let pk -> pat[0]
+    
+    when pk == 11 { // K_LIST: [first, ...rest] or [a, b, c] or [1, _, 3]
+        enter_scope(ctx)
+        let elems -> pat[3]
+        let has_rest -> false
+        let fixed_n -> 0
+        when elems != Nothing {
+            fixed_n -> elems.length
+            when fixed_n > 0 and elems[fixed_n - 1] != Nothing and (elems[fixed_n - 1] is List) and elems[fixed_n - 1].length > 3 and elems[fixed_n - 1][0] == 17 { // K_REST
+                has_rest -> true
+                fixed_n -> fixed_n - 1
+            }
+        }
+        
+        // 1. Check val is List
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL val_slot
+        emit_u16(ctx, val_slot, line)
+        let t_idx -> add_constant(ctx, `List`)
+        emit_byte(ctx, 85, line) // OP_IS_TYPE
+        emit_u16(ctx, t_idx, line)
+        let j_fail1 -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+        
+        // 2. Check length
+        emit_byte(ctx, 32, line)
+        emit_u16(ctx, val_slot, line)
+        let len_idx -> add_constant(ctx, `length`)
+        emit_byte(ctx, 84, line) // OP_GET_PROP .length
+        emit_u16(ctx, len_idx, line)
+        emit_constant(ctx, fixed_n, line)
+        when has_rest {
+            emit_byte(ctx, 69, line) // OP_GTE
+        } or {
+            emit_byte(ctx, 64, line) // OP_EQ
+        }
+        let j_fail2 -> emit_jump(ctx, 99, line)
+        
+        // 3. Check fixed literal/constant elements
+        let j_lit_fails -> []
+        let ei -> 0
+        do while ei < fixed_n {
+            let el -> elems[ei]
+            when el != Nothing and (el is List) and el.length > 3 and el[0] == 2 { // K_LITERAL
+                emit_byte(ctx, 32, line)
+                emit_u16(ctx, val_slot, line)
+                emit_constant(ctx, ei, line)
+                emit_byte(ctx, 82, line) // OP_GET_INDEX
+                compile_expression(ctx, el)
+                emit_byte(ctx, 64, line) // OP_EQ
+                let j_lf -> emit_jump(ctx, 99, line)
+                j_lit_fails.append(j_lf)
+            }
+            ei -> ei + 1
+        }
+        
+        // 4. Bind variables
+        ei -> 0
+        do while ei < fixed_n {
+            let el -> elems[ei]
+            when el != Nothing and (el is List) and el.length > 3 and el[0] == 4 { // K_VARIABLE
+                let vname -> Str.to_string(el[3])
+                when vname != `_` {
+                    emit_byte(ctx, 32, line)
+                    emit_u16(ctx, val_slot, line)
+                    emit_constant(ctx, ei, line)
+                    emit_byte(ctx, 82, line) // OP_GET_INDEX
+                    let bslot -> declare_local(ctx, vname)
+                    emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+                    emit_u16(ctx, bslot, line)
+                }
+            }
+            ei -> ei + 1
+        }
+        when has_rest {
+            let rest_node -> elems[elems.length - 1]
+            let rname -> Str.to_string(rest_node[3])
+            when rname != `_` {
+                emit_constant(ctx, fixed_n, line)
+                emit_byte(ctx, 32, line)
+                emit_u16(ctx, val_slot, line)
+                emit_byte(ctx, 49, line) // OP_SUB (fixed_n - list drops start)
+                let rslot -> declare_local(ctx, rname)
+                emit_byte(ctx, 33, line)
+                emit_u16(ctx, rslot, line)
+            }
+        }
+        
+        // 5. Guard check
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        
+        // 6. Body & jump to end
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        
+        // 7. Patch failure jumps
+        patch_jump(ctx, j_fail1)
+        patch_jump(ctx, j_fail2)
+        let li -> 0
+        do while li < j_lit_fails.length {
+            patch_jump(ctx, j_lit_fails[li])
+            li -> li + 1
+        }
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    when pk == 13 or pk == 12 { // K_STRUCT_INIT or K_MAP: Point { x, y } or { `name` -> n }
+        enter_scope(ctx)
+        let fields -> Nothing
+        let struct_name -> ``
+        when pk == 13 {
+            struct_name -> Str.to_string(pat[3])
+            when pat.length > 4 { fields -> pat[4] }
+        } or when pk == 12 {
+            when pat.length > 3 { fields -> pat[3] }
+        }
+        
+        // Check val is Map
+        emit_byte(ctx, 32, line)
+        emit_u16(ctx, val_slot, line)
+        let t_idx -> add_constant(ctx, `Map`)
+        emit_byte(ctx, 85, line) // OP_IS_TYPE
+        emit_u16(ctx, t_idx, line)
+        let j_fail1 -> emit_jump(ctx, 99, line)
+        
+        // If struct_name present, check val is struct_name
+        let j_fail_type -> -1
+        when struct_name != `` {
+            emit_byte(ctx, 32, line)
+            emit_u16(ctx, val_slot, line)
+            let s_idx -> add_constant(ctx, struct_name)
+            emit_byte(ctx, 85, line) // OP_IS_TYPE struct_name
+            emit_u16(ctx, s_idx, line)
+            j_fail_type -> emit_jump(ctx, 99, line)
+        }
+        
+        // Bind fields
+        when fields != Nothing {
+            let fi -> 0
+            do while fi < fields.length {
+                let f -> fields[fi]
+                when f != Nothing and (f is List) and f.length > 3 {
+                    let raw_key -> ``
+                    when f[3] != Nothing and (f[3] is List) and f[3].length > 3 and f[3][0] == 2 { // K_LITERAL
+                        raw_key -> Str.to_string(f[3][3])
+                    } or {
+                        raw_key -> Str.to_string(f[3])
+                    }
+                    let bind_name -> ``
+                    when f.length > 4 and f[4] != Nothing and (f[4] is List) and f[4].length > 3 and f[4][0] == 4 {
+                        bind_name -> Str.to_string(f[4][3])
+                    } or {
+                        bind_name -> Str.to_string(raw_key)
+                    }
+                    when bind_name != `_` {
+                        emit_byte(ctx, 32, line)
+                        emit_u16(ctx, val_slot, line)
+                        let k_idx -> add_constant(ctx, Str.to_string(raw_key))
+                        emit_byte(ctx, 1, line)
+                        emit_u16(ctx, k_idx, line)
+                        emit_byte(ctx, 82, line) // OP_GET_INDEX
+                        let bslot -> declare_local(ctx, bind_name)
+                        emit_byte(ctx, 33, line)
+                        emit_u16(ctx, bslot, line)
+                    }
+                }
+                fi -> fi + 1
+            }
+        }
+        
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        
+        patch_jump(ctx, j_fail1)
+        when j_fail_type >= 0 {
+            patch_jump(ctx, j_fail_type)
+        }
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    when pk == 5 { // K_CALL: Result.Ok(v) or Option.Some(x)
+        enter_scope(ctx)
+        let callee -> pat[3]
+        let args -> pat[4]
+        let variant_name -> ``
+        let enum_name -> ``
+        when callee != Nothing and (callee is List) and callee.length > 4 and callee[0] == 6 { // K_GET
+            when callee[3] != Nothing and (callee[3] is List) and callee[3].length > 3 and callee[3][0] == 4 {
+                enum_name -> Str.to_string(callee[3][3])
+            }
+            variant_name -> Str.to_string(callee[4])
+        } or when callee != Nothing and (callee is List) and callee.length > 3 and callee[0] == 4 { // K_VARIABLE
+            variant_name -> Str.to_string(callee[3])
+        }
+        
+        // Check type is Variant / Enum
+        emit_byte(ctx, 32, line)
+        emit_u16(ctx, val_slot, line)
+        let is_ok -> add_constant(ctx, `Variant`)
+        emit_byte(ctx, 85, line) // OP_IS_TYPE Variant
+        emit_u16(ctx, is_ok, line)
+        let j_fail1 -> emit_jump(ctx, 99, line)
+        
+        // Check variant_name if present
+        let j_fail_var -> -1
+        when variant_name != `` {
+            emit_byte(ctx, 32, line)
+            emit_u16(ctx, val_slot, line)
+            let v_idx -> add_constant(ctx, variant_name)
+            emit_byte(ctx, 85, line) // OP_IS_TYPE variant_name
+            emit_u16(ctx, v_idx, line)
+            j_fail_var -> emit_jump(ctx, 99, line)
+        }
+        
+        // Bind args from variant data / list
+        when args != Nothing {
+            let ai -> 0
+            do while ai < args.length {
+                let a -> args[ai]
+                when a != Nothing and (a is List) and a.length > 3 and a[0] == 4 {
+                    let aname -> Str.to_string(a[3])
+                    when aname != `_` {
+                        emit_byte(ctx, 32, line)
+                        emit_u16(ctx, val_slot, line)
+                        let data_prop -> add_constant(ctx, `data`)
+                        emit_byte(ctx, 84, line) // OP_GET_PROP .data
+                        emit_u16(ctx, data_prop, line)
+                        emit_constant(ctx, ai, line)
+                        emit_byte(ctx, 82, line) // OP_GET_INDEX
+                        let aslot -> declare_local(ctx, aname)
+                        emit_byte(ctx, 33, line)
+                        emit_u16(ctx, aslot, line)
+                    }
+                }
+                ai -> ai + 1
+            }
+        }
+        
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        
+        patch_jump(ctx, j_fail1)
+        when j_fail_var >= 0 {
+            patch_jump(ctx, j_fail_var)
+        }
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    when pk == 4 { // K_VARIABLE: case n when n < 10
+        enter_scope(ctx)
+        let vname -> Str.to_string(pat[3])
+        when vname != `_` {
+            emit_byte(ctx, 32, line)
+            emit_u16(ctx, val_slot, line)
+            let vslot -> declare_local(ctx, vname)
+            emit_byte(ctx, 33, line)
+            emit_u16(ctx, vslot, line)
+        }
+        
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    // Fallback literal / expression equality match
+    enter_scope(ctx)
+    emit_byte(ctx, 32, line)
+    emit_u16(ctx, val_slot, line)
+    compile_expression(ctx, pat)
+    emit_byte(ctx, 64, line) // OP_EQ
+    let j_fail1 -> emit_jump(ctx, 99, line)
+    
+    let j_guard -> -1
+    when guard != Nothing {
+        compile_expression(ctx, guard)
+        j_guard -> emit_jump(ctx, 99, line)
+    }
+    
+    compile_block(ctx, body)
+    let j_end -> emit_jump(ctx, 96, line)
+    end_jumps.append(j_end)
+    
+    patch_jump(ctx, j_fail1)
+    when j_guard >= 0 {
+        patch_jump(ctx, j_guard)
+    }
+    exit_scope(ctx, line)
     <- Nothing
 }
 
@@ -477,15 +1700,34 @@ function compile_expression(ctx, expr) {
 
     when kind == 2 { // K_LITERAL
         let val -> expr[3]
-        when val == Nothing {
+        let tok_kind -> ``
+        when expr.length > 4 and expr[4] != Nothing { tok_kind -> expr[4] }
+        let tok_kind_str -> Str.to_string(tok_kind)
+        when tok_kind == 19 or tok_kind_str == `19` or tok_kind_str == `NOTHING` or val == Nothing {
             emit_byte(ctx, 2, line) // OP_NOTHING
-        } or when val == true or val == `true` or val == `True` {
-            emit_byte(ctx, 4, line) // OP_TRUE
-        } or when val == false or val == `false` or val == `False` {
-            emit_byte(ctx, 5, line) // OP_FALSE
-        } or when looks_int_str(val) {
-            let num -> parse_int_str(val)
-            emit_constant(ctx, num, line)
+        } or when tok_kind == 20 or tok_kind_str == `20` or tok_kind_str == `DEFAULT` {
+            emit_byte(ctx, 2, line) // OP_NOTHING
+        } or when tok_kind == 26 or tok_kind_str == `26` or tok_kind_str == `BOOLEAN` or (val is Boolean) {
+            when val == true or val == `true` or val == `True` {
+                emit_byte(ctx, 4, line) // OP_TRUE
+            } or {
+                emit_byte(ctx, 5, line) // OP_FALSE
+            }
+        } or when tok_kind == 22 or tok_kind_str == `22` or tok_kind_str == `INTEGER` or tok_kind_str == `Int` or (val is Integer) {
+            when val is Integer {
+                emit_constant(ctx, val, line)
+            } or when looks_int_str(val) {
+                emit_constant(ctx, parse_int_str(val), line)
+            } or {
+                emit_constant(ctx, val, line)
+            }
+        } or when tok_kind == 23 or tok_kind_str == `23` or tok_kind_str == `DECIMAL` or tok_kind_str == `Float` or (val is Decimal) {
+            when val is Decimal {
+                emit_constant(ctx, val, line)
+            } or {
+                let num_str -> Str.to_string(val)
+                emit_constant(ctx, num_str.to_number(), line)
+            }
         } or {
             emit_constant(ctx, val, line)
         }
@@ -494,17 +1736,26 @@ function compile_expression(ctx, expr) {
 
     when kind == 4 { // K_VARIABLE
         let name -> expr[3]
-        when name == `Nothing` {
+        when name != Nothing and (name is List) and name.length > 3 and name[0] == 45 { // K_TYPE_ANN
+            name -> name[3]
+        }
+        name -> Str.to_string(name)
+        when name == `Nothing` or name == `nothing` or name == `Default` or name == `default` {
             emit_byte(ctx, 2, line) // OP_NOTHING
         } or when name == `True` or name == `true` {
             emit_byte(ctx, 4, line) // OP_TRUE
         } or when name == `False` or name == `false` {
             emit_byte(ctx, 5, line) // OP_FALSE
         } or {
-            let slot -> resolve_local(ctx, name)
-            when slot >= 0 {
-                emit_byte(ctx, 32, line) // OP_LOAD_LOCAL
-                emit_u16(ctx, slot, line)
+            let resolved -> resolve_or_capture_local(ctx, name)
+            when resolved != Nothing {
+                when resolved[`type`] == `local` {
+                    emit_byte(ctx, 32, line) // OP_LOAD_LOCAL
+                    emit_u16(ctx, resolved[`index`], line)
+                } or when resolved[`type`] == `capture` {
+                    emit_byte(ctx, 38, line) // OP_LOAD_CAPTURE
+                    emit_u16(ctx, resolved[`index`], line)
+                }
             } or {
                 let name_idx -> add_constant(ctx, name)
                 emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
@@ -545,18 +1796,84 @@ function compile_expression(ctx, expr) {
         or when op == `*` { emit_byte(ctx, 50, line) } // OP_MUL
         or when op == `/` { emit_byte(ctx, 51, line) } // OP_DIV
         or when op == `%` { emit_byte(ctx, 52, line) } // OP_MOD
+        or when op == `&` or op == `&&` { emit_byte(ctx, 56, line) } // OP_BIT_AND
+        or when op == `|` or op == `||` { emit_byte(ctx, 57, line) } // OP_BIT_OR
+        or when op == `^` or op == `^^` { emit_byte(ctx, 58, line) } // OP_BIT_XOR
+        or when op == `<<` { emit_byte(ctx, 59, line) } // OP_SHL
+        or when op == `>>` { emit_byte(ctx, 60, line) } // OP_SHR
         or when op == `==` { emit_byte(ctx, 64, line) } // OP_EQ
         or when op == `!=` { emit_byte(ctx, 65, line) } // OP_NEQ
         or when op == `<` { emit_byte(ctx, 66, line) }  // OP_LT
         or when op == `<=` { emit_byte(ctx, 67, line) } // OP_LTE
         or when op == `>` { emit_byte(ctx, 68, line) }  // OP_GT
         or when op == `>=` { emit_byte(ctx, 69, line) } // OP_GTE
+        or when op == `..` { emit_byte(ctx, 88, line) } // OP_RANGE_EXCL
+        or when op == `..=` { emit_byte(ctx, 89, line) } // OP_RANGE_INCL
+        or when op == `++` { emit_byte(ctx, 90, line) } // OP_CONCAT_APPEND
+        or when op == `--` { emit_byte(ctx, 91, line) } // OP_DROP
         <- Nothing
     }
 
     when kind == 5 { // K_CALL
         let callee -> expr[3]
         let args -> expr[4]
+        when callee != Nothing and callee[0] == 4 { // K_VARIABLE
+            let cname -> Str.to_string(callee[3])
+            when is_type_name_str(cname) {
+                when args != Nothing and args.length >= 1 {
+                    compile_expression(ctx, args[0])
+                } or {
+                    emit_byte(ctx, 2, line) // OP_NOTHING
+                }
+                let const_idx -> add_constant(ctx, cname)
+                emit_byte(ctx, 86, line) // OP_CAST
+                emit_u16(ctx, const_idx, line)
+                <- Nothing
+            }
+        }
+        when callee != Nothing and callee[0] == 6 { // K_GET
+            let obj -> callee[3]
+            let mname -> Str.to_string(callee[4])
+            when obj != Nothing and obj[0] == 4 { // K_VARIABLE
+                let oname -> Str.to_string(obj[3])
+                let is_local_var -> resolve_local(ctx, oname) >= 0
+                when is_local_var == false and ctx[`parent`] != Nothing {
+                    is_local_var -> resolve_or_capture_local(ctx, oname) != Nothing
+                }
+                let is_top_var -> false
+                when ctx[`variables`] != Nothing and ctx[`variables`][oname] == true {
+                    is_top_var -> true
+                }
+                when is_local_var == false and is_top_var == false and
+                     oname != `__builtin_set` and oname != `__builtin_map` and
+                     oname != `__builtin_list` and oname != `__builtin_math` and
+                     oname != `__builtin_io` and oname != `__builtin_file` and
+                     oname != `__builtin_term` and oname != `__builtin_sys` and
+                     oname != `__builtin_time` and oname != `__builtin_string` and
+                     oname != `__builtin_process` and oname != `__builtin_regex` and
+                     oname != `__builtin_net` and
+                     oname != `__builtin_output` and oname != `__builtin_input` and
+                     oname != `__builtin_reflect` and oname != `__builtin` {
+                    let direct_name -> oname + `_` + mname
+                    let name_idx -> add_constant(ctx, direct_name)
+                    emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
+                    emit_u16(ctx, name_idx, line)
+                    
+                    let an -> 0
+                    when args != Nothing {
+                        an -> args.length
+                        let ai -> 0
+                        do while ai < an {
+                            compile_expression(ctx, args[ai])
+                            ai -> ai + 1
+                        }
+                    }
+                    emit_byte(ctx, 112, line) // OP_CALL
+                    emit_u16(ctx, an, line)
+                    <- Nothing
+                }
+            }
+        }
         
         compile_expression(ctx, callee)
         let an -> args.length
@@ -567,6 +1884,51 @@ function compile_expression(ctx, expr) {
         }
         emit_byte(ctx, 112, line) // OP_CALL
         emit_u16(ctx, an, line)
+        <- Nothing
+    }
+
+    when kind == 1 { // K_UNARY (op, right)
+        let op_name -> Str.to_string(expr[3])
+        let right_expr -> expr[4]
+        compile_expression(ctx, right_expr)
+        when op_name == `not` or op_name == `!` {
+            emit_byte(ctx, 54, line) // OP_NOT
+        } or when op_name == `~` {
+            emit_byte(ctx, 55, line) // OP_BIT_NOT
+        } or when op_name == `-` {
+            emit_byte(ctx, 53, line) // OP_NEG
+        } or when op_name == `+` {
+            // No-op
+        } or {
+            emit_byte(ctx, 54, line)
+        }
+        <- Nothing
+    }
+
+    when kind == 10 { // K_LOGICAL (left, op, right)
+        let op_name -> Str.to_string(expr[4])
+        when op_name == `and` {
+            compile_expression(ctx, expr[3])
+            let skip_jump -> emit_jump(ctx, 97, line) // OP_JUMP_IF_FALSE
+            emit_byte(ctx, 4, line)                   // OP_POP
+            compile_expression(ctx, expr[5])
+            patch_jump(ctx, skip_jump)
+            <- Nothing
+        }
+        when op_name == `or` {
+            compile_expression(ctx, expr[3])
+            let skip_jump -> emit_jump(ctx, 98, line) // OP_JUMP_IF_TRUE
+            emit_byte(ctx, 4, line)                   // OP_POP
+            compile_expression(ctx, expr[5])
+            patch_jump(ctx, skip_jump)
+            <- Nothing
+        }
+        when op_name == `xor` {
+            compile_expression(ctx, expr[3])
+            compile_expression(ctx, expr[5])
+            emit_byte(ctx, 65, line) // OP_NEQ
+            <- Nothing
+        }
         <- Nothing
     }
 
@@ -589,8 +1951,12 @@ function compile_expression(ctx, expr) {
         let ei -> 0
         do while ei < en {
             let entry -> entries[ei]
-            let kname -> Str.to_string(entry[3])
-            emit_constant(ctx, kname, line)
+            let knode -> entry[3]
+            when knode != Nothing and (knode is List) and knode.length > 0 {
+                compile_expression(ctx, knode)
+            } or {
+                emit_constant(ctx, Str.to_string(knode), line)
+            }
             compile_expression(ctx, entry[4])
             ei -> ei + 1
         }
@@ -599,16 +1965,75 @@ function compile_expression(ctx, expr) {
         <- Nothing
     }
 
+    when kind == 13 { // K_STRUCT_INIT (Point { x -> 10, y -> 20 } or Point { x, y })
+        let sname -> Str.to_string(expr[3])
+        let fields -> expr[4]
+        let fn -> 0
+        when fields != Nothing { fn -> fields.length }
+        
+        // Push '__type__' -> sname
+        emit_constant(ctx, `__type__`, line)
+        emit_constant(ctx, sname, line)
+        
+        let fi -> 0
+        do while fi < fn {
+            let f -> fields[fi]
+            let kname -> Str.to_string(f[3])
+            let fval -> f[4]
+            emit_constant(ctx, kname, line)
+            when fval == Nothing {
+                compile_expression(ctx, [4, line, 0, kname]) // K_VARIABLE shorthand
+            } or {
+                compile_expression(ctx, fval)
+            }
+            fi -> fi + 1
+        }
+        emit_byte(ctx, 81, line) // OP_MAKE_MAP
+        emit_u16(ctx, fn + 1, line)
+        <- Nothing
+    }
+
     when kind == 9 { // K_ASSIGN
-        let name -> expr[3]
+        let tgt -> expr[3]
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 3 and tgt[0] == 45 { // K_TYPE_ANN
+            tgt -> tgt[3]
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 3 and (tgt[0] == 4 or tgt[0] == 30) { // K_VARIABLE or K_IDENTIFIER
+            tgt -> tgt[3]
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 4 and (tgt[0] == 8 or tgt[0] == 5) { // K_INDEX: obj[key] -> val
+            compile_expression(ctx, tgt[3]) // obj
+            compile_expression(ctx, tgt[4]) // key
+            compile_expression(ctx, expr[4])   // val
+            emit_byte(ctx, 83, line)           // OP_SET_INDEX
+            <- Nothing
+        }
+        when (tgt != Nothing) and (tgt is List) and tgt.length > 4 and tgt[0] == 6 { // K_GET: obj.prop -> val
+            compile_expression(ctx, tgt[3]) // obj
+            let prop_name -> Str.to_string(tgt[4])
+            let name_idx -> add_constant(ctx, prop_name)
+            emit_byte(ctx, 1, line)            // OP_CONST
+            emit_u16(ctx, name_idx, line)
+            compile_expression(ctx, expr[4])   // val
+            emit_byte(ctx, 83, line)           // OP_SET_INDEX
+            <- Nothing
+        }
+        let name -> Str.to_string(tgt)
         let val -> expr[4]
         compile_expression(ctx, val)
-        let slot -> resolve_local(ctx, name)
-        when slot >= 0 {
-            emit_byte(ctx, 33, line) // OP_STORE_LOCAL
-            emit_u16(ctx, slot, line)
-            emit_byte(ctx, 32, line) // OP_LOAD_LOCAL
-            emit_u16(ctx, slot, line)
+        let resolved -> resolve_or_capture_local(ctx, name)
+        when resolved != Nothing {
+            when resolved[`type`] == `local` {
+                emit_byte(ctx, 33, line) // OP_STORE_LOCAL
+                emit_u16(ctx, resolved[`index`], line)
+                emit_byte(ctx, 32, line) // OP_LOAD_LOCAL
+                emit_u16(ctx, resolved[`index`], line)
+            } or when resolved[`type`] == `capture` {
+                emit_byte(ctx, 39, line) // OP_STORE_CAPTURE
+                emit_u16(ctx, resolved[`index`], line)
+                emit_byte(ctx, 38, line) // OP_LOAD_CAPTURE
+                emit_u16(ctx, resolved[`index`], line)
+            }
         } or {
             let name_idx -> add_constant(ctx, name)
             emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
@@ -616,6 +2041,17 @@ function compile_expression(ctx, expr) {
             emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
             emit_u16(ctx, name_idx, line)
         }
+        <- Nothing
+    }
+
+    when kind == 7 { // K_SET (obj.name -> val)
+        compile_expression(ctx, expr[3]) // obj
+        let prop_name -> Str.to_string(expr[4])
+        let name_idx -> add_constant(ctx, prop_name)
+        emit_byte(ctx, 1, line) // OP_CONST
+        emit_u16(ctx, name_idx, line)
+        compile_expression(ctx, expr[5]) // val
+        emit_byte(ctx, 83, line) // OP_SET_INDEX
         <- Nothing
     }
 
@@ -648,44 +2084,1605 @@ function compile_expression(ctx, expr) {
         <- Nothing
     }
 
+    when kind == 47 { // K_CAST (<: syntax)
+        let val_expr -> expr[3]
+        let target_type -> Str.to_string(expr[4])
+        compile_expression(ctx, val_expr)
+        let const_idx -> add_constant(ctx, target_type)
+        emit_byte(ctx, 86, line) // OP_CAST
+        emit_u16(ctx, const_idx, line)
+        <- Nothing
+    }
+
+    when kind == 15 { // K_CHECK (check expr)
+        compile_expression(ctx, expr[3])
+        emit_byte(ctx, 92, line) // OP_CHECK_UNWRAP
+        <- Nothing
+    }
+
+    when kind == 38 { // K_IS (val is Pattern / Type)
+        let val_node -> expr[3]
+        let pat_node -> expr[4]
+        compile_expression(ctx, val_node)
+        when pat_node != Nothing and pat_node.length > 3 and is_type_name_str(Str.to_string(pat_node[3])) {
+            let type_name -> Str.to_string(pat_node[3])
+            let type_idx -> add_constant(ctx, type_name)
+            emit_byte(ctx, 85, line) // OP_IS_TYPE
+            emit_u16(ctx, type_idx, line)
+            <- Nothing
+        } or {
+            compile_expression(ctx, pat_node)
+            emit_byte(ctx, 64, line) // OP_EQ
+            <- Nothing
+        }
+    }
+
+    when kind == 16 { // K_RAISE
+        let rexpr -> expr[3]
+        let err_fn_idx -> add_constant(ctx, `__builtin_error`)
+        emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL __builtin_error
+        emit_u16(ctx, err_fn_idx, line)
+        when rexpr != Nothing {
+            compile_expression(ctx, rexpr)
+        } or {
+            emit_byte(ctx, 2, line) // OP_NOTHING
+        }
+        emit_byte(ctx, 112, line) // OP_CALL (1 arg)
+        emit_u16(ctx, 1, line)
+        emit_byte(ctx, 113, line) // OP_RETURN
+        <- Nothing
+    }
+
+    when kind == 23 { // K_WHEN expression
+        let cases -> expr[3]
+        let cn -> cases.length
+        let ci -> 0
+        let end_jumps -> []
+
+        do while ci < cn {
+            let c -> cases[ci]
+            let cond -> c[3]
+            let body -> c[4]
+            
+            when cond == Nothing or cond == `else` or (cond is String and cond == `else`) or (cond is List and cond.length > 3 and cond[0] == 2 and cond[3] == `else`) {
+                enter_scope(ctx)
+                compile_block_expr(ctx, body)
+                exit_scope(ctx, line)
+            } or {
+                compile_expression(ctx, cond)
+                let jump_false -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+                enter_scope(ctx)
+                compile_block_expr(ctx, body)
+                exit_scope(ctx, line)
+                
+                when ci < cn - 1 {
+                    let j_end -> emit_jump(ctx, 96, line) // OP_JUMP
+                    end_jumps.append(j_end)
+                }
+                patch_jump(ctx, jump_false)
+            }
+            ci -> ci + 1
+        }
+
+        let ji -> 0
+        let jn -> end_jumps.length
+        do while ji < jn {
+            patch_jump(ctx, end_jumps[ji])
+            ji -> ji + 1
+        }
+        <- Nothing
+    }
+
+    when kind == 20 { // K_BLOCK (block expression { ... expr })
+        let stmts -> expr[3]
+        enter_scope(ctx)
+        let si -> 0
+        let sn -> 0
+        when stmts != Nothing { sn -> stmts.length }
+        do while si < sn {
+            let s -> stmts[si]
+            when si == sn - 1 and s != Nothing and s[0] == 18 { // Last statement is K_EXPR_STMT: evaluate without pop
+                compile_expression(ctx, s[3])
+            } or {
+                compile_statement(ctx, s)
+            }
+            si -> si + 1
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+
+    when kind == 21 or kind == 37 { // K_FUNCTION or K_FUNC_EXPR (lambda / closure)
+        let fn_name -> ``
+        let fn_params -> []
+        let fn_body -> Nothing
+        when kind == 21 {
+            fn_name -> expr[3]
+            fn_params -> expr[4]
+            fn_body -> expr[5]
+        } or {
+            fn_name -> `anon_fn_` + Str.to_string(line)
+            fn_params -> expr[3]
+            fn_body -> expr[4]
+        }
+        when fn_name == Nothing or fn_name == `` {
+            fn_name -> `anon_fn_` + Str.to_string(line)
+        }
+        
+        let fn_ctx -> make_compiler_child(fn_name, ctx)
+        enter_scope(fn_ctx)
+        
+        // Bind parameters as locals
+        let pi -> 0
+        let pn -> 0
+        when fn_params != Nothing { pn -> fn_params.length }
+        do while pi < pn {
+            let p -> fn_params[pi]
+            when p != Nothing and p.length > 3 and p[0] == 30 { // K_PARAM
+                declare_local(fn_ctx, p[3])
+            } or {
+                declare_local(fn_ctx, p)
+            }
+            pi -> pi + 1
+        }
+        
+        compile_block(fn_ctx, fn_body)
+        emit_byte(fn_ctx, 2, line) // OP_NOTHING
+        emit_byte(fn_ctx, 113, line) // OP_RETURN
+        
+        let fn_chunk -> fn_ctx[`chunk`]
+        fn_chunk[`num_locals`] -> fn_ctx[`max_locals`]
+        
+        let const_idx -> add_constant(ctx, fn_chunk)
+        let caps -> fn_ctx[`captures`]
+        when caps.length > 0 {
+            let ci -> 0
+            do while ci < caps.length {
+                emit_byte(ctx, 32, line) // OP_LOAD_LOCAL parent slot
+                emit_u16(ctx, caps[ci][`parent_slot`], line)
+                ci -> ci + 1
+            }
+            emit_byte(ctx, 87, line) // OP_MAKE_CLOSURE
+            emit_u16(ctx, const_idx, line)
+            emit_u16(ctx, caps.length, line)
+        } or {
+            emit_byte(ctx, 1, line) // OP_CONST
+            emit_u16(ctx, const_idx, line)
+        }
+        <- Nothing
+    }
+
     emit_byte(ctx, 2, line) // OP_NOTHING
     <- Nothing
 }
 
-// --- In-Memory Bytecode Evaluator (Zen VM Prototype) ---
+function vm_io_write(v) {
+    <- __builtin_output.write(v)
+}
+function vm_builtin_error(msg) {
+    let m -> msg
+    when m == Nothing {
+        m -> `error`
+    }
+    <- __builtin.error_literal(m)
+}
+function vm_io_writeln(v) {
+    <- __builtin_output.write_line(v)
+}
+function vm_io_print(v) {
+    <- __builtin_output.write_line(v)
+}
+function vm_io_read(prompt) {
+    <- __builtin_input.read(prompt)
+}
+function vm_io_readln() {
+    <- __builtin_input.read_line()
+}
+function vm_file_read(p) {
+    <- __builtin_file.read(p)
+}
+function vm_file_write(p, c) {
+    <- __builtin_file.write(p, c)
+}
+function vm_file_exists(p) {
+    <- __builtin_file.exists(p)
+}
+function vm_file_is_file(p) {
+    <- __builtin_file.is_file(p)
+}
+function vm_file_is_dir(p) {
+    <- __builtin_file.is_dir(p)
+}
+function vm_file_list_dir(p) {
+    <- __builtin_file.list_dir(p)
+}
+function vm_term_width() {
+    let sz -> __builtin_term.get_size()
+    when sz != Nothing and sz is Map and sz[`width`] != Nothing {
+        <- sz[`width`]
+    }
+    <- 80
+}
+function vm_term_height() {
+    let sz -> __builtin_term.get_size()
+    when sz != Nothing and sz is Map and sz[`height`] != Nothing {
+        <- sz[`height`]
+    }
+    <- 24
+}
+function vm_sys_args() {
+    <- __builtin_sys.get_args()
+}
+function vm_sys_exit(code) {
+    <- __builtin_sys.exit(code)
+}
+function vm_sys_env(k) {
+    <- __builtin_sys.get_env(k)
+}
+function vm_time_now() {
+    <- __builtin_time.now()
+}
+function vm_time_sleep(ms) {
+    <- __builtin_time.sleep(ms)
+}
 
-function invoke_callable(callee, args) {
+function make_native(name) {
+    <- { `is_native` -> true, `native_fn` -> name }
+}
+
+function vm_result_ok(v) {
+    <- { `enum_name` -> `Result`, `variant_name` -> `Ok`, `data` -> [v], `__type__` -> `Result` }
+}
+function vm_result_error(e) {
+    <- { `enum_name` -> `Result`, `variant_name` -> `Error`, `data` -> [e], `__type__` -> `Result` }
+}
+function vm_option_some(v) {
+    <- { `enum_name` -> `Option`, `variant_name` -> `Some`, `data` -> [v], `__type__` -> `Option` }
+}
+function vm_option_none() {
+    <- { `enum_name` -> `Option`, `variant_name` -> `None`, `data` -> [], `__type__` -> `Option` }
+}
+function vm_option_something(v) {
+    <- { `enum_name` -> `Option`, `variant_name` -> `Something`, `data` -> [v], `__type__` -> `Option` }
+}
+function vm_option_nothing() {
+    <- { `enum_name` -> `Option`, `variant_name` -> `Nothing`, `data` -> [], `__type__` -> `Option` }
+}
+
+export function create_vm_prelude() {
+    let g -> {}
+    
+    // Output & IO
+    let out_mod -> {
+        `write` -> make_native(`io_write`),
+        `write_line` -> make_native(`io_writeln`),
+        `writeln` -> make_native(`io_writeln`),
+        `print` -> make_native(`io_print`),
+        `info` -> make_native(`io_writeln`),
+        `warn` -> make_native(`io_writeln`),
+        `error` -> make_native(`io_writeln`),
+        `debug` -> make_native(`io_writeln`)
+    }
+    g[`output`] -> out_mod
+    g[`__builtin_output`] -> out_mod
+    
+    let in_mod -> {
+        `read` -> make_native(`io_read`),
+        `read_line` -> make_native(`io_readln`),
+        `readln` -> make_native(`io_readln`)
+    }
+    g[`input`] -> in_mod
+    g[`__builtin_input`] -> in_mod
+    
+    let io_mod -> {
+        `write` -> make_native(`io_write`),
+        `write_line` -> make_native(`io_writeln`),
+        `writeln` -> make_native(`io_writeln`),
+        `print` -> make_native(`io_print`),
+        `read` -> make_native(`io_read`),
+        `read_line` -> make_native(`io_readln`),
+        `readln` -> make_native(`io_readln`),
+        `info` -> make_native(`io_writeln`),
+        `warn` -> make_native(`io_writeln`),
+        `error` -> make_native(`io_writeln`)
+    }
+    g[`io`] -> io_mod
+    g[`IO`] -> io_mod
+    g[`__builtin_io`] -> io_mod
+    
+    let builtin_mod -> {
+        `error` -> make_native(`builtin_error`),
+        `error_literal` -> make_native(`builtin_error`),
+        `string_to_bytes` -> make_native(`builtin_string_to_bytes`),
+        `bytes_to_string` -> make_native(`builtin_bytes_to_string`),
+        `create_bytes_size` -> make_native(`builtin_create_bytes_size`),
+        `create_bytes_list` -> make_native(`builtin_create_bytes_list`),
+        `pack_binary` -> make_native(`builtin_pack_binary`),
+        `unpack_binary` -> make_native(`builtin_unpack_binary`),
+        `get_env` -> make_native(`sys_env`),
+        `set_env` -> make_native(`sys_set_env`),
+        `list_env` -> make_native(`sys_list_env`),
+        `has_env` -> make_native(`sys_has_env`)
+    }
+    g[`__builtin`] -> builtin_mod
+    g[`builtin`] -> builtin_mod
+    g[`__builtin_error`] -> make_native(`builtin_error`)
+    g[`__builtin_error_literal`] -> make_native(`builtin_error`)
+    g[`__builtin_string_to_bytes`] -> make_native(`builtin_string_to_bytes`)
+    g[`__builtin_bytes_to_string`] -> make_native(`builtin_bytes_to_string`)
+    g[`__builtin_create_bytes_size`] -> make_native(`builtin_create_bytes_size`)
+    g[`__builtin_create_bytes_list`] -> make_native(`builtin_create_bytes_list`)
+    g[`__builtin_pack_binary`] -> make_native(`builtin_pack_binary`)
+    g[`__builtin_unpack_binary`] -> make_native(`builtin_unpack_binary`)
+    
+    // Map builtins
+    let map_builtin_mod -> {
+        `keys` -> make_native(`map_keys`),
+        `values` -> make_native(`map_values`),
+        `items` -> make_native(`map_items`),
+        `entries` -> make_native(`map_items`),
+        `has` -> make_native(`map_has`),
+        `has_key` -> make_native(`map_has`)
+    }
+    g[`__builtin_map`] -> map_builtin_mod
+
+    // List builtins
+    let list_builtin_mod -> {
+        `remove_at` -> make_native(`list_remove_at`)
+    }
+    g[`__builtin_list`] -> list_builtin_mod
+
+    // Set builtins
+    let set_builtin_mod -> {
+        `from_list` -> make_native(`set_from_list`),
+        `to_list` -> make_native(`set_to_list`),
+        `has` -> make_native(`set_has`),
+        `add` -> make_native(`set_add`),
+        `remove` -> make_native(`set_remove`)
+    }
+    g[`__builtin_set`] -> set_builtin_mod
+    
+    // File
+    let file_mod -> {
+        `read` -> make_native(`file_read`),
+        `write` -> make_native(`file_write`),
+        `append` -> make_native(`file_append`),
+        `remove` -> make_native(`file_remove`),
+        `exists` -> make_native(`file_exists`),
+        `is_file` -> make_native(`file_is_file`),
+        `is_dir` -> make_native(`file_is_dir`),
+        `list_dir` -> make_native(`file_list_dir`),
+        `mkdir` -> make_native(`file_mkdir`),
+        `mkdir_p` -> make_native(`file_mkdir`),
+        `open` -> make_native(`file_open`),
+        `write_bytes` -> make_native(`file_write_bytes`)
+    }
+    g[`file`] -> file_mod
+    g[`__builtin_file`] -> file_mod
+    g[`__builtin_file_read`] -> make_native(`file_read`)
+    g[`__builtin_file_write`] -> make_native(`file_write`)
+    g[`__builtin_file_append`] -> make_native(`file_append`)
+    g[`__builtin_file_remove`] -> make_native(`file_remove`)
+    g[`__builtin_file_exists`] -> make_native(`file_exists`)
+    g[`__builtin_file_is_file`] -> make_native(`file_is_file`)
+    g[`__builtin_file_is_dir`] -> make_native(`file_is_dir`)
+    g[`__builtin_file_list_dir`] -> make_native(`file_list_dir`)
+    // Math
+    let math_mod -> {
+        `pi` -> 3.141592653589793,
+        `e` -> 2.718281828459045,
+        `sqrt` -> make_native(`math_sqrt`),
+        `sin` -> make_native(`math_sin`),
+        `cos` -> make_native(`math_cos`),
+        `floor` -> make_native(`math_floor`),
+        `ceil` -> make_native(`math_ceil`),
+        `abs` -> make_native(`math_abs`),
+        `pow` -> make_native(`math_pow`)
+    }
+    g[`math`] -> math_mod
+    g[`__builtin_math`] -> math_mod
+    g[`__builtin_math_sqrt`] -> make_native(`math_sqrt`)
+    g[`__builtin_math_sin`] -> make_native(`math_sin`)
+    g[`__builtin_math_cos`] -> make_native(`math_cos`)
+    g[`__builtin_math_floor`] -> make_native(`math_floor`)
+    g[`__builtin_math_ceil`] -> make_native(`math_ceil`)
+    g[`__builtin_math_abs`] -> make_native(`math_abs`)
+    g[`__builtin_math_pow`] -> make_native(`math_pow`)
+    
+    // Term
+    let term_mod -> {
+        `width` -> make_native(`term_width`),
+        `height` -> make_native(`term_height`),
+        `get_size` -> make_native(`term_get_size`),
+        `clear` -> make_native(`term_clear`),
+        `move` -> make_native(`term_move`),
+        `color` -> make_native(`term_color`),
+        `reset` -> make_native(`term_reset`),
+        `alt_screen_enter` -> make_native(`term_alt_screen_enter`),
+        `alt_screen_exit` -> make_native(`term_alt_screen_exit`),
+        `write` -> make_native(`term_write`),
+        `clear_eol` -> make_native(`term_clear_eol`),
+        `hide_cursor` -> make_native(`term_hide_cursor`),
+        `show_cursor` -> make_native(`term_show_cursor`),
+        `flush` -> make_native(`term_flush`),
+        `raw_enter` -> make_native(`term_raw_enter`),
+        `raw_exit` -> make_native(`term_raw_exit`),
+        `is_tty` -> make_native(`term_is_tty`),
+        `read_key` -> make_native(`term_read_key`),
+        `poll_key` -> make_native(`term_poll_key`),
+        `paint_canvas` -> make_native(`term_paint_canvas`),
+        `enable_mouse` -> make_native(`term_enable_mouse`),
+        `disable_mouse` -> make_native(`term_disable_mouse`)
+    }
+    g[`term`] -> term_mod
+    g[`__builtin_term`] -> term_mod
+    
+    // Sys
+    let sys_mod -> {
+        `args` -> make_native(`sys_args`),
+        `get_args` -> make_native(`sys_args`),
+        `exit` -> make_native(`sys_exit`),
+        `env` -> make_native(`sys_env`),
+        `get_env` -> make_native(`sys_env`),
+        `get_cwd` -> make_native(`sys_get_cwd`),
+        `cwd` -> make_native(`sys_get_cwd`),
+        `chdir` -> make_native(`sys_chdir`),
+        `platform` -> make_native(`sys_platform`),
+        `version` -> make_native(`sys_version`),
+        `exec` -> make_native(`sys_exec`)
+    }
+    g[`sys`] -> sys_mod
+    g[`__builtin_sys`] -> sys_mod
+    
+    // Time
+    let time_mod -> {
+        `now` -> make_native(`time_now`),
+        `wallclock` -> make_native(`time_wallclock`),
+        `monotonic` -> make_native(`time_monotonic`),
+        `sleep` -> make_native(`time_sleep`)
+    }
+    g[`time`] -> time_mod
+    g[`__builtin_time`] -> time_mod
+
+    // Process
+    let process_mod -> {
+        `run` -> make_native(`process_run`),
+        `get_id` -> make_native(`process_get_id`),
+        `spawn` -> make_native(`process_spawn`),
+        `shell` -> make_native(`process_shell`),
+        `shell_result` -> make_native(`process_shell_result`),
+        `shell_in` -> make_native(`process_shell_in`),
+        `shell_result_in` -> make_native(`process_shell_result_in`),
+        `shell_env` -> make_native(`process_shell_env`),
+        `shell_result_env` -> make_native(`process_shell_result_env`),
+        `shell_in_env` -> make_native(`process_shell_in_env`),
+        `shell_result_in_env` -> make_native(`process_shell_result_in_env`),
+        `pipeline_run` -> make_native(`process_pipeline_run`),
+        `shell_each_line` -> make_native(`process_shell_each_line`),
+        `shell_each_line_in` -> make_native(`process_shell_each_line_in`),
+        `shell_each_line_env` -> make_native(`process_shell_each_line_env`)
+    }
+    g[`process`] -> process_mod
+    g[`__builtin_process`] -> process_mod
+    
+    // String & Text utils
+    let str_mod -> {
+        `length` -> make_native(`str_length`),
+        `to_string` -> make_native(`str_to_string`),
+        `substring` -> make_native(`str_substring`),
+        `starts_with` -> make_native(`str_starts_with`),
+        `ends_with` -> make_native(`str_ends_with`),
+        `contains` -> make_native(`str_contains`),
+        `index_of` -> make_native(`str_index_of`),
+        `split` -> make_native(`str_split`),
+        `replace` -> make_native(`str_replace`),
+        `trim` -> make_native(`str_trim`),
+        `to_lower` -> make_native(`str_to_lower`),
+        `to_upper` -> make_native(`str_to_upper`),
+        `at` -> make_native(`str_at`),
+        `char_at` -> make_native(`str_at`),
+        `join` -> make_native(`str_join`),
+        `repeat` -> make_native(`str_repeat`)
+    }
+    g[`Str`] -> str_mod
+    g[`string`] -> str_mod
+    g[`__builtin_string`] -> str_mod
+    g[`Str_length`] -> make_native(`str_length`)
+    g[`Str_to_string`] -> make_native(`str_to_string`)
+    g[`Str_substring`] -> make_native(`str_substring`)
+    g[`Str_starts_with`] -> make_native(`str_starts_with`)
+    g[`Str_ends_with`] -> make_native(`str_ends_with`)
+    g[`Str_contains`] -> make_native(`str_contains`)
+    g[`Str_index_of`] -> make_native(`str_index_of`)
+    g[`Str_split`] -> make_native(`str_split`)
+    g[`Str_replace`] -> make_native(`str_replace`)
+    g[`Str_trim`] -> make_native(`str_trim`)
+    g[`Str_to_lower`] -> make_native(`str_to_lower`)
+    g[`Str_to_upper`] -> make_native(`str_to_upper`)
+    g[`Str_at`] -> make_native(`str_at`)
+    g[`Str_char_at`] -> make_native(`str_at`)
+    g[`Str_join`] -> make_native(`str_join`)
+    g[`Str_repeat`] -> make_native(`str_repeat`)
+    g[`string_length`] -> make_native(`str_length`)
+    g[`string_to_string`] -> make_native(`str_to_string`)
+    g[`string_substring`] -> make_native(`str_substring`)
+    g[`string_starts_with`] -> make_native(`str_starts_with`)
+    g[`string_ends_with`] -> make_native(`str_ends_with`)
+    g[`string_contains`] -> make_native(`str_contains`)
+    g[`string_index_of`] -> make_native(`str_index_of`)
+    g[`string_split`] -> make_native(`str_split`)
+    g[`string_replace`] -> make_native(`str_replace`)
+    g[`string_trim`] -> make_native(`str_trim`)
+    g[`string_to_lower`] -> make_native(`str_to_lower`)
+    g[`string_to_upper`] -> make_native(`str_to_upper`)
+    g[`string_at`] -> make_native(`str_at`)
+    g[`string_char_at`] -> make_native(`str_at`)
+    g[`string_join`] -> make_native(`str_join`)
+    g[`string_repeat`] -> make_native(`str_repeat`)
+    
+    // Path module & globals
+    let path_mod -> {
+        `join` -> make_native(`path_join`),
+        `dirname` -> make_native(`path_dirname`),
+        `dir_name` -> make_native(`path_dirname`),
+        `basename` -> make_native(`path_basename`),
+        `base_name` -> make_native(`path_basename`),
+        `is_absolute` -> make_native(`path_is_absolute`)
+    }
+    g[`Path`] -> path_mod
+    g[`Path_join`] -> make_native(`path_join`)
+    g[`Path_dirname`] -> make_native(`path_dirname`)
+    g[`Path_dir_name`] -> make_native(`path_dirname`)
+    g[`Path_basename`] -> make_native(`path_basename`)
+    g[`Path_base_name`] -> make_native(`path_basename`)
+    g[`Path_is_absolute`] -> make_native(`path_is_absolute`)
+    g[`path_join`] -> make_native(`path_join`)
+    g[`path_dirname`] -> make_native(`path_dirname`)
+    g[`path_dir_name`] -> make_native(`path_dirname`)
+    g[`path_basename`] -> make_native(`path_basename`)
+    g[`path_base_name`] -> make_native(`path_basename`)
+    g[`path_is_absolute`] -> make_native(`path_is_absolute`)
+    g[`path`] -> path_mod
+    
+    // Zen Data
+    let zd_mod -> {
+        `parse` -> make_native(`str_to_string`),
+        `stringify` -> make_native(`str_to_string`)
+    }
+    g[`zd`] -> zd_mod
+    g[`ZenData`] -> zd_mod
+    
+    // Result & Option Variants
+    let res_mod -> {
+        `Ok` -> vm_result_ok,
+        `Error` -> vm_result_error,
+        `Err` -> vm_result_error
+    }
+    g[`Result`] -> res_mod
+    g[`Result_Ok`] -> vm_result_ok
+    g[`Result_Error`] -> vm_result_error
+    g[`Result_Err`] -> vm_result_error
+    
+    let opt_mod -> {
+        `Some` -> vm_option_some,
+        `None` -> vm_option_none,
+        `Something` -> vm_option_something,
+        `Nothing` -> { `enum_name` -> `Option`, `variant_name` -> `Nothing`, `data` -> [], `__type__` -> `Option` }
+    }
+    g[`Option`] -> opt_mod
+    g[`Option_Some`] -> vm_option_some
+    g[`Option_None`] -> vm_option_none
+    g[`Option_Something`] -> vm_option_something
+    g[`Option_Nothing`] -> { `enum_name` -> `Option`, `variant_name` -> `Nothing`, `data` -> [], `__type__` -> `Option` }
+
+    let ord_mod -> {
+        `Less` -> { `enum_name` -> `Ordering`, `variant_name` -> `Less`, `data` -> [], `__type__` -> `Ordering` },
+        `Equal` -> { `enum_name` -> `Ordering`, `variant_name` -> `Equal`, `data` -> [], `__type__` -> `Ordering` },
+        `Greater` -> { `enum_name` -> `Ordering`, `variant_name` -> `Greater`, `data` -> [], `__type__` -> `Ordering` }
+    }
+    g[`Ordering`] -> ord_mod
+    g[`Ordering_Less`] -> { `enum_name` -> `Ordering`, `variant_name` -> `Less`, `data` -> [], `__type__` -> `Ordering` }
+    g[`Ordering_Equal`] -> { `enum_name` -> `Ordering`, `variant_name` -> `Equal`, `data` -> [], `__type__` -> `Ordering` }
+    g[`Ordering_Greater`] -> { `enum_name` -> `Ordering`, `variant_name` -> `Greater`, `data` -> [], `__type__` -> `Ordering` }
+
+    // Set & Map builtins
+    let set_mod -> {
+        `from_list` -> make_native(`set_from_list`),
+        `to_list` -> make_native(`set_to_list`),
+        `add` -> make_native(`set_add`),
+        `remove` -> make_native(`set_remove`),
+        `has` -> make_native(`set_has`)
+    }
+    g[`__builtin_set`] -> set_mod
+    g[`set`] -> set_mod
+
+    let map_mod -> {
+        `keys` -> make_native(`map_keys`),
+        `values` -> make_native(`map_values`),
+        `items` -> make_native(`map_items`),
+        `entries` -> make_native(`map_items`),
+        `has` -> make_native(`map_has`)
+    }
+    g[`__builtin_map`] -> map_mod
+    g[`map`] -> map_mod
+
+    let list_mod -> {
+        `remove_at` -> make_native(`list_remove_at`)
+    }
+    g[`__builtin_list`] -> list_mod
+    g[`list`] -> list_mod
+
+    // Flattened builtin helpers
+    g[`__builtin_set_from_list`] -> make_native(`set_from_list`)
+    g[`__builtin_set_to_list`] -> make_native(`set_to_list`)
+    g[`__builtin_set_add`] -> make_native(`set_add`)
+    g[`__builtin_set_remove`] -> make_native(`set_remove`)
+    g[`__builtin_set_has`] -> make_native(`set_has`)
+    g[`set_from_list`] -> make_native(`set_from_list`)
+    g[`set_to_list`] -> make_native(`set_to_list`)
+    g[`set_add`] -> make_native(`set_add`)
+    g[`set_remove`] -> make_native(`set_remove`)
+    g[`set_has`] -> make_native(`set_has`)
+    g[`Set_from_list`] -> make_native(`set_from_list`)
+    g[`Set_to_list`] -> make_native(`set_to_list`)
+    g[`set_Set_from_list`] -> make_native(`set_from_list`)
+    g[`set_Set_to_list`] -> make_native(`set_to_list`)
+    g[`__builtin_map_keys`] -> make_native(`map_keys`)
+    g[`__builtin_map_values`] -> make_native(`map_values`)
+    g[`__builtin_map_items`] -> make_native(`map_items`)
+    g[`__builtin_map_entries`] -> make_native(`map_items`)
+    g[`__builtin_map_has`] -> make_native(`map_has`)
+    g[`__builtin_list_remove_at`] -> make_native(`list_remove_at`)
+    g[`list_remove_at`] -> make_native(`list_remove_at`)
+    
+    // Process flattened helpers
+    g[`__builtin_process_run`] -> make_native(`process_run`)
+    g[`__builtin_process_get_id`] -> make_native(`process_get_id`)
+    g[`__builtin_process_spawn`] -> make_native(`process_spawn`)
+    g[`__builtin_process_shell`] -> make_native(`process_shell`)
+    g[`__builtin_process_shell_result`] -> make_native(`process_shell_result`)
+    g[`__builtin_process_shell_in`] -> make_native(`process_shell_in`)
+    g[`__builtin_process_shell_result_in`] -> make_native(`process_shell_result_in`)
+    g[`__builtin_process_shell_env`] -> make_native(`process_shell_env`)
+    g[`__builtin_process_shell_result_env`] -> make_native(`process_shell_result_env`)
+    g[`__builtin_process_shell_in_env`] -> make_native(`process_shell_in_env`)
+    g[`__builtin_process_shell_result_in_env`] -> make_native(`process_shell_result_in_env`)
+    g[`__builtin_process_pipeline_run`] -> make_native(`process_pipeline_run`)
+    g[`__builtin_process_shell_each_line`] -> make_native(`process_shell_each_line`)
+    g[`__builtin_process_shell_each_line_in`] -> make_native(`process_shell_each_line_in`)
+    g[`__builtin_process_shell_each_line_env`] -> make_native(`process_shell_each_line_env`)
+    
+    // Sys flattened helpers
+    g[`__builtin_sys_get_args`] -> make_native(`sys_args`)
+    g[`__builtin_sys_exit`] -> make_native(`sys_exit`)
+    g[`__builtin_sys_get_env`] -> make_native(`sys_env`)
+    g[`__builtin_sys_get_cwd`] -> make_native(`sys_get_cwd`)
+    g[`__builtin_sys_chdir`] -> make_native(`sys_chdir`)
+    g[`__builtin_sys_platform`] -> make_native(`sys_platform`)
+    g[`__builtin_sys_version`] -> make_native(`sys_version`)
+    g[`__builtin_sys_exec`] -> make_native(`sys_exec`)
+
+    // Time flattened helpers
+    g[`__builtin_time_now`] -> make_native(`time_now`)
+    g[`__builtin_time_wallclock`] -> make_native(`time_wallclock`)
+    g[`__builtin_time_monotonic`] -> make_native(`time_monotonic`)
+    g[`__builtin_time_sleep`] -> make_native(`time_sleep`)
+
+    // Term flattened helpers
+    g[`__builtin_term_get_size`] -> make_native(`term_get_size`)
+    g[`__builtin_term_clear`] -> make_native(`term_clear`)
+    g[`__builtin_term_move`] -> make_native(`term_move`)
+    g[`__builtin_term_color`] -> make_native(`term_color`)
+    g[`__builtin_term_reset`] -> make_native(`term_reset`)
+    g[`__builtin_term_alt_screen_enter`] -> make_native(`term_alt_screen_enter`)
+    g[`__builtin_term_alt_screen_exit`] -> make_native(`term_alt_screen_exit`)
+    g[`__builtin_term_raw_enter`] -> make_native(`term_raw_enter`)
+    g[`__builtin_term_raw_exit`] -> make_native(`term_raw_exit`)
+    g[`__builtin_term_hide_cursor`] -> make_native(`term_hide_cursor`)
+    g[`__builtin_term_show_cursor`] -> make_native(`term_show_cursor`)
+    g[`__builtin_term_clear_eol`] -> make_native(`term_clear_eol`)
+    g[`__builtin_term_write`] -> make_native(`term_write`)
+    g[`__builtin_term_flush`] -> make_native(`term_flush`)
+    g[`__builtin_term_is_tty`] -> make_native(`term_is_tty`)
+    g[`__builtin_term_read_key`] -> make_native(`term_read_key`)
+    g[`__builtin_term_poll_key`] -> make_native(`term_poll_key`)
+    g[`__builtin_term_paint_canvas`] -> make_native(`term_paint_canvas`)
+    g[`__builtin_term_enable_mouse`] -> make_native(`term_enable_mouse`)
+    g[`__builtin_term_disable_mouse`] -> make_native(`term_disable_mouse`)
+    
+    // Global Constants
+    g[`true`] -> true
+    g[`false`] -> false
+    g[`True`] -> true
+    g[`False`] -> false
+    // Reflect module
+    let reflect_mod -> {
+        `type_name` -> make_native(`reflect_type_name`),
+        `type_of` -> make_native(`reflect_type_name`),
+        `is_reflectable` -> make_native(`reflect_is_reflectable`),
+        `fields` -> make_native(`reflect_fields`),
+        `has_field` -> make_native(`reflect_has_field`),
+        `field` -> make_native(`reflect_field`),
+        `set_field` -> make_native(`reflect_set_field`),
+        `methods` -> make_native(`reflect_methods`),
+        `has_method` -> make_native(`reflect_has_method`),
+        `call` -> make_native(`reflect_call`),
+        `apply` -> make_native(`reflect_apply`)
+    }
+    g[`__builtin_reflect`] -> reflect_mod
+    g[`reflect`] -> reflect_mod
+    g[`__builtin_reflect_type_name`] -> make_native(`reflect_type_name`)
+    g[`__builtin_reflect_type_of`] -> make_native(`reflect_type_name`)
+    g[`__builtin_reflect_is_reflectable`] -> make_native(`reflect_is_reflectable`)
+    g[`__builtin_reflect_fields`] -> make_native(`reflect_fields`)
+    g[`__builtin_reflect_has_field`] -> make_native(`reflect_has_field`)
+    g[`__builtin_reflect_field`] -> make_native(`reflect_field`)
+    g[`__builtin_reflect_set_field`] -> make_native(`reflect_set_field`)
+    g[`__builtin_reflect_methods`] -> make_native(`reflect_methods`)
+    g[`__builtin_reflect_has_method`] -> make_native(`reflect_has_method`)
+    g[`__builtin_reflect_call`] -> make_native(`reflect_call`)
+    g[`__builtin_reflect_apply`] -> make_native(`reflect_apply`)
+
+    g[`Nothing`] -> Nothing
+    g[`Default`] -> Default
+    
+    when __builtin_sys.get_env(`ZEN_VM_TRACE`) != Nothing {
+        g[`__ZEN_VM_TRACE__`] -> true
+    }
+    <- g
+}
+
+export function invoke_callable(callee, args) {
+    <- invoke_callable_g(callee, args, {})
+}
+
+export function invoke_callable_g(callee, args, globals) {
     when callee == Nothing {
         <- Nothing
     }
-    let n -> args.length
-    when n == 0 {
-        <- callee()
+    when callee is Map {
+        when callee[`is_native`] == true {
+            let nfn -> callee[`native_fn`]
+            when nfn == `str_starts_with` {
+                <- Str.starts_with(args[0], args[1])
+            }
+            when nfn == `str_ends_with` {
+                <- Str.ends_with(args[0], args[1])
+            }
+            when nfn == `str_contains` {
+                <- Str.contains(args[0], args[1])
+            }
+            when nfn == `str_index_of` {
+                <- Str.index_of(args[0], args[1])
+            }
+            when nfn == `str_substring` {
+                <- Str.substring(args[0], args[1], args[2])
+            }
+            when nfn == `str_length` {
+                <- Str.length(args[0])
+            }
+            when nfn == `str_split` {
+                <- Str.split(args[0], args[1])
+            }
+            when nfn == `str_replace` {
+                <- Str.replace(args[0], args[1], args[2])
+            }
+            when nfn == `str_trim` {
+                <- Str.trim(args[0])
+            }
+            when nfn == `str_to_string` {
+                <- Str.to_string(args[0])
+            }
+            when nfn == `str_to_lower` {
+                <- Str.to_lower(args[0])
+            }
+            when nfn == `str_to_upper` {
+                <- Str.to_upper(args[0])
+            }
+            when nfn == `str_at` or nfn == `str_char_at` {
+                let s -> args[0]
+                let idx -> args[1]
+                when s == Nothing { <- `` }
+                <- Str.at(s, idx)
+            }
+            when nfn == `str_join` {
+                let list -> args[0]
+                let sep -> args[1]
+                when (args[0] is String) and (args[1] is List) {
+                    sep -> args[0]
+                    list -> args[1]
+                }
+                when list == Nothing { <- `` }
+                let res -> ``
+                let i -> 0
+                let n -> list.length
+                do while i < n {
+                    when i > 0 { res -> res + Str.to_string(sep) }
+                    res -> res + Str.to_string(list[i])
+                    i -> i + 1
+                }
+                <- res
+            }
+            when nfn == `path_join` {
+                let p1 -> args[0]
+                let p2 -> args[1]
+                when p1 == `` { <- p2 }
+                when p2 == `` { <- p1 }
+                let p1_ends -> Str.ends_with(p1, `/`)
+                let p2_starts -> Str.starts_with(p2, `/`)
+                when p1_ends and p2_starts {
+                    <- p1 + Str.substring(p2, 1, Str.length(p2))
+                }
+                when p1_ends or p2_starts {
+                    <- p1 + p2
+                }
+                <- p1 + `/` + p2
+            }
+            when nfn == `path_dirname` {
+                let p -> args[0]
+                when p == `` or p == `.` { <- `.` }
+                when p == `/` { <- `/` }
+                let parts -> Str.split(p, `/`)
+                let n -> parts.length
+                when parts[n - 1] == `` {
+                    n -> n - 1
+                }
+                when n <= 1 {
+                    when Str.starts_with(p, `/`) { <- `/` }
+                    <- `.`
+                }
+                let result -> parts[0]
+                when result == `` {
+                    result -> `/` + parts[1]
+                    let i -> 2
+                    do while i < n - 1 {
+                        result -> result + `/` + parts[i]
+                        i -> i + 1
+                    }
+                    <- result
+                }
+                let i -> 1
+                do while i < n - 1 {
+                    result -> result + `/` + parts[i]
+                    i -> i + 1
+                }
+                <- result
+            }
+            when nfn == `path_basename` {
+                let p -> args[0]
+                when p == `` { <- `.` }
+                when p == `/` { <- `/` }
+                let parts -> Str.split(p, `/`)
+                let n -> parts.length
+                when parts[n - 1] == `` {
+                    when n > 1 {
+                        <- parts[n - 2]
+                    }
+                    <- `/`
+                }
+                <- parts[n - 1]
+            }
+            when nfn == `path_is_absolute` {
+                <- Str.starts_with(args[0], `/`)
+            }
+            when nfn == `io_write` {
+                when args.length > 0 { <- __builtin_io.write(args[0]) }
+                <- Nothing
+            }
+            when nfn == `io_writeln` {
+                when args.length > 0 { <- __builtin_io.write_line(args[0]) }
+                <- __builtin_io.write_line(``)
+            }
+            when nfn == `io_print` {
+                when args.length > 0 { <- __builtin_io.write_line(args[0]) }
+                <- __builtin_io.write_line(``)
+            }
+            when nfn == `io_read` {
+                <- __builtin_io.read_line()
+            }
+            when nfn == `io_readln` {
+                <- __builtin_io.read_line()
+            }
+            when nfn == `builtin_error` {
+                let msg -> ``
+                when args.length > 0 {
+                    let a0 -> args[0]
+                    when a0 != Nothing and (a0 is Map) and (a0[`__type__`] == `Error` or a0[`enum_name`] == `Error`) {
+                        <- a0
+                    }
+                    msg -> Str.to_string(a0)
+                }
+                <- {
+                    `__type__` -> `Error`,
+                    `message` -> msg,
+                    `is_error` -> true
+                }
+            }
+            when nfn == `builtin_string_to_bytes` {
+                when args.length > 0 { <- __builtin.string_to_bytes(args[0]) }
+                <- []
+            }
+            when nfn == `builtin_bytes_to_string` {
+                when args.length > 0 { <- __builtin.bytes_to_string(args[0]) }
+                <- ``
+            }
+            when nfn == `builtin_create_bytes_size` {
+                when args.length > 0 { <- __builtin.create_bytes_size(args[0]) }
+                <- []
+            }
+            when nfn == `builtin_create_bytes_list` {
+                when args.length > 0 { <- __builtin.create_bytes_list(args[0]) }
+                <- []
+            }
+            when nfn == `builtin_pack_binary` {
+                when args.length > 1 { <- __builtin.pack_binary(args[0], args[1]) }
+                <- []
+            }
+            when nfn == `builtin_unpack_binary` {
+                when args.length > 1 { <- __builtin.unpack_binary(args[0], args[1]) }
+                <- []
+            }
+            when nfn == `file_read` {
+                <- __builtin_file.read(args[0])
+            }
+            when nfn == `file_write` {
+                <- __builtin_file.write(args[0], args[1])
+            }
+            when nfn == `file_append` {
+                <- __builtin_file.append(args[0], args[1])
+            }
+            when nfn == `file_remove` {
+                <- __builtin_file.remove(args[0])
+            }
+            when nfn == `file_exists` {
+                <- __builtin_file.exists(args[0])
+            }
+            when nfn == `file_is_file` {
+                <- __builtin_file.is_file(args[0])
+            }
+            when nfn == `file_is_dir` {
+                <- __builtin_file.is_dir(args[0])
+            }
+            when nfn == `file_list_dir` {
+                <- __builtin_file.list_dir(args[0])
+            }
+            when nfn == `file_mkdir` {
+                <- __builtin_file.mkdir_p(args[0])
+            }
+            when nfn == `file_open` {
+                let mode -> `r`
+                when args.length > 1 { mode -> args[1] }
+                <- __builtin_file.open(args[0], mode)
+            }
+            when nfn == `file_write_bytes` {
+                <- __builtin_file.write_bytes(args[0], args[1])
+            }
+            when nfn == `sys_args` {
+                <- __builtin_sys.get_args()
+            }
+            when nfn == `sys_exit` {
+                when args.length > 0 { <- __builtin_sys.exit(args[0]) }
+                <- __builtin_sys.exit(0)
+            }
+            when nfn == `sys_env` {
+                when args.length > 0 { <- __builtin_sys.get_env(args[0]) }
+                <- ``
+            }
+            when nfn == `sys_get_cwd` {
+                <- __builtin_sys.get_cwd()
+            }
+            when nfn == `sys_chdir` {
+                when args.length > 0 { <- __builtin_sys.chdir(args[0]) }
+                <- false
+            }
+            when nfn == `sys_platform` {
+                <- __builtin_sys.platform()
+            }
+            when nfn == `sys_version` {
+                <- __builtin_sys.version()
+            }
+            when nfn == `sys_exec` {
+                when args.length > 0 { <- __builtin_sys.exec(args[0]) }
+                <- -1
+            }
+            when nfn == `time_now` {
+                <- __builtin_time.now()
+            }
+            when nfn == `time_wallclock` {
+                <- __builtin_time.wallclock()
+            }
+            when nfn == `time_monotonic` {
+                <- __builtin_time.monotonic()
+            }
+            when nfn == `time_sleep` {
+                when args.length > 0 { <- __builtin_time.sleep(args[0]) }
+                <- Nothing
+            }
+            when nfn == `term_get_size` {
+                let sz -> __builtin_term.get_size()
+                when sz != Nothing and (sz is Map) and sz[`width`] != Nothing { <- sz }
+                <- {`width` -> 80, `height` -> 24}
+            }
+            when nfn == `term_clear` {
+                __builtin_term.clear()
+                <- Nothing
+            }
+            when nfn == `term_move` {
+                when args.length > 1 { __builtin_term.move(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `term_color` {
+                when args.length > 1 { __builtin_term.color(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `term_reset` {
+                __builtin_term.reset()
+                <- Nothing
+            }
+            when nfn == `term_alt_screen_enter` {
+                __builtin_term.alt_screen_enter()
+                <- Nothing
+            }
+            when nfn == `term_alt_screen_exit` {
+                __builtin_term.alt_screen_exit()
+                <- Nothing
+            }
+            when nfn == `term_raw_enter` {
+                <- __builtin_term.raw_enter()
+            }
+            when nfn == `term_raw_exit` {
+                __builtin_term.raw_exit()
+                <- Nothing
+            }
+            when nfn == `term_hide_cursor` {
+                __builtin_term.hide_cursor()
+                <- Nothing
+            }
+            when nfn == `term_show_cursor` {
+                __builtin_term.show_cursor()
+                <- Nothing
+            }
+            when nfn == `term_clear_eol` {
+                __builtin_term.clear_eol()
+                <- Nothing
+            }
+            when nfn == `term_write` {
+                when args.length > 0 { __builtin_term.write(args[0]) }
+                <- Nothing
+            }
+            when nfn == `term_flush` {
+                __builtin_term.flush()
+                <- Nothing
+            }
+            when nfn == `term_is_tty` {
+                <- __builtin_term.is_tty()
+            }
+            when nfn == `term_read_key` {
+                <- __builtin_term.read_key()
+            }
+            when nfn == `term_poll_key` {
+                when args.length > 0 { <- __builtin_term.poll_key(args[0]) }
+                <- __builtin_term.poll_key(0)
+            }
+            when nfn == `term_paint_canvas` {
+                when args.length > 0 { <- __builtin_term.paint_canvas(args[0]) }
+                <- Nothing
+            }
+            when nfn == `term_enable_mouse` {
+                <- Nothing
+            }
+            when nfn == `term_disable_mouse` {
+                <- Nothing
+            }
+            when nfn == `term_width` {
+                let sz -> __builtin_term.get_size()
+                when sz != Nothing and sz is Map and sz[`width`] != Nothing { <- sz[`width`] }
+                <- 80
+            }
+            when nfn == `term_height` {
+                let sz -> __builtin_term.get_size()
+                when sz != Nothing and sz is Map and sz[`height`] != Nothing { <- sz[`height`] }
+                <- 24
+            }
+            when nfn == `process_shell` {
+                when args.length > 0 { <- __builtin_process.shell(args[0]) }
+                <- ``
+            }
+            when nfn == `process_shell_in` {
+                when args.length > 1 { <- __builtin_process.shell_in(args[0], args[1]) }
+                <- ``
+            }
+            when nfn == `process_shell_env` {
+                when args.length > 1 { <- __builtin_process.shell_env(args[0], args[1]) }
+                <- ``
+            }
+            when nfn == `process_shell_in_env` {
+                when args.length > 2 { <- __builtin_process.shell_in_env(args[0], args[1], args[2]) }
+                <- ``
+            }
+            when nfn == `process_shell_result` {
+                when args.length > 0 { <- __builtin_process.shell_result(args[0]) }
+                <- Nothing
+            }
+            when nfn == `process_shell_result_in` {
+                when args.length > 1 { <- __builtin_process.shell_result_in(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `process_shell_result_env` {
+                when args.length > 1 { <- __builtin_process.shell_result_env(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `process_shell_result_in_env` {
+                when args.length > 2 { <- __builtin_process.shell_result_in_env(args[0], args[1], args[2]) }
+                <- Nothing
+            }
+            when nfn == `process_shell_each_line` {
+                when args.length > 1 { <- __builtin_process.shell_each_line(args[0], args[1]) }
+                <- 0
+            }
+            when nfn == `process_shell_each_line_in` {
+                when args.length > 2 { <- __builtin_process.shell_each_line_in(args[0], args[1], args[2]) }
+                <- 0
+            }
+            when nfn == `process_shell_each_line_env` {
+                when args.length > 2 { <- __builtin_process.shell_each_line_env(args[0], args[1], args[2]) }
+                <- 0
+            }
+            when nfn == `process_get_id` {
+                <- __builtin_process.get_id()
+            }
+            when nfn == `process_spawn` {
+                when args.length > 1 { <- __builtin_process.spawn(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `process_pipeline_run` {
+                when args.length > 2 { <- __builtin_process.pipeline_run(args[0], args[1], args[2]) }
+                when args.length > 0 { <- __builtin_process.pipeline_run(args[0], Nothing, Nothing) }
+                <- Nothing
+            }
+            when nfn == `process_run` {
+                when args.length > 1 { <- __builtin_process.run(args[0], args[1]) }
+                <- Nothing
+            }
+            when nfn == `set_from_list` {
+                <- __builtin_set.from_list(args[0])
+            }
+            when nfn == `set_to_list` {
+                <- __builtin_set.to_list(args[0])
+            }
+            when nfn == `set_add` {
+                <- __builtin_set.add(args[0], args[1])
+            }
+            when nfn == `set_remove` {
+                <- __builtin_set.remove(args[0], args[1])
+            }
+            when nfn == `set_has` {
+                <- __builtin_set.has(args[0], args[1])
+            }
+            when nfn == `map_keys` {
+                when args[0] != Nothing and (args[0] is Map) { <- args[0].keys() }
+                <- []
+            }
+            when nfn == `map_values` {
+                when args[0] != Nothing and (args[0] is Map) { <- args[0].values() }
+                <- []
+            }
+            when nfn == `map_items` {
+                let items -> []
+                when args[0] != Nothing and (args[0] is Map) {
+                    do for k in args[0].keys() {
+                        items.append({`key` -> k, `value` -> args[0][k]})
+                    }
+                }
+                <- items
+            }
+            when nfn == `map_has` {
+                when args[0] != Nothing and (args[0] is Map) { <- args[0].has(args[1]) }
+                <- false
+            }
+            when nfn == `list_remove_at` {
+                let l -> args[0]
+                let idx -> args[1]
+                when l != Nothing and idx != Nothing and idx >= 0 and idx < l.length {
+                    <- __builtin_list.remove_at(l, idx)
+                }
+                <- Nothing
+            }
+            when nfn == `math_sqrt` {
+                when args.length > 0 { <- __builtin_math.sqrt(args[0]) }
+                <- 0
+            }
+            when nfn == `math_sin` {
+                when args.length > 0 { <- __builtin_math.sin(args[0]) }
+                <- 0
+            }
+            when nfn == `math_cos` {
+                when args.length > 0 { <- __builtin_math.cos(args[0]) }
+                <- 0
+            }
+            when nfn == `math_floor` {
+                when args.length > 0 { <- __builtin_math.floor(args[0]) }
+                <- 0
+            }
+            when nfn == `math_ceil` {
+                when args.length > 0 { <- __builtin_math.ceil(args[0]) }
+                <- 0
+            }
+            when nfn == `math_abs` {
+                when args.length > 0 { <- __builtin_math.abs(args[0]) }
+                <- 0
+            }
+            when nfn == `math_pow` {
+                when args.length > 1 { <- __builtin_math.pow(args[0], args[1]) }
+                <- 0
+            }
+            when nfn == `set_from_list` {
+                when args.length > 0 { <- __builtin_set.from_list(args[0]) }
+                <- []
+            }
+            when nfn == `set_to_list` {
+                when args.length > 0 { <- __builtin_set.to_list(args[0]) }
+                <- []
+            }
+            when nfn == `set_has` {
+                when args.length > 1 { <- __builtin_set.has(args[0], args[1]) }
+                <- false
+            }
+            when nfn == `set_add` {
+                when args.length > 1 { <- __builtin_set.add(args[0], args[1]) }
+                <- args[0]
+            }
+            when nfn == `set_remove` {
+                when args.length > 1 { <- __builtin_set.remove(args[0], args[1]) }
+                <- args[0]
+            }
+            when nfn == `reflect_type_name` {
+                when args != Nothing and args.length > 0 {
+                    let obj -> args[0]
+                    when obj == Nothing { <- `Nothing` }
+                    when obj is String { <- `String` }
+                    when obj is List { <- `List` }
+                    when obj is Integer { <- `Integer` }
+                    when obj is Decimal { <- `Decimal` }
+                    when obj is Boolean { <- `Boolean` }
+                    when obj is Rune { <- `Rune` }
+                    when obj is Bytes { <- `Bytes` }
+                    when obj is Set { <- `Set` }
+                    when obj is Map {
+                        when obj[`is_closure`] == true or obj[`is_native`] == true or obj[`code`] != Nothing { <- `Function` }
+                        when obj[`kind`] != Nothing { <- obj[`kind`] }
+                        when obj[`__type__`] != Nothing { <- obj[`__type__`] }
+                        <- `Map`
+                    }
+                    <- `Variant`
+                }
+                <- `Nothing`
+            }
+            when nfn == `reflect_is_reflectable` {
+                when args != Nothing and args.length > 0 {
+                    let obj -> args[0]
+                    when obj is Map {
+                        <- obj[`__type__`] != Nothing or obj[`kind`] != Nothing
+                    }
+                }
+                <- false
+            }
+            when nfn == `reflect_fields` {
+                when args != Nothing and args.length > 0 and (args[0] is Map) {
+                    <- args[0].keys()
+                }
+                <- []
+            }
+            when nfn == `reflect_has_field` {
+                when args != Nothing and args.length > 1 and (args[0] is Map) {
+                    <- args[0].has(args[1])
+                }
+                <- false
+            }
+            when nfn == `reflect_field` {
+                when args != Nothing and args.length > 1 and (args[0] is Map) {
+                    <- args[0][args[1]]
+                }
+                <- Nothing
+            }
+            when nfn == `reflect_set_field` {
+                when args != Nothing and args.length > 2 and (args[0] is Map) {
+                    args[0][args[1]] -> args[2]
+                    <- args[2]
+                }
+                <- Nothing
+            }
+            when nfn == `reflect_methods` {
+                <- []
+            }
+            when nfn == `reflect_has_method` {
+                when args != Nothing and args.length > 1 and (args[0] is Map) {
+                    let m -> args[0][args[1]]
+                    when m != Nothing and (m is Map) and (m[`is_closure`] == true or m[`is_native`] == true or m[`code`] != Nothing) {
+                        <- true
+                    }
+                }
+                <- false
+            }
+            when nfn == `reflect_call` {
+                when args != Nothing and args.length > 1 and (args[0] is Map) {
+                    let fn_val -> args[0][args[1]]
+                    let fn_args -> []
+                    when args.length > 2 and (args[2] is List) { fn_args -> args[2] }
+                    <- invoke_callable_g(fn_val, fn_args, globals)
+                }
+                <- Nothing
+            }
+            when nfn == `reflect_apply` {
+                when args != Nothing and args.length > 0 {
+                    let fn_val -> args[0]
+                    let fn_args -> []
+                    when args.length > 1 and (args[1] is List) { fn_args -> args[1] }
+                    <- invoke_callable_g(fn_val, fn_args, globals)
+                }
+                <- Nothing
+            }
+            <- Nothing
+        }
+        when callee[`is_method`] != Nothing {
+            let recv -> callee[`target`]
+            when callee[`method_fn`] != Nothing {
+                let call_args -> [recv]
+                let ai -> 0
+                do while ai < args.length {
+                    call_args.append(args[ai])
+                    ai -> ai + 1
+                }
+                <- invoke_callable_g(callee[`method_fn`], call_args, globals)
+            }
+            let m -> callee[`method`]
+            when recv is List {
+                when m == `append` or m == `push` {
+                    when args.length > 0 {
+                        let item -> args[0]
+                        let res -> vm_list_append(recv, item)
+                    }
+                    <- recv
+                }
+                when m == `pop` {
+                    <- vm_list_pop(recv)
+                }
+                when m == `at` or m == `get` {
+                    when args.length > 0 {
+                        let idx -> args[0]
+                        when idx != Nothing and idx >= 0 and idx < recv.length {
+                            <- recv[idx]
+                        }
+                    }
+                    <- Nothing
+                }
+                when m == `remove_at` {
+                    when args.length > 0 {
+                        let idx -> args[0]
+                        when idx != Nothing and idx >= 0 and idx < recv.length {
+                            <- __builtin_list.remove_at(recv, idx)
+                        }
+                    }
+                    <- Nothing
+                }
+                when m == `size` or m == `count` or m == `length` {
+                    <- recv.length
+                }
+                when m == `has` or m == `contains` {
+                    when args.length > 0 {
+                        let i -> 0
+                        do while i < recv.length {
+                            when recv[i] == args[0] { <- true }
+                            i -> i + 1
+                        }
+                    }
+                    <- false
+                }
+                when m == `clear` {
+                    do while recv.length > 0 { recv.pop() }
+                    <- Nothing
+                }
+                when m == `clone` {
+                    let copy -> []
+                    do for item in recv { copy.append(item) }
+                    <- copy
+                }
+            }
+            when recv is String {
+                when m == `at` or m == `get` or m == `char_at` {
+                    when args.length > 0 {
+                        let idx -> args[0]
+                        when idx != Nothing and idx >= 0 and idx < Str.length(recv) {
+                            <- Str.at(recv, idx)
+                        }
+                    }
+                    <- Nothing
+                }
+                when m == `length` or m == `size` or m == `count` {
+                    <- Str.length(recv)
+                }
+                when m == `starts_with` {
+                    when args.length > 0 { <- Str.starts_with(recv, args[0]) }
+                    <- false
+                }
+                when m == `ends_with` {
+                    when args.length > 0 { <- Str.ends_with(recv, args[0]) }
+                    <- false
+                }
+                when m == `contains` or m == `has` {
+                    when args.length > 0 { <- Str.contains(recv, args[0]) }
+                    <- false
+                }
+                when m == `index_of` or m == `find` {
+                    when args.length > 0 { <- Str.index_of(recv, args[0]) }
+                    <- -1
+                }
+                when m == `substring` or m == `slice` {
+                    when args.length > 1 { <- Str.substring(recv, args[0], args[1]) }
+                    when args.length > 0 { <- Str.substring(recv, args[0], Str.length(recv)) }
+                    <- recv
+                }
+                when m == `split` {
+                    when args.length > 0 { <- Str.split(recv, args[0]) }
+                    <- [recv]
+                }
+                when m == `trim` {
+                    <- Str.trim(recv)
+                }
+                when m == `to_upper` or m == `upper` {
+                    <- Str.to_upper(recv)
+                }
+                when m == `to_lower` or m == `lower` {
+                    <- Str.to_lower(recv)
+                }
+                when m == `replace` {
+                    when args.length > 1 { <- Str.replace(recv, args[0], args[1]) }
+                    <- recv
+                }
+                when m == `to_number` or m == `to_int` or m == `to_float` or m == `to_decimal` {
+                    when looks_int_str(recv) {
+                        <- parse_int_str(recv)
+                    } or {
+                        <- recv.to_number()
+                    }
+                }
+            }
+            when recv is Set {
+                when m == `size` or m == `count` or m == `length` {
+                    <- recv.length
+                }
+                when m == `has` or m == `contains` {
+                    when args.length > 0 {
+                        <- __builtin_set.has(recv, args[0])
+                    }
+                    <- false
+                }
+                when m == `add` {
+                    when args.length > 0 {
+                        __builtin_set.add(recv, args[0])
+                    }
+                    <- recv
+                }
+                when m == `remove` {
+                    when args.length > 0 {
+                        __builtin_set.remove(recv, args[0])
+                    }
+                    <- recv
+                }
+                when m == `to_list` {
+                    <- __builtin_set.to_list(recv)
+                }
+            }
+            when recv is Map {
+                when recv[`__type__`] != Nothing {
+                    let type_name -> Str.to_string(recv[`__type__`])
+                    let full_mname -> type_name + `_` + m
+                    when globals[full_mname] != Nothing {
+                        let call_args -> [recv]
+                        let ai -> 0
+                        do while ai < args.length {
+                            call_args.append(args[ai])
+                            ai -> ai + 1
+                        }
+                        <- invoke_callable_g(globals[full_mname], call_args, globals)
+                    }
+                }
+                when recv[m] != Nothing {
+                    let fn_val -> recv[m]
+                    let call_args -> [recv]
+                    let ai -> 0
+                    do while ai < args.length {
+                        call_args.append(args[ai])
+                        ai -> ai + 1
+                    }
+                    <- invoke_callable_g(fn_val, call_args, globals)
+                }
+                when m == `has` or m == `has_key` {
+                    when args.length > 0 {
+                        <- vm_map_has(recv, args[0])
+                    }
+                    <- false
+                }
+                when m == `keys` {
+                    <- vm_map_keys(recv)
+                }
+                when m == `values` {
+                    <- vm_map_values(recv)
+                }
+                when m == `items` or m == `entries` {
+                    let items -> []
+                    do for k in recv.keys() {
+                        items.append({`key` -> k, `value` -> recv[k]})
+                    }
+                    <- items
+                }
+                when m == `size` or m == `count` or m == `length` {
+                    <- recv.keys().length
+                }
+                when m == `clear` {
+                    let ks -> recv.keys()
+                    do for k in ks { recv.remove(k) }
+                    <- Nothing
+                }
+                when m == `delete` or m == `remove` {
+                    when args.length > 0 and recv.has(args[0]) {
+                        recv.remove(args[0])
+                    }
+                    <- Nothing
+                }
+            }
+            when m == `read` {
+                <- recv.read()
+            }
+            when m == `write` {
+                when args.length > 0 { <- recv.write(args[0]) }
+                <- Nothing
+            }
+            when m == `close` {
+                <- recv.close()
+            }
+            when m == `wait` {
+                <- recv.wait()
+            }
+            when m == `get_stdout` {
+                <- recv.get_stdout()
+            }
+            when m == `get_code` {
+                <- recv.get_code()
+            }
+            when m == `kill` {
+                <- recv.kill()
+            }
+            <- Nothing
+        }
+        when callee[`is_closure`] != Nothing {
+            <- eval_chunk_fn(callee[`chunk`], args, globals, callee[`captures`])
+        }
+        when callee[`code`] != Nothing {
+            <- eval_chunk_fn(callee, args, globals, Nothing)
+        }
+        when callee[`fn`] != Nothing {
+            <- invoke_callable_g(callee[`fn`], args, globals)
+        }
+        when callee[`enum_name`] != Nothing or callee[`variant_name`] != Nothing {
+            let en -> callee[`enum_name`]
+            let vn -> callee[`variant_name`]
+            when en == Nothing { en -> callee[`enum`] }
+            when vn == Nothing { vn -> callee[`tag`] }
+            <- {
+                `enum_name` -> en,
+                `variant_name` -> vn,
+                `data` -> args,
+                `__type__` -> en
+            }
+        }
     }
-    when n == 1 {
-        <- callee(args[0])
-    }
-    when n == 2 {
-        <- callee(args[0], args[1])
-    }
-    when n == 3 {
-        <- callee(args[0], args[1], args[2])
-    }
-    when n == 4 {
-        <- callee(args[0], args[1], args[2], args[3])
-    }
-    when n == 5 {
-        <- callee(args[0], args[1], args[2], args[3], args[4])
-    }
-    when n == 6 {
-        <- callee(args[0], args[1], args[2], args[3], args[4], args[5])
-    }
-    <- Nothing
+    <- __builtin_reflect.apply(callee, args)
 }
 
-function eval_chunk(chunk, globals) {
-    when globals == Nothing {
-        globals -> {}
+export function eval_chunk(chunk, globals) {
+    when globals == Nothing or globals.keys().length == 0 {
+        globals -> create_vm_prelude()
     }
     let code -> chunk[`code`]
     let consts -> chunk[`constants`]
@@ -738,7 +3735,11 @@ function eval_chunk(chunk, globals) {
             let lo -> code[ip + 1]
             ip -> ip + 2
             let slot -> (hi * 256) + lo
-            stack.append(locals[slot])
+            when slot < locals.length {
+                stack.append(locals[slot])
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 33 { // OP_STORE_LOCAL
             let hi -> code[ip]
@@ -746,6 +3747,9 @@ function eval_chunk(chunk, globals) {
             ip -> ip + 2
             let slot -> (hi * 256) + lo
             let val -> stack.pop()
+            do while locals.length <= slot {
+                locals.append(Nothing)
+            }
             locals[slot] -> val
         }
         or when op == 34 { // OP_LOAD_GLOBAL
@@ -754,7 +3758,22 @@ function eval_chunk(chunk, globals) {
             ip -> ip + 2
             let idx -> (hi * 256) + lo
             let gname -> consts[idx]
-            stack.append(globals[gname])
+            when globals[gname] != Nothing {
+                stack.append(globals[gname])
+            } or when Str.contains(gname, `_`) {
+                let under_pos -> Str.index_of(gname, `_`)
+                let prefix -> Str.substring(gname, 0, under_pos)
+                let member_name -> Str.substring(gname, under_pos + 1, Str.length(gname))
+                when globals[prefix] != Nothing and globals[prefix] is Map and globals[prefix][member_name] != Nothing {
+                    stack.append(globals[prefix][member_name])
+                } or when globals[member_name] != Nothing {
+                    stack.append(globals[member_name])
+                } or {
+                    stack.append(Nothing)
+                }
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 35 { // OP_STORE_GLOBAL
             let hi -> code[ip]
@@ -773,7 +3792,7 @@ function eval_chunk(chunk, globals) {
         or when op == 49 { // OP_SUB
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a - b)
+            stack.append(eval_sub_vm(a, b))
         }
         or when op == 50 { // OP_MUL
             let b -> stack.pop()
@@ -789,6 +3808,47 @@ function eval_chunk(chunk, globals) {
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(a % b)
+        }
+        or when op == 53 { // OP_NEG
+            let a -> stack.pop()
+            stack.append(-a)
+        }
+        or when op == 54 { // OP_NOT
+            let a -> stack.pop()
+            when a == false or a == Nothing or a == 0 or a == `` {
+                stack.append(true)
+            } or {
+                stack.append(false)
+            }
+        }
+        or when op == 55 { // OP_BIT_NOT
+            let a -> stack.pop()
+            stack.append(~parse_int_str(a))
+        }
+        or when op == 56 { // OP_BIT_AND
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) & parse_int_str(b))
+        }
+        or when op == 57 { // OP_BIT_OR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) | parse_int_str(b))
+        }
+        or when op == 58 { // OP_BIT_XOR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) ^^ parse_int_str(b))
+        }
+        or when op == 59 { // OP_SHL
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) << parse_int_str(b))
+        }
+        or when op == 60 { // OP_SHR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) >> parse_int_str(b))
         }
         or when op == 64 { // OP_EQ
             let b -> stack.pop()
@@ -864,7 +3924,29 @@ function eval_chunk(chunk, globals) {
         or when op == 82 { // OP_GET_INDEX
             let key -> stack.pop()
             let obj -> stack.pop()
-            stack.append(obj[key])
+            when obj == Nothing {
+                stack.append(Nothing)
+            } or when obj is Map {
+                stack.append(obj[key])
+            } or when (obj is List) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
+                let kidx -> 0
+                when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx >= 0 and kidx < obj.length {
+                    stack.append(obj[kidx])
+                } or {
+                    stack.append(Nothing)
+                }
+            } or when (obj is String) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
+                let kidx -> 0
+                when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx >= 0 and kidx < Str.length(obj) {
+                    stack.append(Str.at(obj, kidx))
+                } or {
+                    stack.append(Nothing)
+                }
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 83 { // OP_SET_INDEX
             let val -> stack.pop()
@@ -880,7 +3962,156 @@ function eval_chunk(chunk, globals) {
             let idx -> (hi * 256) + lo
             let prop -> consts[idx]
             let obj -> stack.pop()
-            stack.append(obj[prop])
+            when obj == Nothing {
+                stack.append(Nothing)
+            } or when (obj is Map) and obj[`__type__`] != Nothing and globals.has(obj[`__type__`] + `_` + prop) {
+                stack.append({
+                    `target` -> obj,
+                    `method_fn` -> globals[obj[`__type__`] + `_` + prop],
+                    `is_method` -> true
+                })
+            } or when (obj is Map) and obj[`__type`] != Nothing and globals.has(obj[`__type`] + `_` + prop) {
+                stack.append({
+                    `target` -> obj,
+                    `method_fn` -> globals[obj[`__type`] + `_` + prop],
+                    `is_method` -> true
+                })
+            } or when (obj is Map) and obj.has(prop) {
+                stack.append(obj[prop])
+            } or when prop == `length` {
+                when obj is List or obj is String {
+                    stack.append(obj.length)
+                } or when obj is Map {
+                    stack.append(obj.keys().length)
+                } or {
+                    stack.append(0)
+                }
+            } or when prop == `kind` {
+                when obj is String {
+                    stack.append(`String`)
+                } or when obj is List {
+                    stack.append(`List`)
+                } or when obj is Integer {
+                    stack.append(`Integer`)
+                } or when obj is Decimal {
+                    stack.append(`Decimal`)
+                } or when obj is Boolean {
+                    stack.append(`Boolean`)
+                } or when obj is Rune {
+                    stack.append(`Rune`)
+                } or when obj is Bytes {
+                    stack.append(`Bytes`)
+                } or when obj is Set {
+                    stack.append(`Set`)
+                } or when obj is Map {
+                    when obj[`kind`] != Nothing {
+                        stack.append(obj[`kind`])
+                    } or when obj[`__type__`] != Nothing {
+                        stack.append(obj[`__type__`])
+                    } or {
+                        stack.append(`Map`)
+                    }
+                } or {
+                    stack.append(Nothing)
+                }
+            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            } or when (obj is List or obj is Map or obj is Set) and (
+                prop == `append` or prop == `push` or prop == `pop` or prop == `has` or
+                prop == `contains` or prop == `keys` or prop == `values` or prop == `items` or
+                prop == `entries` or prop == `at` or prop == `get` or prop == `remove_at` or
+                prop == `size` or prop == `count` or prop == `length` or prop == `add` or
+                prop == `remove` or prop == `to_list` or prop == `clear` or prop == `clone`
+            ) {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            } or {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            }
+        }
+        or when op == 85 { // OP_IS_TYPE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            let tname -> consts[idx]
+            let val -> stack.pop()
+            stack.append(eval_is_type_vm(val, tname))
+        }
+        or when op == 86 { // OP_CAST
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            let target_type -> consts[idx]
+            let val -> stack.pop()
+            stack.append(eval_cast_vm(val, target_type))
+        }
+        or when op == 87 { // OP_MAKE_CLOSURE
+            let hi1 -> code[ip]
+            let lo1 -> code[ip + 1]
+            let hi2 -> code[ip + 2]
+            let lo2 -> code[ip + 3]
+            ip -> ip + 4
+            let chunk_idx -> (hi1 * 256) + lo1
+            let cap_cnt -> (hi2 * 256) + lo2
+            let fn_chunk -> consts[chunk_idx]
+            let caps -> []
+            let ci -> 0
+            do while ci < cap_cnt {
+                caps.append(stack.pop())
+                ci -> ci + 1
+            }
+            let rcaps -> []
+            let ri -> caps.length - 1
+            do while ri >= 0 {
+                rcaps.append(caps[ri])
+                ri -> ri - 1
+            }
+            stack.append({
+                `chunk` -> fn_chunk,
+                `captures` -> rcaps,
+                `is_closure` -> true
+            })
+        }
+        or when op == 88 { // OP_RANGE_EXCL (a..b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, false))
+        }
+        or when op == 89 { // OP_RANGE_INCL (a..=b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, true))
+        }
+        or when op == 90 { // OP_CONCAT_APPEND (a ++ b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_concat_append_vm(a, b))
+        }
+        or when op == 91 { // OP_DROP (a -- b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_drop_vm(a, b))
+        }
+        or when op == 92 { // OP_CHECK_UNWRAP
+            let top -> stack.pop()
+            when top is Error or (top != Nothing and top is Map and top[`__type__`] != Nothing and top[`__type__`] == `Error`) {
+                stack.append(Nothing)
+            } or {
+                stack.append(top)
+            }
         }
         or when op == 96 { // OP_JUMP
             let hi -> code[ip]
@@ -905,6 +4136,19 @@ function eval_chunk(chunk, globals) {
                 ip -> ip + offset
             }
         }
+        or when op == 98 { // OP_JUMP_IF_TRUE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let offset -> (hi * 256) + lo
+            when offset > 32767 {
+                offset -> offset - 65536
+            }
+            let top -> stack[stack.length - 1]
+            when top != false and top != Nothing and top != 0 {
+                ip -> ip + offset
+            }
+        }
         or when op == 99 { // OP_POP_JUMP_IF_FALSE
             let hi -> code[ip]
             let lo -> code[ip + 1]
@@ -915,6 +4159,19 @@ function eval_chunk(chunk, globals) {
             }
             let top -> stack.pop()
             when top == false or top == Nothing or top == 0 {
+                ip -> ip + offset
+            }
+        }
+        or when op == 100 { // OP_POP_JUMP_IF_TRUE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let offset -> (hi * 256) + lo
+            when offset > 32767 {
+                offset -> offset - 65536
+            }
+            let top -> stack.pop()
+            when top != false and top != Nothing and top != 0 {
                 ip -> ip + offset
             }
         }
@@ -938,11 +4195,23 @@ function eval_chunk(chunk, globals) {
             }
             let callee -> stack.pop()
             
-            when callee != Nothing and callee.has(`code`) {
-                let fn_res -> eval_chunk_fn(callee, rargs, globals)
+            when callee != Nothing and (callee is Map) and callee[`is_method`] != Nothing and callee[`method_fn`] != Nothing {
+                let call_args -> [callee[`target`]]
+                let ai -> 0
+                do while ai < rargs.length {
+                    call_args.append(rargs[ai])
+                    ai -> ai + 1
+                }
+                let fn_res -> eval_chunk_fn(callee[`method_fn`], call_args, globals, Nothing)
+                stack.append(fn_res)
+            } or when callee != Nothing and (callee is Map) and callee[`is_closure`] != Nothing {
+                let fn_res -> eval_chunk_fn(callee[`chunk`], rargs, globals, callee[`captures`])
+                stack.append(fn_res)
+            } or when callee != Nothing and (callee is Map) and callee[`code`] != Nothing {
+                let fn_res -> eval_chunk_fn(callee, rargs, globals, Nothing)
                 stack.append(fn_res)
             } or {
-                let fn_res -> invoke_callable(callee, rargs)
+                let fn_res -> invoke_callable_g(callee, rargs, globals)
                 stack.append(fn_res)
             }
         }
@@ -966,7 +4235,7 @@ function eval_chunk(chunk, globals) {
     <- Nothing
 }
 
-function eval_chunk_fn(chunk, args, globals) {
+function eval_chunk_fn(chunk, args, globals, captures) {
     let code -> chunk[`code`]
     let consts -> chunk[`constants`]
     let stack -> []
@@ -1022,7 +4291,11 @@ function eval_chunk_fn(chunk, args, globals) {
             let lo -> code[ip + 1]
             ip -> ip + 2
             let slot -> (hi * 256) + lo
-            stack.append(locals[slot])
+            when slot < locals.length {
+                stack.append(locals[slot])
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 33 { // OP_STORE_LOCAL
             let hi -> code[ip]
@@ -1030,7 +4303,31 @@ function eval_chunk_fn(chunk, args, globals) {
             ip -> ip + 2
             let slot -> (hi * 256) + lo
             let val -> stack.pop()
+            do while locals.length <= slot {
+                locals.append(Nothing)
+            }
             locals[slot] -> val
+        }
+        or when op == 38 { // OP_LOAD_CAPTURE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            when captures != Nothing and idx < captures.length {
+                stack.append(captures[idx])
+            } or {
+                stack.append(Nothing)
+            }
+        }
+        or when op == 39 { // OP_STORE_CAPTURE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            let val -> stack[stack.length - 1]
+            when captures != Nothing and idx < captures.length {
+                captures[idx] -> val
+            }
         }
         or when op == 34 { // OP_LOAD_GLOBAL
             let hi -> code[ip]
@@ -1038,7 +4335,22 @@ function eval_chunk_fn(chunk, args, globals) {
             ip -> ip + 2
             let idx -> (hi * 256) + lo
             let gname -> consts[idx]
-            stack.append(globals[gname])
+            when globals[gname] != Nothing {
+                stack.append(globals[gname])
+            } or when Str.contains(gname, `_`) {
+                let under_pos -> Str.index_of(gname, `_`)
+                let prefix -> Str.substring(gname, 0, under_pos)
+                let member_name -> Str.substring(gname, under_pos + 1, Str.length(gname))
+                when globals[prefix] != Nothing and globals[prefix] is Map and globals[prefix][member_name] != Nothing {
+                    stack.append(globals[prefix][member_name])
+                } or when globals[member_name] != Nothing {
+                    stack.append(globals[member_name])
+                } or {
+                    stack.append(Nothing)
+                }
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 35 { // OP_STORE_GLOBAL
             let hi -> code[ip]
@@ -1057,7 +4369,7 @@ function eval_chunk_fn(chunk, args, globals) {
         or when op == 49 { // OP_SUB
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a - b)
+            stack.append(eval_sub_vm(a, b))
         }
         or when op == 50 { // OP_MUL
             let b -> stack.pop()
@@ -1073,6 +4385,47 @@ function eval_chunk_fn(chunk, args, globals) {
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(a % b)
+        }
+        or when op == 53 { // OP_NEG
+            let a -> stack.pop()
+            stack.append(-a)
+        }
+        or when op == 54 { // OP_NOT
+            let a -> stack.pop()
+            when a == false or a == Nothing or a == 0 or a == `` {
+                stack.append(true)
+            } or {
+                stack.append(false)
+            }
+        }
+        or when op == 55 { // OP_BIT_NOT
+            let a -> stack.pop()
+            stack.append(~parse_int_str(a))
+        }
+        or when op == 56 { // OP_BIT_AND
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) & parse_int_str(b))
+        }
+        or when op == 57 { // OP_BIT_OR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) | parse_int_str(b))
+        }
+        or when op == 58 { // OP_BIT_XOR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) ^^ parse_int_str(b))
+        }
+        or when op == 59 { // OP_SHL
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) << parse_int_str(b))
+        }
+        or when op == 60 { // OP_SHR
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(parse_int_str(a) >> parse_int_str(b))
         }
         or when op == 64 { // OP_EQ
             let b -> stack.pop()
@@ -1148,7 +4501,29 @@ function eval_chunk_fn(chunk, args, globals) {
         or when op == 82 { // OP_GET_INDEX
             let key -> stack.pop()
             let obj -> stack.pop()
-            stack.append(obj[key])
+            when obj == Nothing {
+                stack.append(Nothing)
+            } or when obj is Map {
+                stack.append(obj[key])
+            } or when (obj is List) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
+                let kidx -> 0
+                when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx >= 0 and kidx < obj.length {
+                    stack.append(obj[kidx])
+                } or {
+                    stack.append(Nothing)
+                }
+            } or when (obj is String) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
+                let kidx -> 0
+                when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx >= 0 and kidx < Str.length(obj) {
+                    stack.append(Str.at(obj, kidx))
+                } or {
+                    stack.append(Nothing)
+                }
+            } or {
+                stack.append(Nothing)
+            }
         }
         or when op == 83 { // OP_SET_INDEX
             let val -> stack.pop()
@@ -1164,7 +4539,156 @@ function eval_chunk_fn(chunk, args, globals) {
             let idx -> (hi * 256) + lo
             let prop -> consts[idx]
             let obj -> stack.pop()
-            stack.append(obj[prop])
+            when obj == Nothing {
+                stack.append(Nothing)
+            } or when (obj is Map) and obj[`__type__`] != Nothing and globals.has(obj[`__type__`] + `_` + prop) {
+                stack.append({
+                    `target` -> obj,
+                    `method_fn` -> globals[obj[`__type__`] + `_` + prop],
+                    `is_method` -> true
+                })
+            } or when (obj is Map) and obj[`__type`] != Nothing and globals.has(obj[`__type`] + `_` + prop) {
+                stack.append({
+                    `target` -> obj,
+                    `method_fn` -> globals[obj[`__type`] + `_` + prop],
+                    `is_method` -> true
+                })
+            } or when (obj is Map) and obj.has(prop) {
+                stack.append(obj[prop])
+            } or when prop == `length` {
+                when obj is List or obj is String {
+                    stack.append(obj.length)
+                } or when obj is Map {
+                    stack.append(obj.keys().length)
+                } or {
+                    stack.append(0)
+                }
+            } or when prop == `kind` {
+                when obj is String {
+                    stack.append(`String`)
+                } or when obj is List {
+                    stack.append(`List`)
+                } or when obj is Integer {
+                    stack.append(`Integer`)
+                } or when obj is Decimal {
+                    stack.append(`Decimal`)
+                } or when obj is Boolean {
+                    stack.append(`Boolean`)
+                } or when obj is Rune {
+                    stack.append(`Rune`)
+                } or when obj is Bytes {
+                    stack.append(`Bytes`)
+                } or when obj is Set {
+                    stack.append(`Set`)
+                } or when obj is Map {
+                    when obj[`kind`] != Nothing {
+                        stack.append(obj[`kind`])
+                    } or when obj[`__type__`] != Nothing {
+                        stack.append(obj[`__type__`])
+                    } or {
+                        stack.append(`Map`)
+                    }
+                } or {
+                    stack.append(Nothing)
+                }
+            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            } or when (obj is List or obj is Map or obj is Set) and (
+                prop == `append` or prop == `push` or prop == `pop` or prop == `has` or
+                prop == `contains` or prop == `keys` or prop == `values` or prop == `items` or
+                prop == `entries` or prop == `at` or prop == `get` or prop == `remove_at` or
+                prop == `size` or prop == `count` or prop == `length` or prop == `add` or
+                prop == `remove` or prop == `to_list` or prop == `clear` or prop == `clone`
+            ) {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            } or {
+                stack.append({
+                    `target` -> obj,
+                    `method` -> prop,
+                    `is_method` -> true
+                })
+            }
+        }
+        or when op == 85 { // OP_IS_TYPE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            let tname -> consts[idx]
+            let val -> stack.pop()
+            stack.append(eval_is_type_vm(val, tname))
+        }
+        or when op == 86 { // OP_CAST
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let idx -> (hi * 256) + lo
+            let target_type -> consts[idx]
+            let val -> stack.pop()
+            stack.append(eval_cast_vm(val, target_type))
+        }
+        or when op == 87 { // OP_MAKE_CLOSURE
+            let hi1 -> code[ip]
+            let lo1 -> code[ip + 1]
+            let hi2 -> code[ip + 2]
+            let lo2 -> code[ip + 3]
+            ip -> ip + 4
+            let chunk_idx -> (hi1 * 256) + lo1
+            let cap_cnt -> (hi2 * 256) + lo2
+            let fn_chunk -> consts[chunk_idx]
+            let caps -> []
+            let ci -> 0
+            do while ci < cap_cnt {
+                caps.append(stack.pop())
+                ci -> ci + 1
+            }
+            let rcaps -> []
+            let ri -> caps.length - 1
+            do while ri >= 0 {
+                rcaps.append(caps[ri])
+                ri -> ri - 1
+            }
+            stack.append({
+                `chunk` -> fn_chunk,
+                `captures` -> rcaps,
+                `is_closure` -> true
+            })
+        }
+        or when op == 88 { // OP_RANGE_EXCL (a..b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, false))
+        }
+        or when op == 89 { // OP_RANGE_INCL (a..=b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, true))
+        }
+        or when op == 90 { // OP_CONCAT_APPEND (a ++ b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_concat_append_vm(a, b))
+        }
+        or when op == 91 { // OP_DROP (a -- b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_drop_vm(a, b))
+        }
+        or when op == 92 { // OP_CHECK_UNWRAP
+            let top -> stack.pop()
+            when top is Error or (top != Nothing and top is Map and top[`__type__`] != Nothing and top[`__type__`] == `Error`) {
+                stack.append(Nothing)
+            } or {
+                stack.append(top)
+            }
         }
         or when op == 96 { // OP_JUMP
             let hi -> code[ip]
@@ -1189,6 +4713,19 @@ function eval_chunk_fn(chunk, args, globals) {
                 ip -> ip + offset
             }
         }
+        or when op == 98 { // OP_JUMP_IF_TRUE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let offset -> (hi * 256) + lo
+            when offset > 32767 {
+                offset -> offset - 65536
+            }
+            let top -> stack[stack.length - 1]
+            when top != false and top != Nothing and top != 0 {
+                ip -> ip + offset
+            }
+        }
         or when op == 99 { // OP_POP_JUMP_IF_FALSE
             let hi -> code[ip]
             let lo -> code[ip + 1]
@@ -1199,6 +4736,19 @@ function eval_chunk_fn(chunk, args, globals) {
             }
             let top -> stack.pop()
             when top == false or top == Nothing or top == 0 {
+                ip -> ip + offset
+            }
+        }
+        or when op == 100 { // OP_POP_JUMP_IF_TRUE
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let offset -> (hi * 256) + lo
+            when offset > 32767 {
+                offset -> offset - 65536
+            }
+            let top -> stack.pop()
+            when top != false and top != Nothing and top != 0 {
                 ip -> ip + offset
             }
         }
@@ -1222,11 +4772,25 @@ function eval_chunk_fn(chunk, args, globals) {
             }
             let callee2 -> stack.pop()
             
-            when callee2 != Nothing and callee2.has(`code`) {
-                let fn_res2 -> eval_chunk_fn(callee2, rargs2, globals)
+            when callee2 != Nothing and (callee2 is Map) and callee2[`is_method`] != Nothing and callee2[`method_fn`] != Nothing {
+                let call_args2 -> [callee2[`target`]]
+                let ai2 -> 0
+                do while ai2 < rargs2.length {
+                    call_args2.append(rargs2[ai2])
+                    ai2 -> ai2 + 1
+                }
+                let fn_res2 -> eval_chunk_fn(callee2[`method_fn`], call_args2, globals, Nothing)
                 stack.append(fn_res2)
+            } or when callee2 != Nothing and (callee2 is Map) and callee2[`is_closure`] != Nothing {
+                let fn_res2 -> eval_chunk_fn(callee2[`chunk`], rargs2, globals, callee2[`captures`])
+                stack.append(fn_res2)
+            } or when callee2 != Nothing and (callee2 is Map) and callee2[`code`] != Nothing {
+                let fn_res2 -> eval_chunk_fn(callee2, rargs2, globals, Nothing)
+                stack.append(fn_res2)
+            } or when callee2 == Nothing {
+                stack.append(Nothing)
             } or {
-                let fn_res2 -> invoke_callable(callee2, rargs2)
+                let fn_res2 -> invoke_callable_g(callee2, rargs2, globals)
                 stack.append(fn_res2)
             }
         }
@@ -1248,4 +4812,668 @@ function eval_chunk_fn(chunk, args, globals) {
         <- stack.pop()
     }
     <- Nothing
+}
+
+// --- Bytecode Serialization, Caching (.zbc) & Packaging ---
+
+export function serialize_chunk(chunk, src_hash) {
+    when src_hash == Nothing {
+        src_hash -> `0`
+    }
+    let num_locals -> chunk[`num_locals`]
+    let cname -> chunk[`name`]
+    when cname == Nothing {
+        cname -> `main`
+    }
+    let out -> `ZENB:1:` + Str.to_string(src_hash) + `:` + Str.to_string(num_locals) + `:` + Str.to_string(cname) + `\n`
+    
+    // Constants
+    let consts -> chunk[`constants`]
+    let cn -> 0
+    when consts != Nothing {
+        cn -> consts.length
+    }
+    out -> out + `CONSTANTS:` + Str.to_string(cn) + `\n`
+    let ci -> 0
+    do while ci < cn {
+        let cv -> consts[ci]
+        when cv is Map and cv[`code`] != Nothing {
+            let sub_text -> serialize_chunk(cv, `sub`)
+            sub_text -> Str.replace(sub_text, `\\`, `\\\\`)
+            sub_text -> Str.replace(sub_text, `\n`, `\\n`)
+            out -> out + `F:` + sub_text + `\n`
+        } or when cv == Nothing {
+            out -> out + `N:\n`
+        } or when cv == Default {
+            out -> out + `D:\n`
+        } or when cv == True or cv == true {
+            out -> out + `B:1\n`
+        } or when cv == False or cv == false {
+            out -> out + `B:0\n`
+        } or {
+            let sval -> Str.to_string(cv)
+            let slen -> Str.length(sval)
+            let is_num -> True
+            when slen == 0 {
+                is_num -> False
+            }
+            let si -> 0
+            when slen > 0 and Str.at(sval, 0) == `-` {
+                si -> 1
+            }
+            do while si < slen and is_num {
+                let ch -> Str.at(sval, si)
+                when Str.index_of(`0123456789`, ch) == -1 {
+                    is_num -> False
+                }
+                si -> si + 1
+            }
+            when is_num {
+                out -> out + `I:` + sval + `\n`
+            } or {
+                sval -> Str.replace(sval, `\\`, `\\\\`)
+                sval -> Str.replace(sval, `\n`, `\\n`)
+                out -> out + `S:` + sval + `\n`
+            }
+        }
+        ci -> ci + 1
+    }
+
+    // Code
+    let code -> chunk[`code`]
+    let code_len -> 0
+    when code != Nothing {
+        code_len -> code.length
+    }
+    out -> out + `CODE:` + Str.to_string(code_len) + `\n`
+    let cdi -> 0
+    let code_str -> ``
+    do while cdi < code_len {
+        let b -> Str.to_string(code[cdi])
+        when code_str == `` {
+            code_str -> b
+        } or {
+            code_str -> code_str + `,` + b
+        }
+        cdi -> cdi + 1
+    }
+    out -> out + code_str + `\n`
+
+    // Lines
+    let lines -> chunk[`lines`]
+    let lines_len -> 0
+    when lines != Nothing {
+        lines_len -> lines.length
+    }
+    out -> out + `LINES:` + Str.to_string(lines_len) + `\n`
+    let ldi -> 0
+    let lines_str -> ``
+    do while ldi < lines_len {
+        let ln -> Str.to_string(lines[ldi])
+        when lines_str == `` {
+            lines_str -> ln
+        } or {
+            lines_str -> lines_str + `,` + ln
+        }
+        ldi -> ldi + 1
+    }
+    out -> out + lines_str + `\n`
+
+    <- out
+}
+
+export function deserialize_chunk(raw_text) {
+    when raw_text == Nothing or raw_text == `` {
+        <- {`ok` -> false, `error` -> `empty bytecode payload`}
+    }
+    let lines -> Str.split(raw_text, `\n`)
+    when lines.length < 5 {
+        <- {`ok` -> false, `error` -> `invalid bytecode format: too short`}
+    }
+    let hparts -> Str.split(lines[0], `:`)
+    when hparts.length < 5 or hparts[0] != `ZENB` {
+        <- {`ok` -> false, `error` -> `invalid magic header in bytecode`}
+    }
+    let src_hash -> hparts[2]
+    let num_locals -> parse_int_str(hparts[3])
+    let cname -> hparts[4]
+
+    let li -> 1
+    // Parse Constants
+    let c_header -> Str.split(lines[li], `:`)
+    when c_header[0] != `CONSTANTS` {
+        <- {`ok` -> false, `error` -> `expected CONSTANTS section`}
+    }
+    let const_count -> parse_int_str(c_header[1])
+    li -> li + 1
+
+    let consts -> []
+    let ci -> 0
+    do while ci < const_count and li < lines.length {
+        let cline -> lines[li]
+        let colon -> Str.index_of(cline, `:`)
+        when colon != -1 {
+            let tag -> Str.substring(cline, 0, colon)
+            let val_str -> Str.substring(cline, colon + 1, Str.length(cline))
+            when tag == `F` {
+                let sub_raw -> Str.replace(val_str, `\\n`, `\n`)
+                sub_raw -> Str.replace(sub_raw, `\\\\`, `\\`)
+                let sub_res -> deserialize_chunk(sub_raw)
+                when sub_res[`ok`] {
+                    consts.append(sub_res[`chunk`])
+                } or {
+                    consts.append(Nothing)
+                }
+            } or when tag == `N` {
+                consts.append(Nothing)
+            } or when tag == `D` {
+                consts.append(Default)
+            } or when tag == `B` {
+                when val_str == `1` { consts.append(True) } or { consts.append(False) }
+            } or when tag == `S` {
+                let sval -> Str.replace(val_str, `\\n`, `\n`)
+                sval -> Str.replace(sval, `\\\\`, `\\`)
+                consts.append(sval)
+            } or when tag == `I` {
+                consts.append(parse_int_str(val_str))
+            } or {
+                consts.append(val_str)
+            }
+        }
+        li -> li + 1
+        ci -> ci + 1
+    }
+
+    // Parse Code
+    when li >= lines.length {
+        <- {`ok` -> false, `error` -> `missing CODE section`}
+    }
+    let code_header -> Str.split(lines[li], `:`)
+    when code_header[0] != `CODE` {
+        <- {`ok` -> false, `error` -> `expected CODE section`}
+    }
+    let code_count -> parse_int_str(code_header[1])
+    li -> li + 1
+
+    let code_bytes -> []
+    when code_count > 0 and li < lines.length {
+        let byte_tokens -> Str.split(lines[li], `,`)
+        let bi -> 0
+        let bn -> byte_tokens.length
+        do while bi < bn and bi < code_count {
+            code_bytes.append(parse_int_str(byte_tokens[bi]))
+            bi -> bi + 1
+        }
+    }
+    li -> li + 1
+
+    // Parse Lines
+    let debug_lines -> []
+    when li < lines.length {
+        let lines_header -> Str.split(lines[li], `:`)
+        when lines_header[0] == `LINES` {
+            let line_count -> parse_int_str(lines_header[1])
+            li -> li + 1
+            when line_count > 0 and li < lines.length {
+                let line_tokens -> Str.split(lines[li], `,`)
+                let lti -> 0
+                let ltn -> line_tokens.length
+                do while lti < ltn and lti < line_count {
+                    debug_lines.append(parse_int_str(line_tokens[lti]))
+                    lti -> lti + 1
+                }
+            }
+        }
+    }
+
+    let chunk -> {
+        `code` -> code_bytes,
+        `constants` -> consts,
+        `lines` -> debug_lines,
+        `num_locals` -> num_locals,
+        `name` -> cname
+    }
+    <- {`ok` -> true, `chunk` -> chunk, `src_hash` -> src_hash}
+}
+
+export function is_bytecode_file(filepath) {
+    when filepath == Nothing {
+        <- False
+    }
+    when Str.ends_with(filepath, `.zbc`) {
+        <- True
+    }
+    when __builtin_file.is_file(filepath) {
+        let content -> __builtin_file.read(filepath)
+        when Str.starts_with(content, `ZENB:`) {
+            <- True
+        }
+    }
+    <- False
+}
+
+export function write_bytecode_file(chunk, filepath, src_hash) {
+    let payload -> serialize_chunk(chunk, src_hash)
+    <- __builtin_file.write(filepath, payload)
+}
+
+export function read_bytecode_file(filepath) {
+    when not __builtin_file.is_file(filepath) {
+        <- {`ok` -> false, `error` -> `bytecode file not found: ` + filepath}
+    }
+    let content -> __builtin_file.read(filepath)
+    <- deserialize_chunk(content)
+}
+
+export function get_cache_path(src_path) {
+    let filename -> src_path
+    do while Str.contains(filename, `/`) {
+        let sl -> Str.index_of(filename, `/`)
+        filename -> Str.substring(filename, sl + 1, Str.length(filename))
+    }
+    let stem -> filename
+    when Str.ends_with(stem, `.zl`) {
+        stem -> Str.substring(stem, 0, Str.length(stem) - 3)
+    }
+    <- `__zcache__/` + stem + `.zbc`
+}
+
+export function compile_file_to_bundle(src_path, out_zbc_path) {
+    when not __builtin_file.is_file(src_path) {
+        <- {`ok` -> false, `error` -> `source file not found: ` + src_path}
+    }
+    let src -> __builtin_file.read(src_path)
+    let prog -> Parser.parse_source(src)
+    when prog == Nothing or AST.prog_err(prog) != Nothing {
+        let err -> AST.prog_err(prog)
+        when err == Nothing { err -> `parse error` }
+        <- {`ok` -> false, `error` -> Str.to_string(err)}
+    }
+    let b_res -> compile_program(prog)
+    when b_res[`ok`] != true {
+        <- {`ok` -> false, `error` -> `bytecode compile failed`}
+    }
+    let chunk -> b_res[`chunk`]
+    write_bytecode_file(chunk, out_zbc_path, Str.length(src))
+    <- {`ok` -> true, `zbc_path` -> out_zbc_path, `chunk` -> chunk}
+}
+
+export function eval_bytecode_file(zbc_path, globals) {
+    let r -> read_bytecode_file(zbc_path)
+    when r[`ok`] != true {
+        <- Nothing
+    }
+    let chunk -> r[`chunk`]
+    when globals == Nothing {
+        globals -> {}
+    }
+    <- eval_chunk(chunk, globals)
+}
+
+function eval_range_vm(st, en, inclusive) {
+    let res -> []
+    when st is Integer and en is Integer {
+        when st <= en {
+            let cur -> st
+            let limit -> en
+            when inclusive { limit -> limit + 1 }
+            do while cur < limit {
+                res.append(cur)
+                cur -> cur + 1
+            }
+        } or {
+            let cur -> st
+            let limit -> en
+            when inclusive { limit -> limit - 1 }
+            do while cur > limit {
+                res.append(cur)
+                cur -> cur - 1
+            }
+        }
+        <- res
+    }
+    when st is String and en is String {
+        let s0 -> Str.at(st, 0)
+        let s1 -> Str.at(en, 0)
+        let c0 -> Str.index_of(`abcdefghijklmnopqrstuvwxyz`, s0)
+        let c1 -> Str.index_of(`abcdefghijklmnopqrstuvwxyz`, s1)
+        when c0 != -1 and c1 != -1 {
+            let chars -> `abcdefghijklmnopqrstuvwxyz`
+            when c0 <= c1 {
+                let cur -> c0
+                let limit -> c1
+                when inclusive { limit -> limit + 1 }
+                do while cur < limit {
+                    res.append(Str.at(chars, cur))
+                    cur -> cur + 1
+                }
+            } or {
+                let cur -> c0
+                let limit -> c1
+                when inclusive { limit -> limit - 1 }
+                do while cur > limit {
+                    res.append(Str.at(chars, cur))
+                    cur -> cur - 1
+                }
+            }
+            <- res
+        }
+    }
+    <- res
+}
+
+function eval_is_type_vm(val, type_name) {
+    when type_name == `Integer` or type_name == `Int` or type_name == `Int64` or
+         type_name == `Int32` or type_name == `Int16` or type_name == `Int8` or type_name == `Byte` {
+        <- val is Integer
+    }
+    when type_name == `Decimal` or type_name == `Float` or type_name == `Double` {
+        <- val is Decimal
+    }
+    when type_name == `String` or type_name == `Str` {
+        <- val is String
+    }
+    when type_name == `Boolean` or type_name == `Bool` {
+        <- val is Boolean
+    }
+    when type_name == `Rune` or type_name == `Char` or type_name == `Glyph` {
+        when val is Rune { <- true }
+        when val is String and Str.length(val) == 1 { <- true }
+        <- false
+    }
+    when type_name == `Bytes` or type_name == `Buffer` {
+        <- val is Bytes
+    }
+    when type_name == `List` {
+        <- val is List
+    }
+    when type_name == `Set` {
+        <- val is Set
+    }
+    when type_name == `Map` {
+        <- val is Map
+    }
+    when type_name == `Nothing` or type_name == `nothing` or type_name == `None` {
+        <- val == Nothing
+    }
+    when type_name == `Error` {
+        when val is Error {
+            <- true
+        }
+        when val != Nothing and val is Map and val[`__type__`] != Nothing and val[`__type__`] == `Error` {
+            <- true
+        }
+        when val != Nothing and (val is Map) and (val[`enum_name`] == `Error` or val[`variant_name`] == `Error`) {
+            <- true
+        }
+        <- false
+    }
+    when type_name == `Variant` {
+        when val is Variant {
+            <- true
+        }
+        when val != Nothing and (val is Map) and val[`enum_name`] != Nothing {
+            <- true
+        }
+        <- false
+    }
+    when val != Nothing and (val is Map) and val[`enum_name`] != Nothing {
+        when val[`enum_name`] == type_name or val[`variant_name`] == type_name {
+            <- true
+        }
+    }
+    when val != Nothing and val is Map and val[`__type__`] != Nothing and val[`__type__`] == type_name {
+        <- true
+    }
+    <- false
+}
+
+function eval_sub_vm(a, b) {
+    when ((a is Integer) or looks_int_str(a)) and (b is List) {
+        let n -> 0
+        when (a is Integer) { n -> a } or { n -> parse_int_str(a) }
+        let res -> []
+        let i -> n
+        do while i < b.length {
+            res.append(b[i])
+            i -> i + 1
+        }
+        <- res
+    }
+    when (a is List) and ((b is Integer) or looks_int_str(b)) {
+        let n -> 0
+        when (b is Integer) { n -> b } or { n -> parse_int_str(b) }
+        let res -> []
+        let i -> 0
+        let limit -> a.length - n
+        do while i < limit {
+            res.append(a[i])
+            i -> i + 1
+        }
+        <- res
+    }
+    <- a - b
+}
+
+function eval_concat_append_vm(a, b) {
+    when a is List {
+        let res -> []
+        let i -> 0
+        do while i < a.length {
+            res.append(a[i])
+            i -> i + 1
+        }
+        when b is List {
+            let j -> 0
+            do while j < b.length {
+                res.append(b[j])
+                j -> j + 1
+            }
+        } or {
+            res.append(b)
+        }
+        <- res
+    }
+    when b is List {
+        let res -> [a]
+        let j -> 0
+        do while j < b.length {
+            res.append(b[j])
+            j -> j + 1
+        }
+        <- res
+    }
+    when a is Integer and b is Integer {
+        <- a + b
+    }
+    when a is Decimal and b is Decimal {
+        <- a + b
+    }
+    when a is String {
+        <- a + Str.to_string(b)
+    }
+    <- Str.to_string(a) + Str.to_string(b)
+}
+
+function eval_drop_vm(a, b) {
+    when a is Integer and b is Integer {
+        <- a - b
+    }
+    when a is Decimal and b is Decimal {
+        <- a - b
+    }
+    when a is String and b is Integer {
+        let n -> b
+        when n <= 0 { <- a }
+        let slen -> Str.length(a)
+        when n >= slen { <- `` }
+        <- Str.substring(a, 0, slen - n)
+    }
+    when a is Integer and b is String {
+        let n -> a
+        when n <= 0 { <- b }
+        let slen -> Str.length(b)
+        when n >= slen { <- `` }
+        <- Str.substring(b, n, slen)
+    }
+    when a is List and b is Integer {
+        let n -> b
+        let res -> []
+        when n <= 0 { <- a }
+        let llen -> a.length
+        when n >= llen { <- [] }
+        let i -> 0
+        do while i < (llen - n) {
+            res.append(a[i])
+            i -> i + 1
+        }
+        <- res
+    }
+    when a is Integer and b is List {
+        let n -> a
+        let res -> []
+        when n <= 0 { <- b }
+        let llen -> b.length
+        when n >= llen { <- [] }
+        let i -> n
+        do while i < llen {
+            res.append(b[i])
+            i -> i + 1
+        }
+        <- res
+    }
+    <- a
+}
+
+function is_type_name_str(s) {
+    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
+    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
+    when s == `String` or s == `Str` { <- true }
+    when s == `Boolean` or s == `Bool` { <- true }
+    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
+    when s == `Bytes` or s == `Buffer` { <- true }
+    when s == `List` or s == `Set` or s == `Map` { <- true }
+    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    <- false
+}
+
+function eval_cast_vm(val, target_type) {
+    when target_type == `Integer` or target_type == `Int` or target_type == `Int64` or
+         target_type == `Int32` or target_type == `Int16` or target_type == `Int8` or target_type == `Byte` {
+        when val is Integer { <- val }
+        when val is Decimal { <- parse_int_str(Str.to_string(val)) }
+        when val == true { <- 1 }
+        when val == false { <- 0 }
+        when val == Nothing { <- 0 }
+        when val is String {
+            when val == `` { <- 0 }
+            when Str.length(val) == 1 and not Str.contains(`0123456789`, val) {
+                <- parse_int_str(Str.to_string(val))
+            }
+            <- parse_int_str(val)
+        }
+        when val is List { <- val.length }
+        when val is Map { <- val.length }
+        <- 0
+    }
+    when target_type == `Decimal` or target_type == `Float` or target_type == `Double` {
+        when val is Decimal { <- val }
+        when val is Integer { <- val + 0.0 }
+        when val == true { <- 1.0 }
+        when val == false { <- 0.0 }
+        when val == Nothing { <- 0.0 }
+        when val is String { <- parse_int_str(val) + 0.0 }
+        <- 0.0
+    }
+    when target_type == `String` or target_type == `Str` {
+        when val is String { <- val }
+        when val == true { <- `True` }
+        when val == false { <- `False` }
+        when val == Nothing { <- `` }
+        <- Str.to_string(val)
+    }
+    when target_type == `Boolean` or target_type == `Bool` {
+        when val == true or val == false { <- val }
+        when val is Integer { <- val != 0 }
+        when val is Decimal { <- val != 0.0 }
+        when val is String {
+            when val == `True` or val == `true` or val == `1` { <- true }
+            <- false
+        }
+        when val is List or val is Map { <- val.length > 0 }
+        when val == Nothing { <- false }
+        <- true
+    }
+    when target_type == `Rune` or target_type == `Char` or target_type == `Glyph` {
+        when val is String {
+            when Str.length(val) >= 1 {
+                <- Str.substring(val, 0, 1)
+            }
+            <- ``
+        }
+        when val is Integer {
+            let s -> Str.to_string(val)
+            <- Str.substring(s, 0, 1)
+        }
+        <- ``
+    }
+    when target_type == `Bytes` or target_type == `Buffer` {
+        when val is String {
+            let res -> []
+            let len -> Str.length(val)
+            let i -> 0
+            do while i < len {
+                res.append(Str.substring(val, i, i + 1))
+                i -> i + 1
+            }
+            <- res
+        }
+        when val is List { <- val }
+        when val is Integer { <- [val] }
+        <- []
+    }
+    when target_type == `List` {
+        when val is List { <- val }
+        when val is String {
+            let res -> []
+            let len -> Str.length(val)
+            let i -> 0
+            do while i < len {
+                res.append(Str.substring(val, i, i + 1))
+                i -> i + 1
+            }
+            <- res
+        }
+        <- [val]
+    }
+    when target_type == `Set` {
+        when val is List {
+            let res -> []
+            let i -> 0
+            do while i < val.length {
+                let item -> val[i]
+                when not res.contains(item) {
+                    res.append(item)
+                }
+                i -> i + 1
+            }
+            <- res
+        }
+        when val is String {
+            let list_val -> eval_cast_vm(val, `List`)
+            <- eval_cast_vm(list_val, `Set`)
+        }
+        <- [val]
+    }
+    when target_type == `Map` {
+        when val is Map { <- val }
+        <- {}
+    }
+    when target_type == `Data` or target_type == `ZenData` {
+        when val is Map or val is List {
+            <- val
+        }
+        <- {}
+    }
+    <- val
 }

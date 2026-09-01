@@ -1,0 +1,7 @@
+export function add_numbers(a, b) {
+    <- a + b
+}
+
+export function greet_name(name) {
+    <- `Greetings, ` + name + `!`
+}

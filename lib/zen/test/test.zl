@@ -12,7 +12,7 @@ import zen.text.string as Str
  @param expected The expected value.
  @param message Optional message to display on failure.
  !/
-function assert_equal(actual, expected, message) {
+export function assert_equal(actual, expected, message) {
     let msg -> message
     when msg == Nothing {
         msg -> `Assertion failed`
@@ -30,7 +30,7 @@ function assert_equal(actual, expected, message) {
  @param value The value.
  @param message Optional message.
  !/
-function assert_true(value, message) {
+export function assert_true(value, message) {
     <- assert_equal(value, true, message)
 }
 
@@ -39,7 +39,7 @@ function assert_true(value, message) {
  @param value The value.
  @param message Optional message.
  !/
-function assert_false(value, message) {
+export function assert_false(value, message) {
     <- assert_equal(value, false, message)
 }
 
@@ -48,7 +48,7 @@ function assert_false(value, message) {
  @param name The name of the test.
  @param fn The test function.
  !/
-function run_unit(name, fn) {
+export function run_unit(name, fn) {
     IO.info(`Running test: ` + name)
     let success -> fn()
     when success {
@@ -64,7 +64,7 @@ function run_unit(name, fn) {
  @param name The name of the suite.
  @param tests A list of maps with 'name' and 'fn'.
  !/
-function run_suite(name, tests) {
+export function run_suite(name, tests) {
     IO.info(`--- Running Suite: ` + name + ` ---`)
     let passed -> 0
     // Prefer list length; fall back for dynamic hosts that only expose string length.

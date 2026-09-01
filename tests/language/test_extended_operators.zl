@@ -1,4 +1,4 @@
-import zen.test.test as test
+import zen.test as test
 import zen.text.string as Str
 
 function test_string_append_and_concat() {

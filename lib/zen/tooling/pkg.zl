@@ -27,14 +27,17 @@ export function add_dependency(proj, name, src_spec) {
     deps[name] -> src_spec
     manifest_map[`dependencies`] -> deps
 
-    let manifest_path -> path.join(proj[`root`], `.zbuild`)
+    let manifest_path -> proj[`manifest_path`]
+    when manifest_path == Nothing {
+        manifest_path -> path.join(proj[`root`], `zen.pkg.zd`)
+    }
     file.write(manifest_path, manifest.stringify_manifest(manifest_map))
-    io.writeln(`[PKG] Added dependency '` + name + `' -> ` + src_spec + ` to .zbuild`)
+    io.writeln(`[PKG] Added dependency '` + name + `' -> ` + src_spec + ` to ` + path.base_name(manifest_path))
     <- install_dependencies(proj)
 }
 
 /!
-  Installs all dependencies declared in .zbuild into deps/ and updates zen.lock.
+  Installs all dependencies declared in manifest into deps/ and updates zen.lock.zd.
 !/
 export function install_dependencies(proj) {
     let root -> proj[`root`]
@@ -58,7 +61,7 @@ export function install_dependencies(proj) {
 
     let dep_names -> deps.keys()
     when dep_names.length == 0 {
-        io.writeln(`[PKG] No external dependencies declared in .zbuild`)
+        io.writeln(`[PKG] No external dependencies declared in ` + path.base_name(proj[`manifest_path`]))
         <- { `ok` -> true, `count` -> 0 }
     }
 
@@ -115,9 +118,12 @@ export function install_dependencies(proj) {
     }
 
     lock[`packages`] -> locked_pkgs
-    let lock_path -> path.join(root, `zen.lock`)
+    let lock_path -> proj[`lock_path`]
+    when lock_path == Nothing {
+        lock_path -> path.join(root, `zen.lock.zd`)
+    }
     file.write(lock_path, manifest.stringify_lockfile(lock))
-    io.writeln(`[PKG] Installed ` + Str.to_string(installed_count) + ` packages. Updated zen.lock`)
+    io.writeln(`[PKG] Installed ` + Str.to_string(installed_count) + ` packages. Updated ` + path.base_name(lock_path))
 
     <- {
         `ok` -> true,
@@ -166,13 +172,13 @@ export function list_dependencies(proj) {
 }
 
 /!
-  Removes a dependency from .zbuild and deletes its directory in deps/.
+  Removes a dependency from manifest and deletes its directory in deps/.
 !/
 export function remove_dependency(proj, name) {
     let manifest_map -> proj[`manifest`]
     let deps -> manifest_map[`dependencies`]
     when deps == Nothing or not deps.has(name) {
-        io.writeln(`[PKG] Dependency '` + name + `' not found in .zbuild`)
+        io.writeln(`[PKG] Dependency '` + name + `' not found in manifest`)
         <- { `ok` -> false }
     }
 
@@ -184,7 +190,10 @@ export function remove_dependency(proj, name) {
         }
     }
     manifest_map[`dependencies`] -> new_deps
-    let manifest_path -> path.join(proj[`root`], `.zbuild`)
+    let manifest_path -> proj[`manifest_path`]
+    when manifest_path == Nothing {
+        manifest_path -> path.join(proj[`root`], `zen.pkg.zd`)
+    }
     file.write(manifest_path, manifest.stringify_manifest(manifest_map))
 
     // Remove from lockfile
@@ -198,7 +207,10 @@ export function remove_dependency(proj, name) {
             }
         }
         lock[`packages`] -> new_pkgs
-        let lock_path -> path.join(proj[`root`], `zen.lock`)
+        let lock_path -> proj[`lock_path`]
+        when lock_path == Nothing {
+            lock_path -> path.join(proj[`root`], `zen.lock.zd`)
+        }
         file.write(lock_path, manifest.stringify_lockfile(lock))
     }
 

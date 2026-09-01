@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-ZEN="${ZEN:-python3 bootstrap/Zen.py}"
+ZEN="${ZEN:-$ROOT/bin/zen}"
 
 CORE=(
   tests/01_primitives.zl

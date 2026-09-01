@@ -372,7 +372,7 @@ class ExpressionHandler:
         if isinstance(object, (list, set, dict, str, tuple, bytearray)) and member_name in ["size", "length", "count", "len"]:
             val = len(object)
             class CallableValue(type(val)):
-                def __call__(self):
+                def __call__(self, *args, **kwargs):
                     return self
             return CallableValue(val)
 
@@ -550,9 +550,82 @@ class ExpressionHandler:
 
         raise RuntimeError(f"Cannot index object of type {type(object_val)}")
 
+    def _eval_cast(self, val: Any, target_type: str) -> Any:
+        if target_type in ("Integer", "Int", "Int64", "Int32", "Int16", "Int8", "Byte"):
+            if isinstance(val, int): return val
+            if isinstance(val, float): return int(val)
+            if isinstance(val, bool): return 1 if val else 0
+            if val is None: return 0
+            if isinstance(val, str):
+                s = val.strip()
+                if not s: return 0
+                if len(s) == 1 and not s.isdigit(): return ord(s[0])
+                try: return int(s, 0)
+                except ValueError:
+                    try: return int(float(s))
+                    except ValueError: return 0
+            if isinstance(val, (list, dict, set)): return len(val)
+            return 0
+        if target_type in ("Decimal", "Float", "Double"):
+            if isinstance(val, float): return val
+            if isinstance(val, (int, bool)): return float(val)
+            if val is None: return 0.0
+            if isinstance(val, str):
+                try: return float(val.strip())
+                except ValueError: return 0.0
+            return 0.0
+        if target_type in ("String", "Str"):
+            if isinstance(val, str): return val
+            if isinstance(val, bool): return "True" if val else "False"
+            if val is None: return ""
+            if isinstance(val, list):
+                if val and all(isinstance(x, int) for x in val):
+                    try: return bytes(val).decode("utf-8", errors="replace")
+                    except Exception: return str(val)
+            return str(val)
+        if target_type in ("Boolean", "Bool"):
+            if isinstance(val, bool): return val
+            if isinstance(val, (int, float)): return bool(val)
+            if isinstance(val, str): return val in ("True", "true", "1")
+            if isinstance(val, (list, dict, set)): return len(val) > 0
+            if val is None: return False
+            return True
+        if target_type in ("Rune", "Char", "Glyph"):
+            if isinstance(val, str): return val[0] if val else ""
+            if isinstance(val, int):
+                try: return chr(val)
+                except Exception: return ""
+            return ""
+        if target_type in ("Bytes", "Buffer"):
+            if isinstance(val, str): return list(val.encode("utf-8"))
+            if isinstance(val, list): return val
+            if isinstance(val, int): return [val]
+            return []
+        if target_type == "List":
+            if isinstance(val, list): return val
+            if isinstance(val, (set, dict)): return list(val)
+            if isinstance(val, str): return list(val)
+            return [val]
+        if target_type == "Set":
+            if isinstance(val, list):
+                res = []
+                for x in val:
+                    if x not in res: res.append(x)
+                return res
+            if isinstance(val, str): return list(dict.fromkeys(val))
+            return [val]
+        if target_type == "Map":
+            if isinstance(val, dict): return val
+            return {}
+        return val
+
     def _evaluate_call_expression(
         self, node: CallExpression, environment: Environment
     ) -> any:
+        if isinstance(node.callee, Identifier) and node.callee.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+            arguments = [self._evaluate(arg, environment) for arg in node.arguments]
+            return self._eval_cast(arguments[0] if arguments else None, node.callee.name)
+
         callee: Any = self._evaluate(node.callee, environment)
 
         arguments: List[Any] = [
@@ -560,7 +633,10 @@ class ExpressionHandler:
         ]
 
         if callable(callee) and not isinstance(callee, FunctionObject):
-            return callee(*arguments)
+            try:
+                return callee(*arguments)
+            except IndexError:
+                return None
 
         # Handle task calls
         if isinstance(callee, TaskObject):
@@ -672,6 +748,10 @@ class ExpressionHandler:
         left: any = self._evaluate(node.left, environment)
         op = getattr(node.operator, "value", node.operator)
         op_str = str(op)
+
+        if op_str == "<:":
+            target_type = getattr(node.right, "name", str(node.right))
+            return self._eval_cast(left, target_type)
 
         # Short-circuiting for logical AND / OR
         if op_str == "and":

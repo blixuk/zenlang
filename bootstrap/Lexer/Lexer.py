@@ -104,7 +104,9 @@ class Lexer(Comments, Identifiers, Numbers, Strings, Operators, Symbols):
             self.make_operator()
 
     def _dispatch_less_than(self):
-        if self.peek(1) == "-":
+        if self.peek(1) == ":":
+            self.make_type_cast()
+        elif self.peek(1) == "-":
             self.make_return()
         elif self.peek(1) == "<":
             self.make_operator()

@@ -7,7 +7,7 @@
 
 import zen.text.string as Str
 
-enumerator TokenType {
+export enumerator TokenType {
     // Categories / fallbacks
     KEYWORD -> `KEYWORD`,
     IDENTIFIER -> `IDENTIFIER`,
@@ -79,6 +79,7 @@ enumerator TokenType {
     // Assignment / type punctuation
     TYPE_SET -> `TYPE_SET`,
     TYPE_LET -> `TYPE_LET`,
+    TYPE_CAST -> `TYPE_CAST`,
     ASSIGNMENT -> `ASSIGNMENT`,
     RETURN -> `RETURN`,
 
@@ -159,32 +160,32 @@ enumerator TokenType {
  A single lexeme. Positional struct list: [kind, start, length, line, column, end_line, end_column].
  THREE_LAYER phase 5.1: zero-copy integer span token representation.
  !/
-function token(kind, start, length, line, column, end_line, end_column) {
+export function token(kind, start, length, line, column, end_line, end_column) {
     <- [kind, start, length, line, column, end_line, end_column]
 }
 
-function tok_kind(t) {
+export function tok_kind(t) {
     when t == Nothing {
         <- Nothing
     }
     <- t[0]
 }
 
-function tok_start(t) {
+export function tok_start(t) {
     when t == Nothing {
         <- 0
     }
     <- t[1]
 }
 
-function tok_length(t) {
+export function tok_length(t) {
     when t == Nothing {
         <- 0
     }
     <- t[2]
 }
 
-function tok_lexeme(src, t) {
+export function tok_lexeme(src, t) {
     when t == Nothing or src == Nothing {
         <- ``
     }
@@ -196,7 +197,7 @@ function tok_lexeme(src, t) {
     <- Str.substring(src, s, s + l)
 }
 
-function tok_value(t) {
+export function tok_value(t) {
     when t == Nothing {
         <- ``
     }
@@ -207,28 +208,28 @@ function tok_value(t) {
     <- ``
 }
 
-function tok_line(t) {
+export function tok_line(t) {
     when t == Nothing {
         <- 0
     }
     <- t[3]
 }
 
-function tok_column(t) {
+export function tok_column(t) {
     when t == Nothing {
         <- 0
     }
     <- t[4]
 }
 
-function tok_end_line(t) {
+export function tok_end_line(t) {
     when t == Nothing {
         <- 0
     }
     <- t[5]
 }
 
-function tok_end_column(t) {
+export function tok_end_column(t) {
     when t == Nothing {
         <- 0
     }
@@ -239,7 +240,7 @@ function tok_end_column(t) {
  Map TokenType name / variant / already-int → small integer.
  Lexer stores this on every token; Parser is_kind compares ints on -g.
  !/
-function kind_id(kind) {
+export function kind_id(kind) {
     when kind == Nothing {
         <- -1
     }
@@ -366,7 +367,8 @@ function kind_id(kind) {
     when s == `CHECK_SYMBOL` { <- 111 }
     when s == `RAISE_SYMBOL` { <- 112 }
     when s == `ASSERT_SYMBOL` { <- 113 }
-    when s == `EOF` { <- 114 }
+    when s == `TYPE_CAST` { <- 114 }
+    when s == `EOF` { <- 115 }
     // Already an integer id (native TokenType.X emit).
     when Str.contains(`0123456789`, Str.at(s, 0)) {
         <- kind

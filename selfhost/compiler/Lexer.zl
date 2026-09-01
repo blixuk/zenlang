@@ -57,6 +57,16 @@ function _is_digit(c) {
     <- Str.contains(`0123456789`, c)
 }
 
+function _is_hex_digit(c) {
+    when c == `` { <- false }
+    <- Str.contains(`0123456789abcdefABCDEF`, c)
+}
+
+function _is_oct_digit(c) {
+    when c == `` { <- false }
+    <- Str.contains(`01234567`, c)
+}
+
 function _is_alpha(c) {
     when c == `` { <- false }
     <- (c >= `a` and c <= `z`) or (c >= `A` and c <= `Z`) or c == `_`
@@ -300,13 +310,13 @@ function escape_piece(esc) {
     when esc == `"` {
         <- `"`
     }
-    <- esc
+    <- `\\` + esc
 }
 
 /!
   Free function entry: tokenize source text → list of tokens.
 !/
-function tokenize_source(src) {
+export function tokenize_source(src) {
     LEX[LEX_TOKENS] -> []
     when src == Nothing or src == `` {
         tok_push(TokenType.EOF, 0, 0, 1, 1, 1, 1)
@@ -468,9 +478,12 @@ function tokenize_source(src) {
                 }
             }
 
-            // 9. Less than / <= / return / << / <<=
+            // 9. Less than / <= / return / << / <<= / type cast <:
             or when ch == `<` {
-                when _peek() == `=` {
+                when _peek() == `:` {
+                    _advance()
+                    tok_push(TokenType.TYPE_CAST, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `=` {
                     _advance()
                     tok_push(TokenType.LESS_THAN_OR_EQUAL, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or when _peek() == `-` {
@@ -617,19 +630,42 @@ function tokenize_source(src) {
 
             // 18. Digits / Numbers
             or when _is_digit(ch) {
-                do while _is_digit(_peek()) {
-                    _advance()
-                }
-                let is_dec -> false
-                when _peek() == `.` and _peek_at(1) != `.` and _is_digit(_peek_at(1)) {
-                    is_dec -> true
-                    _advance() // consume '.'
+                when ch == `0` and (_peek() == `x` or _peek() == `X`) {
+                    _advance() // consume 'x'
+                    do while _is_hex_digit(_peek()) {
+                        _advance()
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when ch == `0` and (_peek() == `b` or _peek() == `B`) {
+                    _advance() // consume 'b'
+                    do while _peek() == `0` or _peek() == `1` {
+                        _advance()
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when ch == `0` and (_peek() == `o` or _peek() == `O`) {
+                    _advance() // consume 'o'
+                    do while _is_oct_digit(_peek()) {
+                        _advance()
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
                     do while _is_digit(_peek()) {
                         _advance()
                     }
+                    let is_dec -> false
+                    when _peek() == `.` and _peek_at(1) != `.` and _is_digit(_peek_at(1)) {
+                        is_dec -> true
+                        _advance() // consume '.'
+                        do while _is_digit(_peek()) {
+                            _advance()
+                        }
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    tok_push(number_kind(is_dec), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 }
-                let len_p -> LEX[LEX_POS] - start_p
-                tok_push(number_kind(is_dec), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
             }
 
             // 19. Alpha / Identifiers / Keywords

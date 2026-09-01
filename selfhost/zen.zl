@@ -1,16 +1,16 @@
 /!
- Selfhost driver entry — path to full Zen host (no Python).
- Invoked as:
-   python3 bootstrap/Zen.py selfhost/zen.zl <command> ...
-   ./bin/zen-selfhost <command> ...   (after ./scripts/zen install-selfhost)
- Commands: compile | build | run|-g | interpret | check | deps | help
+ Selfhost driver entry — Standalone pure Zen host (no Python).
+ Commands: compile | build | bundle | run | vm | interpret | check | deps | plugin | todo | lint | help
  !/
 
 import compiler.Driver as Driver
+import compiler.Plugin as Plugin
 import zen.io.io as io
 import zen.sys.sys as Sys
 
 function main() {
+    Plugin.register_plugin(Plugin.make_todo_tracker_plugin())
+    Plugin.register_plugin(Plugin.make_linter_plugin())
     let args -> Sys.get_args()
     let r -> Driver.run_args(args)
     when r == Nothing {
@@ -24,6 +24,6 @@ function main() {
     when code == Nothing {
         <- 0
     }
-    // Pass through integer program/CLI codes (bootstrap -g parity).
+    // Pass through integer program/CLI codes.
     <- code
 }

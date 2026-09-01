@@ -1,14 +1,31 @@
 import compiler.Parser as Parser
 import compiler.Bytecode as Bytecode
+import compiler.AST as AST
 import zen.test as test
+import zen.io.io as io
+import zen.text.string as Str
 
 function run_src(src) {
     let prog -> Parser.parse_source(src)
-    let res -> Bytecode.compile_program(prog)
-    when not res[`ok`] {
+    when prog == Nothing {
+        io.writeln(`DEBUG: prog is Nothing`)
         <- Nothing
     }
-    <- Bytecode.eval_chunk(res[`chunk`], {})
+    let perr -> AST.prog_err(prog)
+    when perr != Nothing {
+        io.writeln(`DEBUG: prog err: ` + Str.to_string(perr))
+        <- Nothing
+    }
+    let res -> Bytecode.compile_program(prog)
+    when not res[`ok`] {
+        io.writeln(`DEBUG: compile not ok: ` + Str.to_string(res[`errors`]))
+        <- Nothing
+    }
+    let val -> Bytecode.eval_chunk(res[`chunk`], {})
+    when val == Nothing {
+        io.writeln(`DEBUG: eval_chunk returned Nothing`)
+    }
+    <- val
 }
 
 function test_vm_arithmetic() {

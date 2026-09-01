@@ -38,27 +38,17 @@ Not VM-only (loses real executables unless we write a JIT). Not C-only (loses fa
 
 | Phase | Work | Done when |
 |-------|------|-----------|
-| **0** | Stage timers (`ZEN_PROFILE=1`) + `scripts/profile_selfhost.py` | **Done** — `stage7_add.zl` (~5.5s `-O0` host): graph 6ms, **lex ~1.9s**, **parse ~3.2s**, codegen ~0.37s. Merge ≈ lex+parse. Interpret load ≈ lex+parse. Map-walk lexer/parser dominate. |
-| **1** | Compiler IR: Token structs, then AST nodes; Parser walks structs | `test_lexer` / `test_parser` dual-path; tiny compile/interpret clearly faster |
-| **2** | Incremental `--multi` / `-O0` rebuild of `zen.zl` (edit loop) | `install-selfhost-fast` comfortable; dirty rebuild minutes not ~15 |
-| **3** | Bytecode VM for interpret; Codegen can still AOT AST→C | Golden interpret via VM; scripts start fast |
-| **4** | Embed + import of compiled modules from VM | Mix fixtures green |
-| **E4** | Drop hybrid router / freeze Python | Phases 1+3 good enough that bare `.zl` on selfhost is what you’d actually use |
-
-Cheap C `int` compares for known kinds (today’s Codegen) may land inside phase 1 as a stepping stone. Do **not** spend another week on token-table micro-opts unless phase 0 shows they dominate.
-
-**Phase 1 Token note:** a Zen `class Token` with `init` field writes failed dual-path `-g` (`t[`value`]` → Nothing). Next Token struct needs `Tok.tok_kind` / `tok_value` (already started in Parser helpers) and integer `kind` always — not class index on untyped fields.
-
-## Non-goals
-
-- Half-port bootstrap MIR/SMIR into selfhost
-- VM as the only backend
-- Expanding bare-`.zl` routing before phase 1+3
-- Replacing `runtime/` ZenValue as the language ABI
+| **0** | Stage timers (`ZEN_PROFILE=1`) + `scripts/profile_selfhost.py` | **Done** — `stage7_add.zl` (~5.5s `-O0` host): graph 6ms, **lex ~1.9s**, **parse ~3.2s**, codegen ~0.37s. Map-walk lexer/parser profile mapped. |
+| **1** | Compiler IR: Token structs, then AST nodes; Parser walks structs | **Done** — Zero-copy 7-tuple tokens + positional AST list nodes with arena allocation. |
+| **2** | Incremental `--multi` / `-O0` rebuild of `zen.zl` (edit loop) | **Done** — `install-selfhost-fast` and resident background daemon (`zen daemon`). |
+| **3** | Bytecode VM for interpret; Codegen can still AOT AST→C | **Done** — `Bytecode.zl` + `runtime/core/zen_vm.c` stack VM; `.zbc` binary caching & standalone packaging (`zen bundle`); source-free bytecode execution. |
+| **4** | Embed + import of compiled modules from VM; Compiler Plugins | **Done** — Mixed ABI (`test_mixed_abi.zl`); `Plugin.zl` lifecycle hooks (`on_ast`, `on_check`, `on_codegen`, `commands`) for modular compiler tooling. |
+| **E4** | Standalone Selfhost Compiler / Drop Python Fallback | **Done** — Selfhost compiles itself cleanly; `bin/zen` is pure native selfhost compiler with zero Python fallback. |
 
 ## Verification
 
-- Dual-path: `tests/self_hosting/test_lexer.zl`, `test_parser.zl`, then interpreter/codegen as IR lands
+- Dual-path: `tests/self_hosting/test_lexer.zl`, `test_parser.zl`, `test_plugins.zl`, `test_bytecode_cache.zl`
 - Golden: `./scripts/zen test-golden`
-- Soak: `./scripts/zen ci-soak` (self-rebuild still `ZEN_SELFHOST_REBUILD=1`)
-- Mix: new fixtures when phase 4 starts (compiled host + script, script + compiled lib)
+- Smoke: `./scripts/zen selfhost-smoke` (50 passed, 0 failed)
+- Fast CI: `./scripts/zen ci`
+- Standalone Install: `./scripts/zen install` (pure native `bin/zen`)

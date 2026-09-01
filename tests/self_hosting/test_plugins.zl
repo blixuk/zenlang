@@ -1,0 +1,123 @@
+/!
+ Selfhost Compiler Plugin System Tests.
+ Verifies plugin registration, lifecycle hooks (AST inspection, check diagnostics),
+ and custom CLI command extension.
+!/
+
+import compiler.Plugin as Plugin
+import compiler.Parser as Parser
+import compiler.AST as AST
+import zen.test as test
+import zen.text.string as Str
+
+function test_plugin_registration() {
+    Plugin.reset_plugins()
+    let base_len -> Plugin.get_registered_plugins().length
+    let p -> {
+        `name` -> `TestPlugin`,
+        `version` -> `1.0.0`,
+        `description` -> `Sample test plugin`
+    }
+    let ok -> Plugin.register_plugin(p)
+    let list -> Plugin.get_registered_plugins()
+    let pass -> test.assert_equal(ok, True, `register_plugin ok`)
+    pass -> pass and test.assert_equal(list.length, base_len + 1, `plugins count incremented`)
+    <- pass
+}
+
+function test_plugin_ast_hook_and_issues() {
+    Plugin.reset_plugins()
+    let tracker -> Plugin.make_todo_tracker_plugin()
+    Plugin.register_plugin(tracker)
+    
+    let src -> `
+        let TODO_fix_memory -> 1
+        let normal_var -> 2
+        function main() {
+            let FIXME_check_bounds -> 3
+            <- 0
+        }
+    `
+    let prog -> Parser.parse_source(src)
+    Plugin.dispatch_on_ast(prog, `test_file.zl`)
+    
+    let issues -> Plugin.get_issues()
+    let pass -> test.assert_equal(issues.length, 2, `found 2 tagged identifiers`)
+    when issues.length >= 2 {
+        let i0 -> issues[0]
+        pass -> pass and test.assert_equal(i0[`plugin`], `TodoTracker`, `plugin is TodoTracker`)
+        pass -> pass and test.assert_equal(Str.contains(i0[`message`], `TODO_fix_memory`), True, `found TODO_fix_memory`)
+    }
+    <- pass
+}
+
+function test_plugin_custom_command() {
+    Plugin.reset_plugins()
+    let cmd_executed -> False
+    let custom_cmd -> function(args) {
+        <- { `code` -> 0, `message` -> `custom command executed successfully` }
+    }
+    
+    let p -> {
+        `name` -> `CommandExtPlugin`,
+        `commands` -> {
+            `mytool` -> custom_cmd
+        }
+    }
+    Plugin.register_plugin(p)
+    
+    let has_cmd -> Plugin.has_command(`mytool`)
+    let pass -> test.assert_equal(has_cmd, True, `has custom command mytool`)
+    
+    let res -> Plugin.dispatch_command(`mytool`, [`arg1`, `arg2`])
+    pass -> pass and test.assert_equal(res[`code`], 0, `cmd exit code 0`)
+    pass -> pass and test.assert_equal(Str.contains(res[`message`], `custom command executed`), True, `cmd output message`)
+    <- pass
+}
+
+function test_plugin_linter() {
+    Plugin.reset_plugins()
+    let linter -> Plugin.make_linter_plugin()
+    Plugin.register_plugin(linter)
+    
+    let src -> `
+        function CalculateSum(a, b) {
+            <- a + b
+        }
+        function correct_snake_case() {
+            <- 42
+        }
+        function main() {
+            <- 0
+        }
+    `
+    let prog -> Parser.parse_source(src)
+    Plugin.dispatch_on_check({`ok` -> True}, prog)
+    
+    let issues -> Plugin.get_issues()
+    let pass -> test.assert_equal(issues.length, 1, `linter found 1 PascalCase function`)
+    when issues.length >= 1 {
+        let i0 -> issues[0]
+        pass -> pass and test.assert_equal(i0[`plugin`], `Linter`, `plugin is Linter`)
+        pass -> pass and test.assert_equal(Str.contains(i0[`message`], `CalculateSum`), True, `flagged CalculateSum`)
+    }
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Plugin.registration`, `fn` -> test_plugin_registration},
+        {`name` -> `Plugin.ast_hook_issues`, `fn` -> test_plugin_ast_hook_and_issues},
+        {`name` -> `Plugin.custom_command`, `fn` -> test_plugin_custom_command},
+        {`name` -> `Plugin.linter`, `fn` -> test_plugin_linter}
+    ]
+    <- test.run_suite(`Compiler Plugin Subsystem`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

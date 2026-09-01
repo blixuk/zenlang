@@ -60,6 +60,7 @@ class TokenType(Enum):
 
     TYPE_SET = "TYPE_SET"
     TYPE_LET = "TYPE_LET"
+    TYPE_CAST = "TYPE_CAST"
     ASSIGNMENT = "ASSIGNMENT"
     RETURN = "RETURN"
 
@@ -276,6 +277,7 @@ ASSIGNMENTS: dict = {
     "<-": TokenType.RETURN,
     ":": TokenType.TYPE_SET,
     ":>": TokenType.TYPE_LET,
+    "<:": TokenType.TYPE_CAST,
     "?": TokenType.CHECK_SYMBOL,
     "^": TokenType.RAISE_SYMBOL,
     "!": TokenType.ASSERT_SYMBOL,

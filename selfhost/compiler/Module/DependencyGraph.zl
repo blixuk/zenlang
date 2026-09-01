@@ -3,7 +3,7 @@
  Dual-path: mutators return the graph map (native moves args; must rebind).
  !/
 
-function create() {
+export function create() {
     <- {
         `nodes` -> [],
         `edges` -> {}
@@ -38,7 +38,7 @@ function dg_list_push(lst, item) {
     <- lst
 }
 
-function add_node(graph, path) {
+export function add_node(graph, path) {
     when path == Nothing or path == `` {
         <- graph
     }
@@ -54,7 +54,7 @@ function add_node(graph, path) {
     <- graph
 }
 
-function add_edge(graph, from_path, to_path) {
+export function add_edge(graph, from_path, to_path) {
     graph -> add_node(graph, from_path)
     graph -> add_node(graph, to_path)
     let edges -> graph[`edges`]
@@ -70,11 +70,11 @@ function add_edge(graph, from_path, to_path) {
     <- graph
 }
 
-function has_node(graph, path) {
+export function has_node(graph, path) {
     <- list_contains(graph[`nodes`], path)
 }
 
-function dependencies_of(graph, path) {
+export function dependencies_of(graph, path) {
     let edges -> graph[`edges`]
     when not edges.has(path) {
         <- []
@@ -87,7 +87,7 @@ let DG -> {
     `order` -> []
 }
 
-function get_compilation_order(graph) {
+export function get_compilation_order(graph) {
     DG[`visited`] -> []
     DG[`order`] -> []
     let nodes -> graph[`nodes`]

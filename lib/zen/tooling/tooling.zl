@@ -17,6 +17,7 @@ import zen.tooling.docgen as docgen
 import zen.tooling.graph as graph
 import zen.tooling.dash as dash
 import zen.tooling.profiler as profiler
+import zen.tooling.repl as repl
 
 export manifest
 export templates
@@ -32,3 +33,4 @@ export docgen
 export graph
 export dash
 export profiler
+export repl

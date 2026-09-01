@@ -98,9 +98,10 @@ function test_project_scaffolding_and_build() {
 
     let init_res -> project.init_project(test_dir, `test_proj`, `cli`, `Test Project Description`)
     test.assert_true(init_res[`ok`], `project init succeeded`)
-    test.assert_true(file.exists(path.join(test_dir, `.zbuild`)), `.zbuild created`)
+    test.assert_true(file.exists(path.join(test_dir, `zen.pkg.zd`)), `zen.pkg.zd created`)
     test.assert_true(file.exists(path.join(test_dir, `src/main.zl`)), `src/main.zl created`)
     test.assert_true(file.exists(path.join(test_dir, `tests/test_main.zl`)), `tests/test_main.zl created`)
+    test.assert_true(file.exists(path.join(test_dir, `README.zm`)), `README.zm created`)
 
     let proj -> project.load_project(test_dir)
     test.assert_true(proj[`ok`], `loaded project successfully`)
@@ -123,6 +124,7 @@ function test_project_scaffolding_and_build() {
     // Generate documentation
     let doc_res -> docgen.generate_docs(reloaded, `html`, Nothing)
     test.assert_true(doc_res[`ok`], `doc generation succeeded`)
+    test.assert_true(file.exists(path.join(test_dir, `docs/API.zm`)), `API.zm exists`)
     test.assert_true(file.exists(path.join(test_dir, `docs/API.md`)), `API.md exists`)
     test.assert_true(file.exists(path.join(test_dir, `docs/html/index.html`)), `HTML doc exists`)
 

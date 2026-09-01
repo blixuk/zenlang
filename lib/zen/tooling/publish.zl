@@ -60,7 +60,10 @@ export function bump_project_version(proj, part, do_git_tag) {
     let new_ver -> bump_version_string(old_ver, part)
     manifest_map[`version`] -> new_ver
 
-    let manifest_path -> path.join(proj[`root`], `.zbuild`)
+    let manifest_path -> proj[`manifest_path`]
+    when manifest_path == Nothing {
+        manifest_path -> path.join(proj[`root`], `zen.pkg.zd`)
+    }
     file.write(manifest_path, manifest.stringify_manifest(manifest_map))
 
     io.writeln(`[VERSION] Bumping ` + manifest_map[`name`] + `: ` + old_ver + ` -> ` + new_ver)
@@ -68,7 +71,8 @@ export function bump_project_version(proj, part, do_git_tag) {
     when do_git_tag != false and process.available(`git`) {
         let tag_name -> `v` + new_ver
         let root -> proj[`root`]
-        process.shell_in(root, `git add .zbuild 2>/dev/null`)
+        let m_basename -> path.base_name(manifest_path)
+        process.shell_in(root, `git add ` + m_basename + ` 2>/dev/null`)
         process.shell_in(root, `git commit -m ` + process.shell_quote(`chore: bump version to ` + new_ver) + ` 2>/dev/null`)
         process.shell_in(root, `git tag ` + process.shell_quote(tag_name) + ` 2>/dev/null`)
         io.writeln(`[GIT] Created commit and tag ` + tag_name)

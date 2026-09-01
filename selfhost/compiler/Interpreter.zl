@@ -248,6 +248,13 @@ function is_bound_method(v) {
     <- false
 }
 
+function is_bound_builtin_method(v) {
+    when map_kind(v) == `bound_builtin_method` {
+        <- true
+    }
+    <- false
+}
+
 function is_fn_val(v) {
     when map_kind(v) == `fn` {
         <- true
@@ -613,7 +620,7 @@ function bind_captures(names, i, env, snap) {
 }
 
 function collect_free_names(node, excludes, acc) {
-    when node == Nothing {
+    when node == Nothing or not (node is List) {
         <- acc
     }
     let k -> AST.ast_kind(node)
@@ -669,8 +676,14 @@ function collect_free_names(node, excludes, acc) {
     when k == AST.K_LIST {
         <- collect_free_names_list(AST.list_elems(node), excludes, acc)
     }
-    when k == AST.K_RETURN or k == AST.K_ASSIGN or k == AST.K_REASSIGN {
+    when k == AST.K_RETURN {
         <- collect_free_names(AST.ret_val(node), excludes, acc)
+    }
+    when k == AST.K_ASSIGN {
+        <- collect_free_names(AST.assign_val(node), excludes, acc)
+    }
+    when k == AST.K_REASSIGN {
+        <- collect_free_names(AST.reassign_val(node), excludes, acc)
     }
     when k == AST.K_EXPR_STMT or k == AST.K_ASSERT or k == AST.K_CHECK {
         <- collect_free_names(AST.expr_stmt_expr(node), excludes, acc)
@@ -752,23 +765,23 @@ function interpret_source(src) {
     <- interpret_program(prog)
 }
 
-function interpret_file(path) {
+function interpret_file(file_path) {
     clear_error()
     reset_types()
     MODS[`exports`] -> {}
     let want -> Sys.get_env(`ZEN_PROFILE`) == `1`
     let t_all -> Time.monotonic()
-    let src -> __builtin_file.read(path)
+    let src -> __builtin_file.read(file_path)
     when src == Nothing {
         <- {
             `ok` -> false,
             `value` -> Nothing,
-            `error` -> `cannot read ` + Str.to_string(path)
+            `error` -> `cannot read ` + Str.to_string(file_path)
         }
     }
     when not GraphBuilder.source_may_import(src) {
         let t_load -> Time.monotonic()
-        let r0 -> load_module_file(path, true)
+        let r0 -> load_module_file(file_path, true)
         when want == true {
             io.writeln(`profile load ` + Str.to_string((Time.monotonic() - t_load) * 1000) + ` ms`)
             io.writeln(`profile total ` + Str.to_string((Time.monotonic() - t_all) * 1000) + ` ms`)
@@ -776,20 +789,20 @@ function interpret_file(path) {
         <- r0
     }
     let t_graph -> Time.monotonic()
-    let order -> GraphBuilder.compilation_order(path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
+    let order -> GraphBuilder.compilation_order(file_path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
     when want == true {
         io.writeln(`profile graph ` + Str.to_string((Time.monotonic() - t_graph) * 1000) + ` ms`)
     }
     when order == Nothing {
-        <- load_module_file(path, true)
+        <- load_module_file(file_path, true)
     }
     let n -> order.length
     when n == 0 {
-        <- load_module_file(path, true)
+        <- load_module_file(file_path, true)
     }
-    load_graph_deps(path, order, 0, n)
+    load_graph_deps(file_path, order, 0, n)
     let t_load -> Time.monotonic()
-    let r1 -> load_module_file(path, true)
+    let r1 -> load_module_file(file_path, true)
     when want == true {
         io.writeln(`profile load ` + Str.to_string((Time.monotonic() - t_load) * 1000) + ` ms`)
         io.writeln(`profile total ` + Str.to_string((Time.monotonic() - t_all) * 1000) + ` ms`)
@@ -821,16 +834,55 @@ function env_prelude() {
     global -> env_define(global, `True`, true, false)
     global -> env_define(global, `False`, false, false)
     global -> env_define(global, `Nothing`, Nothing, false)
+    global -> env_define(global, `Default`, Default, false)
     global -> env_define(global, `__builtin_string`, make_builtin_mod(`string`), false)
+    global -> env_define(global, `Str`, make_builtin_mod(`string`), false)
     global -> env_define(global, `__builtin_file`, make_builtin_mod(`file`), false)
+    global -> env_define(global, `file`, make_builtin_mod(`file`), false)
     global -> env_define(global, `__builtin_io`, make_builtin_mod(`io`), false)
     global -> env_define(global, `__builtin_output`, make_builtin_mod(`output`), false)
-    // Bootstrap injects bare `io` / `output` without an import (tests/01–06).
+    global -> env_define(global, `__builtin_input`, make_builtin_mod(`input`), false)
     global -> env_define(global, `io`, make_builtin_mod(`io`), false)
     global -> env_define(global, `IO`, make_builtin_mod(`io`), false)
     global -> env_define(global, `output`, make_builtin_mod(`output`), false)
+    global -> env_define(global, `input`, make_builtin_mod(`input`), false)
     global -> env_define(global, `__builtin_memory`, make_builtin_mod(`memory`), false)
+    global -> env_define(global, `__builtin_sys`, make_builtin_mod(`sys`), false)
+    global -> env_define(global, `sys`, make_builtin_mod(`sys`), false)
+    global -> env_define(global, `__builtin_time`, make_builtin_mod(`time`), false)
+    global -> env_define(global, `time`, make_builtin_mod(`time`), false)
+    global -> env_define(global, `__builtin_term`, make_builtin_mod(`term`), false)
+    global -> env_define(global, `term`, make_builtin_mod(`term`), false)
+    global -> env_define(global, `__builtin_math`, make_builtin_mod(`math`), false)
+    global -> env_define(global, `math`, make_builtin_mod(`math`), false)
+    global -> env_define(global, `__builtin_list`, make_builtin_mod(`list`), false)
+    global -> env_define(global, `__builtin_set`, make_builtin_mod(`set`), false)
+    global -> env_define(global, `__builtin_map`, make_builtin_mod(`map`), false)
+    global -> env_define(global, `__builtin_reflect`, make_builtin_mod(`reflect`), false)
+    global -> env_define(global, `reflect`, make_builtin_mod(`reflect`), false)
+    global -> env_define(global, `Result`, make_builtin_enum(`Result`, [`Ok`, `Error`, `Err`]), false)
+    global -> env_define(global, `Option`, make_builtin_enum(`Option`, [`Some`, `None`]), false)
     <- global
+}
+
+function make_builtin_enum(ename, tag_names) {
+    let members -> {}
+    let i -> 0
+    do while i < tag_names.length {
+        let tag -> tag_names[i]
+        members[tag] -> {
+            `kind` -> `variant`,
+            `enum` -> ename,
+            `tag` -> tag,
+            `data` -> Nothing
+        }
+        i -> i + 1
+    }
+    <- {
+        `kind` -> `enum`,
+        `name` -> ename,
+        `members` -> members
+    }
 }
 
 function make_builtin_mod(prefix) {
@@ -909,27 +961,27 @@ function interpret_graph(entry_path, order, i, n, entry_result) {
     <- interpret_graph(entry_path, order, i + 1, n, next_entry)
 }
 
-function load_module_file(path, is_entry) {
-    let prog -> GraphBuilder.parse_cached(path)
+function load_module_file(file_path, is_entry) {
+    let prog -> GraphBuilder.parse_cached(file_path)
     when prog == Nothing {
         <- {
             `ok` -> false,
             `value` -> Nothing,
-            `error` -> `cannot read ` + Str.to_string(path)
+            `error` -> `cannot read ` + Str.to_string(file_path)
         }
     }
     let env -> env_prelude()
-    env -> bind_imports(AST.prog_stmts(prog), env, path)
+    env -> bind_imports(AST.prog_stmts(prog), env, file_path)
     when get_error() != Nothing {
         <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
     }
-    <- eval_program_in(prog, env, is_entry, path)
+    <- eval_program_in(prog, env, is_entry, file_path)
 }
 
-function eval_program_in(prog, env, call_main, path) {
+function eval_program_in(prog, env, call_main, file_path) {
     let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
     when stmts == Nothing or stmts.length == 0 {
-        remember_exports(path, {})
+        remember_exports(file_path, {})
         when call_main != true {
             <- {`ok` -> true, `value` -> Nothing, `error` -> Nothing}
         }
@@ -944,19 +996,19 @@ function eval_program_in(prog, env, call_main, path) {
         last -> take_return()
     }
     let exp -> collect_exports(stmts, env)
-    remember_exports(path, exp)
+    remember_exports(file_path, exp)
     when call_main != true {
         <- {`ok` -> true, `value` -> last, `error` -> Nothing}
     }
     <- call_entry_main(env, last)
 }
 
-function remember_exports(path, exports) {
-    when path == Nothing or path == `` {
+function remember_exports(file_path, exports) {
+    when file_path == Nothing or file_path == `` {
         <- exports
     }
     let em -> MODS[`exports`]
-    em[path] -> exports
+    em[file_path] -> exports
     MODS[`exports`] -> em
     <- exports
 }
@@ -1002,19 +1054,19 @@ function call_named_fn(env, fn_name, last) {
     <- {`ok` -> true, `value` -> r, `error` -> Nothing}
 }
 
-function load_module_file_env(path) {
-    let prog -> GraphBuilder.parse_cached(path)
+function load_module_file_env(file_path) {
+    let prog -> GraphBuilder.parse_cached(file_path)
     when prog == Nothing {
         <- {
             `ok` -> false,
             `env` -> Nothing,
             `program` -> Nothing,
-            `error` -> `cannot read ` + Str.to_string(path)
+            `error` -> `cannot read ` + Str.to_string(file_path)
         }
     }
     let env -> env_prelude()
     let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
-    env -> bind_imports(stmts, env, path)
+    env -> bind_imports(stmts, env, file_path)
     when get_error() != Nothing {
         <- {`ok` -> false, `env` -> Nothing, `program` -> Nothing, `error` -> get_error()}
     }
@@ -1026,23 +1078,23 @@ function load_module_file_env(path) {
         <- {`ok` -> false, `env` -> Nothing, `program` -> Nothing, `error` -> get_error()}
     }
     let exports -> collect_exports(stmts, env)
-    remember_exports(path, exports)
+    remember_exports(file_path, exports)
     <- {`ok` -> true, `env` -> env, `program` -> prog, `error` -> Nothing}
 }
 
-function interpret_file_env(path) {
+function interpret_file_env(file_path) {
     clear_error()
     reset_types()
     MODS[`exports`] -> {}
-    let src0 -> __builtin_file.read(path)
+    let src0 -> __builtin_file.read(file_path)
     when not GraphBuilder.source_may_import(src0) {
-        <- load_module_file_env(path)
+        <- load_module_file_env(file_path)
     }
-    let order -> GraphBuilder.compilation_order(path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
+    let order -> GraphBuilder.compilation_order(file_path, `.`, `lib`, `selfhost`, `tests/self_hosting`)
     when order != Nothing and order.length > 0 {
-        load_graph_deps(path, order, 0, order.length)
+        load_graph_deps(file_path, order, 0, order.length)
     }
-    <- load_module_file_env(path)
+    <- load_module_file_env(file_path)
 }
 
 function bind_imports(stmts, env, file_path) {
@@ -1763,6 +1815,11 @@ function eval_expr(node, env) {
     when is_kind(node, AST.K_WHEN) {
         <- eval_when(node, env)
     }
+    when is_kind(node, AST.K_CAST) {
+        let v -> eval_expr(AST.cast_expr(node), env)
+        let t -> Str.to_string(AST.cast_type(node))
+        <- eval_cast(v, t)
+    }
     when is_kind(node, AST.K_LITERAL) {
         <- coerce_literal_node(node)
     }
@@ -1770,7 +1827,7 @@ function eval_expr(node, env) {
         <- env_get(env, Str.to_string(AST.var_name(node)))
     }
     when is_kind(node, AST.K_GROUPING) {
-        <- eval_expr(AST.un_right(node), env)
+        <- eval_expr(AST.grp_expr(node), env)
     }
     when is_kind(node, AST.K_UNARY) {
         let r -> eval_expr(AST.un_right(node), env)
@@ -2047,7 +2104,19 @@ function eval_arg_list(arg_nodes, i, env, args) {
 }
 
 function eval_call(node, env) {
-    let callee -> eval_expr(AST.call_callee(node), env)
+    let callee_node -> AST.call_callee(node)
+    when is_kind(callee_node, AST.K_VARIABLE) {
+        let cname -> Str.to_string(AST.var_name(callee_node))
+        when is_type_name_str(cname) {
+            let arg_nodes -> AST.call_args(node)
+            let args -> eval_arg_list(arg_nodes, 0, env, [])
+            when args != Nothing and args.length >= 1 {
+                <- eval_cast(args[0], cname)
+            }
+            <- eval_cast(Nothing, cname)
+        }
+    }
+    let callee -> eval_expr(callee_node, env)
     when get_error() != Nothing {
         <- Nothing
     }
@@ -2074,11 +2143,141 @@ function eval_call(node, env) {
     when is_bound_method(callee) {
         <- call_method(callee[`fn`], callee[`self`], args)
     }
+    when is_bound_builtin_method(callee) {
+        <- eval_bound_builtin(callee, args)
+    }
     when is_fn_val(callee) {
         <- call_fn(callee, args, env)
     }
     set_error(`Callee is not callable`)
     <- Nothing
+}
+
+function is_type_name_str(s) {
+    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
+    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
+    when s == `String` or s == `Str` { <- true }
+    when s == `Boolean` or s == `Bool` { <- true }
+    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
+    when s == `Bytes` or s == `Buffer` { <- true }
+    when s == `List` or s == `Set` or s == `Map` { <- true }
+    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    <- false
+}
+
+function eval_cast(val, target_type) {
+    when target_type == `Integer` or target_type == `Int` or target_type == `Int64` or
+         target_type == `Int32` or target_type == `Int16` or target_type == `Int8` or target_type == `Byte` {
+        when val is Integer { <- val }
+        when val is Decimal { <- parse_int_str(Str.to_string(val)) }
+        when val == true { <- 1 }
+        when val == false { <- 0 }
+        when val == Nothing { <- 0 }
+        when val is String {
+            when val == `` { <- 0 }
+            when Str.length(val) == 1 and not Str.contains(`0123456789`, val) {
+                <- parse_int_str(Str.to_string(val))
+            }
+            <- parse_int_str(val)
+        }
+        when val is List { <- val.length }
+        when val is Map { <- val.length }
+        <- 0
+    }
+    when target_type == `Decimal` or target_type == `Float` or target_type == `Double` {
+        when val is Decimal { <- val }
+        when val is Integer { <- val + 0.0 }
+        when val == true { <- 1.0 }
+        when val == false { <- 0.0 }
+        when val == Nothing { <- 0.0 }
+        when val is String { <- parse_int_str(val) + 0.0 }
+        <- 0.0
+    }
+    when target_type == `String` or target_type == `Str` {
+        when val is String { <- val }
+        when val == true { <- `True` }
+        when val == false { <- `False` }
+        when val == Nothing { <- `` }
+        <- Str.to_string(val)
+    }
+    when target_type == `Boolean` or target_type == `Bool` {
+        when val == true or val == false { <- val }
+        when val is Integer { <- val != 0 }
+        when val is Decimal { <- val != 0.0 }
+        when val is String {
+            when val == `True` or val == `true` or val == `1` { <- true }
+            <- false
+        }
+        when val is List or val is Map { <- val.length > 0 }
+        when val == Nothing { <- false }
+        <- true
+    }
+    when target_type == `Rune` or target_type == `Char` or target_type == `Glyph` {
+        when val is String {
+            when Str.length(val) >= 1 {
+                <- Str.substring(val, 0, 1)
+            }
+            <- ``
+        }
+        when val is Integer {
+            let s -> Str.to_string(val)
+            <- Str.substring(s, 0, 1)
+        }
+        <- ``
+    }
+    when target_type == `Bytes` or target_type == `Buffer` {
+        when val is String {
+            let res -> []
+            let len -> Str.length(val)
+            let i -> 0
+            do while i < len {
+                res.append(Str.substring(val, i, i + 1))
+                i -> i + 1
+            }
+            <- res
+        }
+        when val is List { <- val }
+        when val is Integer { <- [val] }
+        <- []
+    }
+    when target_type == `List` {
+        when val is List { <- val }
+        when val is String {
+            let res -> []
+            let len -> Str.length(val)
+            let i -> 0
+            do while i < len {
+                res.append(Str.substring(val, i, i + 1))
+                i -> i + 1
+            }
+            <- res
+        }
+        <- [val]
+    }
+    when target_type == `Set` {
+        when val is List {
+            let res -> []
+            let i -> 0
+            do while i < val.length {
+                let item -> val[i]
+                when not res.contains(item) {
+                    res.append(item)
+                }
+                i -> i + 1
+            }
+            <- res
+        }
+        when val is String {
+            let list_val -> eval_cast(val, `List`)
+            <- eval_cast(list_val, `Set`)
+        }
+        <- [val]
+    }
+    when target_type == `Map` {
+        when val is Map { <- val }
+        <- {}
+    }
+    <- val
 }
 
 function is_primitive(v) {
@@ -2120,14 +2319,176 @@ function guest_get(obj, name) {
     }
     when obj != Nothing {
         when is_primitive(obj) {
+            when obj is String {
+                when name == `starts_with` or name == `ends_with` or name == `contains` or
+                     name == `index_of` or name == `split` or name == `trim` or
+                     name == `substring` or name == `replace` {
+                    <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `string`, `method` -> name }
+                }
+            }
             <- Nothing
         }
         let rt -> obj.kind
-        when rt == `List` {
+        when rt == `List` or (obj is List) {
+            when name == `append` or name == `push` or name == `pop` or name == `has` or
+                 name == `contains` or name == `join` or name == `clear` or name == `clone` or
+                 name == `at` or name == `get` or name == `remove_at` or name == `size` or
+                 name == `count` or name == `length` {
+                <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `list`, `method` -> name }
+            }
             <- Nothing
+        }
+        when rt == `Set` or (obj is Set) {
+            when name == `size` or name == `count` or name == `length` or name == `has` or
+                 name == `contains` or name == `add` or name == `remove` or name == `to_list` {
+                <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `set`, `method` -> name }
+            }
+            <- Nothing
+        }
+        when name == `has` or name == `keys` or name == `values` or name == `items` or
+             name == `clear` or name == `delete` or name == `remove` {
+            <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `map`, `method` -> name }
         }
         when obj.has(name) {
             <- obj[name]
+        }
+    }
+    <- Nothing
+}
+
+function eval_bound_builtin(callee, args) {
+    let tgt -> callee[`target`]
+    let mtype -> callee[`type`]
+    let mname -> callee[`method`]
+    let a0 -> nth_arg(args, 0)
+    let a1 -> nth_arg(args, 1)
+    let a2 -> nth_arg(args, 2)
+    when mtype == `list` {
+        when mname == `append` or mname == `push` {
+            tgt.append(a0)
+            <- tgt
+        }
+        when mname == `pop` {
+            <- tgt.pop()
+        }
+        when mname == `has` or mname == `contains` {
+            <- tgt.contains(a0)
+        }
+        when mname == `at` or mname == `get` {
+            when a0 != Nothing and a0 >= 0 and a0 < tgt.length {
+                <- tgt[a0]
+            }
+            <- Nothing
+        }
+        when mname == `remove_at` {
+            when a0 != Nothing and a0 >= 0 and a0 < tgt.length {
+                let val -> tgt[a0]
+                tgt.remove_at(a0)
+                <- val
+            }
+            <- Nothing
+        }
+        when mname == `size` or mname == `count` or mname == `length` {
+            <- tgt.length
+        }
+        when mname == `join` {
+            let sep -> `,`
+            when a0 != Nothing { sep -> Str.to_string(a0) }
+            <- Str.join(tgt, sep)
+        }
+        when mname == `clear` {
+            do while tgt.length > 0 {
+                tgt.pop()
+            }
+            <- Nothing
+        }
+        when mname == `clone` {
+            let copy -> []
+            do for item in tgt {
+                copy.append(item)
+            }
+            <- copy
+        }
+    }
+    when mtype == `set` {
+        when mname == `size` or mname == `count` or mname == `length` {
+            <- tgt.length
+        }
+        when mname == `has` or mname == `contains` {
+            <- tgt.contains(a0)
+        }
+        when mname == `add` {
+            __builtin_set.add(tgt, a0)
+            <- tgt
+        }
+        when mname == `remove` {
+            __builtin_set.remove(tgt, a0)
+            <- tgt
+        }
+        when mname == `to_list` {
+            <- __builtin_set.to_list(tgt)
+        }
+    }
+    when mtype == `map` {
+        when mname == `has` or mname == `has_key` {
+            <- tgt.has(a0)
+        }
+        when mname == `keys` {
+            <- tgt.keys()
+        }
+        when mname == `values` {
+            <- tgt.values()
+        }
+        when mname == `items` {
+            let items -> []
+            do for k in tgt.keys() {
+                items.append({`key` -> k, `value` -> tgt[k]})
+            }
+            <- items
+        }
+        when mname == `clear` {
+            let ks -> tgt.keys()
+            do for k in ks {
+                tgt.remove(k)
+            }
+            <- Nothing
+        }
+        when mname == `delete` or mname == `remove` {
+            when a0 != Nothing and tgt.has(a0) {
+                tgt.remove(a0)
+            }
+            <- Nothing
+        }
+    }
+    when mtype == `string` {
+        let s -> Str.to_string(tgt)
+        when mname == `starts_with` {
+            <- Str.starts_with(s, Str.to_string(a0))
+        }
+        when mname == `ends_with` {
+            <- Str.ends_with(s, Str.to_string(a0))
+        }
+        when mname == `contains` {
+            <- Str.contains(s, Str.to_string(a0))
+        }
+        when mname == `index_of` {
+            <- Str.index_of(s, Str.to_string(a0))
+        }
+        when mname == `split` {
+            <- Str.split(s, Str.to_string(a0))
+        }
+        when mname == `trim` {
+            <- Str.trim(s)
+        }
+        when mname == `substring` {
+            let start -> a0
+            let end -> a1
+            when start == Nothing { start -> 0 }
+            when end == Nothing { end -> Str.length(s) }
+            <- Str.substring(s, start, end)
+        }
+        when mname == `replace` {
+            <- Str.replace(s, Str.to_string(a0), Str.to_string(a1))
         }
     }
     <- Nothing
@@ -2249,6 +2610,86 @@ function eval_builtin(name, args) {
     }
     when name == `memory.arena_depth` {
         <- MEM[`depth`]
+    }
+    when name == `sys.get_args` or name == `sys.args` {
+        <- Sys.get_args()
+    }
+    when name == `sys.get_env` or name == `sys.env` {
+        <- Sys.get_env(Str.to_string(a0))
+    }
+    when name == `sys.exit` {
+        Sys.exit(a0)
+        <- Nothing
+    }
+    when name == `time.now` or name == `time.monotonic` {
+        <- Time.monotonic()
+    }
+    when name == `time.sleep` {
+        Time.sleep(a0)
+        <- Nothing
+    }
+    when name == `term.get_size` or name == `term.size` {
+        <- __builtin_term.get_size()
+    }
+    when name == `term.is_tty` {
+        <- __builtin_term.is_tty()
+    }
+    when name == `file.exists` {
+        <- __builtin_file.exists(a0)
+    }
+    when name == `file.write` {
+        <- __builtin_file.write(a0, a1)
+    }
+    when name == `file.is_dir` {
+        <- __builtin_file.is_dir(a0)
+    }
+    when name == `file.list_dir` {
+        <- __builtin_file.list_dir(a0)
+    }
+    when name == `list.remove_at` {
+        <- __builtin_list.remove_at(a0, a1)
+    }
+    when name == `set.from_list` {
+        <- __builtin_set.from_list(a0)
+    }
+    when name == `set.to_list` {
+        <- __builtin_set.to_list(a0)
+    }
+    when name == `set.add` {
+        <- __builtin_set.add(a0, a1)
+    }
+    when name == `set.remove` {
+        <- __builtin_set.remove(a0, a1)
+    }
+    when name == `map.keys` {
+        when a0 != Nothing and (a0 is Map) {
+            <- a0.keys()
+        }
+        <- []
+    }
+    when name == `map.values` {
+        when a0 != Nothing and (a0 is Map) {
+            <- a0.values()
+        }
+        <- []
+    }
+    when name == `map.has` {
+        when a0 != Nothing and (a0 is Map) {
+            <- a0.has(a1)
+        }
+        <- false
+    }
+    when name == `map.items` or name == `map.entries` {
+        let items -> []
+        when a0 != Nothing and (a0 is Map) {
+            do for k in a0.keys() {
+                items.append({`key` -> k, `value` -> a0[k]})
+            }
+        }
+        <- items
+    }
+    when name == `reflect.apply` {
+        <- __builtin_reflect.apply(a0, a1)
     }
     set_error(`unknown builtin ` + Str.to_string(name))
     <- Nothing
@@ -2744,19 +3185,61 @@ function all_digits(s, i, n, digits) {
 }
 
 function parse_int_str(s) {
-    // fold digits; support leading -
-    let n -> Str.length(s)
+    when s == Nothing { <- 0 }
+    when s is Integer { <- s }
+    let s_str -> Str.to_string(s)
+    let n -> Str.length(s_str)
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `x` or Str.at(s_str, 1) == `X`) {
+        let hex_digits -> `0123456789abcdef`
+        let hex_lower -> Str.to_lower(s_str)
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(hex_lower, i)
+            let d -> Str.index_of(hex_digits, ch)
+            when d != -1 {
+                acc -> (acc * 16) + d
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `b` or Str.at(s_str, 1) == `B`) {
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch == `1` {
+                acc -> (acc * 2) + 1
+            } or when ch == `0` {
+                acc -> acc * 2
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
+    let dot -> Str.index_of(s_str, `.`)
+    when dot != -1 {
+        s_str -> Str.substring(s_str, 0, dot)
+        n -> Str.length(s_str)
+    }
+    when n == 0 {
+        <- 0
+    }
     let i -> 0
     let neg -> false
-    when Str.at(s, 0) == `-` {
+    when Str.at(s_str, 0) == `-` {
         neg -> true
         i -> 1
     }
     let acc -> 0
     let digits -> `0123456789`
     do while i < n {
-        let ch -> Str.at(s, i)
+        let ch -> Str.at(s_str, i)
         let d -> Str.index_of(digits, ch)
+        when d == -1 {
+            break
+        }
         acc -> acc * 10 + d
         i -> i + 1
     }

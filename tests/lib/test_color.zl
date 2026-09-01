@@ -1,5 +1,5 @@
-import zen.test as test
-import zen.color as color
+import zen.test.test as test
+import zen.color.color as color
 import zen.ui.color as ui_color
 import zen.text.string as Str
 

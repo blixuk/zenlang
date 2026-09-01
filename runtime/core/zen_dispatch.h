@@ -35,6 +35,7 @@ ZenValue ZenValue_join(ZenValue self, ZenValue separator);
 ZenValue ZenValue_write(ZenValue self, ZenValue value);
 ZenValue ZenValue_writeln(ZenValue self, ZenValue value);
 ZenValue ZenValue_read(ZenValue self);
+ZenValue ZenValue_close(ZenValue self);
 
 ZenValue ZenValue_info(ZenValue self, ZenValue value);
 ZenValue ZenValue_warn(ZenValue self, ZenValue value);

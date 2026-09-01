@@ -98,6 +98,9 @@ function register_enum(name) {
 }
 
 function is_enum_name(name) {
+    when name == `Option` or name == `Result` or name == `Ordering` {
+        <- true
+    }
     let e -> CG[`enums`]
     when e == Nothing {
         <- false
@@ -305,9 +308,121 @@ function split_packed_owners(packed) {
     <- result
 }
 
+function is_builtin_method_name(m) {
+    when m == `length` or m == `size` or m == `count` or m == `at` or m == `get` or
+         m == `set` or m == `set_at` or m == `keys` or m == `values` or m == `entries` or
+         m == `items` or m == `has` or m == `contains` or m == `append` or m == `pop` or
+         m == `peek` or m == `push` or m == `remove` or m == `remove_at` or m == `write` or
+         m == `writeln` or m == `write_line` or m == `read` or m == `starts_with` or
+         m == `ends_with` or m == `join` or m == `substring` or m == `slice` or m == `close` or
+         m == `to_number` or m == `get_stdout` or m == `get_code` or m == `wait` or m == `kill` {
+        <- true
+    }
+    <- false
+}
+
+function emit_builtin_method_default(m, obj, alist) {
+    when m == `length` or m == `size` or m == `count` {
+        <- `ZenValue_get_length(` + obj + `)`
+    }
+    when m == `at` or m == `get` {
+        <- `ZenValue_get_at(` + obj + `, ` + alist + `)`
+    }
+    when m == `set` or m == `set_at` {
+        <- `ZenValue_set_at(` + obj + `, ` + alist + `)`
+    }
+    when m == `keys` {
+        <- `ZenMap_get_keys(` + obj + `)`
+    }
+    when m == `values` {
+        <- `ZenMap_get_values(` + obj + `)`
+    }
+    when m == `entries` or m == `items` {
+        <- `ZenMap_get_items(` + obj + `)`
+    }
+    when m == `has` or m == `contains` {
+        when alist == `` {
+            <- `ZenValue_contains(` + obj + `, ZEN_NOTHING_VAL)`
+        }
+        <- `ZenValue_contains(` + obj + `, ` + alist + `)`
+    }
+    when m == `append` or m == `push` {
+        when alist == `` {
+            <- `ZenValue_append(` + obj + `, ZEN_NOTHING_VAL)`
+        }
+        <- `ZenValue_append(` + obj + `, ` + alist + `)`
+    }
+    when m == `pop` {
+        <- `ZenList_pop(` + obj + `)`
+    }
+    when m == `peek` {
+        <- `ZenValue_peek(` + obj + `)`
+    }
+    when m == `remove` {
+        when alist == `` {
+            <- `ZenValue_remove(` + obj + `, ZEN_NOTHING_VAL)`
+        }
+        <- `ZenValue_remove(` + obj + `, ` + alist + `)`
+    }
+    when m == `remove_at` {
+        <- `ZenList_remove_at_index(` + obj + `, ` + alist + `)`
+    }
+    when m == `write` {
+        when alist == `` {
+            <- `ZenValue_write(` + obj + `, ZEN_NOTHING_VAL)`
+        }
+        <- `ZenValue_write(` + obj + `, ` + alist + `)`
+    }
+    when m == `writeln` or m == `write_line` {
+        when alist == `` {
+            <- `ZenValue_writeln(` + obj + `, ZEN_NOTHING_VAL)`
+        }
+        <- `ZenValue_writeln(` + obj + `, ` + alist + `)`
+    }
+    when m == `read` {
+        <- `ZenValue_read(` + obj + `)`
+    }
+    when m == `starts_with` {
+        <- `ZenValue_starts_with(` + obj + `, ` + alist + `)`
+    }
+    when m == `ends_with` {
+        <- `ZenValue_ends_with(` + obj + `, ` + alist + `)`
+    }
+    when m == `join` {
+        <- `ZenValue_join(` + obj + `, ` + alist + `)`
+    }
+    when m == `substring` or m == `slice` {
+        when Str.contains(alist, `,`) {
+            <- `ZenValue_slice(` + obj + `, ` + alist + `)`
+        }
+        <- `ZenValue_slice(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL)`
+    }
+    when m == `close` {
+        <- `ZenValue_close(` + obj + `)`
+    }
+    when m == `to_number` {
+        <- `ZenValue_to_number(` + obj + `)`
+    }
+    when m == `get_stdout` {
+        <- `ZenObject_get_stdout((` + obj + `).as.object)`
+    }
+    when m == `get_code` {
+        <- `ZenObject_get_code((` + obj + `).as.object)`
+    }
+    when m == `wait` {
+        <- `ZenObject_wait((` + obj + `).as.object)`
+    }
+    when m == `kill` {
+        <- `ZenObject_kill((` + obj + `).as.object)`
+    }
+    <- `ZEN_NOTHING_VAL`
+}
+
 function build_type_dispatch_chain(m, obj, alist, names, i) {
     when i >= names.length {
-        // Fallback: call last class's method (should not happen if type is always set)
+        when is_builtin_method_name(m) {
+            <- emit_builtin_method_default(m, obj, alist)
+        }
         let fallback_cls -> names[names.length - 1]
         let fn -> c_ident(class_method_c_name(fallback_cls, m))
         when alist == `` {
@@ -322,10 +437,6 @@ function build_type_dispatch_chain(m, obj, alist, names, i) {
         this_call -> fn + `(` + obj + `)`
     } or {
         this_call -> fn + `(` + obj + `, ` + alist + `)`
-    }
-    when i + 1 >= names.length {
-        // Last branch: no else needed — always this one
-        <- this_call
     }
     let type_check -> `(ZenValue_equal(ZenMap_get_value_at_key(` + obj + `, ZenValue_make_string("__type")), ZenValue_make_string("` + escape_c_string(cname) + `"))).as.boolean`
     let else_branch -> build_type_dispatch_chain(m, obj, alist, names, i + 1)
@@ -413,6 +524,18 @@ function global_extern_block_for_program(prog) {
     let stmts -> AST.prog_stmts(prog)
     when stmts == Nothing {
         <- ``
+    }
+    when AST.ast_kind(stmts) == AST.K_STMT_CHUNK {
+        let acc -> ``
+        let chunk -> stmts
+        do while chunk != Nothing and AST.ast_kind(chunk) == AST.K_STMT_CHUNK {
+            let slice -> AST.stmt_chunk_stmts(chunk)
+            when slice != Nothing {
+                acc -> global_extern_walk(slice, 0, slice.length, acc)
+            }
+            chunk -> AST.stmt_chunk_next(chunk)
+        }
+        <- acc
     }
     <- global_extern_walk(stmts, 0, stmts.length, ``)
 }
@@ -595,13 +718,18 @@ function token_type_int_str(fname) {
     <- `0`
 }
 
+function c_fn_ident(name) {
+    let s -> Str.to_string(name)
+    when s == `main` {
+        <- `zen_main`
+    }
+    <- c_ident(name)
+}
+
 function c_ident(name) {
     let s -> Str.to_string(name)
     when s == `` or s == `Nothing` or s == `None` {
         <- ``
-    }
-    when s == `main` {
-        <- `zen_main`
     }
     when Str.starts_with(s, `z_`) {
         <- s
@@ -753,7 +881,7 @@ function proto_block_walk(stmts, i, n, acc) {
     }
     let s -> stmts[i]
     when cg_is_kind(s, AST.K_FUNCTION) {
-        let name -> c_ident(AST.fn_name(s))
+        let name -> c_fn_ident(AST.fn_name(s))
         let sig -> param_sig(AST.fn_params(s))
         let line -> `ZenValue ` + name + `(` + sig + `);`
         when acc == `` {
@@ -820,8 +948,14 @@ function emit_main_wrapper_named(init_name) {
         iname -> `zen_module_init`
     }
     cg_emit(`#ifndef ZEN_NO_HOST_MAIN`)
+    when was_emitted(`zen_main`) {
+        cg_emit(`extern ZenValue zen_main(void);`)
+    } or {
+        cg_emit(`__attribute__((weak)) ZenValue zen_main(void) { return ZEN_NOTHING_VAL; }`)
+    }
     cg_emit(`int main(int argc, char** argv) {`)
     push_indent()
+    cg_emit(`ZenRuntime_initialize();`)
     cg_emit(`ZenSystem_initialize_arguments(argc, argv);`)
     cg_emit(iname + `();`)
     cg_emit(`ZenValue __r = zen_main();`)
@@ -863,7 +997,7 @@ function cg_walk_stmt_slice(stmts, i, n, mode) {
         let s -> stmts[j]
         when cg_is_kind(s, AST.K_FUNCTION) {
             let raw -> Str.to_string(AST.fn_name(s))
-            let fname -> c_ident(raw)
+            let fname -> c_fn_ident(raw)
             register_free_fn(raw)
             // Multi-file merge: first free-function definition wins.
             when mode == 0 {
@@ -913,9 +1047,174 @@ function cg_walk_stmt_slice(stmts, i, n, mode) {
             }
             // mode 2/3: no module globals from class itself
         }
+        when cg_is_kind(s, AST.K_STRUCTURE) {
+            let raw -> Str.to_string(s[3])
+            let fname -> c_ident(raw)
+            register_free_fn(raw)
+            when mode == 0 {
+                when was_emitted(fname) == false {
+                    emit_structure_proto(s)
+                    mark_emitted(fname)
+                }
+            }
+            when mode == 1 {
+                let bkey -> fname + `__body`
+                when was_emitted(fname) and was_emitted(bkey) == false {
+                    emit_structure_body(s)
+                    mark_emitted(bkey)
+                }
+            }
+            when mode == 3 {
+                let traits -> AST.struct_traits(s)
+                when traits_has_reflectable(traits) {
+                    emit_struct_reflect_register(s)
+                }
+            }
+        }
+        when cg_is_kind(s, AST.K_CLASS) {
+            when mode == 3 {
+                let traits -> AST.class_traits(s)
+                when traits_has_reflectable(traits) {
+                    emit_class_reflect_register(s)
+                }
+            }
+        }
+        when cg_is_kind(s, AST.K_SCOPE) {
+            let sname -> c_ident(s[3])
+            when mode == 2 {
+                when was_emitted(sname) == false {
+                    cg_emit(`ZenValue ` + sname + `;`)
+                    mark_emitted(sname)
+                }
+            }
+            when mode == 3 {
+                let ikey -> sname + `__init`
+                when was_emitted(sname) and was_emitted(ikey) == false {
+                    emit_scope_init(s)
+                    mark_emitted(ikey)
+                }
+            }
+        }
+        when mode == 3 {
+            when not cg_is_kind(s, AST.K_FUNCTION) and not cg_is_kind(s, AST.K_CLASS) and not cg_is_kind(s, AST.K_STRUCTURE) and not cg_is_kind(s, AST.K_ENUMERATOR) and not cg_is_kind(s, AST.K_LET) and not cg_is_kind(s, AST.K_SCOPE) {
+                emit_stmt(s)
+            }
+        }
         j -> j + 1
     }
     <- Nothing
+}
+
+function cg_struct_member_name(m, fallback) {
+    when m == Nothing {
+        <- fallback
+    }
+    when cg_is_kind(m, AST.K_LET) {
+        <- Str.to_string(AST.let_name(m))
+    }
+    when cg_is_kind(m, AST.K_VARIABLE) {
+        <- Str.to_string(AST.var_name(m))
+    }
+    when cg_is_kind(m, AST.K_STRUCTURE) {
+        <- Str.to_string(m[3])
+    }
+    let k -> AST.ast_kind(m)
+    when k != Nothing and k >= 0 {
+        when m.length > 3 {
+            <- Str.to_string(m[3])
+        }
+    }
+    <- Str.to_string(m)
+}
+
+function emit_structure_proto(s) {
+    let raw -> Str.to_string(s[3])
+    let fname -> c_ident(raw)
+    register_free_fn(raw)
+    let members -> s[4]
+    let sig -> ``
+    when members != Nothing and members.length > 0 {
+        let mi -> 0
+        let mn -> members.length
+        do while mi < mn {
+            let mraw -> cg_struct_member_name(members[mi], `arg_` + Str.to_string(mi))
+            let mname -> c_ident(mraw)
+            when mi > 0 { sig -> sig + `, ` }
+            sig -> sig + `ZenValue ` + mname
+            mi -> mi + 1
+        }
+    } or {
+        sig -> `void`
+    }
+    cg_emit(`ZenValue ` + fname + `(` + sig + `);`)
+}
+
+function emit_structure_body(s) {
+    let raw -> Str.to_string(s[3])
+    let fname -> c_ident(raw)
+    let members -> s[4]
+    let sig -> ``
+    let param_names -> []
+    when members != Nothing and members.length > 0 {
+        let mi -> 0
+        let mn -> members.length
+        do while mi < mn {
+            let mraw -> cg_struct_member_name(members[mi], `arg_` + Str.to_string(mi))
+            let mname -> c_ident(mraw)
+            param_names.append(mname)
+            when mi > 0 { sig -> sig + `, ` }
+            sig -> sig + `ZenValue ` + mname
+            mi -> mi + 1
+        }
+    } or {
+        sig -> `void`
+    }
+    cg_emit(``)
+    cg_emit(`ZenValue ` + fname + `(` + sig + `) {`)
+    push_indent()
+    cg_emit(`ZenValue self = ZenMap_make_from_arguments(0);`)
+    cg_emit(`(void)ZenMap_set_value_at_key(self, ZenValue_make_string("__type__"), ZenValue_make_string("` + escape_c_string(raw) + `"));`)
+    cg_emit(`(void)ZenMap_set_value_at_key(self, ZenValue_make_string("__type"), ZenValue_make_string("` + escape_c_string(raw) + `"));`)
+    cg_emit(`(void)ZenMap_set_value_at_key(self, ZenValue_make_string("kind"), ZenValue_make_string("` + escape_c_string(raw) + `"));`)
+    when members != Nothing and members.length > 0 {
+        let pi -> 0
+        let pn -> param_names.length
+        do while pi < pn {
+            let mraw -> cg_struct_member_name(members[pi], `arg_` + Str.to_string(pi))
+            cg_emit(`(void)ZenMap_set_value_at_key(self, ZenValue_make_string("` + escape_c_string(mraw) + `"), ` + param_names[pi] + `);`)
+            pi -> pi + 1
+        }
+    }
+    cg_emit(`return self;`)
+    pop_indent()
+    cg_emit(`}`)
+}
+
+function emit_scope_init(s) {
+    let sname -> c_ident(s[3])
+    cg_emit(sname + ` = ZenMap_make_from_arguments(0);`)
+    let body -> s[4]
+    let stmts -> []
+    when body != Nothing and body is List {
+        when body.length > 3 and body[0] == 20 { // K_BLOCK
+            stmts -> body[3]
+        } or {
+            stmts -> body
+        }
+    }
+    when stmts != Nothing {
+        let si -> 0
+        let sn -> stmts.length
+        do while si < sn {
+            let sm -> stmts[si]
+            when sm != Nothing and sm.length > 4 and (sm[0] == 19 or sm[0] == 9 or sm[0] == 29) { // K_LET / K_ASSIGN / K_SET
+                let field_k -> Str.to_string(sm[3])
+                let field_v -> emit_expr(sm[4])
+                cg_emit(`(void)ZenMap_set_value_at_key(` + sname + `, ZenValue_make_string("` + escape_c_string(field_k) + `"), ` + field_v + `);`)
+            }
+            si -> si + 1
+        }
+    }
 }
 
 function emit_module_global_decl(node) {
@@ -993,7 +1292,7 @@ function emit_init_calls(names, i) {
 }
 
 function emit_func_proto(fn) {
-    let name -> c_ident(AST.fn_name(fn))
+    let name -> c_fn_ident(AST.fn_name(fn))
     let params -> AST.fn_params(fn)
     let sig -> param_sig(params)
     cg_emit(`ZenValue ` + name + `(` + sig + `);`)
@@ -1049,6 +1348,17 @@ function emit_enum_inits(node) {
 
 // ---------- Lambdas / closures ----------
 
+function is_module_or_fn(oname, mname) {
+    let full_fn -> oname + `_` + mname
+    when is_free_fn(full_fn) or is_free_fn(mname) { <- true }
+    when oname == `fiber` or oname == `future` or oname == `channel` or oname == `task` { <- true }
+    when oname == `IO` or oname == `io` or oname == `Str` or oname == `string` { <- true }
+    when oname == `Math` or oname == `Path` or oname == `path` or oname == `File` or oname == `file` { <- true }
+    when oname == `Time` or oname == `time` or oname == `Sys` or oname == `sys` { <- true }
+    when oname == `term` or oname == `cli` or oname == `test` { <- true }
+    <- false
+}
+
 /!
  Collect free variable names from an AST expression or statement.
  excludes = map of param/local names to skip.
@@ -1097,7 +1407,18 @@ function collect_free_vars(node, excludes, acc) {
         <- collect_free_vars_list(AST.block_stmts(node), excludes, acc)
     }
     when k == AST.K_CALL {
-        acc -> collect_free_vars(AST.call_callee(node), excludes, acc)
+        let callee -> AST.call_callee(node)
+        when callee != Nothing and AST.ast_kind(callee) == AST.K_GET {
+            let obj -> AST.get_obj(callee)
+            let mname -> Str.to_string(AST.get_name(callee))
+            when obj != Nothing and AST.ast_kind(obj) == AST.K_VARIABLE {
+                let oname -> Str.to_string(AST.var_name(obj))
+                when is_module_or_fn(oname, mname) {
+                    <- collect_free_vars_list(AST.call_args(node), excludes, acc)
+                }
+            }
+        }
+        acc -> collect_free_vars(callee, excludes, acc)
         <- collect_free_vars_list(AST.call_args(node), excludes, acc)
     }
     when k == AST.K_BINARY or k == AST.K_LOGICAL {
@@ -1400,7 +1721,7 @@ function param_sig_rec(params, i, n, acc) {
 }
 
 function emit_func_body(fn) {
-    let name -> c_ident(AST.fn_name(fn))
+    let name -> c_fn_ident(AST.fn_name(fn))
     let params -> AST.fn_params(fn)
     let pmap -> {}
     when params != Nothing {
@@ -1490,6 +1811,100 @@ function param_sig_with_self(params) {
     <- `ZenValue z_self, ` + rest
 }
 
+function traits_has_reflectable(traits) {
+    when traits == Nothing {
+        <- false
+    }
+    let ti -> 0
+    let tn -> traits.length
+    do while ti < tn {
+        when Str.to_string(traits[ti]) == `reflectable` {
+            <- true
+        }
+        ti -> ti + 1
+    }
+    <- false
+}
+
+function emit_struct_reflect_register(s) {
+    let raw -> Str.to_string(s[3])
+    let members -> s[4]
+    cg_emit(`{`)
+    cg_emit(`  ZenValue __rf = ZenList_make_from_arguments(0);`)
+    when members != Nothing {
+        let mi -> 0
+        let mn -> members.length
+        do while mi < mn {
+            let mraw -> cg_struct_member_name(members[mi], ``)
+            when mraw != `` and mraw != `let` {
+                cg_emit(`  ZenList_append_value(__rf, ZenValue_make_string("` + escape_c_string(mraw) + `"));`)
+            }
+            mi -> mi + 1
+        }
+    }
+    cg_emit(`  ZenValue __rm = ZenList_make_from_arguments(0);`)
+    cg_emit(`  ZenReflect_register_type(ZenValue_make_string("` + escape_c_string(raw) + `"), __rf, __rm);`)
+    cg_emit(`}`)
+}
+
+function emit_class_reflect_register(cls) {
+    let cname -> Str.to_string(AST.class_name(cls))
+    let members -> AST.class_members(cls)
+    let methods -> AST.class_methods(cls)
+    cg_emit(`{`)
+    cg_emit(`  ZenValue __rf = ZenList_make_from_arguments(0);`)
+    when members != Nothing {
+        let fi -> 0
+        let fn_cnt -> members.length
+        do while fi < fn_cnt {
+            let fraw -> cg_struct_member_name(members[fi], ``)
+            when fraw != `` and fraw != `let` {
+                cg_emit(`  ZenList_append_value(__rf, ZenValue_make_string("` + escape_c_string(fraw) + `"));`)
+            }
+            fi -> fi + 1
+        }
+    }
+    cg_emit(`  ZenValue __rm = ZenList_make_from_arguments(0);`)
+    when methods != Nothing {
+        let mi -> 0
+        let mn -> methods.length
+        do while mi < mn {
+            let mname -> Str.to_string(AST.fn_name(methods[mi]))
+            cg_emit(`  ZenList_append_value(__rm, ZenValue_make_string("` + escape_c_string(mname) + `"));`)
+            let thunk_name -> `__thunk_` + c_ident(cname) + `_` + c_ident(mname)
+            cg_emit(`  ZenReflect_register_method("` + escape_c_string(cname) + `", "` + escape_c_string(mname) + `", (ZenReflectMethodFn)` + thunk_name + `);`)
+            mi -> mi + 1
+        }
+    }
+    cg_emit(`  ZenReflect_register_type(ZenValue_make_string("` + escape_c_string(cname) + `"), __rf, __rm);`)
+    cg_emit(`}`)
+}
+
+function emit_reflect_thunk(cname, method) {
+    let mname -> Str.to_string(AST.fn_name(method))
+    let params -> AST.fn_params(method)
+    let pn -> 0
+    when params != Nothing {
+        pn -> params.length
+    }
+    let thunk_name -> `__thunk_` + c_ident(cname) + `_` + c_ident(mname)
+    cg_emit(`static ZenValue ` + thunk_name + `(void* self_obj, ZenValue __args) {`)
+    push_indent()
+    let args_call -> `ZenValue_from_map((ZenMap*)self_obj)`
+    let pi -> 0
+    do while pi < pn {
+        let an -> `__a` + Str.to_string(pi)
+        cg_emit(`ZenValue ` + an + ` = ZenList_get_value_at_index(__args, ZenValue_make_integer(` + Str.to_string(pi) + `LL));`)
+        args_call -> args_call + `, ` + an
+        pi -> pi + 1
+    }
+    let target_fn -> c_ident(class_method_c_name(cname, mname))
+    cg_emit(`return ` + target_fn + `(` + args_call + `);`)
+    pop_indent()
+    cg_emit(`}`)
+    cg_emit(``)
+}
+
 function emit_class_bodies(cls) {
     let cname -> Str.to_string(AST.class_name(cls))
     register_class(cname)
@@ -1508,6 +1923,16 @@ function emit_class_bodies(cls) {
     do while mi < mn {
         register_method(Str.to_string(AST.fn_name(methods[mi])), cname)
         mi -> mi + 1
+    }
+    // Emit thunks for reflectable class methods
+    let traits -> AST.class_traits(cls)
+    when traits_has_reflectable(traits) {
+        let ti -> 0
+        let tn -> methods.length
+        do while ti < tn {
+            emit_reflect_thunk(cname, methods[ti])
+            ti -> ti + 1
+        }
     }
     // Constructor: base fields then derived; init from nearest owner
     emit_class_new(cname, members, methods)
@@ -1533,6 +1958,8 @@ function emit_class_new(cname, members, methods) {
     cg_emit(`ZenValue z_self = ZenMap_make_from_arguments(0);`)
     // Tag type for optional runtime use
     cg_emit(`(void)ZenMap_set_value_at_key(z_self, ZenValue_make_string("__type"), ZenValue_make_string("` + escape_c_string(cname) + `"));`)
+    cg_emit(`(void)ZenMap_set_value_at_key(z_self, ZenValue_make_string("__type__"), ZenValue_make_string("` + escape_c_string(cname) + `"));`)
+    cg_emit(`(void)ZenMap_set_value_at_key(z_self, ZenValue_make_string("kind"), ZenValue_make_string("` + escape_c_string(cname) + `"));`)
     let base_n -> class_base_of(cname)
     when base_n != Nothing and base_n != `` {
         cg_emit(`(void)ZenMap_set_value_at_key(z_self, ZenValue_make_string("__base"), ZenValue_make_string("` + escape_c_string(base_n) + `"));`)
@@ -1703,10 +2130,14 @@ function emit_stmt(node) {
         <- Nothing
     }
     when cg_is_kind(node, AST.K_BLOCK) {
+        cg_emit(`{`)
+        push_indent()
         let stmts -> AST.block_stmts(node)
         when stmts != Nothing {
             walk_block(stmts, 0)
         }
+        pop_indent()
+        cg_emit(`}`)
         <- Nothing
     }
     when cg_is_kind(node, AST.K_LET) {
@@ -1733,6 +2164,12 @@ function emit_stmt(node) {
         }
         <- Nothing
     }
+    when cg_is_kind(node, AST.K_ASSIGN) {
+        let name -> c_ident(AST.assign_name(node))
+        let v -> emit_expr(AST.assign_val(node))
+        cg_emit(name + ` = ` + v + `;`)
+        <- Nothing
+    }
     when cg_is_kind(node, AST.K_EXPR_STMT) {
         let e -> AST.expr_stmt_expr(node)
         when cg_is_kind(e, AST.K_LITERAL) {
@@ -1751,6 +2188,40 @@ function emit_stmt(node) {
             let v -> emit_expr(AST.assign_val(e))
             cg_emit(name + ` = ` + v + `;`)
             <- Nothing
+        }
+        // In-place statement update for ++ / -- (e.g. bar ++ "░", doc -- 4, 7 -- prefix)
+        when cg_is_kind(e, AST.K_BINARY) {
+            let bop -> Str.to_string(AST.bin_op(e))
+            let l -> AST.bin_left(e)
+            let r -> AST.bin_right(e)
+            when bop == `++` {
+                when cg_is_kind(l, AST.K_VARIABLE) {
+                    let vname -> c_ident(AST.var_name(l))
+                    let re -> emit_expr(r)
+                    cg_emit(vname + ` = ZenValue_op_append(` + vname + `, ` + re + `);`)
+                    <- Nothing
+                }
+                when cg_is_kind(r, AST.K_VARIABLE) {
+                    let vname -> c_ident(AST.var_name(r))
+                    let le -> emit_expr(l)
+                    cg_emit(vname + ` = ZenValue_op_append(` + le + `, ` + vname + `);`)
+                    <- Nothing
+                }
+            }
+            when bop == `--` {
+                when cg_is_kind(l, AST.K_VARIABLE) {
+                    let vname -> c_ident(AST.var_name(l))
+                    let re -> emit_expr(r)
+                    cg_emit(vname + ` = ZenValue_op_remove(` + vname + `, ` + re + `);`)
+                    <- Nothing
+                }
+                when cg_is_kind(r, AST.K_VARIABLE) {
+                    let vname -> c_ident(AST.var_name(r))
+                    let le -> emit_expr(l)
+                    cg_emit(vname + ` = ZenValue_op_remove(` + le + `, ` + vname + `);`)
+                    <- Nothing
+                }
+            }
         }
         // Map/list index assign: obj[key] -> value  (critical for B[`graph`], CG[`buf`])
         when cg_is_kind(e, AST.K_INDEX_ASSIGN) {
@@ -1772,6 +2243,11 @@ function emit_stmt(node) {
     }
     when cg_is_kind(node, AST.K_CHECK_STMT) {
         emit_check_stmt(node)
+        <- Nothing
+    }
+    when cg_is_kind(node, AST.K_RAISE) {
+        let rv -> emit_expr(AST.raise_expr(node))
+        cg_emit(`ZenException_raise(` + rv + `);`)
         <- Nothing
     }
     when cg_is_kind(node, AST.K_WHILE) {
@@ -1936,7 +2412,18 @@ function is_bind_pattern_is(node) {
         <- true
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
+        let name -> Str.to_string(AST.var_name(pat))
+        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+            <- false
+        }
         <- true
+    }
+    when cg_is_kind(pat, AST.K_LITERAL) {
+        let name -> Str.to_string(AST.lit_val(pat))
+        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+            <- false
+        }
+        <- false
     }
     <- false
 }
@@ -2031,9 +2518,17 @@ function bind_pattern_guard(pat, t) {
         <- `ZenValue_make_boolean(true)`
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
+        let name -> Str.to_string(AST.var_name(pat))
+        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+            <- `ZenValue_is_type_name(` + t + `, "` + name + `")`
+        }
         <- `ZenValue_make_boolean(true)`
     }
     when cg_is_kind(pat, AST.K_LITERAL) {
+        let raw -> Str.to_string(AST.lit_val(pat))
+        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+            <- `ZenValue_is_type_name(` + t + `, "` + raw + `")`
+        }
         let lv -> emit_expr(pat)
         <- `ZenValue_equal(` + t + `, ` + lv + `)`
     }
@@ -2058,7 +2553,11 @@ function bind_pattern_guard(pat, t) {
         <- `ZenValue_make_boolean((` + t + `).type == ZEN_MAP)`
     }
     when cg_is_kind(pat, AST.K_STRUCT_INIT) {
-        <- `ZenValue_make_boolean(true)`
+        let sname -> Str.to_string(AST.struct_init_name(pat))
+        when sname != `` {
+            <- `ZenValue_is_type_name(` + t + `, "` + sname + `")`
+        }
+        <- `ZenValue_make_boolean((` + t + `).type == ZEN_MAP)`
     }
     when cg_is_kind(pat, AST.K_CALL) {
         <- enum_is_guard(pat, t)
@@ -2087,6 +2586,9 @@ function emit_pattern_binds(pat, t) {
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
         let name -> Str.to_string(AST.var_name(pat))
+        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+            <- Nothing
+        }
         when name != `_` {
             let nm -> c_ident(name)
             cg_emit(`ZenValue ` + nm + ` = ` + t + `;`)
@@ -2117,11 +2619,11 @@ function emit_pattern_binds(pat, t) {
         <- Nothing
     }
     when cg_is_kind(pat, AST.K_MAP) {
-        emit_map_binds(map_fields_of(pat), t, 0)
+        emit_map_binds(AST.map_entries(pat), t, 0)
         <- Nothing
     }
     when cg_is_kind(pat, AST.K_STRUCT_INIT) {
-        emit_map_binds(AST.map_entries(pat), t, 0)
+        emit_map_binds(AST.struct_init_fields(pat), t, 0)
         <- Nothing
     }
     when cg_is_kind(pat, AST.K_CALL) {
@@ -2165,13 +2667,17 @@ function emit_map_binds(fields, t, i) {
     }
     let f -> fields[i]
     let val -> AST.struct_field_val(f)
-    when cg_is_kind(val, AST.K_VARIABLE) {
-        let name -> Str.to_string(AST.var_name(val))
-        when name != `_` {
-            let nm -> c_ident(name)
-            let key -> escape_c_string(Str.to_string(AST.struct_field_name(f)))
-            cg_emit(`ZenValue ` + nm + ` = ZenValue_get_field(` + t + `, "` + key + `");`)
-        }
+    let raw_name -> ``
+    when AST.struct_field_name(f) != Nothing {
+        raw_name -> Str.to_string(AST.struct_field_name(f))
+    }
+    when val != Nothing and cg_is_kind(val, AST.K_VARIABLE) {
+        raw_name -> Str.to_string(AST.var_name(val))
+    }
+    when raw_name != `` and raw_name != `_` {
+        let nm -> c_ident(raw_name)
+        let key -> escape_c_string(Str.to_string(AST.struct_field_name(f)))
+        cg_emit(`ZenValue ` + nm + ` = ZenValue_get_field(` + t + `, "` + key + `");`)
     }
     emit_map_binds(fields, t, i + 1)
 }
@@ -2195,24 +2701,43 @@ function emit_enum_binds(args, t, i) {
 }
 
 function emit_check_stmt(node) {
+    let expr_node -> AST.check_stmt_expr(node)
+    let or_b -> AST.check_stmt_or_block(node)
+    let raise_e -> AST.check_stmt_raise(node)
+    let cases -> AST.check_stmt_cases(node)
+    when expr_node != Nothing and cg_is_kind(expr_node, AST.K_BLOCK) {
+        let exc -> next_temp()
+        cg_emit(`ZenExceptionContext ` + exc + `;`)
+        cg_emit(`ZenException_push_context(&` + exc + `);`)
+        cg_emit(`if (setjmp(` + exc + `.buf) == 0) {`)
+        push_indent()
+        emit_stmt(expr_node)
+        cg_emit(`ZenException_pop_context();`)
+        pop_indent()
+        cg_emit(`} else {`)
+        push_indent()
+        cg_emit(`ZenException_pop_context();`)
+        when or_b != Nothing {
+            emit_stmt(or_b)
+        }
+        when raise_e != Nothing {
+            let rv -> emit_expr(raise_e)
+            cg_emit(`ZenException_raise(` + rv + `);`)
+        }
+        pop_indent()
+        cg_emit(`}`)
+        <- Nothing
+    }
     let flag -> next_temp()
     cg_emit(`ZenValue ` + flag + ` = ZenValue_make_boolean(false);`)
-    let expr_node -> AST.check_stmt_expr(node)
     when expr_node != Nothing {
-        when is_kind(expr_node, AST.K_BLOCK) {
-            emit_stmt(expr_node)
-            cg_emit(flag + ` = ZenValue_make_boolean(true);`)
-        } or {
-            let v -> emit_expr(expr_node)
-            let t -> next_temp()
-            cg_emit(`ZenValue ` + t + ` = ` + v + `;`)
-            let cases -> AST.check_stmt_cases(node)
-            when cases != Nothing {
-                emit_check_cases(cases, 0, cases.length, t, flag)
-            }
+        let v -> emit_expr(expr_node)
+        let t -> next_temp()
+        cg_emit(`ZenValue ` + t + ` = ` + v + `;`)
+        when cases != Nothing {
+            emit_check_cases(cases, 0, cases.length, t, flag)
         }
     }
-    let or_b -> AST.check_stmt_or_block(node)
     when or_b != Nothing {
         cg_emit(`if (!(` + flag + `.as.boolean)) {`)
         push_indent()
@@ -2220,12 +2745,11 @@ function emit_check_stmt(node) {
         pop_indent()
         cg_emit(`}`)
     }
-    let raise_e -> AST.check_stmt_raise(node)
     when raise_e != Nothing {
         cg_emit(`if (!(` + flag + `.as.boolean)) {`)
         push_indent()
         let rv -> emit_expr(raise_e)
-        cg_emit(`ZenValue_raise(` + rv + `);`)
+        cg_emit(`ZenException_raise(` + rv + `);`)
         pop_indent()
         cg_emit(`}`)
     }
@@ -2245,13 +2769,14 @@ function emit_check_cases(cases, i, n, t, flag) {
 }
 
 function emit_check_case_one(c, t, flag) {
-    let pat -> c[`condition`]
+    let pat -> AST.case_cond(c)
     let guard -> bind_pattern_guard(pat, t)
     cg_emit(`if ((` + guard + `).as.boolean) {`)
     push_indent()
     emit_pattern_binds(pat, t)
-    when c[`guard`] != Nothing {
-        let ge -> emit_expr(c[`guard`])
+    let grd -> AST.case_guard(c)
+    when grd != Nothing {
+        let ge -> emit_expr(grd)
         cg_emit(`if ((` + ge + `).as.boolean) {`)
         push_indent()
         emit_stmt(AST.case_body(c))
@@ -2326,7 +2851,7 @@ function emit_block_into_var(body, target_var) {
     <- Nothing
 }
 
-function emit_when_expr_cases(cases, i, n, target_var, first) {
+function emit_when_expr_cases(cases, i, n, target_var) {
     when i >= n {
         <- Nothing
     }
@@ -2334,30 +2859,23 @@ function emit_when_expr_cases(cases, i, n, target_var, first) {
     let has_cond -> AST.case_cond(c) != Nothing
     when has_cond {
         let cond -> emit_expr(AST.case_cond(c))
-        when first {
-            cg_emit(`if ((` + cond + `).as.boolean) {`)
-        } or {
-            cg_emit(`} else if ((` + cond + `).as.boolean) {`)
-        }
+        cg_emit(`if ((` + cond + `).as.boolean) {`)
         push_indent()
         emit_block_into_var(AST.case_body(c), target_var)
         pop_indent()
+        when i + 1 < n {
+            cg_emit(`} else {`)
+            push_indent()
+            emit_when_expr_cases(cases, i + 1, n, target_var)
+            pop_indent()
+            cg_emit(`}`)
+        } or {
+            cg_emit(`}`)
+        }
     } or {
         // else
-        when first {
-            cg_emit(`{`)
-        } or {
-            cg_emit(`} else {`)
-        }
-        push_indent()
         emit_block_into_var(AST.case_body(c), target_var)
-        pop_indent()
     }
-    when i + 1 >= n {
-        cg_emit(`}`)
-        <- Nothing
-    }
-    emit_when_expr_cases(cases, i + 1, n, target_var, false)
 }
 
 // ---------- Expressions → C expression strings ----------
@@ -2370,7 +2888,7 @@ function emit_expr(node) {
         let t -> next_temp()
         cg_emit(`ZenValue ` + t + ` = ZEN_NOTHING_VAL;`)
         let cases -> AST.when_cases(node)
-        emit_when_expr_cases(cases, 0, cases.length, t, true)
+        emit_when_expr_cases(cases, 0, cases.length, t)
         <- t
     }
     // More specific kinds before generic *Literal* / *Expression* names
@@ -2387,7 +2905,14 @@ function emit_expr(node) {
         <- emit_literal_node(node)
     }
     when cg_is_kind(node, AST.K_VARIABLE) {
-        <- c_ident(AST.var_name(node))
+        let raw -> Str.to_string(AST.var_name(node))
+        when is_type_name_str(raw) {
+            <- `ZenValue_make_string("` + escape_c_string(raw) + `")`
+        }
+        when is_free_fn(raw) and raw != `main` {
+            <- `ZenValue_from_function((ZenValue (*)(void))` + c_fn_ident(raw) + `)`
+        }
+        <- c_ident(raw)
     }
     when cg_is_kind(node, AST.K_BINARY) {
         let l -> emit_expr(AST.bin_left(node))
@@ -2404,18 +2929,39 @@ function emit_expr(node) {
         when op == `-` {
             <- `ZenValue_negate(` + r + `)`
         }
+        when op == `~` {
+            <- `ZenValue_bitwise_not(` + r + `)`
+        }
         <- r
     }
     when cg_is_kind(node, AST.K_LOGICAL) {
-        let l -> emit_expr(AST.bin_left(node))
-        let r -> emit_expr(AST.bin_right(node))
         let op -> Str.to_string(AST.bin_op(node))
         when op == `and` {
-            <- `ZenValue_and(` + l + `, ` + r + `)`
+            let l -> emit_expr(AST.bin_left(node))
+            let t -> next_temp()
+            cg_emit(`ZenValue ` + t + ` = ` + l + `;`)
+            cg_emit(`if (` + t + `.type != ZEN_NOTHING && (` + t + `.type != ZEN_BOOLEAN || ` + t + `.as.boolean) && (` + t + `.type != ZEN_INTEGER || ` + t + `.as.integer != 0)) {`)
+            push_indent()
+            let r -> emit_expr(AST.bin_right(node))
+            cg_emit(t + ` = ` + r + `;`)
+            pop_indent()
+            cg_emit(`}`)
+            <- t
         }
         when op == `or` {
-            <- `ZenValue_or(` + l + `, ` + r + `)`
+            let l -> emit_expr(AST.bin_left(node))
+            let t -> next_temp()
+            cg_emit(`ZenValue ` + t + ` = ` + l + `;`)
+            cg_emit(`if (` + t + `.type == ZEN_NOTHING || (` + t + `.type == ZEN_BOOLEAN && !` + t + `.as.boolean) || (` + t + `.type == ZEN_INTEGER && ` + t + `.as.integer == 0)) {`)
+            push_indent()
+            let r -> emit_expr(AST.bin_right(node))
+            cg_emit(t + ` = ` + r + `;`)
+            pop_indent()
+            cg_emit(`}`)
+            <- t
         }
+        let l -> emit_expr(AST.bin_left(node))
+        let r -> emit_expr(AST.bin_right(node))
         <- `ZenValue_and(` + l + `, ` + r + `)`
     }
     when cg_is_kind(node, AST.K_CALL) {
@@ -2423,6 +2969,53 @@ function emit_expr(node) {
     }
     when cg_is_kind(node, AST.K_FUNC_EXPR) {
         <- emit_function_expression(node)
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let target_val -> emit_expr(AST.cast_expr(node))
+        let target_type -> Str.to_string(AST.cast_type(node))
+        <- `ZenValue_cast(` + target_val + `, "` + target_type + `")`
+    }
+    when cg_is_kind(node, AST.K_CHECK) {
+        let t -> next_temp()
+        let exc -> next_temp()
+        cg_emit(`ZenValue ` + t + ` = ZEN_NOTHING_VAL;`)
+        cg_emit(`ZenExceptionContext ` + exc + `;`)
+        cg_emit(`ZenException_push_context(&` + exc + `);`)
+        cg_emit(`if (setjmp(` + exc + `.buf) == 0) {`)
+        push_indent()
+        let v -> emit_expr(AST.check_expr_expr(node))
+        cg_emit(t + ` = ` + v + `;`)
+        cg_emit(`ZenException_pop_context();`)
+        pop_indent()
+        cg_emit(`} else {`)
+        push_indent()
+        cg_emit(`ZenException_pop_context();`)
+        cg_emit(t + ` = ZEN_NOTHING_VAL;`)
+        pop_indent()
+        cg_emit(`}`)
+        cg_emit(`if (` + t + `.type == ZEN_ERROR) { ` + t + ` = ZEN_NOTHING_VAL; }`)
+        <- t
+    }
+    when cg_is_kind(node, AST.K_BLOCK) {
+        let stmts -> AST.block_stmts(node)
+        when stmts == Nothing or stmts.length == 0 {
+            <- `ZEN_NOTHING_VAL`
+        }
+        let t -> next_temp()
+        cg_emit(`ZenValue ` + t + ` = ZEN_NOTHING_VAL;`)
+        let bi -> 0
+        let bn -> stmts.length
+        do while bi < bn {
+            let s -> stmts[bi]
+            when bi == bn - 1 and s != Nothing and cg_is_kind(s, AST.K_EXPR_STMT) {
+                let ev -> emit_expr(AST.expr_stmt_expr(s))
+                cg_emit(t + ` = ` + ev + `;`)
+            } or {
+                emit_stmt(s)
+            }
+            bi -> bi + 1
+        }
+        <- t
     }
     when cg_is_kind(node, AST.K_IS) {
         <- emit_is_expression(node)
@@ -2554,9 +3147,10 @@ function emit_struct_init(node) {
     when fields == Nothing {
         fields -> []
     }
-    // Start with kind
+    // Start with kind and __type__
     let t -> next_temp()
     cg_emit(`ZenValue ` + t + ` = ZenMap_make_from_arguments(0);`)
+    cg_emit(`(void)ZenMap_set_value_at_key(` + t + `, ZenValue_make_string("__type__"), ZenValue_make_string("` + escape_c_string(name) + `"));`)
     cg_emit(`(void)ZenMap_set_value_at_key(` + t + `, ZenValue_make_string("kind"), ZenValue_make_string("` + escape_c_string(name) + `"));`)
     emit_struct_fields(fields, 0, t)
     <- t
@@ -2636,11 +3230,41 @@ function looks_int(s) {
         }
         i -> 1
     }
+    // Hex literals: 0x... / 0X...
+    when n > i + 2 and Str.at(s, i) == `0` and (Str.at(s, i + 1) == `x` or Str.at(s, i + 1) == `X`) {
+        <- hex_digits_only(s, i + 2, n)
+    }
+    // Binary literals: 0b... / 0B...
+    when n > i + 2 and Str.at(s, i) == `0` and (Str.at(s, i + 1) == `b` or Str.at(s, i + 1) == `B`) {
+        <- bin_digits_only(s, i + 2, n)
+    }
     // Digit-class strings like "0123456789" must stay strings (also invalid C octal).
     when Str.at(s, i) == `0` and n > i + 1 {
         <- false
     }
     <- digits_only(s, i, n)
+}
+
+function hex_digits_only(s, i, n) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when not _is_hex_digit(ch) {
+        <- false
+    }
+    <- hex_digits_only(s, i + 1, n)
+}
+
+function bin_digits_only(s, i, n) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when ch != `0` and ch != `1` {
+        <- false
+    }
+    <- bin_digits_only(s, i + 1, n)
 }
 
 function digits_only(s, i, n) {
@@ -2656,6 +3280,13 @@ function digits_only(s, i, n) {
 
 function _is_digit(ch) {
     when ch == `0` or ch == `1` or ch == `2` or ch == `3` or ch == `4` or ch == `5` or ch == `6` or ch == `7` or ch == `8` or ch == `9` {
+        <- true
+    }
+    <- false
+}
+
+function _is_hex_digit(ch) {
+    when _is_digit(ch) or (ch >= `a` and ch <= `f`) or (ch >= `A` and ch <= `F`) {
         <- true
     }
     <- false
@@ -2713,21 +3344,6 @@ function escape_rec(s, i, n, acc) {
     }
     let ch -> Str.at(s, i)
     when ch == `\\` {
-        when i + 1 < n {
-            let nch -> Str.at(s, i + 1)
-            when nch == `x` or nch == `n` or nch == `r` or nch == `t` or nch == `0` {
-                <- escape_rec(s, i + 2, n, acc + `\\` + nch)
-            }
-            when nch == `e` {
-                <- escape_rec(s, i + 2, n, acc + `\\x1b`)
-            }
-            when nch == `\\` {
-                <- escape_rec(s, i + 2, n, acc + `\\\\`)
-            }
-            when nch == `"` {
-                <- escape_rec(s, i + 2, n, acc + `\\\"`)
-            }
-        }
         <- escape_rec(s, i + 1, n, acc + `\\\\`)
     }
     when ch == `"` {
@@ -2746,6 +3362,33 @@ function escape_rec(s, i, n, acc) {
 }
 
 function emit_binary(op, l, r) {
+    when op == `|` {
+        <- `ZenValue_bitwise_or(` + l + `, ` + r + `)`
+    }
+    when op == `&` {
+        <- `ZenValue_bitwise_and(` + l + `, ` + r + `)`
+    }
+    when op == `^` or op == `^^` {
+        <- `ZenValue_bitwise_xor(` + l + `, ` + r + `)`
+    }
+    when op == `<<` {
+        <- `ZenValue_left_shift(` + l + `, ` + r + `)`
+    }
+    when op == `>>` {
+        <- `ZenValue_right_shift(` + l + `, ` + r + `)`
+    }
+    when op == `++` {
+        <- `ZenValue_op_append(` + l + `, ` + r + `)`
+    }
+    when op == `--` {
+        <- `ZenValue_op_remove(` + l + `, ` + r + `)`
+    }
+    when op == `..` {
+        <- `ZenValue_range(` + l + `, ` + r + `)`
+    }
+    when op == `..=` or op == `...` {
+        <- `ZenValue_range_inclusive(` + l + `, ` + r + `)`
+    }
     when op == `+` {
         <- `ZenValue_add(` + l + `, ` + r + `)`
     }
@@ -2797,15 +3440,35 @@ function emit_is_expression(node) {
         <- `ZenValue_equal(` + v + `, ` + p + `)`
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(pat))
+        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+            <- `ZenValue_is_type_name(` + v + `, "` + raw + `")`
+        }
         let p -> emit_expr(pat)
         <- `ZenValue_equal(` + v + `, ` + p + `)`
     }
     when cg_is_kind(pat, AST.K_LITERAL) {
+        let raw -> Str.to_string(AST.lit_val(pat))
+        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+            <- `ZenValue_is_type_name(` + v + `, "` + raw + `")`
+        }
         let p -> emit_expr(pat)
         <- `ZenValue_equal(` + v + `, ` + p + `)`
     }
     let p2 -> emit_expr(pat)
     <- `ZenValue_equal(` + v + `, ` + p2 + `)`
+}
+
+function is_type_name_str(s) {
+    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
+    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
+    when s == `String` or s == `Str` { <- true }
+    when s == `Boolean` or s == `Bool` { <- true }
+    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
+    when s == `Bytes` or s == `Buffer` { <- true }
+    when s == `List` or s == `Set` or s == `Map` { <- true }
+    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    <- false
 }
 
 function emit_call(node) {
@@ -2821,6 +3484,13 @@ function emit_call(node) {
                 <- ctor + `()`
             }
             <- ctor + `(` + alist + `)`
+        }
+        when is_type_name_str(raw) {
+            when args != Nothing and args.length >= 1 {
+                let v -> emit_expr(args[0])
+                <- `ZenValue_cast(` + v + `, "` + raw + `")`
+            }
+            <- `ZenValue_cast(ZEN_NOTHING_VAL, "` + raw + `")`
         }
         // Named free function → direct C call
         when is_free_fn(raw) {
@@ -2871,8 +3541,21 @@ function emit_call(node) {
             when bi != `` {
                 <- bi
             }
-            // Import alias Module.fn → z_Module_fn BEFORE class-method steal
-            // (json.parse must not become Parser_parse).
+            // Check if m is a registered class constructor, e.g. cli.Parser("app", "desc") or bytes.Bytes(10)
+            when is_registered_class(m) {
+                let ctor_fn -> c_ident(class_method_c_name(m, `new`))
+                when alist == `` {
+                    <- ctor_fn + `()`
+                }
+                <- ctor_fn + `(` + alist + `)`
+            }
+            when is_registered_class(oname + `_` + m) {
+                let ctor_fn -> c_ident(class_method_c_name(oname + `_` + m, `new`))
+                when alist == `` {
+                    <- ctor_fn + `()`
+                }
+                <- ctor_fn + `(` + alist + `)`
+            }
             // Alias normalization: short aliases → canonical module name
             when oname == `Tok` {
                 oname -> `Token`
@@ -2895,11 +3578,26 @@ function emit_call(node) {
                 }
                 <- c_ident(`Sys_` + m) + `(` + alist + `)`
             }
-            when is_module_alias_name(oname) {
+            // Direct free function checks
+            when is_free_fn(oname + `_` + m) {
                 when alist == `` {
                     <- c_ident(oname + `_` + m) + `()`
                 }
                 <- c_ident(oname + `_` + m) + `(` + alist + `)`
+            }
+            when is_free_fn(m) {
+                when alist == `` {
+                    <- c_ident(m) + `()`
+                }
+                <- c_ident(m) + `(` + alist + `)`
+            }
+            when (is_module_alias_name(oname) or Str.contains(oname, `_`)) and not is_param_name(oname) {
+                when is_free_fn(oname + `_` + m) {
+                    when alist == `` {
+                        <- c_ident(oname + `_` + m) + `()`
+                    }
+                    <- c_ident(oname + `_` + m) + `(` + alist + `)`
+                }
             }
         }
         let obj -> emit_expr(objn)
@@ -2908,15 +3606,34 @@ function emit_call(node) {
     <- `ZEN_NOTHING_VAL`
 }
 
+function is_param_name(name) {
+    let pm -> CG[`params`]
+    when pm != Nothing and pm.has(c_ident(name)) {
+        <- true
+    }
+    <- false
+}
+
 /!
  True for import aliases / modules whose methods become free functions after merge.
- Capitalized names and known lower aliases (io, sys).
+ Capitalized names and known lower aliases (io, sys, cli, etc.).
  !/
 function is_module_alias_name(oname) {
     when oname == `` {
         <- false
     }
     when oname == `io` or oname == `sys` or oname == `file` or oname == `string` or
+         oname == `str` or oname == `list` or oname == `map` or oname == `set` or
+         oname == `test` or oname == `Test` or oname == `Str` or oname == `List` or
+         oname == `Map` or oname == `Set` or oname == `cli` or oname == `async` or
+         oname == `profile` or oname == `csv` or oname == `http` or oname == `random` or
+         oname == `geometry` or oname == `bmp` or oname == `ppm` or oname == `columns` or
+         oname == `markdown` or oname == `fsm` or oname == `awk` or oname == `term_keys` or
+         oname == `regex` or oname == `xml` or oname == `database` or oname == `ecs` or
+         oname == `bytes` or oname == `logfmt` or oname == `sexp` or oname == `serialize` or
+         oname == `canvas` or oname == `layout` or oname == `widgets` or oname == `html` or
+         oname == `crypto` or oname == `jwt` or oname == `cron` or oname == `net` or
+         oname == `bench` or oname == `fiber` or oname == `task` or oname == `spec` or
          oname == `json` or oname == `process` or oname == `memory` or oname == `time` or
          oname == `color` or oname == `zenmark` or oname == `term` or oname == `zendata` or
          oname == `reflect` or oname == `zd` or oname == `zm` or oname == `fs` or
@@ -2938,6 +3655,14 @@ function is_module_alias_name(oname) {
  Returns "" if not a recognized builtin call.
  !/
 function emit_builtin_call(oname, m, alist) {
+    when oname == `__builtin` {
+        when m == `error` {
+            <- `ZenValue_make_error_message(` + alist + `)`
+        }
+        when m == `error_literal` {
+            <- `ZenValue_make_error_literal(` + alist + `)`
+        }
+    }
     when oname == `__builtin_memory` or oname == `Memory` {
         when m == `create_arena` {
             <- `ZenMemory_create_arena(` + alist + `)`
@@ -2982,6 +3707,9 @@ function emit_builtin_call(oname, m, alist) {
         <- c_ident(`memory_` + m) + `(` + alist + `)`
     }
     when oname == `__builtin_file` or oname == `file` or oname == `File` {
+        when m == `open` {
+            <- `ZenIO_open(` + alist + `)`
+        }
         when m == `write` or m == `write_file` or m == `write_text` {
             <- `ZenIO_write_file(` + alist + `)`
         }
@@ -3025,6 +3753,42 @@ function emit_builtin_call(oname, m, alist) {
             <- `ZenIO_read_value(` + alist + `)`
         }
         <- `ZenIO_` + m + `(` + alist + `)`
+    }
+    when oname == `__builtin` or oname == `__builtin_builtin` or oname == `builtin` {
+        when m == `string_to_bytes` {
+            <- `ZenBytes_string_to_bytes(` + alist + `)`
+        }
+        when m == `bytes_to_string` {
+            <- `ZenBytes_bytes_to_string(` + alist + `)`
+        }
+        when m == `create_bytes_size` {
+            <- `ZenBytes_create_size(` + alist + `)`
+        }
+        when m == `create_bytes_list` {
+            <- `ZenBytes_create_list(` + alist + `)`
+        }
+        when m == `pack_binary` {
+            <- `ZenBytes_pack_binary(` + alist + `)`
+        }
+        when m == `unpack_binary` {
+            <- `ZenBytes_unpack_binary(` + alist + `)`
+        }
+        <- `ZenBuiltin_` + m + `(` + alist + `)`
+    }
+    when oname == `__builtin_list` or oname == `List` {
+        when m == `length` {
+            <- `ZenValue_get_length(` + alist + `)`
+        }
+        when m == `append` {
+            <- `ZenList_append_value(` + alist + `)`
+        }
+        when m == `pop` {
+            <- `ZenList_pop_value(` + alist + `)`
+        }
+        when m == `remove_at` {
+            <- `ZenList_remove_at_index(` + alist + `)`
+        }
+        <- `ZenList_` + m + `(` + alist + `)`
     }
     when oname == `__builtin_string` {
         when m == `to_string` {
@@ -3108,10 +3872,31 @@ function emit_builtin_call(oname, m, alist) {
         when m == `values` {
             <- `ZenMap_get_values(` + alist + `)`
         }
+        when m == `items` or m == `entries` {
+            <- `ZenMap_get_items(` + alist + `)`
+        }
         when m == `has` {
             <- `ZenMap_has_key(` + alist + `)`
         }
         <- `ZenMap_` + m + `(` + alist + `)`
+    }
+    when oname == `__builtin_set` {
+        when m == `from_list` {
+            <- `ZenSet_from_list(` + alist + `)`
+        }
+        when m == `to_list` {
+            <- `ZenSet_to_list(` + alist + `)`
+        }
+        when m == `add` {
+            <- `ZenSet_add_value(` + alist + `)`
+        }
+        when m == `has` or m == `contains` {
+            <- `ZenSet_contains_value(` + alist + `)`
+        }
+        when m == `remove` {
+            <- `ZenSet_remove_value(` + alist + `)`
+        }
+        <- `ZenSet_` + m + `(` + alist + `)`
     }
     when oname == `__builtin_term` {
         when m == `get_size` {
@@ -3236,6 +4021,9 @@ function emit_builtin_call(oname, m, alist) {
         }
         <- `ZenReflect_` + m + `(` + alist + `)`
     }
+    when oname == `__builtin_regex` or oname == `regex` {
+        <- `ZenRegex_` + m + `(` + alist + `)`
+    }
     when oname == `__builtin_net` or oname == `net` or oname == `Net` {
         when alist == `` {
             <- `ZenNet_` + m + `()`
@@ -3273,88 +4061,27 @@ function emit_method_call(m, obj, alist) {
     let owner -> method_owner(m)
     when owner != Nothing and owner != `` {
         let fn -> c_ident(class_method_c_name(owner, m))
+        let this_call -> ``
         when alist == `` {
-            <- fn + `(` + obj + `)`
+            this_call -> fn + `(` + obj + `)`
+        } or {
+            this_call -> fn + `(` + obj + `, ` + alist + `)`
         }
-        <- fn + `(` + obj + `, ` + alist + `)`
-    }
-    when m == `has` or m == `contains` {
-        when alist == `` {
-            <- `ZenValue_contains(` + obj + `, ZEN_NOTHING_VAL)`
+        when is_builtin_method_name(m) {
+            let fallback -> emit_builtin_method_default(m, obj, alist)
+            let type_check -> `(ZenValue_equal(ZenMap_get_value_at_key(` + obj + `, ZenValue_make_string("__type")), ZenValue_make_string("` + escape_c_string(owner) + `"))).as.boolean`
+            <- `(` + type_check + ` ? ` + this_call + ` : ` + fallback + `)`
         }
-        <- `ZenValue_contains(` + obj + `, ` + alist + `)`
+        <- this_call
     }
-    when m == `append` {
-        when alist == `` {
-            <- `ZenValue_append(` + obj + `, ZEN_NOTHING_VAL)`
-        }
-        <- `ZenValue_append(` + obj + `, ` + alist + `)`
-    }
-    when m == `pop` {
-        <- `ZenList_pop(` + obj + `)`
-    }
-    when m == `write` {
-        when alist == `` {
-            <- `ZenValue_write(` + obj + `, ZEN_NOTHING_VAL)`
-        }
-        <- `ZenValue_write(` + obj + `, ` + alist + `)`
-    }
-    when m == `writeln` or m == `write_line` {
-        when alist == `` {
-            <- `ZenValue_writeln(` + obj + `, ZEN_NOTHING_VAL)`
-        }
-        <- `ZenValue_writeln(` + obj + `, ` + alist + `)`
-    }
-    when m == `read` {
-        <- `ZenValue_read(` + obj + `)`
-    }
-    when m == `starts_with` {
-        <- `ZenValue_starts_with(` + obj + `, ` + alist + `)`
-    }
-    when m == `ends_with` {
-        <- `ZenValue_ends_with(` + obj + `, ` + alist + `)`
-    }
-    when m == `join` {
-        <- `ZenValue_join(` + obj + `, ` + alist + `)`
-    }
-    when m == `substring` or m == `slice` {
-        when Str.contains(alist, `,`) {
-            <- `ZenValue_slice(` + obj + `, ` + alist + `)`
-        }
-        <- `ZenValue_slice(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL)`
-    }
-    when m == `at` {
-        <- `ZenValue_get_at(` + obj + `, ` + alist + `)`
-    }
-    when m == `keys` {
-        <- `ZenMap_get_keys(` + obj + `)`
-    }
-    when m == `values` {
-        <- `ZenMap_get_values(` + obj + `)`
-    }
-    when m == `items` {
-        <- `ZenMap_get_items(` + obj + `)`
-    }
-    when m == `to_number` {
-        <- `ZenValue_to_number(` + obj + `)`
-    }
-    when m == `get_stdout` {
-        <- `ZenObject_get_stdout((` + obj + `).as.object)`
-    }
-    when m == `get_code` {
-        <- `ZenObject_get_code((` + obj + `).as.object)`
+    when is_builtin_method_name(m) {
+        <- emit_builtin_method_default(m, obj, alist)
     }
     when m == `wait` {
-        let wowner -> method_owner(`wait`)
-        when wowner == Nothing or wowner == `` {
-            <- `ZenObject_wait((` + obj + `).as.object)`
-        }
+        <- `ZenObject_wait((` + obj + `).as.object)`
     }
     when m == `kill` {
-        let kowner -> method_owner(`kill`)
-        when kowner == Nothing or kowner == `` {
-            <- `ZenObject_kill((` + obj + `).as.object)`
-        }
+        <- `ZenObject_kill((` + obj + `).as.object)`
     }
     // Fallback: free function named meth(obj, args…) after merge
     when alist == `` {

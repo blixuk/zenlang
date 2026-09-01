@@ -1,0 +1,10 @@
+/!
+  Zenlang Interactive REPL CLI Entrypoint.
+  Usage: zen repl
+!/
+
+import zen.tooling.repl as repl
+
+function main() {
+    <- repl.start_repl()
+}

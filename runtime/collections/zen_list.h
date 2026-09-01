@@ -32,4 +32,6 @@ ZenValue ZenList_prepend(ZenValue list, ZenValue item);
 ZenValue ZenList_drop_end(ZenValue list, long long n);
 ZenValue ZenList_drop_start(ZenValue list, long long n);
 
+static inline ZenValue ZenList_remove_at(ZenValue list, ZenValue index) { return ZenList_remove_at_index(list, index); }
+
 #endif // ZEN_LIST_H

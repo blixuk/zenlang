@@ -242,13 +242,39 @@ class ExpressionHandler:
         expression.resolved_type = TypeVariant()
         return TypeVariant()
 
+    def map_type_from_str(self, name: str) -> Type:
+        if name in ("Integer", "Int", "Int64", "Int32", "Int16", "Int8", "Byte"):
+            return TypeInteger()
+        if name in ("Decimal", "Float", "Double"):
+            return TypeDecimal()
+        if name in ("String", "Str"):
+            return TypeString()
+        if name in ("Boolean", "Bool"):
+            return TypeBoolean()
+        if name in ("Rune", "Char", "Glyph"):
+            return TypeRune()
+        if name in ("Bytes", "Buffer"):
+            return TypeList(None, [TypeElement(None, TypeInteger())])
+        if name in ("List", "Set"):
+            return TypeList(None, [TypeElement(None, TypeVariant())])
+        if name == "Map":
+            return TypeMap(None, TypeVariant(), TypeVariant())
+        return TypeVariant()
+
     def check_binary_operation(self, expression: BinaryOperation) -> Type:
         self.logger.debug("check_binary_operation", expression)
 
+        operator: str = expression.operator
+        if operator == "<:":
+            left_type = self.check_expression(expression.left)
+            target_type_str = getattr(expression.right, "name", str(expression.right))
+            res = self.map_type_from_str(target_type_str)
+            expression.type = res
+            expression.resolved_type = res
+            return res
+
         left_type: Type = self.check_expression(expression.left)
         right_type: Type = self.check_expression(expression.right)
-
-        operator: str = expression.operator
 
         # Range operators produce a List (of integers or single-character strings).
         if operator in ("..", "..="):
@@ -522,6 +548,10 @@ class ExpressionHandler:
         symbol = self.scope.lookup(expression.name)
 
         if not symbol:
+            if expression.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+                t = self.map_type_from_str(expression.name)
+                expression.resolved_type = t
+                return t
             raise self.logger.error_variable_undefined(expression)
 
         from Checker.Type import SymbolState

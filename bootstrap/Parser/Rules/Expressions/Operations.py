@@ -249,4 +249,11 @@ class OperationsParserMixin:
                 node = UnaryOperation(getattr(operator, "line"), getattr(operator, "column"), pk, right)
                 return node
 
-        return self.call(allow_instantiation=allow_instantiation)
+        node = self.call(allow_instantiation=allow_instantiation)
+        while self.token_handler.match_type(TokenType.TYPE_CAST):
+            operator = self.token_handler.previous()
+            right = self.token_handler.advance()
+            from Parser.AST import Identifier
+            right_node = Identifier(line=getattr(right, "line", 0), column=getattr(right, "column", 0), scope_level=0, name=getattr(right, "value", str(right)), type="type")
+            node = BinaryOperation(getattr(operator, "line"), getattr(operator, "column"), "<:", node, right_node)
+        return node

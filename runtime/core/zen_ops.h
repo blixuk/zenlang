@@ -28,5 +28,6 @@ ZenValue ZenValue_left_shift(ZenValue a, ZenValue b);
 ZenValue ZenValue_right_shift(ZenValue a, ZenValue b);
 ZenValue ZenValue_op_append(ZenValue a, ZenValue b);
 ZenValue ZenValue_op_remove(ZenValue a, ZenValue b);
+ZenValue ZenValue_cast(ZenValue val, const char* target_type);
 
 #endif // ZEN_OPS_H

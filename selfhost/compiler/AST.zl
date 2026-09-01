@@ -5,429 +5,476 @@
  !/
 
 // --- Kind constants (small integers; compare with ==) ---
-let K_BINARY -> 0
-let K_UNARY -> 1
-let K_LITERAL -> 2
-let K_GROUPING -> 3
-let K_VARIABLE -> 4
-let K_CALL -> 5
-let K_GET -> 6
-let K_SET -> 7
-let K_INDEX -> 8
-let K_ASSIGN -> 9
-let K_LOGICAL -> 10
-let K_LIST -> 11
-let K_MAP -> 12
-let K_STRUCT_INIT -> 13
-let K_STRUCT_FIELD -> 14
-let K_CHECK -> 15
-let K_RAISE -> 16
-let K_REST -> 17
+export let K_BINARY -> 0
+export let K_UNARY -> 1
+export let K_LITERAL -> 2
+export let K_GROUPING -> 3
+export let K_VARIABLE -> 4
+export let K_CALL -> 5
+export let K_GET -> 6
+export let K_SET -> 7
+export let K_INDEX -> 8
+export let K_ASSIGN -> 9
+export let K_LOGICAL -> 10
+export let K_LIST -> 11
+export let K_MAP -> 12
+export let K_STRUCT_INIT -> 13
+export let K_STRUCT_FIELD -> 14
+export let K_CHECK -> 15
+export let K_RAISE -> 16
+export let K_REST -> 17
 
-let K_EXPR_STMT -> 18
-let K_LET -> 19
-let K_BLOCK -> 20
-let K_FUNCTION -> 21
-let K_RETURN -> 22
-let K_WHEN -> 23
-let K_CHECK_STMT -> 24
-let K_WHILE -> 25
-let K_DO_WHILE -> 26
-let K_FOR -> 27
-let K_ASSERT -> 28
-let K_DEFER -> 29
-let K_PARAM -> 30
-let K_CASE -> 31
+export let K_EXPR_STMT -> 18
+export let K_LET -> 19
+export let K_BLOCK -> 20
+export let K_FUNCTION -> 21
+export let K_RETURN -> 22
+export let K_WHEN -> 23
+export let K_CHECK_STMT -> 24
+export let K_WHILE -> 25
+export let K_DO_WHILE -> 26
+export let K_FOR -> 27
+export let K_ASSERT -> 28
+export let K_DEFER -> 29
+export let K_PARAM -> 30
+export let K_CASE -> 31
 
-let K_STRUCTURE -> 32
-let K_STRUCT_MEMBER -> 33
-let K_CLASS -> 34
-let K_ENUMERATOR -> 35
-let K_ENUM_MEMBER -> 36
-let K_FUNC_EXPR -> 37
-let K_IS -> 38
-let K_WITH -> 39
-let K_IMPORT -> 40
-let K_FROM_IMPORT -> 41
-let K_SCOPE -> 42
-let K_PROGRAM -> 43
-let K_INDEX_ASSIGN -> 44
-let K_TYPE_ANN -> 45
-let K_STMT_CHUNK -> 46
-let K_REASSIGN -> 9
-let K_REASSIGNMENT -> 9
+export let K_STRUCTURE -> 32
+export let K_STRUCT_MEMBER -> 33
+export let K_CLASS -> 34
+export let K_ENUMERATOR -> 35
+export let K_ENUM_MEMBER -> 36
+export let K_FUNC_EXPR -> 37
+export let K_IS -> 38
+export let K_WITH -> 39
+export let K_IMPORT -> 40
+export let K_FROM_IMPORT -> 41
+export let K_SCOPE -> 42
+export let K_PROGRAM -> 43
+export let K_INDEX_ASSIGN -> 44
+export let K_TYPE_ANN -> 45
+export let K_STMT_CHUNK -> 46
+export let K_CAST -> 47
+export let K_REASSIGN -> 9
+export let K_REASSIGNMENT -> 9
 
 // --- Universal Node Header Accessors ---
-function ast_kind(n) {
+export function ast_kind(n) {
     when n == Nothing { <- Nothing }
     <- n[0]
 }
 
-function ast_line(n) {
+export function ast_line(n) {
     when n == Nothing { <- 0 }
     <- n[1]
 }
 
-function ast_col(n) {
+export function ast_col(n) {
     when n == Nothing { <- 0 }
     <- n[2]
 }
 
 // --- Constructors ---
 
-function lit(value, line, column) {
+export function lit(value, line, column) {
     <- lit_tok(value, ``, line, column)
 }
 
-function lit_tok(value, token_kind, line, column) {
+export function lit_tok(value, token_kind, line, column) {
     <- [K_LITERAL, line, column, value, token_kind]
 }
 
-function variable(name, line, column) {
+export function variable(name, line, column) {
     <- [K_VARIABLE, line, column, name]
 }
 
-function binary(left, op, right, line, column) {
+export function binary(left, op, right, line, column) {
     <- [K_BINARY, line, column, left, op, right]
 }
 
-function unary(op, right, line, column) {
+export function unary(op, right, line, column) {
     <- [K_UNARY, line, column, op, right]
 }
 
-function logical(left, op, right, line, column) {
+export function logical(left, op, right, line, column) {
     <- [K_LOGICAL, line, column, left, op, right]
 }
 
-function grouping(expr, line, column) {
+export function grouping(expr, line, column) {
     <- [K_GROUPING, line, column, expr]
 }
 
-function call(callee, args, line, column) {
+export function call(callee, args, line, column) {
     <- [K_CALL, line, column, callee, args]
 }
 
-function get(obj, name, line, column) {
+export function get(obj, name, line, column) {
     <- [K_GET, line, column, obj, name]
 }
 
-function make_index(obj, index_expr, line, column) {
+export function make_index(obj, index_expr, line, column) {
     <- [K_INDEX, line, column, obj, index_expr]
 }
 
-function index_assign(obj, index_expr, value, line, column) {
+export function index_assign(obj, index_expr, value, line, column) {
     <- [K_INDEX_ASSIGN, line, column, obj, index_expr, value]
 }
 
-function assign(name, value, line, column) {
+export function assign(name, value, line, column) {
     <- [K_ASSIGN, line, column, name, value]
 }
 
-function set_expr(obj, name, value, line, column) {
+export function set_expr(obj, name, value, line, column) {
     <- [K_SET, line, column, obj, name, value]
 }
 
-function list_lit(elements, line, column) {
+export function list_lit(elements, line, column) {
     <- [K_LIST, line, column, elements]
 }
 
-function map_lit(entries, line, column) {
+export function map_lit(entries, line, column) {
     <- [K_MAP, line, column, entries]
 }
 
-function expr_stmt(expression, line, column) {
+export function expr_stmt(expression, line, column) {
     <- [K_EXPR_STMT, line, column, expression]
 }
 
-function let_stmt(name, value, type_ann, mutable, line, column) {
+export function let_stmt(name, value, type_ann, mutable, line, column) {
     <- [K_LET, line, column, name, value, type_ann, mutable]
 }
 
-function block(statements, line, column) {
+export function block(statements, line, column) {
     <- [K_BLOCK, line, column, statements]
 }
 
-function function_stmt(name, params, body, return_type, line, column) {
+export function function_stmt(name, params, body, return_type, line, column) {
     <- [K_FUNCTION, line, column, name, params, body, return_type]
 }
 
-function param(name, type_ann, line, column) {
+export function param(name, type_ann, line, column) {
     <- [K_PARAM, line, column, name, type_ann]
 }
 
-function return_stmt(value, line, column) {
+export function return_stmt(value, line, column) {
     <- [K_RETURN, line, column, value]
 }
 
-function when_stmt(cases, line, column) {
+export function when_stmt(cases, line, column) {
     <- [K_WHEN, line, column, cases]
 }
 
-function check_statement(expression, cases, or_block, raise_expr, line, column) {
+export function check_statement(expression, cases, or_block, raise_expr, line, column) {
     <- [K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr]
 }
 
-function ast_check_expr(expression, line, column) {
+export function raise_stmt(expr, line, column) {
+    <- [K_RAISE, line, column, expr]
+}
+
+export function raise_expr(n) { <- n[3] }
+export function set_raise_expr(n, e) { n[3] -> e }
+
+export function ast_check_expr(expression, line, column) {
     <- [K_CHECK, line, column, expression]
 }
 
-function case_clause(condition, body, line, column) {
+export function case_clause(condition, body, line, column) {
     <- [K_CASE, line, column, condition, body, Nothing]
 }
 
-function case_clause_guard(condition, body, guard, line, column) {
+export function case_clause_guard(condition, body, guard, line, column) {
     <- [K_CASE, line, column, condition, body, guard]
 }
 
-function rest_pattern(name, line, column) {
+export function rest_pattern(name, line, column) {
     <- [K_REST, line, column, name]
 }
 
-function while_stmt(condition, body, line, column) {
+export function while_stmt(condition, body, line, column) {
     <- [K_WHILE, line, column, condition, body]
 }
 
-function do_while_stmt(body, condition, line, column, test_first) {
+export function do_while_stmt(body, condition, line, column, test_first) {
     when test_first == Nothing {
         test_first -> true
     }
     <- [K_DO_WHILE, line, column, body, condition, test_first]
 }
 
-function for_stmt(variable, iterable, body, line, column) {
+export function for_stmt(variable, iterable, body, line, column) {
     <- [K_FOR, line, column, variable, iterable, body]
 }
 
-function assert_stmt(expression, line, column) {
+export function assert_stmt(expression, line, column) {
     <- [K_ASSERT, line, column, expression]
 }
 
-function defer_stmt(body, line, column) {
+export function defer_stmt(body, line, column) {
     <- [K_DEFER, line, column, body]
 }
 
-function structure_stmt(name, members, line, column) {
-    <- [K_STRUCTURE, line, column, name, members]
+export function structure_stmt(name, members, line, column, traits) {
+    when traits == Nothing {
+        traits -> []
+    }
+    <- [K_STRUCTURE, line, column, name, members, traits]
 }
 
-function class_stmt(name, base_name, members, methods, line, column) {
-    <- [K_CLASS, line, column, name, base_name, members, methods]
+export function class_stmt(name, base_name, members, methods, line, column, traits) {
+    when traits == Nothing {
+        traits -> []
+    }
+    <- [K_CLASS, line, column, name, base_name, members, methods, traits]
 }
 
-function enumerator_stmt(name, members, line, column) {
+export function enumerator_stmt(name, members, line, column) {
     <- [K_ENUMERATOR, line, column, name, members]
 }
 
-function enum_member(name, value, line, column) {
+export function enum_member(name, value, line, column) {
     <- [K_ENUM_MEMBER, line, column, name, value]
 }
 
-function function_expr(params, body, line, column) {
+export function function_expr(params, body, line, column) {
     <- [K_FUNC_EXPR, line, column, params, body]
 }
 
-function is_expr(value, pattern, line, column) {
+export function is_expr(value, pattern, line, column) {
     <- [K_IS, line, column, value, pattern]
 }
 
-function with_stmt(expression, alias, body, line, column) {
+export function with_stmt(expression, alias, body, line, column) {
     <- [K_WITH, line, column, expression, alias, body]
 }
 
-function struct_member(name, type_ann, line, column) {
+export function struct_member(name, type_ann, line, column) {
     <- [K_STRUCT_MEMBER, line, column, name, type_ann]
 }
 
-function struct_init(name, fields, line, column) {
+export function cast(expr, target_type, line, column) {
+    <- [K_CAST, line, column, expr, target_type]
+}
+
+export function struct_init(name, fields, line, column) {
     <- [K_STRUCT_INIT, line, column, name, fields]
 }
 
-function struct_init_field(name, value, line, column) {
+export function struct_init_field(name, value, line, column) {
     <- [K_STRUCT_FIELD, line, column, name, value]
 }
 
-function scope_stmt(name, body, line, column) {
+export function scope_stmt(name, body, line, column) {
     <- [K_SCOPE, line, column, name, body]
 }
 
-function import_stmt(path, alias, line, column) {
+export function import_stmt(path, alias, line, column) {
     <- [K_IMPORT, line, column, path, alias]
 }
 
-function from_import_stmt(module_path, names, line, column) {
+export function from_import_stmt(module_path, names, line, column) {
     <- [K_FROM_IMPORT, line, column, module_path, names]
 }
 
-function type_ann(name, qual) {
+export function type_ann(name, qual) {
     <- [K_TYPE_ANN, 0, 0, name, qual]
 }
 
-function type_ann_node(name, qual, line, column) {
+export function type_ann_node(name, qual, line, column) {
     <- [K_TYPE_ANN, line, column, name, qual]
 }
 
-function program(statements) {
+export function program(statements) {
     <- [K_PROGRAM, 0, 0, statements, Nothing]
 }
 
-function program_error(error) {
+export function program_error(error) {
     <- [K_PROGRAM, 0, 0, [], error]
 }
 
-function program_node(statements, error, line, column) {
+export function program_node(statements, error, line, column) {
     <- [K_PROGRAM, line, column, statements, error]
 }
 
 // --- Specific Node Field Accessors ---
 
-function lit_val(n) { <- n[3] }
-function lit_tok_kind(n) { <- n[4] }
+export function lit_val(n) { <- n[3] }
+export function lit_tok_kind(n) { <- n[4] }
 
-function var_name(n) { <- n[3] }
+export function var_name(n) { <- n[3] }
 
-function bin_left(n) { <- n[3] }
-function bin_op(n) { <- n[4] }
-function bin_right(n) { <- n[5] }
+export function bin_left(n) { <- n[3] }
+export function bin_op(n) { <- n[4] }
+export function bin_right(n) { <- n[5] }
 
-function un_op(n) { <- n[3] }
-function un_right(n) { <- n[4] }
+export function un_op(n) { <- n[3] }
+export function un_right(n) { <- n[4] }
 
-function log_left(n) { <- n[3] }
-function log_op(n) { <- n[4] }
-function log_right(n) { <- n[5] }
+export function log_left(n) { <- n[3] }
+export function log_op(n) { <- n[4] }
+export function log_right(n) { <- n[5] }
 
-function group_expr(n) { <- n[3] }
-function grp_expr(n) { <- n[3] }
+export function group_expr(n) { <- n[3] }
+export function grp_expr(n) { <- n[3] }
 
-function call_callee(n) { <- n[3] }
-function call_args(n) { <- n[4] }
+export function call_callee(n) { <- n[3] }
+export function call_args(n) { <- n[4] }
 
-function get_obj(n) { <- n[3] }
-function get_name(n) { <- n[4] }
-function mem_obj(n) { <- n[3] }
-function mem_prop(n) { <- n[4] }
+export function get_obj(n) { <- n[3] }
+export function set_get_obj(n, obj) {
+    n[3] -> obj
+    <- n
+}
+export function get_name(n) { <- n[4] }
+export function mem_obj(n) { <- n[3] }
+export function mem_prop(n) { <- n[4] }
 
-function set_obj(n) { <- n[3] }
-function set_name(n) { <- n[4] }
-function set_val(n) { <- n[5] }
+export function set_obj(n) { <- n[3] }
+export function set_name(n) { <- n[4] }
+export function set_val(n) { <- n[5] }
 
-function idx_obj(n) { <- n[3] }
-function idx_expr(n) { <- n[4] }
+export function idx_obj(n) { <- n[3] }
+export function idx_expr(n) { <- n[4] }
 
-function idx_assign_obj(n) { <- n[3] }
-function idx_assign_expr(n) { <- n[4] }
-function idx_assign_val(n) { <- n[5] }
+export function idx_assign_obj(n) { <- n[3] }
+export function idx_assign_expr(n) { <- n[4] }
+export function idx_assign_val(n) { <- n[5] }
 
-function assign_name(n) { <- n[3] }
-function assign_val(n) { <- n[4] }
+export function assign_name(n) { <- n[3] }
+export function set_assign_name(n, name) {
+    n[3] -> name
+    <- n
+}
+export function assign_val(n) { <- n[4] }
+export function reassign_val(n) { <- n[4] }
 
-function list_elems(n) { <- n[3] }
-function map_entries(n) { <- n[3] }
+export function list_elems(n) { <- n[3] }
+export function map_entries(n) { <- n[3] }
 
-function expr_stmt_expr(n) { <- n[3] }
+export function expr_stmt_expr(n) { <- n[3] }
 
-function let_name(n) { <- n[3] }
-function let_val(n) { <- n[4] }
-function let_type(n) { <- n[5] }
-function let_mut(n) { <- n[6] }
+export function let_name(n) { <- n[3] }
+export function let_val(n) { <- n[4] }
+export function let_type(n) { <- n[5] }
+export function let_mut(n) { <- n[6] }
 
-function block_stmts(n) { <- n[3] }
+export function block_stmts(n) { <- n[3] }
 
-function fn_name(n) { <- n[3] }
-function fn_params(n) {
+export function is_function(n) {
+    when n == Nothing { <- false }
+    <- n[0] == K_FUNCTION
+}
+
+export function fn_name(n) { <- n[3] }
+export function fn_params(n) {
     when n[0] == K_FUNC_EXPR {
         <- n[3]
     }
     <- n[4]
 }
-function fn_body(n) {
+export function fn_body(n) {
     when n[0] == K_FUNC_EXPR {
         <- n[4]
     }
     <- n[5]
 }
-function fn_ret(n) { <- n[6] }
+export function fn_ret(n) { <- n[6] }
 
-function func_expr_params(n) { <- n[3] }
-function func_expr_body(n) { <- n[4] }
+export function func_expr_params(n) { <- n[3] }
+export function func_expr_body(n) { <- n[4] }
 
-function param_name(n) { <- n[3] }
-function param_type(n) { <- n[4] }
+export function param_name(n) { <- n[3] }
+export function param_type(n) { <- n[4] }
 
-function ret_val(n) { <- n[3] }
+export function ret_val(n) { <- n[3] }
 
-function when_cases(n) { <- n[3] }
+export function when_cases(n) { <- n[3] }
 
-function check_stmt_expr(n) { <- n[3] }
-function check_stmt_cases(n) { <- n[4] }
-function check_stmt_or_block(n) { <- n[5] }
-function check_stmt_raise(n) { <- n[6] }
+export function check_stmt_expr(n) { <- n[3] }
+export function check_stmt_cases(n) { <- n[4] }
+export function check_stmt_or_block(n) { <- n[5] }
+export function check_stmt_raise(n) { <- n[6] }
 
-function check_expr_expr(n) { <- n[3] }
+export function check_expr_expr(n) { <- n[3] }
 
-function case_cond(n) { <- n[3] }
-function case_body(n) { <- n[4] }
-function case_guard(n) { <- n[5] }
+export function case_cond(n) { <- n[3] }
+export function case_body(n) { <- n[4] }
+export function case_guard(n) { <- n[5] }
 
-function rest_name(n) { <- n[3] }
+export function rest_name(n) { <- n[3] }
 
-function while_cond(n) { <- n[3] }
-function while_body(n) { <- n[4] }
+export function while_cond(n) { <- n[3] }
+export function while_body(n) { <- n[4] }
 
-function do_while_body(n) { <- n[3] }
-function do_while_cond(n) { <- n[4] }
-function do_while_test_first(n) { <- n[5] }
+export function do_while_body(n) { <- n[3] }
+export function do_while_cond(n) { <- n[4] }
+export function do_while_test_first(n) { <- n[5] }
 
-function for_var(n) { <- n[3] }
-function for_iter(n) { <- n[4] }
-function for_body(n) { <- n[5] }
+export function for_var(n) { <- n[3] }
+export function for_iter(n) { <- n[4] }
+export function for_body(n) { <- n[5] }
 
-function assert_expr(n) { <- n[3] }
-function defer_body(n) { <- n[3] }
+export function assert_expr(n) { <- n[3] }
+export function defer_body(n) { <- n[3] }
 
-function struct_name(n) { <- n[3] }
-function struct_members(n) { <- n[4] }
+export function struct_name(n) { <- n[3] }
+export function struct_members(n) { <- n[4] }
+export function struct_traits(n) {
+    when n.length > 5 {
+        <- n[5]
+    }
+    <- []
+}
 
-function struct_member_name(n) { <- n[3] }
-function struct_member_type(n) { <- n[4] }
+export function struct_member_name(n) { <- n[3] }
+export function struct_member_type(n) { <- n[4] }
 
-function struct_init_name(n) { <- n[3] }
-function struct_init_fields(n) { <- n[4] }
+export function struct_init_name(n) { <- n[3] }
+export function struct_init_fields(n) { <- n[4] }
 
-function struct_field_name(n) { <- n[3] }
-function struct_field_val(n) { <- n[4] }
+export function struct_field_name(n) { <- n[3] }
+export function struct_field_val(n) { <- n[4] }
 
-function class_name(n) { <- n[3] }
-function class_base(n) { <- n[4] }
-function class_members(n) { <- n[5] }
-function class_methods(n) { <- n[6] }
+export function class_name(n) { <- n[3] }
+export function class_base(n) { <- n[4] }
+export function class_members(n) { <- n[5] }
+export function class_methods(n) { <- n[6] }
+export function class_traits(n) {
+    when n.length > 7 {
+        <- n[7]
+    }
+    <- []
+}
 
-function enum_name(n) { <- n[3] }
-function enum_members(n) { <- n[4] }
+export function enum_name(n) { <- n[3] }
+export function enum_members(n) { <- n[4] }
 
-function enum_mem_name(n) { <- n[3] }
-function enum_mem_val(n) { <- n[4] }
+export function enum_mem_name(n) { <- n[3] }
+export function enum_mem_val(n) { <- n[4] }
 
-function fn_expr_params(n) { <- n[3] }
-function fn_expr_body(n) { <- n[4] }
+export function fn_expr_params(n) { <- n[3] }
+export function fn_expr_body(n) { <- n[4] }
 
-function is_expr_val(n) { <- n[3] }
-function is_expr_pat(n) { <- n[4] }
+export function is_expr_val(n) { <- n[3] }
+export function is_expr_pat(n) { <- n[4] }
 
-function with_expr(n) { <- n[3] }
-function with_alias(n) { <- n[4] }
-function with_body(n) { <- n[5] }
+export function with_expr(n) { <- n[3] }
+export function with_alias(n) { <- n[4] }
+export function with_body(n) { <- n[5] }
 
-function scope_name(n) { <- n[3] }
-function scope_body(n) { <- n[4] }
+export function cast_expr(n) { <- n[3] }
+export function cast_type(n) { <- n[4] }
 
-function import_path(n) { <- n[3] }
-function import_alias(n) { <- n[4] }
+export function scope_name(n) { <- n[3] }
+export function scope_body(n) { <- n[4] }
 
-function from_import_mod(n) { <- n[3] }
-function from_import_names(n) { <- n[4] }
+export function import_path(n) { <- n[3] }
+export function import_alias(n) { <- n[4] }
 
-function is_type_ann(n) {
+export function from_import_mod(n) { <- n[3] }
+export function from_import_names(n) { <- n[4] }
+
+export function is_type_ann(n) {
     when n == Nothing {
         <- false
     }
@@ -437,28 +484,28 @@ function is_type_ann(n) {
     <- false
 }
 
-function type_ann_name(n) { <- n[3] }
-function type_ann_qual(n) { <- n[4] }
+export function type_ann_name(n) { <- n[3] }
+export function type_ann_qual(n) { <- n[4] }
 
-function prog_stmts(n) { <- n[3] }
-function prog_err(n) { <- n[4] }
+export function prog_stmts(n) { <- n[3] }
+export function prog_err(n) { <- n[4] }
 
 // --- Statement Chunk (Zero-Copy Arena Chaining) ---
-function stmt_chunk(statements, next_chunk) {
+export function stmt_chunk(statements, next_chunk) {
     <- [K_STMT_CHUNK, 0, 0, statements, next_chunk]
 }
 
-function stmt_chunk_stmts(n) {
+export function stmt_chunk_stmts(n) {
     when n == Nothing { <- [] }
     <- n[3]
 }
 
-function stmt_chunk_next(n) {
+export function stmt_chunk_next(n) {
     when n == Nothing { <- Nothing }
     <- n[4]
 }
 
-function set_stmt_chunk_next(n, next) {
+export function set_stmt_chunk_next(n, next) {
     when n != Nothing {
         n[4] -> next
     }
@@ -468,7 +515,7 @@ function set_stmt_chunk_next(n, next) {
   Flatten a statement chunk chain or flat list into a single flat array.
   Used as a bridge for legacy array-indexing consumers.
  !/
-function flatten_stmts(node_or_list) {
+export function flatten_stmts(node_or_list) {
     when node_or_list == Nothing {
         <- []
     }
@@ -493,8 +540,13 @@ function flatten_stmts(node_or_list) {
 }
 
 // --- Node Mutation Helpers ---
-function set_ast_kind(n, k) { n[0] -> k }
-function set_lit_val(n, v) { n[3] -> v }
-function set_list_elems(n, elems) { n[3] -> elems }
-function set_var_name(n, name) { n[3] -> name }
-function set_fn_name(n, name) { n[3] -> name }
+export function set_ast_kind(n, k) { n[0] -> k }
+export function set_lit_val(n, v) { n[3] -> v }
+export function set_list_elems(n, elems) { n[3] -> elems }
+export function set_var_name(n, name) { n[3] -> name }
+export function set_fn_name(n, name) { n[3] -> name }
+export function set_let_name(n, name) { n[3] -> name }
+export function set_enum_name(n, name) { n[3] -> name }
+export function set_struct_name(n, name) { n[3] -> name }
+export function set_class_name(n, name) { n[3] -> name }
+export function set_struct_init_name(n, name) { n[3] -> name }

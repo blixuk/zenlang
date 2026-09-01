@@ -13,6 +13,7 @@
 
 import zen.text.string as Str
 import zen.math.math as Math
+import zen.io.io as IO
 
 /!
   Represents an RGBA color with 8-bit channels (0-255).
@@ -95,8 +96,8 @@ function _hex_val(ch) {
 function _byte_to_hex(b) {
     b -> _clamp255(b)
     let hex_chars -> [`0`, `1`, `2`, `3`, `4`, `5`, `6`, `7`, `8`, `9`, `a`, `b`, `c`, `d`, `e`, `f`]
-    let high -> (b / 16) % 16
-    let low -> b % 16
+    let high -> (b >> 4) & 15
+    let low -> b & 15
     <- hex_chars[high] + hex_chars[low]
 }
 
@@ -209,45 +210,42 @@ function hsl(h, s, l) : Color {
   Standard named colors lookup table.
   Includes 8 standard ANSI, 8 bright ANSI, and standard CSS/terminal colors.
 !/
-set _NAMED -> {
-    // 8 Standard ANSI
-    `black` -> Color { r -> 0, g -> 0, b -> 0, a -> 255 },
-    `red` -> Color { r -> 205, g -> 0, b -> 0, a -> 255 },
-    `green` -> Color { r -> 0, g -> 205, b -> 0, a -> 255 },
-    `yellow` -> Color { r -> 205, g -> 205, b -> 0, a -> 255 },
-    `blue` -> Color { r -> 0, g -> 0, b -> 238, a -> 255 },
-    `magenta` -> Color { r -> 205, g -> 0, b -> 205, a -> 255 },
-    `cyan` -> Color { r -> 0, g -> 205, b -> 205, a -> 255 },
-    `white` -> Color { r -> 229, g -> 229, b -> 229, a -> 255 },
-    
-    // 8 Bright ANSI
-    `bright_black` -> Color { r -> 127, g -> 127, b -> 127, a -> 255 },
-    `gray` -> Color { r -> 127, g -> 127, b -> 127, a -> 255 },
-    `grey` -> Color { r -> 127, g -> 127, b -> 127, a -> 255 },
-    `bright_red` -> Color { r -> 255, g -> 0, b -> 0, a -> 255 },
-    `bright_green` -> Color { r -> 0, g -> 255, b -> 0, a -> 255 },
-    `bright_yellow` -> Color { r -> 255, g -> 255, b -> 0, a -> 255 },
-    `bright_blue` -> Color { r -> 92, g -> 92, b -> 255, a -> 255 },
-    `bright_magenta` -> Color { r -> 255, g -> 0, b -> 255, a -> 255 },
-    `bright_cyan` -> Color { r -> 0, g -> 255, b -> 255, a -> 255 },
-    `bright_white` -> Color { r -> 255, g -> 255, b -> 255, a -> 255 },
-    
-    // Extended Named Colors
-    `orange` -> Color { r -> 255, g -> 136, b -> 0, a -> 255 },
-    `purple` -> Color { r -> 128, g -> 0, b -> 128, a -> 255 },
-    `pink` -> Color { r -> 255, g -> 192, b -> 203, a -> 255 },
-    `teal` -> Color { r -> 0, g -> 128, b -> 128, a -> 255 },
-    `gold` -> Color { r -> 255, g -> 215, b -> 0, a -> 255 },
-    `navy` -> Color { r -> 0, g -> 0, b -> 128, a -> 255 },
-    `coral` -> Color { r -> 255, g -> 127, b -> 80, a -> 255 },
-    `lime` -> Color { r -> 0, g -> 255, b -> 0, a -> 255 },
-    `silver` -> Color { r -> 192, g -> 192, b -> 192, a -> 255 },
-    `maroon` -> Color { r -> 128, g -> 0, b -> 0, a -> 255 },
-    `olive` -> Color { r -> 128, g -> 128, b -> 0, a -> 255 },
-    `amber` -> Color { r -> 255, g -> 191, b -> 0, a -> 255 },
-    `indigo` -> Color { r -> 75, g -> 0, b -> 130, a -> 255 },
-    `violet` -> Color { r -> 238, g -> 130, b -> 238, a -> 255 },
-    `aqua` -> Color { r -> 0, g -> 255, b -> 255, a -> 255 }
+function _init_named() {
+    let m -> {}
+    m[`black`] -> rgb(0, 0, 0)
+    m[`red`] -> rgb(205, 0, 0)
+    m[`green`] -> rgb(0, 205, 0)
+    m[`yellow`] -> rgb(205, 205, 0)
+    m[`blue`] -> rgb(0, 0, 238)
+    m[`magenta`] -> rgb(205, 0, 205)
+    m[`cyan`] -> rgb(0, 205, 205)
+    m[`white`] -> rgb(229, 229, 229)
+    m[`bright_black`] -> rgb(127, 127, 127)
+    m[`gray`] -> rgb(127, 127, 127)
+    m[`grey`] -> rgb(127, 127, 127)
+    m[`bright_red`] -> rgb(255, 0, 0)
+    m[`bright_green`] -> rgb(0, 255, 0)
+    m[`bright_yellow`] -> rgb(255, 255, 0)
+    m[`bright_blue`] -> rgb(92, 92, 255)
+    m[`bright_magenta`] -> rgb(255, 0, 255)
+    m[`bright_cyan`] -> rgb(0, 255, 255)
+    m[`bright_white`] -> rgb(255, 255, 255)
+    m[`orange`] -> rgb(255, 136, 0)
+    m[`purple`] -> rgb(128, 0, 128)
+    m[`pink`] -> rgb(255, 192, 203)
+    m[`teal`] -> rgb(0, 128, 128)
+    m[`gold`] -> rgb(255, 215, 0)
+    m[`navy`] -> rgb(0, 0, 128)
+    m[`coral`] -> rgb(255, 127, 80)
+    m[`lime`] -> rgb(0, 255, 0)
+    m[`silver`] -> rgb(192, 192, 192)
+    m[`maroon`] -> rgb(128, 0, 0)
+    m[`olive`] -> rgb(128, 128, 0)
+    m[`amber`] -> rgb(255, 191, 0)
+    m[`indigo`] -> rgb(75, 0, 130)
+    m[`violet`] -> rgb(238, 130, 238)
+    m[`aqua`] -> rgb(0, 255, 255)
+    <- m
 }
 
 /!
@@ -255,9 +253,10 @@ set _NAMED -> {
 !/
 function named(name) : Color {
     when name == Nothing or name == `` { <- rgb(0, 0, 0) }
+    let m -> _init_named()
     let key -> Str.to_lower(Str.trim(name))
-    when _NAMED.has(key) {
-        <- _NAMED[key]
+    when m.has(key) {
+        <- m[key]
     }
     <- rgb(0, 0, 0)
 }
@@ -267,15 +266,17 @@ function named(name) : Color {
 !/
 function has_named(name) {
     when name == Nothing { <- false }
+    let m -> _init_named()
     let key -> Str.to_lower(Str.trim(name))
-    <- _NAMED.has(key)
+    <- m.has(key)
 }
 
 /!
   Returns a list of all available named color identifiers.
 !/
 function named_keys() {
-    <- _NAMED.keys()
+    let m -> _init_named()
+    <- m.keys()
 }
 
 // ==========================================

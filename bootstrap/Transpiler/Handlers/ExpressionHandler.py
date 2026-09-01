@@ -34,7 +34,8 @@ TOKEN_TYPE_IDS = {
     "LESS_THAN_OR_EQUAL": 98, "RANGE": 99, "RANGE_INCLUSIVE": 100,
     "ELLIPSIS": 101, "SCOPE": 102, "EXPORT": 103, "IS": 104, "EXTENDS": 105,
     "PARENT": 106, "SELF": 107, "IMPORT": 108, "FROM": 109, "AS": 110,
-    "CHECK_SYMBOL": 111, "RAISE_SYMBOL": 112, "ASSERT_SYMBOL": 113, "EOF": 114,
+    "CHECK_SYMBOL": 111, "RAISE_SYMBOL": 112, "ASSERT_SYMBOL": 113,
+    "TYPE_CAST": 114, "EOF": 115,
 }
 
 class ExpressionHandler:
@@ -95,11 +96,17 @@ class ExpressionHandler:
                  return f"ZenValue_from_function((ZenValue (*)(void)){m_name})"
             return m_name
         elif isinstance(node, BinaryOperation):
+            op = node.operator.value if hasattr(node.operator, "value") else str(node.operator)
+            if op == "<:":
+                left = self._visit_expression(node.left, target_region=target_region)
+                target_type = getattr(node.right, "name", str(node.right))
+                tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
+                self._emit(Call(target=tmp, callee="ZenValue_cast", args=[left, f'"{target_type}"'], region=current_reg), node)
+                return tmp
             left = self._visit_expression(node.left, target_region=target_region)
             right = self._visit_expression(node.right, target_region=target_region)
             res_type = getattr(node, "resolved_type", None)
             tmp = self._alloc_temp(self.new_label("tmp_bin"), node, type=res_type, region=current_reg)
-            op = node.operator.value if hasattr(node.operator, "value") else str(node.operator)
             self._emit(Compute(target=tmp, op=op, left=left, right=right), node)
             return tmp
         elif isinstance(node, UnaryOperation):
@@ -114,6 +121,12 @@ class ExpressionHandler:
             return tmp
         elif isinstance(node, CallExpression):
             args = [self._visit_expression(arg, target_region=target_region) for arg in node.arguments]
+            if isinstance(node.callee, Identifier) and node.callee.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+                target_type = node.callee.name
+                val = args[0] if args else "ZEN_NOTHING_VAL"
+                tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
+                self._emit(Call(target=tmp, callee="ZenValue_cast", args=[val, f'"{target_type}"'], region=current_reg), node)
+                return tmp
             if isinstance(node.callee, MemberExpression):
                 obj_node = node.callee.object
                 obj = self._visit_expression(obj_node, target_region=target_region)

@@ -47,6 +47,7 @@ ZenValue ZenValue_call(ZenValue value) {
 ZenValue ZenValue_get_field(ZenValue obj, const char* name) {
     if (!name) return ZenValue_make_nothing();
     if (strcmp(name, "length") == 0) return ZenValue_get_length(obj);
+    if (strcmp(name, "kind") == 0) return ZenValue_get_kind(obj);
     if (obj.type == ZEN_MAP) {
         return ZenMap_get_value_at_key(obj, ZenValue_make_string(name));
     }
@@ -246,12 +247,20 @@ ZenValue ZenValue_join(ZenValue self, ZenValue separator) {
     return ZenValue_make_nothing();
 }
 
-ZenValue ZenValue_write(ZenValue self, ZenValue value) { return ZenIO_write_value(value); }
+ZenValue ZenValue_write(ZenValue self, ZenValue value) {
+    if (self.type == ZEN_OBJECT && self.as.object) return ZenObject_write(self.as.object, value);
+    return ZenIO_write_value(value);
+}
 ZenValue ZenValue_writeln(ZenValue self, ZenValue value) { return ZenIO_write_line(value); }
 ZenValue ZenValue_write_raw(ZenValue self, ZenValue value) { return ZenIO_write_raw(value); }
-ZenValue ZenValue_read(ZenValue self) { return ZenIO_read_value(ZenValue_make_nothing()); }
-ZenValue ZenValue_read_line(ZenValue self) { return ZenIO_read_line(); }
-ZenValue ZenValue_read_exact(ZenValue self, ZenValue count) { return ZenIO_read_exact(count); }
+ZenValue ZenValue_read(ZenValue self) {
+    if (self.type == ZEN_OBJECT && self.as.object) return ZenObject_read(self.as.object);
+    return ZenIO_read_value(ZenValue_make_nothing());
+}
+ZenValue ZenValue_close(ZenValue self) {
+    if (self.type == ZEN_OBJECT && self.as.object) return ZenObject_close(self.as.object);
+    return ZenValue_make_nothing();
+}
 
 ZenValue ZenValue_info(ZenValue self, ZenValue value) { return ZenIO_write_info(value); }
 ZenValue ZenValue_warn(ZenValue self, ZenValue value) { return ZenIO_write_warning(value); }

@@ -1,0 +1,541 @@
+/!
+  Baked-in Compiler Extensions Subsystem for Zenlang.
+  Provides modular, statically-compiled developer tooling:
+    - ANSI color formatting & terminal styling (with NO_COLOR support)
+    - Bytecode disassembler (zen disasm)
+    - AST hierarchy inspector (zen ast)
+    - Compiler environment & diagnostic info (zen info)
+    - Bash tab-completion script generator (zen completion bash)
+    - "Did you mean?" command typo suggestion engine
+!/
+
+import compiler.AST as AST
+import compiler.Bytecode as Bytecode
+import compiler.Parser as Parser
+import compiler.Token as Token
+import zen.io.io as io
+import zen.sys.sys as Sys
+import zen.text.string as Str
+
+function fs_is_file(p) {
+    <- __builtin_file.exists(p)
+}
+
+function fs_read(p) {
+    <- __builtin_file.read(p)
+}
+
+// --- ANSI Terminal Styling ---
+
+function is_color_enabled() {
+    let no_col -> Sys.get_env(`NO_COLOR`)
+    when no_col != Nothing and no_col != `` and no_col != `0` {
+        <- False
+    }
+    let term -> Sys.get_env(`TERM`)
+    when term == `dumb` {
+        <- False
+    }
+    <- True
+}
+
+export function style_bold(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[1m` + s + `\x1b[0m`
+}
+
+export function style_cyan(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[36m` + s + `\x1b[0m`
+}
+
+export function style_green(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[32m` + s + `\x1b[0m`
+}
+
+export function style_yellow(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[33m` + s + `\x1b[0m`
+}
+
+export function style_dim(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[2m` + s + `\x1b[0m`
+}
+
+export function style_magenta(s) {
+    when not is_color_enabled() { <- s }
+    <- `\x1b[35m` + s + `\x1b[0m`
+}
+
+// --- Opcode Name Resolver for Disassembly ---
+
+function opcode_name(op) {
+    when op == 0 { <- `OP_CONSTANT` }
+    when op == 1 { <- `OP_NOTHING` }
+    when op == 2 { <- `OP_DEFAULT` }
+    when op == 3 { <- `OP_TRUE` }
+    when op == 4 { <- `OP_FALSE` }
+    when op == 5 { <- `OP_POP` }
+    when op == 6 { <- `OP_GET_LOCAL` }
+    when op == 7 { <- `OP_SET_LOCAL` }
+    when op == 8 { <- `OP_GET_GLOBAL` }
+    when op == 9 { <- `OP_SET_GLOBAL` }
+    when op == 10 { <- `OP_EQUAL` }
+    when op == 11 { <- `OP_NOT_EQUAL` }
+    when op == 12 { <- `OP_GREATER` }
+    when op == 13 { <- `OP_LESS` }
+    when op == 14 { <- `OP_GREATER_EQUAL` }
+    when op == 15 { <- `OP_LESS_EQUAL` }
+    when op == 16 { <- `OP_ADD` }
+    when op == 17 { <- `OP_SUB` }
+    when op == 18 { <- `OP_MUL` }
+    when op == 19 { <- `OP_DIV` }
+    when op == 20 { <- `OP_MOD` }
+    when op == 21 { <- `OP_NOT` }
+    when op == 22 { <- `OP_NEGATE` }
+    when op == 23 { <- `OP_JUMP` }
+    when op == 24 { <- `OP_JUMP_IF_FALSE` }
+    when op == 25 { <- `OP_LOOP` }
+    when op == 26 { <- `OP_CALL` }
+    when op == 27 { <- `OP_CLOSURE` }
+    when op == 28 { <- `OP_RETURN` }
+    when op == 29 { <- `OP_MAKE_LIST` }
+    when op == 30 { <- `OP_MAKE_MAP` }
+    when op == 31 { <- `OP_GET_INDEX` }
+    when op == 32 { <- `OP_SET_INDEX` }
+    when op == 33 { <- `OP_GET_FIELD` }
+    when op == 34 { <- `OP_SET_FIELD` }
+    <- `OP_UNKNOWN(` + Str.to_string(op) + `)`
+}
+
+// --- Bytecode Disassembler Extension (`zen disasm <file.zbc>`) ---
+
+export function disasm_chunk(chunk) {
+    when chunk == Nothing {
+        <- `error: invalid bytecode chunk\n`
+    }
+    let name -> chunk[`name`]
+    when name == Nothing or name == `` {
+        name -> `<anonymous>`
+    }
+    let out -> style_bold(`== Bytecode Disassembly: `) + style_cyan(name) + style_bold(` ==\n\n`)
+    
+    // Constants Pool
+    let consts -> chunk[`constants`]
+    let c_len -> 0
+    when consts != Nothing {
+        c_len -> consts.length
+    }
+    out -> out + style_bold(`Constants Pool (` + Str.to_string(c_len) + ` entries):\n`)
+    let ci -> 0
+    do while ci < c_len {
+        let cv -> consts[ci]
+        out -> out + `  [` + style_dim(Str.to_string(ci)) + `] ` + Str.to_string(cv) + `\n`
+        ci -> ci + 1
+    }
+    out -> out + `\n`
+    
+    // Instructions
+    let code -> chunk[`code`]
+    let lines -> chunk[`lines`]
+    let code_len -> 0
+    when code != Nothing {
+        code_len -> code.length
+    }
+    out -> out + style_bold(`Instructions (` + Str.to_string(code_len) + ` bytes):\n`)
+    let ip -> 0
+    let last_line -> -1
+    do while ip < code_len {
+        let line -> -1
+        when lines != Nothing and ip < lines.length {
+            line -> lines[ip]
+        }
+        let line_str -> `   | `
+        when line != last_line {
+            line_str -> Str.to_string(line)
+            let pad -> 4 - Str.length(line_str)
+            do while pad > 0 {
+                line_str -> ` ` + line_str
+                pad -> pad - 1
+            }
+            line_str -> style_dim(line_str) + ` `
+            last_line -> line
+        }
+        
+        let offset_str -> Str.to_string(ip)
+        let opad -> 4 - Str.length(offset_str)
+        do while opad > 0 {
+            offset_str -> `0` + offset_str
+            opad -> opad - 1
+        }
+        
+        let op -> code[ip]
+        let op_name -> opcode_name(op)
+        out -> out + offset_str + ` ` + line_str + style_green(op_name)
+        
+        // Disassemble Operands
+        when op == 0 { // OP_CONSTANT
+            when ip + 1 < code_len {
+                let c_idx -> code[ip + 1]
+                let c_val -> `<none>`
+                when consts != Nothing and c_idx < consts.length {
+                    c_val -> Str.to_string(consts[c_idx])
+                }
+                out -> out + `  #` + Str.to_string(c_idx) + ` (` + style_yellow(c_val) + `)`
+                ip -> ip + 1
+            }
+        } or when op == 6 or op == 7 { // OP_GET_LOCAL, OP_SET_LOCAL
+            when ip + 1 < code_len {
+                let slot -> code[ip + 1]
+                out -> out + `  slot=` + Str.to_string(slot)
+                ip -> ip + 1
+            }
+        } or when op == 8 or op == 9 { // OP_GET_GLOBAL, OP_SET_GLOBAL
+            when ip + 1 < code_len {
+                let g_idx -> code[ip + 1]
+                let g_name -> `<unknown>`
+                when consts != Nothing and g_idx < consts.length {
+                    g_name -> Str.to_string(consts[g_idx])
+                }
+                out -> out + `  '` + style_yellow(g_name) + `'`
+                ip -> ip + 1
+            }
+        } or when op == 23 or op == 24 { // OP_JUMP, OP_JUMP_IF_FALSE
+            when ip + 2 < code_len {
+                let b1 -> code[ip + 1]
+                let b2 -> code[ip + 2]
+                let jump_offset -> (b1 * 256) + b2
+                let dest_ip -> ip + 3 + jump_offset
+                out -> out + `  -> ` + Str.to_string(dest_ip) + ` (offset ` + Str.to_string(jump_offset) + `)`
+                ip -> ip + 2
+            }
+        } or when op == 25 { // OP_LOOP
+            when ip + 2 < code_len {
+                let b1 -> code[ip + 1]
+                let b2 -> code[ip + 2]
+                let loop_offset -> (b1 * 256) + b2
+                let dest_ip -> ip + 3 - loop_offset
+                out -> out + `  -> ` + Str.to_string(dest_ip) + ` (back ` + Str.to_string(loop_offset) + `)`
+                ip -> ip + 2
+            }
+        } or when op == 26 { // OP_CALL
+            when ip + 1 < code_len {
+                let arity -> code[ip + 1]
+                out -> out + `  argc=` + Str.to_string(arity)
+                ip -> ip + 1
+            }
+        } or when op == 29 { // OP_MAKE_LIST
+            when ip + 1 < code_len {
+                let count -> code[ip + 1]
+                out -> out + `  count=` + Str.to_string(count)
+                ip -> ip + 1
+            }
+        } or when op == 30 { // OP_MAKE_MAP
+            when ip + 1 < code_len {
+                let pairs -> code[ip + 1]
+                out -> out + `  pairs=` + Str.to_string(pairs)
+                ip -> ip + 1
+            }
+        }
+        
+        out -> out + `\n`
+        ip -> ip + 1
+    }
+    
+    <- out
+}
+
+export function disasm_file(target_path) {
+    when not fs_is_file(target_path) {
+        <- {`code` -> 1, `message` -> `error: file not found: ` + target_path}
+    }
+    let chunk -> Bytecode.read_bytecode_file(target_path)
+    when chunk == Nothing {
+        // If passed a .zl file, compile to memory chunk and disassemble
+        when Str.ends_with(target_path, `.zl`) {
+            let src -> fs_read(target_path)
+            let prog -> Parser.parse_source(src)
+            when prog == Nothing {
+                <- {`code` -> 1, `message` -> `error: failed to parse ` + target_path}
+            }
+            let live_chunk -> Bytecode.compile_program(prog)
+            when live_chunk == Nothing {
+                <- {`code` -> 1, `message` -> `error: failed to compile bytecode for ` + target_path}
+            }
+            <- {`code` -> 0, `message` -> disasm_chunk(live_chunk)}
+        }
+        <- {`code` -> 1, `message` -> `error: invalid .zbc bytecode file: ` + target_path}
+    }
+    <- {`code` -> 0, `message` -> disasm_chunk(chunk)}
+}
+
+// --- AST Hierarchy Visualizer Extension (`zen ast <file.zl>`) ---
+
+function ast_kind_name(k) {
+    when k == AST.K_PROGRAM { <- `Program` }
+    when k == AST.K_LET { <- `LetStatement` }
+    when k == AST.K_SET { <- `SetStatement` }
+    when k == AST.K_FUNCTION { <- `Function` }
+    when k == AST.K_RETURN { <- `Return` }
+    when k == AST.K_BLOCK { <- `Block` }
+    when k == AST.K_EXPR_STMT { <- `ExprStatement` }
+    when k == AST.K_LITERAL { <- `Literal` }
+    when k == AST.K_VARIABLE { <- `Variable` }
+    when k == AST.K_BINARY { <- `BinaryExpr` }
+    when k == AST.K_CALL { <- `CallExpr` }
+    when k == AST.K_WHEN { <- `WhenStatement` }
+    when k == AST.K_WHILE { <- `WhileStatement` }
+    when k == AST.K_DO_WHILE { <- `DoWhileStatement` }
+    when k == AST.K_FOR { <- `ForStatement` }
+    when k == AST.K_LIST { <- `ListLiteral` }
+    when k == AST.K_MAP { <- `MapLiteral` }
+    when k == AST.K_GET { <- `GetExpr` }
+    when k == AST.K_INDEX { <- `IndexExpr` }
+    when k == AST.K_CLASS { <- `ClassDecl` }
+    when k == AST.K_ENUMERATOR { <- `EnumDecl` }
+    when k == AST.K_WITH { <- `WithStatement` }
+    when k == AST.K_CHECK_STMT { <- `CheckStatement` }
+    when k == AST.K_ASSERT { <- `AssertStatement` }
+    when k == AST.K_IMPORT { <- `ImportStatement` }
+    when k == AST.K_FUNC_EXPR { <- `FuncExpr` }
+    <- `ASTNode(` + Str.to_string(k) + `)`
+}
+
+function render_ast_node(node, depth) {
+    when node == Nothing {
+        <- ``
+    }
+    let indent -> ``
+    let d -> 0
+    do while d < depth {
+        indent -> indent + `  `
+        d -> d + 1
+    }
+    let k -> AST.ast_kind(node)
+    let line -> AST.ast_line(node)
+    let col -> AST.ast_col(node)
+    let kname -> ast_kind_name(k)
+    let out -> indent + style_cyan(kname) + style_dim(` [` + Str.to_string(line) + `:` + Str.to_string(col) + `]`)
+    
+    when k == AST.K_LET {
+        out -> out + ` ` + style_bold(Str.to_string(AST.let_name(node)))
+        let val_node -> AST.let_val(node)
+        when val_node != Nothing {
+            out -> out + `\n` + render_ast_node(val_node, depth + 1)
+        } or {
+            out -> out + `\n`
+        }
+    } or when k == AST.K_FUNCTION {
+        out -> out + ` ` + style_bold(Str.to_string(AST.fn_name(node)))
+        let fbody -> AST.fn_body(node)
+        when fbody != Nothing {
+            out -> out + `\n` + render_ast_node(fbody, depth + 1)
+        } or {
+            out -> out + `\n`
+        }
+    } or when k == AST.K_LITERAL {
+        out -> out + ` val=` + style_yellow(Str.to_string(AST.lit_val(node))) + `\n`
+    } or when k == AST.K_VARIABLE {
+        out -> out + ` name=` + style_yellow(Str.to_string(AST.var_name(node))) + `\n`
+    } or when k == AST.K_BLOCK {
+        out -> out + `\n`
+        let bstmts -> AST.block_stmts(node)
+        when bstmts != Nothing {
+            let bn -> bstmts.length
+            let bi -> 0
+            do while bi < bn {
+                out -> out + render_ast_node(bstmts[bi], depth + 1)
+                bi -> bi + 1
+            }
+        }
+    } or when k == AST.K_PROGRAM {
+        out -> out + `\n`
+        let pstmts -> AST.flatten_stmts(AST.prog_stmts(node))
+        when pstmts != Nothing {
+            let pn -> pstmts.length
+            let pi -> 0
+            do while pi < pn {
+                out -> out + render_ast_node(pstmts[pi], depth + 1)
+                pi -> pi + 1
+            }
+        }
+    } or when k == AST.K_RETURN {
+        let rval -> AST.ret_val(node)
+        when rval != Nothing {
+            out -> out + `\n` + render_ast_node(rval, depth + 1)
+        } or {
+            out -> out + `\n`
+        }
+    } or when k == AST.K_EXPR_STMT {
+        let expr -> AST.expr_stmt_expr(node)
+        when expr != Nothing {
+            out -> out + `\n` + render_ast_node(expr, depth + 1)
+        } or {
+            out -> out + `\n`
+        }
+    } or {
+        out -> out + `\n`
+    }
+    
+    <- out
+}
+
+export function ast_file(target_path) {
+    when not fs_is_file(target_path) {
+        <- {`code` -> 1, `message` -> `error: file not found: ` + target_path}
+    }
+    let src -> fs_read(target_path)
+    let prog -> Parser.parse_source(src)
+    when prog == Nothing {
+        <- {`code` -> 1, `message` -> `error: parse failure in ` + target_path}
+    }
+    let banner -> style_bold(`== Abstract Syntax Tree: `) + style_cyan(target_path) + style_bold(` ==\n\n`)
+    let tree -> render_ast_node(prog, 0)
+    <- {`code` -> 0, `message` -> banner + tree}
+}
+
+// --- Compiler Diagnostic & System Info (`zen info`) ---
+
+export function compiler_info() {
+    let out -> style_bold(`Zenlang Compiler & Environment Diagnostics\n`)
+    out -> out + style_dim(`-----------------------------------------\n`)
+    out -> out + style_bold(`Version:        `) + style_cyan(`0.7.0 (Standalone Self-Hosted Native)\n`)
+    out -> out + style_bold(`Architecture:   `) + `Three-Layer (ZenValue ABI + Native Compiler IR + Bytecode VM)\n`
+    out -> out + style_bold(`Execution:      `) + `Dual-Path (Pure AOT Native C / Stack Bytecode VM)\n`
+    out -> out + style_bold(`Bytecode Form:  `) + `ZENB v1 (.zbc standalone distribution)\n`
+    out -> out + style_bold(`Daemon Socket:  `) + `/tmp/zen_compiler.sock\n`
+    
+    let cc -> Sys.get_env(`ZEN_CC`)
+    when cc == Nothing or cc == `` {
+        cc -> `gcc (auto-detected default)`
+    }
+    out -> out + style_bold(`C Backend Tool: `) + cc + `\n`
+    
+    let opt -> Sys.get_env(`ZEN_OPT`)
+    when opt == Nothing or opt == `` {
+        opt -> `2 (Release -O2)`
+    }
+    out -> out + style_bold(`Default Opt:    `) + `-O` + opt + `\n`
+    let col_status -> `Disabled`
+    when is_color_enabled() {
+        col_status -> style_green(`Enabled (ANSI)`)
+    }
+    out -> out + style_bold(`Color Support:  `) + col_status + `\n`
+    
+    <- {`code` -> 0, `message` -> out}
+}
+
+// --- Bash Tab Completion Generator (`zen completion bash`) ---
+
+export function bash_completion_script() {
+    let script -> `#!/usr/bin/env bash
+# Bash completion script for Zenlang CLI (zen)
+# To install: source <(zen completion bash)
+# Or copy to /etc/bash_completion.d/zen
+
+_zen_completions() {
+    local cur prev words cword
+    _init_completion || return
+
+    local commands="run build bundle package compile check deps disasm ast info test plugin todo lint daemon completion help"
+    local flags="-o --output -O --opt -m --multi -t --typecheck -q --quiet -v --version -h --help"
+
+    if [[ $cword -eq 1 ]]; then
+        COMPREPLY=( $(compgen -W "$commands $flags" -- "$cur") )
+        return 0
+    fi
+
+    local command="${words[1]}"
+    case "$command" in
+        run|vm|interpret)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -X '!*.@(zl|zbc)' -- "$cur") $(compgen -d -- "$cur") )
+            fi
+            ;;
+        build|compile)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -X '!*.zl' -- "$cur") $(compgen -d -- "$cur") )
+            fi
+            ;;
+        bundle|package)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "-o --output -h --help" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -X '!*.zl' -- "$cur") $(compgen -d -- "$cur") )
+            fi
+            ;;
+        disasm)
+            COMPREPLY=( $(compgen -f -X '!*.@(zbc|zl)' -- "$cur") $(compgen -d -- "$cur") )
+            ;;
+        ast|check|deps)
+            COMPREPLY=( $(compgen -f -X '!*.zl' -- "$cur") $(compgen -d -- "$cur") )
+            ;;
+        daemon)
+            COMPREPLY=( $(compgen -W "start stop status clear ping" -- "$cur") )
+            ;;
+        plugin)
+            COMPREPLY=( $(compgen -W "list run" -- "$cur") )
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash" -- "$cur") )
+            ;;
+        *)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "$flags" -- "$cur") )
+            else
+                COMPREPLY=( $(compgen -f -- "$cur") )
+            fi
+            ;;
+    esac
+}
+
+complete -F _zen_completions zen
+`
+    <- {`code` -> 0, `message` -> script}
+}
+
+// --- "Did You Mean?" Typo Suggestion Engine ---
+
+export function get_command_suggestion(typo) {
+    when typo == Nothing or typo == `` {
+        <- Nothing
+    }
+    let t -> Str.to_string(typo)
+    let candidates -> [
+        `run`, `build`, `bundle`, `package`, `compile`, `check`, `deps`,
+        `disasm`, `ast`, `info`, `test`, `plugin`, `todo`, `lint`,
+        `daemon`, `completion`, `help`, `vm`, `interpret`
+    ]
+    let n -> candidates.length
+    let i -> 0
+    let best_match -> Nothing
+    
+    // Prefix match
+    do while i < n {
+        let c -> candidates[i]
+        when Str.starts_with(c, t) or Str.starts_with(t, c) {
+            <- c
+        }
+        i -> i + 1
+    }
+    
+    // Common typo aliases
+    when t == `buid` or t == `bld` or t == `biuld` { <- `build` }
+    when t == `bundel` or t == `pack` { <- `bundle` }
+    when t == `comile` or t == `cmp` { <- `compile` }
+    when t == `chekc` or t == `chk` { <- `check` }
+    when t == `interp` or t == `eval` { <- `interpret` }
+    when t == `disas` or t == `dis` or t == `dasm` { <- `disasm` }
+    when t == `plg` or t == `plugins` { <- `plugin` }
+    when t == `cmpl` or t == `complete` { <- `completion` }
+    when t == `tst` { <- `test` }
+    when t == `hlp` { <- `help` }
+    
+    <- Nothing
+}

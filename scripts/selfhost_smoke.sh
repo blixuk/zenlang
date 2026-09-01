@@ -58,7 +58,7 @@ fi
 
 # --- 2) CLI help ---
 echo "--- native help ---"
-if out="$("$BIN" help 2>&1)" && printf '%s\n' "$out" | grep -q 'Usage'; then
+if out="$("$BIN" help 2>&1)" && printf '%s\n' "$out" | grep -qi 'Usage'; then
   ok "native help"
 else
   bad "native help"

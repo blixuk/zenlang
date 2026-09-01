@@ -1,5 +1,6 @@
 #include "zen_variant.h"
 #include "collections/zen_list.h"
+#include "collections/zen_map.h"
 #include "memory/zen_memory.h"
 #include <stdarg.h>
 #include <string.h>
@@ -66,10 +67,18 @@ ZenValue ZenValue_is_type_name(ZenValue val, const char* expected_type) {
 
     if (strcmp(expected_type, "Nothing") == 0) return ZenValue_make_boolean(val.type == ZEN_NOTHING);
     if (strcmp(expected_type, "Boolean") == 0 || strcmp(expected_type, "Bool") == 0) return ZenValue_make_boolean(val.type == ZEN_BOOLEAN);
-    if (strcmp(expected_type, "Integer") == 0 || strcmp(expected_type, "Int") == 0) return ZenValue_make_boolean(val.type == ZEN_INTEGER);
-    if (strcmp(expected_type, "Decimal") == 0 || strcmp(expected_type, "Float") == 0) return ZenValue_make_boolean(val.type == ZEN_DECIMAL);
-    if (strcmp(expected_type, "String") == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
+    if (strcmp(expected_type, "Integer") == 0 || strcmp(expected_type, "Int") == 0 ||
+        strcmp(expected_type, "Int64") == 0 || strcmp(expected_type, "Int32") == 0 ||
+        strcmp(expected_type, "Int16") == 0 || strcmp(expected_type, "Int8") == 0 ||
+        strcmp(expected_type, "Byte") == 0) return ZenValue_make_boolean(val.type == ZEN_INTEGER);
+    if (strcmp(expected_type, "Decimal") == 0 || strcmp(expected_type, "Float") == 0 || strcmp(expected_type, "Double") == 0) return ZenValue_make_boolean(val.type == ZEN_DECIMAL);
+    if (strcmp(expected_type, "String") == 0 || strcmp(expected_type, "Str") == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
+    if (strcmp(expected_type, "Rune") == 0 || strcmp(expected_type, "Char") == 0 || strcmp(expected_type, "Glyph") == 0) {
+        return ZenValue_make_boolean(val.type == ZEN_STRING && val.as.string && strlen(val.as.string) == 1);
+    }
+    if (strcmp(expected_type, "Bytes") == 0 || strcmp(expected_type, "Buffer") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_STRING);
     if (strcmp(expected_type, "List") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST);
+    if (strcmp(expected_type, "Set") == 0) return ZenValue_make_boolean(val.type == ZEN_SET);
     if (strcmp(expected_type, "Map") == 0) return ZenValue_make_boolean(val.type == ZEN_MAP);
     if (strcmp(expected_type, "Variant") == 0) return ZenValue_make_boolean(val.type == ZEN_VARIANT);
     if (strcmp(expected_type, "Error") == 0) {
@@ -87,6 +96,28 @@ ZenValue ZenValue_is_type_name(ZenValue val, const char* expected_type) {
               val.as.variant->variant_name.as.string &&
               strcmp(val.as.variant->variant_name.as.string, "Error") == 0))
         );
+    }
+
+    if (val.type == ZEN_MAP) {
+        ZenValue type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type__"));
+        if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, expected_type) == 0) {
+            return ZenValue_make_boolean(true);
+        }
+        type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type"));
+        if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, expected_type) == 0) {
+            return ZenValue_make_boolean(true);
+        }
+    }
+
+    if (val.type == ZEN_VARIANT && val.as.variant) {
+        if (val.as.variant->enum_name.type == ZEN_STRING && val.as.variant->enum_name.as.string &&
+            strcmp(val.as.variant->enum_name.as.string, expected_type) == 0) {
+            return ZenValue_make_boolean(true);
+        }
+        if (val.as.variant->variant_name.type == ZEN_STRING && val.as.variant->variant_name.as.string &&
+            strcmp(val.as.variant->variant_name.as.string, expected_type) == 0) {
+            return ZenValue_make_boolean(true);
+        }
     }
 
     return ZenValue_make_boolean(false);

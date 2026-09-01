@@ -1,0 +1,104 @@
+/!
+  Modern CLI UX and Extensions Unit Tests.
+  Verifies:
+    - ANSI color helper behavior and NO_COLOR support
+    - Usage text and categorized command help formatting
+    - Per-command contextual help for build, bundle, run, compile, etc.
+    - Bash tab-completion generation
+    - Introspection tools: zen info, zen ast, zen disasm
+    - "Did you mean?" typo suggestion matching
+    - Unified flag parsing (-o, --output=, -t, etc.)
+!/
+
+import compiler.Driver as Driver
+import compiler.Extensions as Extensions
+import compiler.Plugin as Plugin
+import zen.test as test
+import zen.text.string as Str
+
+function test_usage_and_help() {
+    let r_help -> Driver.run_args_local([`help`], 0, 1, `help`)
+    let pass -> test.assert_equal(r_help[`code`], 0, `help exit 0`)
+    let msg -> Str.to_string(r_help[`message`])
+    pass -> pass and test.assert_equal(Str.contains(msg, `PRIMARY COMMANDS`), True, `help contains PRIMARY COMMANDS`)
+    pass -> pass and test.assert_equal(Str.contains(msg, `COMPILER & TOOLS`), True, `help contains COMPILER & TOOLS`)
+    pass -> pass and test.assert_equal(Str.contains(msg, `GLOBAL FLAGS`), True, `help contains GLOBAL FLAGS`)
+    
+    // Per-command contextual help
+    let r_build_help -> Driver.run_args_local([`build`, `--help`], 0, 2, `build`)
+    let bmsg -> Str.to_string(r_build_help[`message`])
+    pass -> pass and test.assert_equal(Str.contains(bmsg, `zen build`), True, `build help title`)
+    pass -> pass and test.assert_equal(Str.contains(bmsg, `-o, --output`), True, `build help options`)
+    
+    let r_bundle_help -> Driver.run_args_local([`bundle`, `-h`], 0, 2, `bundle`)
+    let bundle_msg -> Str.to_string(r_bundle_help[`message`])
+    pass -> pass and test.assert_equal(Str.contains(bundle_msg, `zen bundle`), True, `bundle help title`)
+    
+    <- pass
+}
+
+function test_info_and_completion() {
+    let r_info -> Driver.run_args_local([`info`], 0, 1, `info`)
+    let pass -> test.assert_equal(r_info[`code`], 0, `info exit 0`)
+    let imsg -> Str.to_string(r_info[`message`])
+    pass -> pass and test.assert_equal(Str.contains(imsg, `Version:`), True, `info contains Version`)
+    pass -> pass and test.assert_equal(Str.contains(imsg, `Three-Layer`), True, `info contains Three-Layer`)
+    
+    let r_comp -> Driver.run_args_local([`completion`, `bash`], 0, 2, `completion`)
+    pass -> pass and test.assert_equal(r_comp[`code`], 0, `completion exit 0`)
+    let cmsg -> Str.to_string(r_comp[`message`])
+    pass -> pass and test.assert_equal(Str.contains(cmsg, `_zen_completions()`), True, `completion contains function`)
+    pass -> pass and test.assert_equal(Str.contains(cmsg, `complete -F _zen_completions zen`), True, `completion complete command`)
+    
+    <- pass
+}
+
+function test_ast_and_disasm_tools() {
+    let r_ast -> Driver.run_args_local([`ast`, `tests/hello.zl`], 0, 2, `ast`)
+    let pass -> test.assert_equal(r_ast[`code`], 0, `ast exit 0`)
+    let amsg -> Str.to_string(r_ast[`message`])
+    pass -> pass and test.assert_equal(Str.contains(amsg, `Abstract Syntax Tree`), True, `ast header`)
+    pass -> pass and test.assert_equal(Str.contains(amsg, `Function`), True, `ast contains Function`)
+    
+    let r_disasm -> Driver.run_args_local([`disasm`, `tests/hello.zl`], 0, 2, `disasm`)
+    pass -> pass and test.assert_equal(r_disasm[`code`], 0, `disasm exit 0`)
+    let dmsg -> Str.to_string(r_disasm[`message`])
+    pass -> pass and test.assert_equal(Str.contains(dmsg, `Bytecode Disassembly`), True, `disasm header`)
+    pass -> pass and test.assert_equal(Str.contains(dmsg, `Constants Pool`), True, `disasm constants`)
+    
+    <- pass
+}
+
+function test_typo_suggestions() {
+    let r_buid -> Driver.run_args_local([`buid`], 0, 1, `buid`)
+    let pass -> test.assert_equal(r_buid[`code`], 1, `buid exit 1`)
+    let msg1 -> Str.to_string(r_buid[`message`])
+    pass -> pass and test.assert_equal(Str.contains(msg1, `Did you mean 'build'?`), True, `suggest build`)
+    
+    let r_bundel -> Driver.run_args_local([`bundel`], 0, 1, `bundel`)
+    let msg2 -> Str.to_string(r_bundel[`message`])
+    pass -> pass and test.assert_equal(Str.contains(msg2, `Did you mean 'bundle'?`), True, `suggest bundle`)
+    
+    let sug_dis -> Extensions.get_command_suggestion(`disas`)
+    pass -> pass and test.assert_equal(sug_dis, `disasm`, `suggest disasm`)
+    
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Driver.usage_and_help`, `fn` -> test_usage_and_help},
+        {`name` -> `Driver.info_and_completion`, `fn` -> test_info_and_completion},
+        {`name` -> `Driver.ast_and_disasm_tools`, `fn` -> test_ast_and_disasm_tools},
+        {`name` -> `Extensions.typo_suggestions`, `fn` -> test_typo_suggestions}
+    ]
+    <- test.run_suite(`Modern CLI UX & Extensions`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

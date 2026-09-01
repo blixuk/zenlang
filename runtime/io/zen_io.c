@@ -353,11 +353,6 @@ ZenValue ZenIO_open(ZenValue path_val, ZenValue mode_val) {
 
 static ZenFileHandle* zen_file_handle_from_ptr(void* self) {
     if (!self) return NULL;
-    /* Generated code may pass a ZenValue* (boxed handle) or raw ZenFileHandle*. */
-    ZenValue* as_val = (ZenValue*)self;
-    if (as_val->type == ZEN_OBJECT && as_val->as.object) {
-        return (ZenFileHandle*)as_val->as.object;
-    }
     return (ZenFileHandle*)self;
 }
 

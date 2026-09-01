@@ -6,6 +6,7 @@ A practical tutorial for writing Zenlang programs: how the language works, the f
 |----------|------|
 | **This guide** | Tutorial + patterns (start here) |
 | [book/README.md](book/README.md) | **The Zen of Programming** (the complete official book) |
+| [REPL.zm](REPL.zm) | **Interactive Stateful REPL** (`zen repl` live shell guide) |
 | [Style_Guide.md](Style_Guide.md) | **Zenlang Style Guide** (syntax standards & conventions) |
 | [Playground.md](Playground.md) | **Interactive Playground** (live code lab & dual runner) |
 | [FileManager.md](FileManager.md) | **Terminal File Manager** (`zenfm` split-pane explorer) |

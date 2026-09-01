@@ -48,7 +48,7 @@ Owned by documentation maintainers. This is the source of truth for "what the pr
 - Style_Guide.md / Style_Guide.zm — Canonical syntax standards and formatting guidelines
 - Zenlang Tooling.md / Zenlang_Tooling.zm — Compiler CLI, zendoc, zenmark, zenfmt, and zenlsp
 - Zen Manifesto.md, Zenlang Explained.md (§7 modules/reflect), Zenlang.md — philosophy and deeper reference
-- Standard_Library_Reference.md (includes `zen.reflect`, `zen.plugins`, `zen.ui.table`, `zen.ui.spinner`, built-in `module`), Playground.md, FileManager.md, Formatter.md, Zenlang_Documentation_Suite.md
+- Standard_Library_Reference.md (includes `zen.reflect`, `zen.plugins`, `zen.ui.table`, `zen.ui.spinner`, built-in `module`), REPL.zm / REPL.md, Playground.md, FileManager.md, Formatter.md, Zenlang_Documentation_Suite.md
 - book/: *The Zen of Programming* official book — `doc/book/README.md` & `doc/book/AGENTS.md`
 - Roadmap.md, plan.md, ideas.md
 - Specification/: Formal spec sources (*.zm), build.sh (`tools/build_spec.zl`), generated Zenlang.pdf & Zenlang.html, ZSP.md, Zen_Data.md, and Zen_Mark.md.

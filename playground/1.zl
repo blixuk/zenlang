@@ -1,5 +1,22 @@
 
 from zen.io use writeln
 
-writeln(`Hello`) 
-writeln(`World`)
+function main {
+    writeln(`HELLO WORLD`)
+
+    let value: Integer -> calc.mul(2, 4)
+
+    writeln(`VALUE: ` + value)
+
+    <- value
+}
+
+scope calc {
+
+    function add (a: Integer, b: Integer) : Integer {
+        <- a + b
+    }
+
+    function mul (a, b) <- a * b
+
+}

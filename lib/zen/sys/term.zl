@@ -166,9 +166,9 @@ function is_tty() {
  Does not add a newline.
 !/
 function style(fg, bg, text) {
-    color(fg, bg)
-    write(text)
-    reset()
+    __builtin_term.color(fg, bg)
+    __builtin_output.write(text)
+    __builtin_term.reset()
 }
 
 /!

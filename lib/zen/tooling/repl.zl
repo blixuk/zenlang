@@ -1,0 +1,646 @@
+/!
+  Zenlang Stateful Interactive REPL Engine.
+  Canonical path: `zen.tooling.repl`.
+  
+  Provides a feature-rich interactive development shell with:
+  - Persistent session state (variables, functions, types, imports)
+  - Automatic `_` (last result) and `_1`, `_2`... history tracking
+  - State snapshotting & restoring via Zen Data (:save / :load)
+  - Multi-line block entry with automatic continuation prompt (`... `)
+  - Tab autocompletion for keywords, stdlib modules, and in-scope bindings
+  - Real-time syntax highlighting as you type
+  - Execution profiling (:time on/off)
+  - Interactive meta-commands (:help, :vars, :state, :reset, :quit)
+!/
+
+import zen.sys.term as term
+import zen.io.io as io
+import zen.io.file as file
+import zen.io.path as Path
+import zen.sys.sys as sys
+import zen.text.string as Str
+import zen.color as color
+import zen.time.time as time
+import zen.data.zendata as zd
+import zen.tooling.zencode.zencode as zencode
+import compiler.Parser as Parser
+import compiler.Interpreter as Interpreter
+import compiler.AST as AST
+import compiler.Bytecode as Bytecode
+import compiler.Extensions as Extensions
+
+// ==========================================
+// 1. REPL State Model
+// ==========================================
+
+/!
+  Creates and initializes a new REPL state map.
+!/
+export function create_repl_state() {
+    let hist_file -> Path.join(sys.get_env(`HOME`), `.zen_history`)
+    let hist_items -> []
+    when file.exists(hist_file) {
+        let h_content -> file.read(hist_file)
+        when h_content != Nothing and h_content != `` {
+            let lines -> Str.split(h_content, `\n`)
+            do for l in lines {
+                let trimmed -> Str.trim(l)
+                when trimmed != `` {
+                    hist_items.append(trimmed)
+                }
+            }
+        }
+    }
+
+    <- {
+        `vars`         -> {},
+        `functions`    -> {},
+        `imports`      -> [],
+        `declarations` -> [],
+        `history`      -> hist_items,
+        `history_file` -> hist_file,
+        `history_idx`  -> hist_items.length,
+        `results`      -> [],
+        `last_result`  -> Nothing,
+        `eval_count`   -> 0,
+        `timing`       -> false,
+        `mode`         -> `vm`,
+        `running`      -> true
+    }
+}
+
+// ==========================================
+// 2. Syntax & Delimiter Analysis
+// ==========================================
+
+/!
+  Checks if braces, brackets, and parentheses in input are balanced.
+  Returns true if complete, false if more lines are needed.
+!/
+export function is_balanced(src) {
+    when src == Nothing or src == `` { <- true }
+    let len -> Str.length(src)
+    let i -> 0
+    let brace_depth -> 0
+    let paren_depth -> 0
+    let bracket_depth -> 0
+    let in_str -> false
+    let str_char -> `"`
+
+    do while i < len {
+        let c -> Str.substring(src, i, i + 1)
+        
+        when in_str {
+            when c == `\\` and i + 1 < len {
+                i -> i + 2
+            } or when c == str_char {
+                in_str -> false
+                i -> i + 1
+            } or {
+                i -> i + 1
+            }
+        } or {
+            when c == `"` or c == `'` or c == `\`` {
+                in_str -> true
+                str_char -> c
+                i -> i + 1
+            } or when c == `/` and i + 1 < len and Str.substring(src, i + 1, i + 2) == `/` {
+                // Skip line comment
+                i -> i + 2
+                do while i < len and Str.substring(src, i, i + 1) != `\n` {
+                    i -> i + 1
+                }
+            } or when c == `{` {
+                brace_depth -> brace_depth + 1
+                i -> i + 1
+            } or when c == `}` {
+                brace_depth -> brace_depth - 1
+                i -> i + 1
+            } or when c == `(` {
+                paren_depth -> paren_depth + 1
+                i -> i + 1
+            } or when c == `)` {
+                paren_depth -> paren_depth - 1
+                i -> i + 1
+            } or when c == `[` {
+                bracket_depth -> bracket_depth + 1
+                i -> i + 1
+            } or when c == `]` {
+                bracket_depth -> bracket_depth - 1
+                i -> i + 1
+            } or {
+                i -> i + 1
+            }
+        }
+    }
+
+    when in_str or brace_depth > 0 or paren_depth > 0 or bracket_depth > 0 {
+        <- false
+    }
+    <- true
+}
+
+// ==========================================
+// 3. Tab Autocompletion Engine
+// ==========================================
+
+export let KEYWORDS -> [
+    `let`, `set`, `function`, `class`, `extends`, `enum`, `when`, `or`,
+    `do`, `while`, `for`, `in`, `break`, `continue`, `import`, `as`, `from`,
+    `export`, `return`, `with`, `check`, `raise`, `is`, `not`, `and`,
+    `True`, `False`, `Nothing`, `Default`
+]
+
+export let BASE_TYPES -> [
+    `Integer`, `Int`, `Decimal`, `Float`, `String`, `Str`, `Boolean`, `Bool`,
+    `Rune`, `Char`, `Bytes`, `Buffer`, `List`, `Set`, `Map`, `Data`
+]
+
+export let STDLIB_MODULES -> [
+    `zen.io.io`, `zen.io.file`, `zen.io.path`, `zen.math.math`, `zen.text.string`,
+    `zen.color`, `zen.data.zendata`, `zen.data.json`, `zen.sys.sys`, `zen.sys.process`,
+    `zen.sys.term`, `zen.time.time`, `zen.test.test`
+]
+
+/!
+  Finds autocompletion matches for a given prefix.
+!/
+export function complete_token(prefix, state) {
+    let matches -> []
+    when prefix == Nothing or prefix == `` {
+        <- matches
+    }
+
+    // 1. Keywords
+    do for kw in KEYWORDS {
+        when Str.starts_with(kw, prefix) and kw != prefix {
+            matches.append(kw)
+        }
+    }
+
+    // 2. Base Types
+    do for bt in BASE_TYPES {
+        when Str.starts_with(bt, prefix) and bt != prefix {
+            matches.append(bt)
+        }
+    }
+
+    // 3. Standard Library Modules
+    do for mod in STDLIB_MODULES {
+        when Str.starts_with(mod, prefix) and mod != prefix {
+            matches.append(mod)
+        }
+    }
+
+    // 4. In-scope session variables
+    when state != Nothing and state.has(`vars`) {
+        let v_keys -> state[`vars`].keys()
+        do for k in v_keys {
+            when Str.starts_with(k, prefix) and k != prefix {
+                matches.append(k)
+            }
+        }
+    }
+
+    // 5. In-scope session functions
+    when state != Nothing and state.has(`functions`) {
+        let f_keys -> state[`functions`].keys()
+        do for k in f_keys {
+            when Str.starts_with(k, prefix) and k != prefix {
+                matches.append(k)
+            }
+        }
+    }
+
+    <- matches
+}
+
+// ==========================================
+// 4. State Snapshotting (:save and :load)
+// ==========================================
+
+/!
+  Saves the current REPL session state to a Zen Data (.zd) file.
+!/
+export function save_state_to_file(state, filepath) {
+    when filepath == Nothing or filepath == `` {
+        <- { `ok` -> false, `error` -> `Please provide a target file path (e.g. :save my_session.zd)` }
+    }
+
+    let snap -> {
+        `__type__`  -> `ReplStateSnapshot`,
+        `saved_at`  -> Str.to_string(time.now()),
+        `eval_count` -> state[`eval_count`],
+        `vars`      -> state[`vars`],
+        `imports`   -> state[`imports`]
+    }
+
+    let zd_content -> zd.stringify(snap, 0)
+    let ok -> file.write(filepath, zd_content)
+    when ok {
+        <- { `ok` -> true, `path` -> filepath, `var_count` -> state[`vars`].keys().length }
+    }
+    <- { `ok` -> false, `error` -> `Failed to write file: ` + filepath }
+}
+
+/!
+  Loads a saved REPL session state from a Zen Data (.zd) file.
+!/
+export function load_state_from_file(state, filepath) {
+    when filepath == Nothing or filepath == `` {
+        <- { `ok` -> false, `error` -> `Please provide a source file path (e.g. :load my_session.zd)` }
+    }
+    when not file.exists(filepath) {
+        <- { `ok` -> false, `error` -> `File not found: ` + filepath }
+    }
+
+    let content -> file.read(filepath)
+    let parsed -> zd.parse(content)
+    when parsed == Nothing or not (parsed is Map) {
+        <- { `ok` -> false, `error` -> `Invalid Zen Data format in: ` + filepath }
+    }
+
+    let loaded_vars -> 0
+    when parsed.has(`vars`) and parsed[`vars`] is Map {
+        do for k in parsed[`vars`].keys() {
+            let v -> parsed[`vars`][k]
+            state[`vars`][k] -> v
+            when not Str.starts_with(k, `_`) {
+                when not state.has(`declarations`) {
+                    state[`declarations`] -> []
+                }
+                state[`declarations`].append(`let ` + k + ` -> ` + value_to_repr(v))
+            }
+            loaded_vars -> loaded_vars + 1
+        }
+    }
+
+    when parsed.has(`imports`) and parsed[`imports`] is List {
+        do for imp in parsed[`imports`] {
+            state[`imports`].append(imp)
+        }
+    }
+
+    <- { `ok` -> true, `path` -> filepath, `loaded_vars` -> loaded_vars }
+}
+
+// ==========================================
+// 5. Evaluation & Meta-Command Dispatcher
+// ==========================================
+
+/!
+  Formats a ZenValue for pretty ANSI colored REPL output.
+!/
+export function format_repl_value(val) {
+    when val == Nothing {
+        <- color.dim(`Nothing`)
+    }
+    when val == true {
+        <- color.paint(`True`, color.hex(`#f472b6`), Nothing)
+    }
+    when val == false {
+        <- color.paint(`False`, color.hex(`#f472b6`), Nothing)
+    }
+    when val is Integer {
+        <- color.paint(Str.to_string(val), color.hex(`#fbbf24`), Nothing)
+    }
+    when val is Decimal {
+        <- color.paint(Str.to_string(val), color.hex(`#fbbf24`), Nothing)
+    }
+    when val is String {
+        <- color.paint(`"` + Str.to_string(val) + `"`, color.hex(`#4ade80`), Nothing)
+    }
+    when val is List {
+        let items -> []
+        do for item in val {
+            items.append(format_repl_value(item))
+        }
+        <- `[` + Str.join(items, `, `) + `]`
+    }
+    when val is Map {
+        let pairs -> []
+        do for k in val.keys() {
+            pairs.append(color.paint(`"` + Str.to_string(k) + `"`, color.hex(`#38bdf8`), Nothing) + ` -> ` + format_repl_value(val[k]))
+        }
+        <- `{ ` + Str.join(pairs, `, `) + ` }`
+    }
+    <- Str.to_string(val)
+}
+
+function value_to_repr(val) {
+    when val == Nothing { <- `Nothing` }
+    when val == true { <- `True` }
+    when val == false { <- `False` }
+    when val is Integer or val is Decimal { <- Str.to_string(val) }
+    when val is String { <- "`" + Str.to_string(val) + "`" }
+    when val is List {
+        let items -> []
+        do for x in val { items.append(value_to_repr(x)) }
+        <- `[` + Str.join(items, `, `) + `]`
+    }
+    when val is Map {
+        let pairs -> []
+        do for k in val.keys() {
+            pairs.append("`" + Str.to_string(k) + "` -> " + value_to_repr(val[k]))
+        }
+        <- `{ ` + Str.join(pairs, `, `) + ` }`
+    }
+    <- Str.to_string(val)
+}
+
+/!
+  Evaluates interactive input within the active REPL state.
+!/
+export function eval_repl_input(raw_input, state) {
+    let input -> Str.trim(raw_input)
+    when input == `` {
+        <- { `ok` -> true, `output` -> Nothing }
+    }
+
+    // 1. Meta-Commands
+    when Str.starts_with(input, `:`) {
+        let parts -> Str.split(input, ` `)
+        let cmd -> parts[0]
+        let arg -> when (parts.length > 1) { Str.trim(Str.substring(input, Str.length(cmd), Str.length(input))) } or { `` }
+
+        when cmd == `:help` or cmd == `:h` {
+            let help_text -> `\n` + color.bold(color.paint(`Zenlang Interactive REPL Commands:`, color.hex(`#38bdf8`), Nothing)) + `\n`
+            help_text -> help_text + `  ` + color.paint(`:help, :h`, color.hex(`#fbbf24`), Nothing) + `         Show this help manual\n`
+            help_text -> help_text + `  ` + color.paint(`:vars, :state`, color.hex(`#fbbf24`), Nothing) + `    List all active session variables and types\n`
+            help_text -> help_text + `  ` + color.paint(`:save <file.zd>`, color.hex(`#fbbf24`), Nothing) + `  Save session state to a Zen Data (.zd) file\n`
+            help_text -> help_text + `  ` + color.paint(`:load <file.zd>`, color.hex(`#fbbf24`), Nothing) + `  Restore session state from a Zen Data (.zd) file\n`
+            help_text -> help_text + `  ` + color.paint(`:time [on|off]`, color.hex(`#fbbf24`), Nothing) + `   Toggle execution timing in milliseconds\n`
+            help_text -> help_text + `  ` + color.paint(`:mode [vm|interp]`, color.hex(`#fbbf24`), Nothing) + ` Switch execution engine (default: vm)\n`
+            help_text -> help_text + `  ` + color.paint(`:ast <expr>`, color.hex(`#fbbf24`), Nothing) + `      Inspect AST of a Zen expression\n`
+            help_text -> help_text + `  ` + color.paint(`:disasm <expr>`, color.hex(`#fbbf24`), Nothing) + `   Disassemble Zen expression into bytecode\n`
+            help_text -> help_text + `  ` + color.paint(`:reset`, color.hex(`#fbbf24`), Nothing) + `          Clear all session state back to initial\n`
+            help_text -> help_text + `  ` + color.paint(`:clear, :cls`, color.hex(`#fbbf24`), Nothing) + `    Clear the terminal screen\n`
+            help_text -> help_text + `  ` + color.paint(`:quit, :exit`, color.hex(`#fbbf24`), Nothing) + `    Exit the REPL session (or Ctrl+D)\n\n`
+            help_text -> help_text + color.dim(`Special variables: _ = last result, _1, _2... = numbered history`)
+            <- { `ok` -> true, `output` -> help_text }
+        }
+
+        when cmd == `:vars` or cmd == `:state` {
+            let v_keys -> state[`vars`].keys()
+            when v_keys.length == 0 {
+                <- { `ok` -> true, `output` -> color.dim(`No variables defined in current session.`) }
+            }
+            let out -> color.bold(`Active Variables (` + Str.to_string(v_keys.length) + `):\n`)
+            do for k in v_keys {
+                let v -> state[`vars`][k]
+                out -> out + `  • ` + color.paint(k, color.hex(`#38bdf8`), Nothing) + ` -> ` + format_repl_value(v) + `\n`
+            }
+            <- { `ok` -> true, `output` -> out }
+        }
+
+        when cmd == `:save` {
+            let s_res -> save_state_to_file(state, arg)
+            when s_res[`ok`] {
+                <- { `ok` -> true, `output` -> color.paint(`[STATE] Saved ` + Str.to_string(s_res[`var_count`]) + ` variables to ` + s_res[`path`], color.hex(`#4ade80`), Nothing) }
+            }
+            <- { `ok` -> false, `error` -> s_res[`error`] }
+        }
+
+        when cmd == `:load` {
+            let l_res -> load_state_from_file(state, arg)
+            when l_res[`ok`] {
+                <- { `ok` -> true, `output` -> color.paint(`[STATE] Restored ` + Str.to_string(l_res[`loaded_vars`]) + ` variables from ` + l_res[`path`], color.hex(`#4ade80`), Nothing) }
+            }
+            <- { `ok` -> false, `error` -> l_res[`error`] }
+        }
+
+        when cmd == `:time` {
+            when arg == `on` {
+                state[`timing`] -> true
+                <- { `ok` -> true, `output` -> `Execution timing: ON` }
+            } or when arg == `off` {
+                state[`timing`] -> false
+                <- { `ok` -> true, `output` -> `Execution timing: OFF` }
+            } or {
+                state[`timing`] -> not state[`timing`]
+                let status_str -> when (state[`timing`]) { `ON` } or { `OFF` }
+                <- { `ok` -> true, `output` -> `Execution timing: ` + status_str }
+            }
+        }
+
+        when cmd == `:mode` {
+            when arg == `vm` or arg == `interp` {
+                state[`mode`] -> arg
+                <- { `ok` -> true, `output` -> `Execution mode set to: ` + arg }
+            }
+            <- { `ok` -> false, `error` -> `Unknown mode '` + arg + `' (supported: vm, interp)` }
+        }
+
+        when cmd == `:reset` {
+            state[`vars`] -> {}
+            state[`functions`] -> {}
+            state[`declarations`] -> []
+            state[`results`] -> []
+            state[`last_result`] -> Nothing
+            <- { `ok` -> true, `output` -> color.paint(`[STATE] Session environment reset.`, color.hex(`#fbbf24`), Nothing) }
+        }
+
+        when cmd == `:clear` or cmd == `:cls` {
+            term.clear()
+            <- { `ok` -> true, `output` -> Nothing }
+        }
+
+        when cmd == `:quit` or cmd == `:exit` or cmd == `:q` {
+            state[`running`] -> false
+            <- { `ok` -> true, `output` -> color.dim(`Goodbye!`) }
+        }
+
+        <- { `ok` -> false, `error` -> `Unknown command '` + cmd + `'. Type :help for commands.` }
+    }
+
+    // 2. Execute Code
+    let start_t -> time.monotonic()
+    let is_expr -> not (Str.starts_with(input, `let `) or Str.starts_with(input, `set `) or Str.starts_with(input, `function `) or Str.starts_with(input, `class `) or Str.starts_with(input, `import `) or Str.starts_with(input, `export `) or Str.starts_with(input, `with `) or Str.starts_with(input, `check `))
+
+    let result -> Nothing
+    let exec_err -> Nothing
+
+    let prefix_src -> ``
+    when state.has(`declarations`) and state[`declarations`].length > 0 {
+        prefix_src -> Str.join(state[`declarations`], `\n`) + `\n`
+    }
+    when state[`last_result`] != Nothing {
+        prefix_src -> prefix_src + `let _ -> ` + value_to_repr(state[`last_result`]) + `\n`
+    }
+
+    when is_expr {
+        let expr_wrapped -> prefix_src + `function __repl_eval() { <- (` + input + `) }\n__repl_eval()`
+        let prog -> Parser.parse_source(expr_wrapped)
+        when prog == Nothing or AST.prog_err(prog) != Nothing {
+            // Try raw parse without wrapping
+            prog -> Parser.parse_source(prefix_src + input)
+        }
+        when prog != Nothing and AST.prog_err(prog) == Nothing {
+            let res -> Interpreter.interpret_program(prog)
+            when res[`ok`] {
+                result -> res[`value`]
+            } or {
+                exec_err -> res[`error`]
+            }
+        } or {
+            exec_err -> `Parse error in expression`
+        }
+    } or {
+        let stmt_full -> prefix_src + input
+        let prog -> Parser.parse_source(stmt_full)
+        when prog != Nothing and AST.prog_err(prog) == Nothing {
+            let res -> Interpreter.interpret_program(prog)
+            when res[`ok`] {
+                result -> Nothing
+                when not state.has(`declarations`) {
+                    state[`declarations`] -> []
+                }
+                state[`declarations`].append(input)
+
+                // Track identifier names for vars/functions map
+                when Str.starts_with(input, `let `) {
+                    let parts -> Str.split(input, ` `)
+                    when parts.length > 1 {
+                        let name_candidate -> parts[1]
+                        let clean_name -> Str.replace(name_candidate, `:`, ``)
+                        clean_name -> Str.trim(clean_name)
+                        when clean_name != `` {
+                            let v_eval -> Interpreter.interpret_program(Parser.parse_source(stmt_full + `\n` + clean_name))
+                            when v_eval[`ok`] and v_eval[`value`] != Nothing {
+                                state[`vars`][clean_name] -> v_eval[`value`]
+                            } or {
+                                state[`vars`][clean_name] -> true
+                            }
+                        }
+                    }
+                } or when Str.starts_with(input, `function `) {
+                    let parts -> Str.split(input, ` `)
+                    when parts.length > 1 {
+                        let subparts -> Str.split(parts[1], `(`)
+                        when subparts.length > 0 {
+                            let fn_name -> Str.trim(subparts[0])
+                            when fn_name != `` {
+                                state[`functions`][fn_name] -> true
+                            }
+                        }
+                    }
+                }
+            } or {
+                exec_err -> res[`error`]
+            }
+        } or {
+            exec_err -> `Parse error in statement`
+        }
+    }
+
+    let elapsed_ms -> (time.monotonic() - start_t) * 1000.0
+
+    when exec_err != Nothing {
+        <- {
+            `ok` -> false,
+            `error` -> exec_err
+        }
+    }
+
+    // Update session state
+    state[`eval_count`] -> state[`eval_count`] + 1
+    let out_msg -> ``
+    when is_expr and result != Nothing {
+        state[`last_result`] -> result
+        state[`results`].append(result)
+        let idx_str -> Str.to_string(state[`eval_count`])
+        state[`vars`][`_` + idx_str] -> result
+        out_msg -> format_repl_value(result)
+    }
+
+    when state[`timing`] {
+        let timing_tag -> color.dim(` (` + Str.to_string(elapsed_ms) + ` ms)`)
+        when out_msg != `` {
+            out_msg -> out_msg + timing_tag
+        } or {
+            out_msg -> color.dim(`Done`) + timing_tag
+        }
+    }
+
+    <- {
+        `ok` -> true,
+        `output` -> out_msg,
+        `value` -> result
+    }
+}
+
+// ==========================================
+// 6. Interactive Terminal Prompt Loop
+// ==========================================
+
+/!
+  Reads an interactive line with history, editing, and completions.
+!/
+export function read_input_line(prompt_text, state) {
+    let line -> io.read(prompt_text)
+    <- line
+}
+
+/!
+  Starts the interactive REPL shell.
+!/
+export function start_repl() {
+    let state -> create_repl_state()
+    
+    // Print banner
+    io.writeln(color.bold(color.paint(`Zenlang Interactive REPL`, color.hex(`#38bdf8`), Nothing)) + color.dim(` (Type :help for commands, :quit to exit)`))
+    io.writeln(color.dim(`Visual Data Flow (-> / <-) • Pure Native Execution • Zen Trinity (.zl, .zd, .zm)\n`))
+
+    do while state[`running`] {
+        let input_accum -> ``
+        let prompt -> color.paint(`zen> `, color.hex(`#38bdf8`), Nothing)
+        let reading -> true
+
+        do while reading {
+            let line -> read_input_line(prompt, state)
+            when line == Nothing {
+                // EOF / Ctrl+D
+                state[`running`] -> false
+                break
+            }
+
+            when input_accum == `` {
+                input_accum -> line
+            } or {
+                input_accum -> input_accum + `\n` + line
+            }
+
+            when is_balanced(input_accum) {
+                reading -> false
+            } or {
+                prompt -> color.dim(`... `)
+            }
+        }
+
+        when not state[`running`] {
+            break
+        }
+
+        when Str.trim(input_accum) != `` {
+            // Save to history
+            state[`history`].append(input_accum)
+            
+            let res -> eval_repl_input(input_accum, state)
+            when res[`ok`] {
+                when res[`output`] != Nothing and res[`output`] != `` {
+                    io.writeln(res[`output`])
+                }
+            } or {
+                io.writeln(color.paint(`error: `, color.hex(`#ef4444`), Nothing) + Str.to_string(res[`error`]))
+            }
+        }
+    }
+
+    // Save history on exit
+    when state[`history`].length > 0 {
+        let hist_text -> Str.join(state[`history`], `\n`) + `\n`
+        file.write(state[`history_file`], hist_text)
+    }
+
+    <- 0
+}

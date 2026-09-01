@@ -46,7 +46,7 @@ function print_usage() {
     io.writeln(`  doc [--html|--markdown] [outdir]   Generate Markdown and interactive HTML documentation`)
     io.writeln(`  pkg <install|add|remove|list|graph> Manage external dependencies and lockfile (zen.lock)`)
     io.writeln(`  graph [--html] [out_file]          Visualize dependency graph in terminal or interactive HTML`)
-    io.writeln(`  bump <patch|minor|major>           Bump semantic version in .zbuild and create Git tag`)
+    io.writeln(`  bump <patch|minor|major>           Bump semantic version in zen.pkg.zd and create Git tag`)
     io.writeln(`  publish                            Package release archive into build/<name>-<ver>.tar`)
     io.writeln(`  env                                Print compiler, runtime, and environment diagnostics`)
     io.writeln(``)
@@ -77,7 +77,7 @@ function print_env() {
     when proj[`ok`] == true {
         io.writeln(`Active Project:   ` + proj[`manifest`][`name`] + ` v` + proj[`manifest`][`version`] + ` (` + proj[`root`] + `)`)
     } or {
-        io.writeln(`Active Project:   None (not inside a .zbuild project directory)`)
+        io.writeln(`Active Project:   None (not inside a zen.pkg.zd project directory)`)
     }
     io.writeln(`C Compiler (gcc): ` + Str.to_string(process.available(`gcc`)))
     io.writeln(`C Compiler (clang): ` + Str.to_string(process.available(`clang`)))
@@ -86,7 +86,18 @@ function print_env() {
 }
 
 function main() {
-    let args -> sys.get_args()
+    let raw_args -> sys.get_args()
+    let args -> []
+    let ai -> 0
+    do while ai < raw_args.length {
+        let a -> raw_args[ai]
+        when ai == 1 and Str.ends_with(a, `.zl`) {
+            // skip script path when invoked as `zen <script.zl> <cmd>`
+        } or {
+            args.append(a)
+        }
+        ai -> ai + 1
+    }
     when args.length <= 1 {
         print_usage()
         <- 0

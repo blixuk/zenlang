@@ -1,0 +1,298 @@
+/!
+ Compiler Plugin & Extension Subsystem.
+ Allows compiler developers and users to build custom extensions
+ (code linters, AST inspectors, comment/TODO trackers, custom CLI tools)
+ while keeping the core compiler lean, fast, and modular.
+!/
+
+import compiler.AST as AST
+import compiler.Bytecode as Bytecode
+import compiler.Parser as Parser
+import zen.io.io as io
+import zen.text.string as Str
+
+// Global Plugin Registry State
+set PLUGINS -> {
+    `list` -> [],
+    `commands` -> {},
+    `issues` -> [],
+    `active` -> true
+}
+
+export function reset_plugins() {
+    PLUGINS[`list`] -> []
+    PLUGINS[`commands`] -> {}
+    PLUGINS[`issues`] -> []
+    PLUGINS[`active`] -> true
+    register_plugin(make_todo_tracker_plugin())
+    register_plugin(make_linter_plugin())
+    <- True
+}
+
+export function register_plugin(p) {
+    when p == Nothing {
+        <- False
+    }
+    let plist -> PLUGINS[`list`]
+    plist.append(p)
+    
+    // Register custom CLI commands provided by the plugin
+    when p.has(`commands`) and p[`commands`] != Nothing {
+        let cmds -> p[`commands`]
+        let keys -> cmds.keys()
+        let n -> keys.length
+        let i -> 0
+        do while i < n {
+            let k -> keys[i]
+            let fn_handler -> cmds[k]
+            PLUGINS[`commands`][k] -> fn_handler
+            i -> i + 1
+        }
+    }
+    
+    // Call on_init if present
+    when p.has(`on_init`) and p[`on_init`] != Nothing {
+        let init_fn -> p[`on_init`]
+        init_fn(PLUGINS)
+    }
+    
+    <- True
+}
+
+export function get_registered_plugins() {
+    <- PLUGINS[`list`]
+}
+
+export function has_command(cmd) {
+    when cmd == `todo` {
+        <- True
+    }
+    <- PLUGINS[`commands`].has(cmd)
+}
+
+export function dispatch_command(cmd, args) {
+    when cmd == `todo` {
+        <- todo_cli_cmd(args)
+    }
+    when not PLUGINS[`commands`].has(cmd) {
+        <- Nothing
+    }
+    let fn_handler -> PLUGINS[`commands`][cmd]
+    <- fn_handler(args)
+}
+
+export function run_plugin_script(script_path, script_args) {
+    when not __builtin_file.exists(script_path) {
+        <- {`code` -> 1, `message` -> `plugin: script not found: ` + script_path}
+    }
+    let chunk -> Bytecode.read_bytecode_file(script_path)
+    when chunk == Nothing and Str.ends_with(script_path, `.zl`) {
+        let src -> __builtin_file.read(script_path)
+        let prog -> Parser.parse_source(src)
+        when prog == Nothing {
+            <- {`code` -> 1, `message` -> `plugin: parse error in ` + script_path}
+        }
+        chunk -> Bytecode.compile_program(prog)
+    }
+    when chunk == Nothing {
+        <- {`code` -> 1, `message` -> `plugin: failed to load ` + script_path}
+    }
+    let res -> Bytecode.eval_chunk(chunk, {})
+    <- {`code` -> 0, `message` -> `plugin script completed: ` + script_path}
+}
+
+export function report_issue(plugin_name, severity, message, origin_file, line, col) {
+    let issue -> {
+        `plugin` -> plugin_name,
+        `severity` -> severity, // `info`, `warning`, `error`
+        `message` -> message,
+        `file` -> origin_file,
+        `line` -> line,
+        `column` -> col
+    }
+    PLUGINS[`issues`].append(issue)
+    <- issue
+}
+
+export function get_issues() {
+    <- PLUGINS[`issues`]
+}
+
+export function clear_issues() {
+    PLUGINS[`issues`] -> []
+    <- True
+}
+
+// --- Lifecycle Hooks Dispatchers ---
+
+export function dispatch_on_ast(ast_prog, origin_file) {
+    when not PLUGINS[`active`] or ast_prog == Nothing {
+        <- ast_prog
+    }
+    todo_scan_ast(ast_prog, origin_file)
+    let plugins -> PLUGINS[`list`]
+    let n -> plugins.length
+    let i -> 0
+    do while i < n {
+        let p -> plugins[i]
+        when p.has(`on_ast`) and p[`on_ast`] != Nothing {
+            let hook_fn -> p[`on_ast`]
+            hook_fn(ast_prog, origin_file)
+        }
+        i -> i + 1
+    }
+    <- ast_prog
+}
+
+export function dispatch_on_check(check_result, ast_prog) {
+    when not PLUGINS[`active`] or check_result == Nothing {
+        <- check_result
+    }
+    linter_check_ast(check_result, ast_prog)
+    let plugins -> PLUGINS[`list`]
+    let n -> plugins.length
+    let i -> 0
+    do while i < n {
+        let p -> plugins[i]
+        when p.has(`on_check`) and p[`on_check`] != Nothing {
+            let hook_fn -> p[`on_check`]
+            hook_fn(check_result, ast_prog)
+        }
+        i -> i + 1
+    }
+    <- check_result
+}
+
+export function dispatch_on_codegen(c_code, ast_prog) {
+    when not PLUGINS[`active`] or c_code == Nothing {
+        <- c_code
+    }
+    let plugins -> PLUGINS[`list`]
+    let n -> plugins.length
+    let i -> 0
+    let res_code -> c_code
+    do while i < n {
+        let p -> plugins[i]
+        when p.has(`on_codegen`) and p[`on_codegen`] != Nothing {
+            let hook_fn -> p[`on_codegen`]
+            let mod_code -> hook_fn(res_code, ast_prog)
+            when mod_code != Nothing and mod_code != `` {
+                res_code -> mod_code
+            }
+        }
+        i -> i + 1
+    }
+    <- res_code
+}
+
+// --- Built-in Standard Extensions / Examples ---
+
+function todo_scan_node(node, origin_file) {
+    when node == Nothing {
+        <- Nothing
+    }
+    let k -> AST.ast_kind(node)
+    when k == AST.K_LET {
+        let vname -> Str.to_string(AST.let_name(node))
+        when Str.starts_with(vname, `TODO_`) or Str.starts_with(vname, `FIXME_`) {
+            report_issue(`TodoTracker`, `info`, `Found tag in identifier: ` + vname, origin_file, AST.ast_line(node), AST.ast_col(node))
+        }
+    }
+    when k == AST.K_FUNCTION {
+        let fbody -> AST.fn_body(node)
+        when fbody != Nothing {
+            todo_scan_node(fbody, origin_file)
+        }
+    }
+    when k == AST.K_BLOCK {
+        let bstmts -> AST.block_stmts(node)
+        when bstmts != Nothing {
+            let bn -> bstmts.length
+            let bi -> 0
+            do while bi < bn {
+                todo_scan_node(bstmts[bi], origin_file)
+                bi -> bi + 1
+            }
+        }
+    }
+    <- Nothing
+}
+
+export function todo_scan_ast(ast_prog, origin_file) {
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(ast_prog))
+    when stmts == Nothing {
+        <- Nothing
+    }
+    let n -> stmts.length
+    let i -> 0
+    do while i < n {
+        todo_scan_node(stmts[i], origin_file)
+        i -> i + 1
+    }
+    <- Nothing
+}
+
+export function todo_cli_cmd(args) {
+    let issues -> get_issues()
+    let count -> issues.length
+    when count == 0 {
+        <- { `code` -> 0, `message` -> `No TODO/FIXME tags found.` }
+    }
+    let out -> `Found ` + Str.to_string(count) + ` tag(s):\n`
+    let i -> 0
+    do while i < count {
+        let it -> issues[i]
+        out -> out + `  [` + it[`severity`] + `] ` + it[`file`] + `:` + Str.to_string(it[`line`]) + ` - ` + it[`message`] + `\n`
+        i -> i + 1
+    }
+    <- { `code` -> 0, `message` -> out }
+}
+
+export function make_todo_tracker_plugin() {
+    <- {
+        `name` -> `TodoTracker`,
+        `version` -> `1.0.0`,
+        `description` -> `Scans codebase for TODO, FIXME, BUG annotations and identifiers`
+    }
+}
+
+export function linter_check_ast(check_result, ast_prog) {
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(ast_prog))
+    when stmts == Nothing {
+        <- Nothing
+    }
+    let n -> stmts.length
+    let i -> 0
+    do while i < n {
+        let s -> stmts[i]
+        when s != Nothing and AST.ast_kind(s) == AST.K_FUNCTION {
+            let fname -> Str.to_string(AST.fn_name(s))
+            let line -> AST.ast_line(s)
+            let col -> AST.ast_col(s)
+            // Check if function name contains uppercase characters
+            let len -> Str.length(fname)
+            let fi -> 0
+            let has_upper -> False
+            do while fi < len {
+                let ch -> Str.at(fname, fi)
+                when Str.index_of(`ABCDEFGHIJKLMNOPQRSTUVWXYZ`, ch) != -1 {
+                    has_upper -> True
+                }
+                fi -> fi + 1
+            }
+            when has_upper and fname != `main` {
+                report_issue(`Linter`, `warning`, `Function '` + fname + `' should use snake_case`, `<file>`, line, col)
+            }
+        }
+        i -> i + 1
+    }
+    <- Nothing
+}
+
+export function make_linter_plugin() {
+    <- {
+        `name` -> `Linter`,
+        `version` -> `1.0.0`,
+        `description` -> `Zenlang style and naming convention linter`
+    }
+}

@@ -56,9 +56,11 @@ echo "      ZEN LIBRARY TEST SUITE        "
 echo "===================================="
 echo
 
+ZEN="${ZEN:-$ROOT_DIR/bin/zen}"
+
 for test_file in "${TEST_FILES[@]}"; do
   echo ">>> $test_file"
-  python3 bootstrap/Zen.py "$test_file"
+  $ZEN "$test_file"
   echo
 done
 

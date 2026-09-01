@@ -1,16 +1,18 @@
 /!
   Manifest module for Zenlang project tooling.
-  Handles parsing and serialization of relaxed ZON (Zen Object Notation)
-  project manifests (.zbuild) and dependency lockfiles (zen.lock).
+  Handles parsing and serialization of Zen Data (zen.pkg.zd)
+  project manifests and dependency lockfiles (zen.lock.zd),
+  with fallback support for legacy JSON/.zbuild.
 !/
 
+import zen.data.zendata as zd
 import zen.data.json as json
 import zen.text.string as Str
 import zen.io.file as file
 
 /!
   Strips line comments (//), block comments (/* ... */),
-  and doc comments from source text to allow relaxed ZON/JSON.
+  and doc comments from source text.
 !/
 export function strip_comments(text) {
     when text == Nothing {
@@ -76,15 +78,22 @@ export function strip_comments(text) {
 }
 
 /!
-  Parses a .zbuild manifest string into a structured project map with defaults.
+  Parses a zen.pkg.zd (or .zbuild) manifest string into a structured project map.
 !/
 export function parse_manifest(text) {
     when text == Nothing or Str.trim(text) == `` {
         <- default_manifest(`unnamed`)
     }
-    let clean -> strip_comments(text)
-    let manifest_map -> json.parse(clean)
-    when manifest_map == Nothing {
+    // Try Zen Data parser first
+    let manifest_map -> zd.parse(text)
+    when manifest_map == Nothing or not (manifest_map is Map) or (not manifest_map.has(`name`) and not manifest_map.has(`version`) and not manifest_map.has(`type`) and not manifest_map.has(`dependencies`)) {
+        let clean -> strip_comments(text)
+        let j_map -> json.parse(clean)
+        when j_map != Nothing and (j_map is Map) {
+            manifest_map -> j_map
+        }
+    }
+    when manifest_map == Nothing or not (manifest_map is Map) {
         <- default_manifest(`unnamed`)
     }
 
@@ -194,26 +203,69 @@ export function default_manifest(name) {
 }
 
 /!
-  Serializes a manifest map into a formatted ZON/JSON string with header comment.
+  Serializes a manifest map into a formatted Zen Data (.zd) manifest string.
 !/
 export function stringify_manifest(m) {
     let out -> `// ==========================================================\n`
-    out -> out + `// Zenlang Project Build Manifest (.zbuild)\n`
-    out -> out + `// ==========================================================\n`
-    out -> out + json.stringify_pretty(m, 2) + `\n`
+    out -> out + `// Zenlang Package Manifest (zen.pkg.zd)\n`
+    out -> out + `// ==========================================================\n\n`
+    out -> out + `Package {\n`
+    out -> out + `    \`name\`         -> \`` + Str.to_string(m[`name`]) + `\`,\n`
+    out -> out + `    \`version\`      -> \`` + Str.to_string(m[`version`]) + `\`,\n`
+    out -> out + `    \`type\`         -> \`` + Str.to_string(m[`type`]) + `\`,\n`
+    out -> out + `    \`entry\`        -> \`` + Str.to_string(m[`entry`]) + `\`,\n`
+    out -> out + `    \`target\`       -> \`` + Str.to_string(m[`target`]) + `\`,\n`
+    out -> out + `    \`description\`  -> \`` + Str.to_string(m[`description`]) + `\`,\n`
+    when m.has(`author`) and m[`author`] != Nothing and Str.to_string(m[`author`]) != `` {
+        out -> out + `    \`author\`       -> \`` + Str.to_string(m[`author`]) + `\`,\n`
+    }
+    out -> out + `    \`license\`      -> \`` + Str.to_string(m[`license`]) + `\`,\n`
+    out -> out + `    \`c_flags\`      -> \`` + Str.to_string(m[`c_flags`]) + `\`,\n`
+    
+    // Dependencies
+    let deps -> m[`dependencies`]
+    when deps == Nothing or not (deps is Map) or deps.keys().length == 0 {
+        out -> out + `    \`dependencies\` -> {},\n`
+    } or {
+        out -> out + `    \`dependencies\` -> {\n`
+        do for k in deps.keys() {
+            out -> out + `        \`` + Str.to_string(k) + `\` -> \`` + Str.to_string(deps[k]) + `\`,\n`
+        }
+        out -> out + `    },\n`
+    }
+    
+    // Scripts
+    let sc -> m[`scripts`]
+    when sc == Nothing or not (sc is Map) or sc.keys().length == 0 {
+        out -> out + `    \`scripts\`      -> {}\n`
+    } or {
+        out -> out + `    \`scripts\`      -> {\n`
+        do for k in sc.keys() {
+            out -> out + `        \`` + Str.to_string(k) + `\` -> \`` + Str.to_string(sc[k]) + `\`,\n`
+        }
+        out -> out + `    }\n`
+    }
+    
+    out -> out + `}\n`
     <- out
 }
 
 /!
-  Parses a zen.lock lockfile string.
+  Parses a zen.lock.zd (or zen.lock) lockfile string.
 !/
 export function parse_lockfile(text) {
     when text == Nothing or Str.trim(text) == `` {
         <- { `version` -> `1.0`, `packages` -> {} }
     }
-    let clean -> strip_comments(text)
-    let lock -> json.parse(clean)
-    when lock == Nothing {
+    let lock -> zd.parse(text)
+    when lock == Nothing or not (lock is Map) or (not lock.has(`packages`) and not lock.has(`version`)) {
+        let clean -> strip_comments(text)
+        let j_lock -> json.parse(clean)
+        when j_lock != Nothing and (j_lock is Map) {
+            lock -> j_lock
+        }
+    }
+    when lock == Nothing or not (lock is Map) {
         <- { `version` -> `1.0`, `packages` -> {} }
     }
     when not lock.has(`packages`) {
@@ -226,11 +278,32 @@ export function parse_lockfile(text) {
 }
 
 /!
-  Serializes a lockfile map into formatted JSON.
+  Serializes a lockfile map into formatted Zen Data (.zd).
 !/
 export function stringify_lockfile(lock) {
-    let out -> `// Zenlang Dependency Lockfile (zen.lock)\n`
+    let out -> `// ==========================================================\n`
+    out -> out + `// Zenlang Dependency Lockfile (zen.lock.zd)\n`
     out -> out + `// Auto-generated by zen pkg. Do not edit manually.\n`
-    out -> out + json.stringify_pretty(lock, 2) + `\n`
+    out -> out + `// ==========================================================\n\n`
+    out -> out + `Lockfile {\n`
+    out -> out + `    \`version\`  -> \`` + Str.to_string(lock[`version`]) + `\`,\n`
+    let pkgs -> lock[`packages`]
+    when pkgs == Nothing or not (pkgs is Map) or pkgs.keys().length == 0 {
+        out -> out + `    \`packages\` -> {}\n`
+    } or {
+        out -> out + `    \`packages\` -> {\n`
+        do for pname in pkgs.keys() {
+            let pinfo -> pkgs[pname]
+            out -> out + `        \`` + Str.to_string(pname) + `\` -> {\n`
+            when pinfo is Map {
+                do for ik in pinfo.keys() {
+                    out -> out + `            \`` + Str.to_string(ik) + `\` -> \`` + Str.to_string(pinfo[ik]) + `\`,\n`
+                }
+            }
+            out -> out + `        },\n`
+        }
+        out -> out + `    }\n`
+    }
+    out -> out + `}\n`
     <- out
 }

@@ -29,8 +29,8 @@ Owned by the self-hosting effort.
 | 3 | Module graph | **Done (MVP)** — Resolver + DependencyGraph + GraphBuilder dual-path green (`test_module.zl`) |
 | 4 | Checker | **Done (MVP+)** — with/class/enum/lambda/is; dual-path green (`test_checker.zl` 11) |
 | 5 | Transpiler / C | **Done + classes/enums/lambdas/with** — multi-unit; inheritance; enum; closures; region push/pop |
-| 6 | Driver | **Done (MVP) + multi-file + multi-unit** — merge default; `--multi` one C TU/module + host; `build`/`run` |
-| 7 | Native + E2E | **Done + hybrid handoff** — self-rebuild; multi-unit + class; fixtures enum/closure/with; handoff |
+| 6 | Driver | **Done (MVP) + multi-file + multi-unit** — merge default; `--multi` one C TU/module + host; `build`/`run`/`bundle`/`plugin` |
+| 7 | Native + E2E | **Done + Standalone Native Host** — self-compilation loop green; pure native `bin/zen`; `.zbc` packaging & caching; compiler plugins |
 
 # Work Guidance
 
@@ -46,8 +46,9 @@ Owned by the self-hosting effort.
 - **with/region:** parse `WithStatement`; Codegen push/pop `ZenMemory_*` when resource is `ZEN_ARENA`; fixture `with_region.zl`.
 - Checker: with alias scope; class `self`; enumerator + `is`; lambdas — not full ownership yet.
 - Do not port bootstrap MIR/SMIR into selfhost unless PARITY reopens that track; grow Codegen + runtime instead.
-- **Endgame:** fully Zen host — **#1–#5 MVP done**; **Phases A, L, B, C, D, E1–E3 done (Host-1.0)**. Working toward **E4** (bootstrap drop) without expanding routing yet. Golden: `./scripts/zen test-golden`. Soak: `./scripts/zen ci-soak`. Self-rebuild of `zen.zl` stays `ZEN_SELFHOST_REBUILD=1`. Edit-loop: `ZEN_OPT=0 ./scripts/zen install-selfhost-fast`. Smoke reuses `bin/zen-selfhost` unless `ZEN_SMOKE_REBUILD=1`. Bootstrap `-g` links cached runtime `.o` + `-I runtime/`.
-- Production today: `./scripts/zen install` installs hybrid handoff; selfhost CLI: `compile` / `build` / `run`/`-g` / `interpret` / `test`/`--test` / `check` / `deps`. `lsp` is `tools/zenlsp.zl` (hybrid `./bin/zen lsp`), not linked into zen-selfhost.
+- **Endgame:** fully Zen host — **#1–#5 MVP done**; **Phases A, L, B, C, D, E1–E3 done (Host-1.0)**; **Standalone Pure Native Host (E4)** achieved. Golden: `./scripts/zen test-golden`. Soak: `./scripts/zen ci-soak`. Self-rebuild of `zen.zl` stays `ZEN_SELFHOST_REBUILD=1`. Edit-loop: `ZEN_OPT=0 ./scripts/zen install-selfhost-fast`. Smoke reuses `bin/zen-selfhost` unless `ZEN_SMOKE_REBUILD=1`. Bootstrap `-g` links cached runtime `.o` + `-I runtime/`.
+- **Modern CLI UX & Extensions:** Modernized CLI with ANSI colors, contextual help (`zen <cmd> --help`), fuzzy typo suggestions ("Did you mean 'build'?"), bash tab-completion generator (`zen completion bash`), AST hierarchy visualizer (`zen ast`), and bytecode disassembler (`zen disasm`). Architectural split between baked-in native extensions (`compiler/Extensions.zl`) and dynamic script plugins (`compiler/Plugin.zl`).
+- Production today: `./scripts/zen install` installs standalone native `bin/zen`; CLI: `build` / `bundle` / `run` / `compile` / `check` / `deps` / `disasm` / `ast` / `info` / `completion` / `test` / `plugin` / `todo` / `lint` / `daemon`. `lsp` is `tools/zenlsp.zl` (hybrid `./bin/zen lsp`).
 - Edit-loop native rebuild: `ZEN_OPT=0 ./scripts/zen install-selfhost-fast` (or `ZEN_CC=tcc`). Release install stays `-O2`.
 - Parser: **exact** token `is_kind` (`TokenType.NAME` only); never ends_with/contains (NOT vs NOTHING).
 - Parser ops: match operator **kinds**, not `is_val(\`-\`)` (STRING `"-"` false-matched unary minus).
@@ -59,7 +60,7 @@ Owned by the self-hosting effort.
 
 ```bash
 export ZEN_PATH=$PWD:$PWD/selfhost:$PWD/lib
-for t in test_lexer test_parser test_module test_checker test_codegen test_driver test_interpreter; do
+for t in test_lexer test_parser test_module test_checker test_codegen test_driver test_interpreter test_plugins test_bytecode_cache; do
   python3 bootstrap/Zen.py tests/self_hosting/${t}.zl
   python3 bootstrap/Zen.py -g tests/self_hosting/${t}.zl
 done
@@ -68,19 +69,17 @@ python3 bootstrap/Zen.py selfhost/zen.zl help
 python3 bootstrap/Zen.py selfhost/zen.zl interpret tests/self_hosting/fixtures/stage7_add.zl
 python3 bootstrap/Zen.py selfhost/zen.zl compile path/to/file.zl out.c --typecheck
 python3 bootstrap/Zen.py selfhost/zen.zl compile path/to/file.zl output/multi_c --multi
-# Stage 7 native + hybrid handoff:
+# Stage 7 native standalone install:
 ./scripts/zen install-selfhost   # → bin/zen-selfhost
 ./scripts/zen selfhost-smoke     # compile fixture → gcc/runtime → run
-./scripts/zen install            # default install: hybrid bin/zen
+./scripts/zen install            # standalone native bin/zen
 ./scripts/zen test-golden        # bootstrap vs selfhost interpret + AOT
-./scripts/zen handoff-soak       # soak test suite (includes golden)
-./scripts/zen ci-soak            # local soak wrapper (ZEN_SELFHOST_REBUILD=0)
-./scripts/zen multi-selfhost-smoke  # multi-unit self-rebuild (heavier)
+./scripts/zen ci                 # fast full CI smoke
 ```
 - Primary test ladder: `./scripts/zen test` (test-core, test-parity, test-lib, test-lib-native)
-- Default install: `./scripts/zen install` → hybrid `bin/zen` routes compile/build/run/interpret/test/--test/check/deps/help to native selfhost; bare `.zl` stays bootstrap (or `ZEN_INTERPRET=selfhost`); `-g` tries selfhost then bootstrap
-- Gate: `./scripts/zen handoff-soak`
-- `bin/zen-bootstrap` = full host; `bin/zen-selfhost` = native compiler only
+- Default install: `./scripts/zen install` → standalone native `bin/zen` (pure native selfhost execution with zero Python fallback)
+- Rollback tool: `./scripts/zen install-rollback` → restores `bin/zen` to Python bootstrap if needed
+- `bin/zen-bootstrap` = seed host; `bin/zen` / `bin/zen-selfhost` = native selfhost compiler & runtime host
 
 # Child DOX Index
 

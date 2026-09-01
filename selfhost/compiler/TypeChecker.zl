@@ -84,29 +84,27 @@ function is_kind(node, name) {
  Check source text (lex+parse via caller or internal parse).
  Prefer check_program after Parser.parse_source.
  !/
-function check_source_file(src, filename) {
-    let prog -> Parser.parse_source_file(src, filename)
-    when AST.prog_err(prog) != Nothing {
-        <- {
-            `ok` -> false,
-            `errors` -> [Str.to_string(AST.prog_err(prog))],
-            `notes` -> [],
-            `program` -> prog
-        }
-    }
+export function check_source_file(src, filename) {
+    C[`scope`] -> Nothing
+    C[`errors`] -> []
+    C[`notes`] -> []
+    C[`current_return`] -> Nothing
+    C[`in_function`] -> false
+    C[`with_depth`] -> 0
     C[`src`] -> src
     C[`filename`] -> filename
+    let prog -> Parser.parse_source_file(src, filename)
     <- check_program(prog)
 }
 
-function check_source(src) {
+export function check_source(src) {
     <- check_source_file(src, `<source>`)
 }
 
 /!
- Check a Program AST. Returns { ok, errors, program }.
+ Typecheck an AST Program map → { errors: [...] }.
  !/
-function check_program(prog) {
+export function check_program(prog) {
     let global -> Ty.sc_create(Nothing)
     // Builtins (minimal)
     global -> Ty.sc_define(global, `io`, Ty.t_variant(), `MODULE`, false)
@@ -847,6 +845,11 @@ function check_expr(node) {
     when is_kind(node, AST.K_GROUPING) {
         <- check_expr(AST.group_expr(node))
     }
+    when is_kind(node, AST.K_CAST) {
+        let _src_t -> check_expr(AST.cast_expr(node))
+        let target_type_str -> Str.to_string(AST.cast_type(node))
+        <- type_from_name_str(target_type_str)
+    }
     when is_kind(node, AST.K_LIST) {
         let elems -> AST.list_elems(node)
         let et -> Ty.t_variant()
@@ -1200,6 +1203,46 @@ function infer_binary(op, lt, rt) {
     }
     when op == `and` or op == `or` {
         <- Ty.t_boolean()
+    }
+    <- Ty.t_variant()
+}
+
+function is_type_name_str(s) {
+    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
+    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
+    when s == `String` or s == `Str` { <- true }
+    when s == `Boolean` or s == `Bool` { <- true }
+    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
+    when s == `Bytes` or s == `Buffer` { <- true }
+    when s == `List` or s == `Set` or s == `Map` { <- true }
+    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    <- false
+}
+
+function type_from_name_str(s) {
+    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` {
+        <- Ty.t_integer()
+    }
+    when s == `Decimal` or s == `Float` or s == `Double` {
+        <- Ty.t_decimal()
+    }
+    when s == `String` or s == `Str` {
+        <- Ty.t_string()
+    }
+    when s == `Boolean` or s == `Bool` {
+        <- Ty.t_boolean()
+    }
+    when s == `Rune` or s == `Char` or s == `Glyph` {
+        <- Ty.t_rune()
+    }
+    when s == `Bytes` or s == `Buffer` {
+        <- Ty.t_list(Ty.t_integer())
+    }
+    when s == `List` or s == `Set` {
+        <- Ty.t_list(Ty.t_variant())
+    }
+    when s == `Map` {
+        <- Ty.t_variant()
     }
     <- Ty.t_variant()
 }

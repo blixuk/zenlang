@@ -1,0 +1,13 @@
+import zen.io.io as io
+import tests.self_hosting.test_mod_b as ModB
+
+function main() {
+    let sum -> ModB.add_numbers(100, 250)
+    io.writeln(`Sum: ` + Str.to_string(sum))
+    let msg -> ModB.greet_name(`Zen Developer`)
+    io.writeln(msg)
+    when sum == 350 {
+        <- 0
+    }
+    <- 1
+}

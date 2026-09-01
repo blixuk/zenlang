@@ -1,7 +1,7 @@
 /!
   Project management module for Zenlang tooling.
   Handles project detection, root traversal, initialization (zen init),
-  and new project scaffolding (zen new).
+  and new project scaffolding (zen new) using Zen Data and Zen Mark.
 !/
 
 import zen.tooling.manifest as manifest
@@ -13,9 +13,9 @@ import zen.sys.process as process
 import zen.text.string as Str
 
 /!
-  Searches upward from start_dir for a directory containing .zbuild.
+  Searches upward from start_dir for a directory containing zen.pkg.zd or .zbuild.
   @param start_dir Starting directory path (or Nothing for current working directory).
-  @return Absolute directory path containing .zbuild, or Nothing if not found.
+  @return Absolute directory path containing manifest, or Nothing if not found.
 !/
 export function find_root(start_dir) {
     let cur -> start_dir
@@ -24,8 +24,9 @@ export function find_root(start_dir) {
     }
     
     do while cur != Nothing and cur != `` {
-        let manifest_path -> path.join(cur, `.zbuild`)
-        when file.exists(manifest_path) {
+        let pkg_path -> path.join(cur, `zen.pkg.zd`)
+        let legacy_path -> path.join(cur, `.zbuild`)
+        when file.exists(pkg_path) or file.exists(legacy_path) {
             <- cur
         }
         let parent -> path.dir_name(cur)
@@ -50,22 +51,28 @@ export function load_project(dir) {
     when root == Nothing {
         <- {
             `ok` -> false,
-            `error` -> `No .zbuild project manifest found in current or parent directories.`
+            `error` -> `No zen.pkg.zd or .zbuild project manifest found in current or parent directories.`
         }
     }
 
-    let manifest_path -> path.join(root, `.zbuild`)
+    let manifest_path -> path.join(root, `zen.pkg.zd`)
+    when not file.exists(manifest_path) {
+        manifest_path -> path.join(root, `.zbuild`)
+    }
     when not file.exists(manifest_path) {
         <- {
             `ok` -> false,
-            `error` -> `Missing .zbuild manifest at: ` + manifest_path
+            `error` -> `Missing zen.pkg.zd manifest at: ` + manifest_path
         }
     }
 
     let manifest_content -> file.read(manifest_path)
     let manifest_map -> manifest.parse_manifest(manifest_content)
 
-    let lock_path -> path.join(root, `zen.lock`)
+    let lock_path -> path.join(root, `zen.lock.zd`)
+    when not file.exists(lock_path) {
+        lock_path -> path.join(root, `zen.lock`)
+    }
     let lock -> { `version` -> `1.0`, `packages` -> {} }
     when file.exists(lock_path) {
         let lock_content -> file.read(lock_path)
@@ -119,7 +126,7 @@ export function init_project(target_dir, name, template_type, description) {
     file.make_dirs(path.join(dir, `deps`))
     file.make_dirs(path.join(dir, `build`))
 
-    // Write .zbuild manifest
+    // Write zen.pkg.zd manifest
     let manifest_map -> manifest.default_manifest(p_name)
     manifest_map[`type`] -> p_type
     manifest_map[`description`] -> desc
@@ -127,7 +134,7 @@ export function init_project(target_dir, name, template_type, description) {
         manifest_map[`entry`] -> `src/` + p_name + `.zl`
         manifest_map[`target`] -> `build/lib` + p_name + `.a`
     }
-    let manifest_path -> path.join(dir, `.zbuild`)
+    let manifest_path -> path.join(dir, `zen.pkg.zd`)
     file.write(manifest_path, manifest.stringify_manifest(manifest_map))
 
     // Write main source file based on template
@@ -155,8 +162,8 @@ export function init_project(target_dir, name, template_type, description) {
         file.write(gitignore_path, templates.get_gitignore())
     }
 
-    // Write README.md
-    let readme_path -> path.join(dir, `README.md`)
+    // Write README.zm (Zen Mark)
+    let readme_path -> path.join(dir, `README.zm`)
     when not file.exists(readme_path) {
         file.write(readme_path, templates.get_readme(p_name, desc))
     }
@@ -194,12 +201,18 @@ export function new_project(name, parent_dir, template_type, description) {
     when base == Nothing or base == `` {
         base -> sys.get_cwd()
     }
-    let target_dir -> path.join(base, name)
-    when file.exists(target_dir) and file.exists(path.join(target_dir, `.zbuild`)) {
+    let target_dir -> name
+    let p_name -> name
+    when not Str.starts_with(name, `/`) {
+        target_dir -> path.join(base, name)
+    } or {
+        p_name -> path.base_name(name)
+    }
+    when file.exists(target_dir) and (file.exists(path.join(target_dir, `zen.pkg.zd`)) or file.exists(path.join(target_dir, `.zbuild`))) {
         <- {
             `ok` -> false,
             `error` -> `Directory already contains a Zenlang project: ` + target_dir
         }
     }
-    <- init_project(target_dir, name, template_type, description)
+    <- init_project(target_dir, p_name, template_type, description)
 }

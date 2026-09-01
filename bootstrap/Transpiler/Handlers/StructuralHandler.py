@@ -302,7 +302,6 @@ class StructuralHandler:
                 self.module_aliases[name] = real_module_name
                 
                 if name not in self.global_variable_names:
-                     # self.emit(f"ZenValue {name} = {{ZEN_NOTHING, {{0}}}};")
                      self.global_variable_names.add(name)
                 
             elif isinstance(statement, (AssignmentStatement, ReassignmentStatement)) and self.indent_level == 0:
@@ -340,6 +339,8 @@ class StructuralHandler:
         # Recursively handle ScopeStatements
         from Parser.AST import ScopeStatement
         for statement in program.statements:
+             if isinstance(statement, ExportStatement) or statement.__class__.__name__ == "ExportStatement":
+                 statement = statement.statement
              if isinstance(statement, ScopeStatement):
                   self._setup_scope_recursive(statement)
 
@@ -379,6 +380,8 @@ class StructuralHandler:
         
         # Enums initialization
         for stmt in self.program.statements:
+             if isinstance(stmt, ExportStatement) or stmt.__class__.__name__ == "ExportStatement":
+                 stmt = stmt.statement
              if isinstance(stmt, EnumeratorStatement):
                   m_name = self.get_mangled_name(stmt)
                   for variant in stmt.members:

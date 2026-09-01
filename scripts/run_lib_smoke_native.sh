@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
-ZEN="${ZEN:-python3 bootstrap/Zen.py}"
+ZEN="${ZEN:-$ROOT/bin/zen}"
 
 # Subset of tests/lib that compiles and passes under -g.
 # Prefer adding modules used by demos / Unix tooling when they go green.

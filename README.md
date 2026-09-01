@@ -34,6 +34,14 @@ Unix-native programming language for scripts, terminal apps, and networked servi
 ./scripts/zen install-rollback
 ```
 
+### Interactive Stateful REPL (`zen repl`)
+
+```bash
+./scripts/zen repl
+```
+
+Interactive development shell with persistent session state, automatic `_` and `_N` result history, state snapshotting (`:save` / `:load` with Zen Data `.zd`), multi-line block entry, live syntax highlighting, and tab completion. Guide: [doc/REPL.zm](doc/REPL.zm).
+
 ### Interactive Playground & Code Lab
 
 ```bash
@@ -143,7 +151,8 @@ Make is **not** the long-term build system. Use:
 
 ```bash
 ./scripts/zen help
-./scripts/zen install      # hybrid bin/zen (selfhost primary)
+./scripts/zen repl        # interactive stateful REPL
+./scripts/zen install     # hybrid bin/zen (selfhost primary)
 ./scripts/zen test-core   # core language ladder
 ./scripts/zen test-parity # interpret vs -g
 ./scripts/zen test-lib    # stdlib (interpreter)
