@@ -8,7 +8,7 @@ scope: source.zenlang
 
 variables:
   # Logical groupings for easier reading
-  control_flow: 'do|while|until|for|in|when|or|and|not|xor|break|continue|return|check|case|match|default|spawn|await|task'
+  control_flow: 'do|while|until|for|in|when|or|and|not|xor|break|continue|return|check|case|match|default|spawn|await|task|yield|before|after'
   logic: 'and|or|not|xor|in|with|is|reflectable'
   errors: 'raise|assert|defer|check'
   dependencies: 'use|import|from|as|extend|extends|export'
@@ -16,7 +16,7 @@ variables:
   constants: 'Nothing|nothing|Default|default|Void'
   booleans: 'True|False|true|false'
   builtins: 'self|parent|module|entry'
-  types: 'Void|Variant|Integer|Decimal|Boolean|Rune|String|Dictionary|Dict|Tuple|List|Vector|Map|Set|Error|Task|Function|Class|Structure|Struct|Enumerator|Enum|Object'
+  types: 'Void|Variant|Integer|Int|Decimal|Float|Boolean|Bool|Rune|Char|Byte|Bytes|Buffer|String|Str|Dictionary|Dict|Tuple|List|Vector|Map|Set|Error|Task|Function|Class|Structure|Struct|Enumerator|Enum|Object'
 
 contexts:
   main:
@@ -40,6 +40,11 @@ contexts:
         1: storage.type.zenlang
         2: punctuation.definition.generic.begin.zenlang
       push: generic_parameters
+
+    # Triple Backtick Strings ```...```
+    - match: '```'
+      scope: punctuation.definition.string.begin.zenlang
+      push: triple_backtick_string
 
     # Double Quoted Strings "..."
     - match: '"'
@@ -81,8 +86,8 @@ contexts:
     - match: '\b({{builtins}})\b'
       scope: variable.language.zenlang
 
-    # Function declarations: function my_func(...)
-    - match: '\b(function)\s+([a-zA-Z_]\w*)\s*(?=\()'
+    # Function declarations: function my_func(...) or function my_func {
+    - match: '\b(function)\s+([a-zA-Z_]\w*)'
       captures:
         1: keyword.declaration.function.zenlang
         2: entity.name.function.zenlang
@@ -102,7 +107,7 @@ contexts:
       scope: storage.type.zenlang
 
     # Data Flow & Range Operators
-    - match: '->|<-|:>|=>|\.\.=|\.\.'
+    - match: '->|<-|<~|:>|=>|<:|\.\.\.|\.\.\+|\.\.\-|\.\.=|\.\.'
       scope: keyword.operator.flow.zenlang
 
     # Comparison, Arithmetic & Logic Operators
@@ -122,6 +127,14 @@ contexts:
     - match: '!/'
       scope: punctuation.definition.comment.end.zenlang
       pop: true
+
+  triple_backtick_string:
+    - meta_scope: string.quoted.triple.zenlang
+    - match: '```'
+      scope: punctuation.definition.string.end.zenlang
+      pop: true
+    - match: '\\.'
+      scope: constant.character.escape.zenlang
 
   backtick_string:
     - meta_scope: string.quoted.other.zenlang

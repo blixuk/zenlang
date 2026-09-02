@@ -53,8 +53,8 @@ class ModuleParserMixin:
         alias: str | None = None
         if self.token_handler.check_value("as"):
             self.token_handler.advance()
-            alias_token = self.token_handler.expect_type(
-                TokenType.IDENTIFIER, "Expected alias identifier after `as`"
+            alias_token = self.token_handler.expect_types(
+                [TokenType.IDENTIFIER, TokenType.TYPE, TokenType.KEYWORD], "Expected alias identifier after `as`"
             )
             alias = getattr(alias_token, "value")
 
@@ -84,10 +84,7 @@ class ModuleParserMixin:
         symbols = []
         while True:
             symbol_token = None
-            if self.token_handler.check_type(TokenType.IDENTIFIER):
-                symbol_token = self.token_handler.advance()
-                symbol_name = getattr(symbol_token, "value")
-            elif self.token_handler.check_type(TokenType.KEYWORD):
+            if self.token_handler.check_types([TokenType.IDENTIFIER, TokenType.KEYWORD, TokenType.TYPE]):
                 symbol_token = self.token_handler.advance()
                 symbol_name = getattr(symbol_token, "value")
             else:
@@ -99,10 +96,11 @@ class ModuleParserMixin:
 
             if self.token_handler.check_value("as"):
                 self.token_handler.advance()
-                alias_token = self.token_handler.expect_type(
-                    TokenType.IDENTIFIER, "Expected alias after `as`"
+                alias_token = self.token_handler.expect_types(
+                    [TokenType.IDENTIFIER, TokenType.TYPE, TokenType.KEYWORD], "Expected alias after `as`"
                 )
                 symbol_alias = getattr(alias_token, "value")
+
 
             symbols.append({"name": symbol_name, "alias": symbol_alias})
 

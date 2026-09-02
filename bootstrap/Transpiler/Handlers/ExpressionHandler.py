@@ -355,6 +355,8 @@ class ExpressionHandler:
                 TypeDecimal,
                 TypeRune,
                 TypeString,
+                TypeList,
+                TypeMap,
                 TypeDefault,
             )
             rt = getattr(node, "resolved_type", None)
@@ -369,8 +371,12 @@ class ExpressionHandler:
                 self._emit(Load(target=tmp, source="0.0", type="decimal"), node)
             elif isinstance(t, (TypeString, TypeRune)):
                 self._emit(Load(target=tmp, source="``", type="string"), node)
+            elif isinstance(t, TypeList):
+                self._emit(Call(target=tmp, callee="List_from_args", args=["0"], region=current_reg), node)
+            elif isinstance(t, TypeMap):
+                self._emit(Call(target=tmp, callee="Map_from_args", args=["0"], region=current_reg), node)
             else:
-                self._emit(Nullify(target=tmp), node)
+                self._emit(Load(target=tmp, source="ZEN_DEFAULT_VAL", type="default"), node)
             return tmp
         elif isinstance(node, StructureExpression):
             return self._visit_structure_expression(node, target_region=target_region)

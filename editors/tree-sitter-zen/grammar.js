@@ -76,9 +76,21 @@ module.exports = grammar({
     function_declaration: $ => prec(2, seq(
       'function',
       field('name', $.identifier),
-      field('parameters', $.parameter_list),
-      optional(seq(':', field('return_type', $._type))),
-      field('body', $.block),
+      choice(
+        seq(
+          optional(seq(':', field('return_type', $._type))),
+          optional(field('parameters', $.parameter_list)),
+        ),
+        seq(
+          optional(field('parameters', $.parameter_list)),
+          optional(seq(':', field('return_type', $._type))),
+        ),
+      ),
+      field('body', choice(
+        $.block,
+        seq('->', field('expression', $._expression)),
+        seq('<-', field('expression', $._expression)),
+      )),
     )),
 
     parameter_list: $ => seq(
@@ -208,7 +220,7 @@ module.exports = grammar({
 
     assignment_expression: $ => prec.right(1, seq(
       field('left', choice($.identifier, $.member_expression, $.index_expression)),
-      field('operator', choice('->', ':>')),
+      field('operator', choice('->', ':>', '<~')),
       field('right', $._expression),
     )),
 
@@ -216,8 +228,8 @@ module.exports = grammar({
       const table = [
         ['or', 2],
         ['and', 3],
-        ['==', 4], ['!=', 4], ['<', 4], ['<=', 4], ['>', 4], ['>=', 4], ['is', 4],
-        ['..', 5], ['..=', 5],
+        ['==', 4], ['!=', 4], ['<', 4], ['<=', 4], ['>', 4], ['>=', 4], ['is', 4], ['<:', 4],
+        ['..', 5], ['..=', 5], ['...', 5], ['..+', 5], ['..-', 5],
         ['+', 6], ['-', 6],
         ['*', 7], ['/', 7], ['%', 7],
       ];
@@ -278,8 +290,13 @@ module.exports = grammar({
 
     lambda: $ => prec(1, seq(
       'function',
-      $.parameter_list,
-      $.block,
+      optional($.parameter_list),
+      optional(seq(':', field('return_type', $._type))),
+      field('body', choice(
+        $.block,
+        seq('->', field('expression', $._expression)),
+        seq('<-', field('expression', $._expression)),
+      )),
     )),
 
     structure_literal: $ => prec(2, seq(
@@ -326,20 +343,33 @@ module.exports = grammar({
     ),
 
     boolean: $ => choice('True', 'False'),
-    nothing: $ => choice('nothing', 'Nothing', 'Void'),
+    nothing: $ => choice('nothing', 'Nothing', 'Void', 'Default', 'default'),
 
     number: $ => token(choice(
       /0[xX][0-9a-fA-F_]+/,
       /0[bB][01_]+/,
+      /0[oO][0-7_]+/,
       /\d[\d_]*\.\d[\d_]*([eE][+-]?\d+)?/,
       /\d[\d_]*([eE][+-]?\d+)?/,
     )),
 
-    string: $ => token(seq(
-      optional(/[a-zA-Z_][a-zA-Z0-9_]*/),
-      '`',
-      repeat(choice(/[^`\\]/, /\\./)),
-      '`',
+    string: $ => token(choice(
+      seq(
+        optional(/[a-zA-Z_][a-zA-Z0-9_]*/),
+        '`',
+        repeat(choice(/[^`\\]/, /\\./)),
+        '`',
+      ),
+      seq(
+        '```',
+        repeat(choice(/[^`\\]/, /\\./, /`[^`]/, /``[^`]/)),
+        '```',
+      ),
+      seq(
+        '"',
+        repeat(choice(/[^"\\]/, /\\./)),
+        '"',
+      ),
     )),
 
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,

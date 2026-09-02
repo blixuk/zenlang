@@ -824,9 +824,23 @@ class ExpressionHandler:
             return left ** right
 
         if operation in ["==", "="]:
+            from .LiteralHandler import DEFAULT_SENTINEL
+            if left is DEFAULT_SENTINEL or right is DEFAULT_SENTINEL:
+                target = right if left is DEFAULT_SENTINEL else left
+                other = left if left is DEFAULT_SENTINEL else right
+                if other is DEFAULT_SENTINEL and target is DEFAULT_SENTINEL:
+                    return True
+                return DEFAULT_SENTINEL == target
             return left == right
 
         if operation == "!=":
+            from .LiteralHandler import DEFAULT_SENTINEL
+            if left is DEFAULT_SENTINEL or right is DEFAULT_SENTINEL:
+                target = right if left is DEFAULT_SENTINEL else left
+                other = left if left is DEFAULT_SENTINEL else right
+                if other is DEFAULT_SENTINEL and target is DEFAULT_SENTINEL:
+                    return False
+                return not (DEFAULT_SENTINEL == target)
             return left != right
 
         if operation == ">":
@@ -881,20 +895,20 @@ class ExpressionHandler:
         if operation == "!^":
             return ~(left ^ right)
 
-        if operation in ("..", "..="):
-            inclusive = operation == "..="
-
-            def _range_ints(a: int, b: int):
+        if operation in ("..", "..=", "..+", "..-", "..."):
+            def _range_ints(a: int, b: int, op: str):
                 if a <= b:
-                    end = b + 1 if inclusive else b
-                    return list(range(a, end))
+                    start = a + 1 if op == "..+" else a
+                    end = b + 1 if op in ("..=", "..+", "...") else b
+                    return list(range(start, end))
                 # descending
-                end = b - 1 if inclusive else b
-                return list(range(a, end, -1))
+                start = a - 1 if op == "..+" else a
+                end = b - 1 if op in ("..=", "..+", "...") else b
+                return list(range(start, end, -1))
 
             # Integer ranges → List[Integer]
             if isinstance(left, int) and isinstance(right, int):
-                return _range_ints(left, right)
+                return _range_ints(left, right, operation)
 
             # Single-character string / rune ranges → List[String]
             def _as_char(v):
@@ -904,7 +918,7 @@ class ExpressionHandler:
 
             cl, cr = _as_char(left), _as_char(right)
             if cl is not None and cr is not None:
-                return [chr(i) for i in _range_ints(ord(cl), ord(cr))]
+                return [chr(i) for i in _range_ints(ord(cl), ord(cr), operation)]
 
             raise RuntimeError(
                 f"Range operator '{operation}' expects integers or single characters, got {type(left).__name__} and {type(right).__name__}"

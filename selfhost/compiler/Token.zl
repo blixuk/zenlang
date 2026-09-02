@@ -39,7 +39,10 @@ export enumerator TokenType {
     DECIMAL -> `DECIMAL`,
     STRING -> `STRING`,
     RUNE -> `RUNE`,
+    BYTE -> `BYTE`,
+    BYTES -> `BYTES`,
     BOOLEAN -> `BOOLEAN`,
+
 
     // Declarations / keywords (as dedicated kinds where bootstrap uses them)
     FUNCTION -> `FUNCTION`,
@@ -135,7 +138,12 @@ export enumerator TokenType {
     // Ranges / rest
     RANGE -> `RANGE`,
     RANGE_INCLUSIVE -> `RANGE_INCLUSIVE`,
+    RANGE_INCL_END -> `RANGE_INCL_END`,
+    RANGE_EXCL_END -> `RANGE_EXCL_END`,
+    RANGE_FULL_INCL -> `RANGE_FULL_INCL`,
+    YIELD_ARROW -> `YIELD_ARROW`,
     ELLIPSIS -> `ELLIPSIS`,
+
 
     // Module / OOP words (also may appear as KEYWORD)
     SCOPE -> `SCOPE`,
@@ -369,6 +377,12 @@ export function kind_id(kind) {
     when s == `ASSERT_SYMBOL` { <- 113 }
     when s == `TYPE_CAST` { <- 114 }
     when s == `EOF` { <- 115 }
+    when s == `RANGE_INCL_END` { <- 116 }
+    when s == `RANGE_EXCL_END` { <- 117 }
+    when s == `RANGE_FULL_INCL` { <- 118 }
+    when s == `YIELD_ARROW` { <- 119 }
+    when s == `BYTE` { <- 120 }
+    when s == `BYTES` { <- 121 }
     // Already an integer id (native TokenType.X emit).
     when Str.contains(`0123456789`, Str.at(s, 0)) {
         <- kind

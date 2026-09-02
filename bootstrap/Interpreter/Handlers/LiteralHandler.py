@@ -16,6 +16,35 @@ from Parser.AST import (
     ElementLiteral,
 )
 
+class _DefaultSentinel:
+    _instance = None
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    def __repr__(self):
+        return "Default"
+    def __str__(self):
+        return "Default"
+    def __eq__(self, other):
+        if isinstance(other, _DefaultSentinel):
+            return True
+        if other is None:
+            return False
+        if isinstance(other, bool):
+            return other is False
+        if isinstance(other, (int, float)):
+            return other == 0
+        if isinstance(other, str):
+            return other == ""
+        if isinstance(other, list):
+            return len(other) == 0
+        if isinstance(other, dict):
+            return len(other) == 0
+        return False
+
+DEFAULT_SENTINEL = _DefaultSentinel()
+
 class LiteralHandler:
     def _evaluate_integer_literal(self, node: IntegerLiteral, environment) -> int:
         return int(node.value)
@@ -75,7 +104,11 @@ class LiteralHandler:
             return 0.0
         if nt in ("StringLiteral", "RuneLiteral"):
             return ""
-        return None
+        if nt == "ListLiteral":
+            return []
+        if nt == "MapLiteral":
+            return {}
+        return DEFAULT_SENTINEL
 
     def _evaluate_variant_literal(self, node: VariantLiteral, environment) -> Any:
         return node.value

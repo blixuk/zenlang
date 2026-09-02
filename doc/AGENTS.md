@@ -9,47 +9,46 @@ Owned by documentation maintainers. This is the source of truth for "what the pr
 # Local Contracts
 
 - Durable written material belongs under doc/ (or root files like Testing.md and AGENTS.md themselves).
-- Specification/ holds the formal language definition (`Zenlang.zm` built to `Zenlang.pdf` using the native Zen Mark Vector PDF generator). Chapters cover syntax, types, control flow, data structures, OOP, concurrency, error handling, modules, runtime, organization.
-- Top-level files: Getting_Started.md (tutorial + patterns — preferred on-ramp), Language_Module_and_Reflect.md (module/entry/reflect/plugins language reference), Zen Manifesto.md (core philosophy), Zenlang Explained.md, Zenlang.md, Zenlang Tooling.md, Zenlang_Documentation_Suite.md, Roadmap.md, plan.md, Standard_Library_Reference.md, ideas.md, design_module_reflect.md.
-- Human front door for the repo is root `README.md` (quick start + layout); longer tutorial is `doc/Getting_Started.md`. Daily install is Host-1.0 hybrid (`./scripts/zen install`); bootstrap is documented as maintenance fallback.
-- archive/ contains historical drafts and proposals. Treat as read-only context, not current spec.
-- Memory/MIR: active decision is in `selfhost/PARITY.md` (*Backend & memory decision*) — AST→C for user programs, auto default + opt-in regions; `doc/archive/proposal/memory.md` is historical only.
+- **Single Source of Truth:** `doc/SPECIFICATION.md` is the sole immutable ground truth for Zenlang grammar, syntax, types, and execution semantics.
+- **Documentation Standards:** All documents must strictly adhere to `doc/DOCUMENTATION_STANDARDS.md`.
+- **RFC Proposals Framework:** Proposed language syntax and semantic modifications must undergo the formal RFC review process in `doc/proposals/` using `TEMPLATE.md`.
+- Top-level files: SPECIFICATION.md (single source of truth), DOCUMENTATION_STANDARDS.md (style & rules), Zen Manifesto.md (core philosophy), Getting_Started.md (tutorial on-ramp), Standard_Library_Reference.md, Compiler_Architecture.md, Memory_Model.md, Style_Guide.md.
+- Human front door for the repo is root `README.md` (quick start + layout); tutorial is `doc/Getting_Started.md`. Daily install is Host-1.0 hybrid (`./scripts/zen install`).
+- archive/ contains historical drafts, legacy proposals, and archived material (`doc/archive/legacy_2026/`). Treat as read-only context, not current spec.
 - Execution product: three-layer (ZenValue + compiler native IR + script VM, AOT remains C) — [selfhost/THREE_LAYER.md](../selfhost/THREE_LAYER.md).
-- Documentation that defines process or contracts (Testing.md, roadmaps) is binding in conjunction with AGENTS.md files.
 - When implementation or ownership changes, corresponding docs + nearest AGENTS.md must be updated.
 
 # Work Guidance
 
-- Keep prose, spec, and examples in sync with actual language features and stdlib.
-- Use examples that can be executed.
-- For language surface changes, update both Specification/ chapters and high-level docs.
-- Anonymous functions / closures: Zenlang Explained §3.5, Zenlang.md, Specification/7_functions.typ. Outer locals captured **by value**; tests/language/closure_01.zl.
-- Ranges: `..` / `..=` in Zenlang Explained §3.4, Zenlang.md, Specification/5_operators_logic.typ + 6_control_flow.typ, Standard_Library_Reference (`zen.math.range`); do not use `...` (rest/spread).
-- Module context / entry / reflect / plugins: **Language_Module_and_Reflect.md** (user-facing); keep Getting_Started §4.8b–4.9 and Explained §7 in sync; no `@entry`/`@reflectable` — use `module.entry` and `is reflectable`.
-- Prefer direct, operational writing per the Style section in root AGENTS.md.
+- Every syntax example in docs must be 100% valid, runnable Zenlang conforming to `doc/SPECIFICATION.md`.
+- Sentinels must always be capitalized: `Nothing` and `Default`.
+- Visual data flow must be used consistently: `->` (assignment), `<-` (return).
+- Collections must use clean syntax: `[1, 2, 3]` (List), `{ key -> value }` (Map).
+- Module context / entry / reflect / plugins: no `@entry`/`@reflectable` — use `module.entry` and `is reflectable`.
 - Stdlib docs must use nested imports (`use zen.io`, `zen.sys.term`, …); keep the import map in Standard_Library_Reference.md current with `lib/zen/`.
-- Run doc/Specification/build.sh when regenerating the PDF.
+- Prefer direct, operational writing per the Style section in root AGENTS.md.
 
 # Verification
 
-- Consistency checks: docs match code/tests (e.g. feature lists, syntax examples).
-- Build of the spec PDF succeeds.
-- Review of Roadmap.md / plan.md against actual status in bootstrap/, src/, tests/.
-- No stale claims about "implemented" features that are still in roadmap.
+- Consistency checks: docs match code/tests (e.g. feature lists, syntax examples against `SPECIFICATION.md`).
+- Review of RFC proposals in `doc/proposals/`.
+- Zero broken links across all documentation files.
 
 # Child DOX Index
 
-- Getting_Started.md — tutorial, language tour, dual execution, design patterns (start here for learners)
-- Language_Module_and_Reflect.md — **canonical language docs** for `module`, entry, `use`, reflect, plugins
-- Companion programs: `examples/getting_started/` (01–12 + README); `examples/plugins_demo.zl`
+- SPECIFICATION.md — **the single source of truth** for Zenlang syntax, types, grammar, and semantics
+- DOCUMENTATION_STANDARDS.md — universal documentation rules, typography, and code style
+- Zen Manifesto.md — core philosophy and design directives
+- Getting_Started.md — hands-on learner tutorial and tour
+- Zen_Data.md — Zen Data (`.zd`) declarative data serialization specification
+- Zen_Mark.md — Zen Mark (`.zm`) document markup and terminal UI specification
+- Concurrency.md — The Unified Task Concurrency Substrate architecture & programming guide
+- Cookbook.md — Practical recipes, pipelines, and integration patterns
+- Standard_Library_Reference.md — standard library API catalog
 - Compiler_Architecture.md / Compiler_Architecture.zm — Three-Layer execution engine (ZenValue ABI, native positional IR structs, VM, AOT C)
-- Memory_Model.md / Memory_Model.zm — Automatic reference management, chunk-chained arenas, string interning, snapshot concurrency
-- Cookbook.md / Cookbook.zm — Practical recipes for CLI tools, TUI canvas, JSON/ZenData, arenas, mixed ABI
+- Memory_Model.md / Memory_Model.zm — Automatic reference management, scoped arenas, and resource lifetimes
 - Style_Guide.md / Style_Guide.zm — Canonical syntax standards and formatting guidelines
-- Zenlang Tooling.md / Zenlang_Tooling.zm — Compiler CLI, zendoc, zenmark, zenfmt, and zenlsp
-- Zen Manifesto.md, Zenlang Explained.md (§7 modules/reflect), Zenlang.md — philosophy and deeper reference
-- Standard_Library_Reference.md (includes `zen.reflect`, `zen.plugins`, `zen.ui.table`, `zen.ui.spinner`, built-in `module`), REPL.zm / REPL.md, Playground.md, FileManager.md, Formatter.md, Zenlang_Documentation_Suite.md
+- proposals/ — formal RFC proposal process (`doc/proposals/README.md` and `doc/proposals/TEMPLATE.md`)
 - book/: *The Zen of Programming* official book — `doc/book/README.md` & `doc/book/AGENTS.md`
-- Roadmap.md, plan.md, ideas.md
-- Specification/: Formal spec sources (*.zm), build.sh (`tools/build_spec.zl`), generated Zenlang.pdf & Zenlang.html, ZSP.md, Zen_Data.md, and Zen_Mark.md.
-- archive/: Historical proposals (AST, concurrency, memory, modules, error, types, etc.), old drafts, and ideas. Not current.
+- Playground.md, FileManager.md, Formatter.md, REPL.zm / REPL.md
+- archive/: Historical proposals, legacy drafts (`doc/archive/legacy_2026/`). Not current.

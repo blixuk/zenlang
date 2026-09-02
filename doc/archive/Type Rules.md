@@ -31,30 +31,30 @@ Boolean     // True / False
 
 // Collection Types
 
-Vector      // Vector Type
-List        // List Type
-Set         // Set Type
-Tuple       // Tuple Type
-Map         // Map Type
+List        // Ordered, Dynamic, Mutable, Values
+Set         // Unordered, Dynamic, Mutable, Unique values
+Vector      // Ordered, Fixed size, Immutable, Values
+Tuple       // Ordered, Fixed size, Immutable, Values with different types
+Map         // Unordered, Dynamic, Mutable, Key-value pairs
 
 // Container Types
 
-Class       // Class Type
-Object      // Object Type
-Structure   // Structure Type
-Enumerator  // Enumerator Type
+Class       //
+Object      //
+Structure   //
+Enumerator  //
 
 // Action Types
 
-Function    // Function Type
-Task        // Task Type
+Function    //
+Task        //
 
 // Abstract Types
 
-Number      // Number Type (Integer, Decimal)
-Text        // Text Type (String)
-Container   // Container Type (Class, Object, Structure, Enumerator)
-Collection  // Collection Type (Map, List, Set, Tuple, Vector)
+Number      // (Integer, Decimal)
+Text        // (Rune, String)
+Container   // (Class, Object, Structure, Enumerator)
+Collection  // (Map, List, Set, Tuple, Vector)
 
 // User-Defined Types
 
@@ -66,9 +66,9 @@ Zenlang supports custom types via:
 
 // Type Annotations
 
-Vector<Type>
 List<Type, ...>
-Set<Type>
+Set<Type>`
+Vector[length]<Type>
 Tuple<Type, ...>
 Map<Type, Type>
 
@@ -77,14 +77,61 @@ Enumerator<Type>
 
 -------------------------
 
-Nothing: is a special type that can be assigned to any identifier and sets no value.
-Default: is a special type that can be assigned to any identifier and sets default value.
+// Base Values
+
+Nothing // is a special type that can be assigned to any identifier and sets no value.
+Default // is a special type that can be assigned to any identifier and sets default value.
 
 -------------------------
 
-Default Type Container: [Type]{ ... } or [T]{ ... }
+// Base Types
 
-This will only work for literals that have to be assigned to an identifier.
+Void    //
+Varient // 
+
+let a : Integer -> 10       // Value: 10
+let a : Integer -> Nothing  // Value: Nothing
+let a : Integer -> Default  // Value: 0
+
+let a : Decimal -> 10.0     // Value: 10.0
+let a : Decimal -> Nothing  // Value: Nothing
+let a : Decimal -> Default  // Value: 0.0
+
+let a : String -> `Hello`   // Value: `Hello`
+let a : String -> Nothing   // Value: Nothing
+let a : String -> Default   // Value: ``
+
+let a : Boolean -> True     // Value: True
+let a : Boolean -> Nothing  // Value: Nothing
+let a : Boolean -> Default  // Value: False
+
+// Collection Types
+
+let a : List -> [1, 2, 3]   // Value: [1, 2, 3]
+let a : List -> Nothing     // Value: Nothing
+let a : List -> Default     // Value: []
+
+let a : Set -> [1, 2, 3]    // Value: [1, 2, 3]
+let a : Set -> Nothing      // Value: Nothing
+let a : Set -> Default      // Value: []
+
+let a : Vector -> [1, 2, 3] // Value: [1, 2, 3]
+let a : Vector -> Nothing   // Value: Nothing
+let a : Vector -> Default   // Value: []
+
+let a : Tuple -> (1, 2, 3)                  // Value: (1, 2, 3)
+let a : Tuple -> (a -> 1, b -> 2, c -> 3)   // Named Tuple
+let a : Tuple -> Nothing                    // Value: Nothing
+let a : Tuple -> Default                    // Value: ()
+
+let a : Dictionary -> {`a` -> 1, `b` -> 2}  // Value: {`a` -> 1, `b` -> 2}
+let a : Dictionary -> Nothing               // Value: Nothing
+let a : Dictionary -> Default               // Value: {}
+
+-------------------------
+
+Default Type: [Type]{ ... } or [T]{ ... }
+This will only work for when a type is also assigned.
 
 let a : Vector -> {1, 2, 3}
 let a :> Vector{1, 2, 3}
@@ -118,73 +165,6 @@ let a :> M{`a` -> 1, `b` -> 2}
 let a -> Map{`a` -> 1, `b` -> 2}
 let a -> M{`a` -> 1, `b` -> 2}
 
-
--------------------------
-
-let a : Integer -> 10
-// Identifier: a, Type: Integer, Value: 10
-let a : Integer -> Nothing
-// Identifier: a, Type: Integer, Value: Nothing
-let a : Integer -> Default
-// Identifier: a, Type: Integer, Value: 0
-
-let a : Decimal -> 10.0
-// Identifier: a, Type: Decimal, Value: 10.0
-let a : Decimal -> Nothing
-// Identifier: a, Type: Decimal, Value: Nothing
-let a : Decimal -> Default
-// Identifier: a, Type: Decimal, Value: 0.0
-
-let a : String -> `Hello`
-// Identifier: a, Type: String, Value: `Hello`
-let a : String -> Nothing
-// Identifier: a, Type: String, Value: Nothing
-let a : String -> Default
-// Identifier: a, Type: String, Value: ``
-
-let a : Boolean -> True
-// Identifier: a, Type: Boolean, Value: True
-let a : Boolean -> Nothing
-// Identifier: a, Type: Boolean, Value: Nothing
-let a : Boolean -> Default
-// Identifier: a, Type: Boolean, Value: False
-
-let a : Vector -> {1, 2, 3}
-// Identifier: a, Type: Vector, Value: {1, 2, 3}
-let a : Vector -> Nothing
-// Identifier: a, Type: Vector, Value: Nothing
-let a : Vector -> Default
-// Identifier: a, Type: Vector, Value: {}
-
-let a : List -> {1, 2, 3}
-// Identifier: a, Type: List, Value: {1, 2, 3}
-let a : List -> Nothing
-// Identifier: a, Type: List, Value: Nothing
-let a : List -> Default
-// Identifier: a, Type: List, Value: {}
-
-let a : Set -> {1, 2, 3}
-// Identifier: a, Type: Set, Value: {1, 2, 3}
-let a : Set -> Nothing
-// Identifier: a, Type: Set, Value: Nothing
-let a : Set -> Default
-// Identifier: a, Type: Set, Value: {}
-
-let a : Tuple -> {1, 2, 3} 
-// Identifier: a, Type: Tuple, Value: {1, 2, 3}
-let a : Tuple -> {a -> 1, b -> 2, c -> 3} // Named Tuple
-// Identifier: a, Type: Tuple, Value: {a -> 1, b -> 2, c -> 3}
-let a : Tuple -> Nothing
-// Identifier: a, Type: Tuple, Value: Nothing
-let a : Tuple -> Default
-// Identifier: a, Type: Tuple, Value: {}
-
-let a : Dictionary -> {`a` -> 1, `b` -> 2}
-// Identifier: a, Type: Dictionary, Value: {`a` -> 1, `b` -> 2}
-let a : Dictionary -> Nothing
-// Identifier: a, Type: Dictionary, Value: Nothing
-let a : Dictionary -> Default
-// Identifier: a, Type: Dictionary, Value: {}
 
 -------------------------
 

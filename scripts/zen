@@ -46,6 +46,7 @@ Commands:
   graph [--html]    Visualize dependency graph in terminal or interactive HTML
   todo              Scan codebase for TODO, FIXME, BUG tags
   doc               Generate Markdown and HTML API docs
+  doc-pdf           Generate vector PDF documentation & book via native Zen Mark
   pkg <cmd>         Package management (install, add, remove, list)
   bump <type>       Bump version (patch, minor, major)
   publish           Create release tarball package
@@ -250,6 +251,11 @@ case "$cmd" in
     fi
     # shellcheck disable=SC2086
     exec "$ROOT/bin/zen" build "$@"
+    ;;
+  doc-pdf|pdf)
+    echo "Compiling Zenlang Specification and Book PDFs via native Zen Mark..."
+    python3 "$ROOT/bootstrap/Zen.py" "$ROOT/tools/build_spec.zl"
+    python3 "$ROOT/bootstrap/Zen.py" "$ROOT/tools/build_book.zl"
     ;;
   test-core) bash "$ROOT/scripts/run_core_tests.sh" ;;
   test-parity) bash "$ROOT/scripts/run_core_parity.sh" ;;

@@ -29,6 +29,47 @@ class Numbers:
             )
             return
 
+        if self.peek() == "0" and self.peek(1) in ["b", "B"]:
+            number += self.advance() # '0'
+            number += self.advance() # 'b'
+            while (character := self.peek()) is not None:
+                if character in ["0", "1"]:
+                    number += self.advance()
+                elif character == "_":
+                    self.advance()
+                else:
+                    break
+            self.add_token(
+                TokenType.INTEGER,
+                int(number, 2),
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+            return
+
+        if self.peek() == "0" and self.peek(1) in ["o", "O"]:
+            number += self.advance() # '0'
+            number += self.advance() # 'o'
+            while (character := self.peek()) is not None:
+                if character in "01234567":
+                    number += self.advance()
+                elif character == "_":
+                    self.advance()
+                else:
+                    break
+            self.add_token(
+                TokenType.INTEGER,
+                int(number, 8),
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+            return
+
+
         while (character := self.peek()) is not None:
             if character.isdigit():
                 number += self.advance()

@@ -1,17 +1,19 @@
-# Language: `module`, imports, reflection, and plugins
+# Language: `module`, Imports, Reflection, and Plugins
 
-This page documents **current bootstrap** behavior for module context, entry points, `use`/`import`, `zen.reflect`, `is reflectable`, and map-based plugins.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Deep Reference for Module System, Entry Overrides & Reflection |
+| **Authority** | Derived Language Reference (Ground Truth in [doc/SPECIFICATION.md](SPECIFICATION.md)) |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
-| Related | Role |
-|---------|------|
-| [Getting_Started.md](Getting_Started.md) | Tutorial tour |
-| [Zenlang Explained.md](Zenlang%20Explained.md) | Broader language reference |
-| [Standard_Library_Reference.md](Standard_Library_Reference.md) | Import map + stdlib APIs |
-| [design_module_reflect.md](design_module_reflect.md) | Design notes and phases |
-| Tests | `tests/language/module_*.zl`, `tests/lib/test_reflect*.zl` |
-| Example | `examples/plugins_demo.zl` |
+---
 
-**Design principle:** no decorator-only features. Traits use `is …` (e.g. `is reflectable`). Entry override uses **`module.entry`**, not `@entry`.
+## Overview
+
+This guide details the behavior of module context (`module`), dynamic entry point dispatch (`module.entry`), packaging (`use`/`import`/`from`), runtime reflection (`zen.reflect`), and metadata traits (`is reflectable`).
+
+**Core Rule:** Zenlang avoids decorator magic. Traits use `is ...` (e.g. `is reflectable`), and entry point overrides use `module.entry` (data on the module).
 
 ---
 

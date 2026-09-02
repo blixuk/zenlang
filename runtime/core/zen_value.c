@@ -117,6 +117,12 @@ ZenValue ZenValue_make_nothing(void) {
     return z;
 }
 
+ZenValue ZenValue_make_default(void) {
+    ZenValue z;
+    z.type = ZEN_DEFAULT;
+    return z;
+}
+
 ZenValue ZenValue_from_list(struct ZenList* l) {
     ZenValue z;
     z.type = ZEN_LIST;

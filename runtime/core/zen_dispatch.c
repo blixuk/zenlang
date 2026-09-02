@@ -79,6 +79,7 @@ ZenValue ZenValue_get_kind(ZenValue obj) {
         case ZEN_OBJECT: return ZenValue_make_string("Object");
         case ZEN_ARENA: return ZenValue_make_string("Arena");
         case ZEN_NOTHING: return ZenValue_make_string("Nothing");
+        case ZEN_DEFAULT: return ZenValue_make_string("Default");
         default: return ZenValue_make_string("Variant");
     }
 }
@@ -272,6 +273,15 @@ ZenValue ZenValue_to_number(ZenValue self) {
         return ZenValue_make_nothing();
     }
     const char* s = self.as.string;
+    char buf[128];
+    if (strchr(s, '_')) {
+        int bi = 0;
+        for (const char* p = s; *p && bi < 127; p++) {
+            if (*p != '_') buf[bi++] = *p;
+        }
+        buf[bi] = '\0';
+        s = buf;
+    }
     char* end = NULL;
     /* Prefer integer when no decimal point / exponent */
     int has_dot = 0;

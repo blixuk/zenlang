@@ -148,6 +148,7 @@ function match_keyword(src, s, len) {
         when c0 == `x` and c1 == `n` and c2 == `o` and c3 == `r` { <- TokenType.XNOR }
         when c0 == `V` and c1 == `o` and c2 == `i` and c3 == `d` { <- TokenType.VOID }
         when c0 == `L` and c1 == `i` and c2 == `s` and c3 == `t` { <- TokenType.LIST }
+        when (c0 == `B` or c0 == `b`) and c1 == `y` and c2 == `t` and c3 == `e` { <- TokenType.BYTE }
         <- TokenType.IDENTIFIER
     }
     when len == 5 {
@@ -164,12 +165,15 @@ function match_keyword(src, s, len) {
         when c0 == `c` and c1 == `h` and c2 == `e` and c3 == `c` and c4 == `k` { <- TokenType.CHECK }
         when c0 == `d` and c1 == `e` and c2 == `f` and c3 == `e` and c4 == `r` { <- TokenType.DEFER }
         when c0 == `a` and c1 == `w` and c2 == `a` and c3 == `i` and c4 == `t` { <- TokenType.AWAIT }
+        when c0 == `y` and c1 == `i` and c2 == `e` and c3 == `l` and c4 == `d` { <- TokenType.KEYWORD }
+        when c0 == `a` and c1 == `f` and c2 == `t` and c3 == `e` and c4 == `r` { <- TokenType.KEYWORD }
         when c0 == `s` and c1 == `c` and c2 == `o` and c3 == `p` and c4 == `e` { <- TokenType.SCOPE }
         when c0 == `o` and c1 == `w` and c2 == `n` and c3 == `e` and c4 == `d` { <- TokenType.KEYWORD }
         when c0 == `c` and c1 == `l` and c2 == `a` and c3 == `s` and c4 == `s` { <- TokenType.KEYWORD }
         when c0 == `T` and c1 == `u` and c2 == `p` and c3 == `l` and c4 == `e` { <- TokenType.TUPLE }
         when c0 == `C` and c1 == `l` and c2 == `a` and c3 == `s` and c4 == `s` { <- TokenType.CLASS }
         when c0 == `E` and c1 == `r` and c2 == `r` and c3 == `o` and c4 == `r` { <- TokenType.TYPE }
+        when (c0 == `B` or c0 == `b`) and c1 == `y` and c2 == `t` and c3 == `e` and c4 == `s` { <- TokenType.BYTES }
         <- TokenType.IDENTIFIER
     }
     when len == 6 {
@@ -179,6 +183,7 @@ function match_keyword(src, s, len) {
         let c3 -> Str.at(src, s + 3)
         let c4 -> Str.at(src, s + 4)
         let c5 -> Str.at(src, s + 5)
+        when c0 == `b` and c1 == `e` and c2 == `f` and c3 == `o` and c4 == `r` and c5 == `e` { <- TokenType.KEYWORD }
         when c0 == `r` and c1 == `e` and c2 == `t` and c3 == `u` and c4 == `r` and c5 == `n` { <- TokenType.KEYWORD }
         when c0 == `i` and c1 == `m` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.IMPORT }
         when c0 == `e` and c1 == `x` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.EXPORT }
@@ -364,10 +369,16 @@ export function tokenize_source(src) {
                     _advance()
                     when _peek() == `.` {
                         _advance()
-                        tok_push(TokenType.ELLIPSIS, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                        tok_push(TokenType.RANGE_FULL_INCL, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                     } or when _peek() == `=` {
                         _advance()
                         tok_push(TokenType.RANGE_INCLUSIVE, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or when _peek() == `+` {
+                        _advance()
+                        tok_push(TokenType.RANGE_INCL_END, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or when _peek() == `-` {
+                        _advance()
+                        tok_push(TokenType.RANGE_EXCL_END, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                     } or {
                         tok_push(TokenType.RANGE, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                     }
@@ -489,6 +500,9 @@ export function tokenize_source(src) {
                 } or when _peek() == `-` {
                     _advance()
                     tok_push(TokenType.RETURN, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `~` {
+                    _advance()
+                    tok_push(TokenType.YIELD_ARROW, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or when _peek() == `<` {
                     _advance()
                     when _peek() == `=` {
@@ -584,27 +598,49 @@ export function tokenize_source(src) {
 
             // 16. Strings
             or when ch == `\`` or ch == `"` {
-                let quote -> ch
-                let closed -> false
-                let is_err -> false
-                do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {
-                    let c -> _advance()
-                    when c == quote {
-                        closed -> true
-                    } or when c == `\\` {
-                        when LEX[LEX_POS] >= LEX[LEX_LEN] {
-                            is_err -> true
+                when ch == `\`` and _peek() == `\`` and _peek_at(1) == `\`` {
+                    _advance() // 2nd `
+                    _advance() // 3rd `
+                    let closed -> false
+                    do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {
+                        when _peek() == `\`` and _peek_at(1) == `\`` and _peek_at(2) == `\`` {
+                            _advance()
+                            _advance()
+                            _advance()
                             closed -> true
                         } or {
                             _advance()
                         }
                     }
-                }
-                let len_p -> LEX[LEX_POS] - start_p
-                when closed and not is_err {
-                    tok_push(TokenType.STRING, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    let len_p -> LEX[LEX_POS] - start_p
+                    when closed {
+                        tok_push(TokenType.STRING, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
                 } or {
-                    tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    let quote -> ch
+                    let closed -> false
+                    let is_err -> false
+                    do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {
+                        let c -> _advance()
+                        when c == quote {
+                            closed -> true
+                        } or when c == `\\` {
+                            when LEX[LEX_POS] >= LEX[LEX_LEN] {
+                                is_err -> true
+                                closed -> true
+                            } or {
+                                _advance()
+                            }
+                        }
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    when closed and not is_err {
+                        tok_push(TokenType.STRING, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    } or {
+                        tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                    }
                 }
             }
 
@@ -632,34 +668,34 @@ export function tokenize_source(src) {
             or when _is_digit(ch) {
                 when ch == `0` and (_peek() == `x` or _peek() == `X`) {
                     _advance() // consume 'x'
-                    do while _is_hex_digit(_peek()) {
+                    do while _is_hex_digit(_peek()) or _peek() == `_` {
                         _advance()
                     }
                     let len_p -> LEX[LEX_POS] - start_p
                     tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or when ch == `0` and (_peek() == `b` or _peek() == `B`) {
                     _advance() // consume 'b'
-                    do while _peek() == `0` or _peek() == `1` {
+                    do while _peek() == `0` or _peek() == `1` or _peek() == `_` {
                         _advance()
                     }
                     let len_p -> LEX[LEX_POS] - start_p
                     tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or when ch == `0` and (_peek() == `o` or _peek() == `O`) {
                     _advance() // consume 'o'
-                    do while _is_oct_digit(_peek()) {
+                    do while _is_oct_digit(_peek()) or _peek() == `_` {
                         _advance()
                     }
                     let len_p -> LEX[LEX_POS] - start_p
                     tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or {
-                    do while _is_digit(_peek()) {
+                    do while _is_digit(_peek()) or _peek() == `_` {
                         _advance()
                     }
                     let is_dec -> false
                     when _peek() == `.` and _peek_at(1) != `.` and _is_digit(_peek_at(1)) {
                         is_dec -> true
                         _advance() // consume '.'
-                        do while _is_digit(_peek()) {
+                        do while _is_digit(_peek()) or _peek() == `_` {
                             _advance()
                         }
                     }

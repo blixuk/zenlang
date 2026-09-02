@@ -139,10 +139,18 @@ class OperationsParserMixin:
     def range_op(self, allow_instantiation: bool = True) -> ASTNode:
         node: ASTNode = self.term(allow_instantiation=allow_instantiation)
 
-        # `a..b`  exclusive end (half-open)
-        # `a..=b` inclusive end
-        # Note: `...` is ELLIPSIS (rest/spread), not a range.
-        if self.token_handler.match_types([TokenType.RANGE, TokenType.RANGE_INCLUSIVE]):
+        # `a..b`   exclusive end (or range between)
+        # `a..=b`  inclusive end (legacy)
+        # `a..+b`  inclusive end
+        # `a..-b`  exclusive end
+        # `a...b`  full inclusive
+        if self.token_handler.match_types([
+            TokenType.RANGE,
+            TokenType.RANGE_INCLUSIVE,
+            TokenType.RANGE_INCLUSIVE_END,
+            TokenType.RANGE_EXCLUSIVE_END,
+            TokenType.RANGE_FULL_INCLUSIVE,
+        ]):
             operator: Token | None = self.token_handler.previous()
             right: ASTNode | None = self.term(allow_instantiation=allow_instantiation)
             op_value = getattr(operator, "value", "..") or ".."

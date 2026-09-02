@@ -1,147 +1,75 @@
-# Zenlang Compiler Architecture & Internals
+# Zenlang Compiler & Execution Architecture
 
-Zenlang employs a high-performance **Three-Layer Architecture** designed to deliver sub-millisecond script startup, instantaneous feedback, and bare-metal AOT native C compilation with 100% behavioral parity.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Technical Systems Architecture & Runtime Specification |
+| **Authority** | Definitive Guide to the Three-Layer Execution Engine |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
+
+---
+
+## 1. Executive Summary
+
+Zenlang employs a **Three-Layer Execution Architecture** engineered to combine the instantaneous feedback of a scripting language with the raw execution speed and standalone deployability of an ahead-of-time compiled systems language.
 
 ```
-+-------------------------------------------------------------------------+
-|                              Zen Source (.zl)                           |
-+-------------------------------------------------------------------------+
-                                     |
-                                     v
-+-------------------------------------------------------------------------+
-|                  Layer 2: Compiler IR & Data Structures                 |
-|  - Zero-copy 7-tuple Token spans [kind, start, len, line, col, el, ec]   |
-|  - Positional AST Node tuples [kind, line, col, ...payload]             |
-|  - Chunk-chained bump arena allocation (ZenRuntime_allocate)            |
-|  - Clang/Rust-style source-mapped caret diagnostics (Diagnostics.zl)    |
-+-------------------------------------------------------------------------+
-                        /                         \
-                       /                           \
-                      v                             v
-+-------------------------------+   +------------------------------------+
-|  Layer 3: Bytecode Engine     |   | Layer 3: Native C AOT (CLink)      |
-|  - Stack VM (zen_vm.c)        |   | - Transpiler (Codegen.zl)          |
-|  - Instantaneous script eval  |   | - Standalone ELF Binary via GCC/CC |
-|  - Zero-compilation overhead  |   | - Maximum runtime throughput       |
-+-------------------------------+   +------------------------------------+
-                        \                         /
-                         \                       /
-                          v                     v
-+-------------------------------------------------------------------------+
-|                  Layer 1: Unified ZenValue ABI & Runtime                |
-|  - Universal NaN-boxed / Tagged Union ZenValue representation           |
-|  - Shared C runtime across interpreted scripts and compiled binaries    |
-|  - Zero-overhead interoperability (scripts call compiled modules)       |
-+-------------------------------------------------------------------------+
+┌─────────────────────────────────────────────────────────────┐
+│                       Zenlang Source                        │
+│                     (*.zl, *.zd, *.zm)                      │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                ┌──────────────┴──────────────┐
+                ▼                             ▼
+   ┌──────────────────────────┐  ┌──────────────────────────┐
+   │    Bytecode Script VM    │  │     AOT C Transpiler     │
+   │  (Instant execution,     │  │   (Optimized binaries,   │
+   │   REPL, dynamic scripts) │  │    zero-dep deployment)  │
+   └────────────┬─────────────┘  └────────────┬─────────────┘
+                │                             │
+                └──────────────┬──────────────┘
+                               ▼
+            ┌────────────────────────────────────┐
+            │          Universal Runtime         │
+            │           `ZenValue` ABI           │
+            └────────────────────────────────────┘
 ```
 
 ---
 
-## Layer 1: The Unified `ZenValue` ABI
+## 2. The Three Layers
 
-The foundation of Zenlang is the `ZenValue` struct defined in `runtime/core/zen_value.h`. Every runtime value—whether an integer, decimal, string, list, map, tagged struct, closure, or arena handle—is represented as a uniform 16-byte value:
+### Layer 1: Universal `ZenValue` ABI Layer
+At the runtime core is `ZenValue`, a 128-bit tagged union that serves as the universal value representation across all execution paths.
 
-```c
-typedef enum {
-    ZEN_NOTHING = 0,
-    ZEN_INTEGER,
-    ZEN_DECIMAL,
-    ZEN_BOOLEAN,
-    ZEN_STRING,
-    ZEN_LIST,
-    ZEN_MAP,
-    ZEN_OBJECT,
-    ZEN_ARENA,
-    ZEN_VARIANT,
-    ZEN_SET,
-    ZEN_FUNC
-} ZenType;
+- **Data Representation:** Integers, IEEE 754 floats, booleans, strings, lists, maps, structures, functions, and sentinels (`Nothing`, `Default`).
+- **Seamless Interop:** Scripts running on the Bytecode VM can directly call AOT-compiled C functions and vice-versa with zero data serialization or marshaling overhead.
 
-typedef struct {
-    ZenType type;
-    union {
-        int64_t integer;
-        double decimal;
-        bool boolean;
-        char* string;
-        struct ZenList* list;
-        struct ZenMap* map;
-        struct ZenObject* object;
-        struct ZenArena* arena;
-        struct ZenVariant* variant;
-        struct ZenSet* set;
-        struct ZenFunc* func;
-    } as;
-} ZenValue;
-```
+### Layer 2: Positional AST Compiler IR
+The self-hosted compiler avoids heavy tree structures with dispersed heap allocations in favor of flat, positional token and AST lists.
 
-### ABI Invariant
-Because the compiled C code and the bytecode VM/interpreter share the exact same `ZenValue` struct and dispatch table (`ZenValue_add`, `ZenValue_get_at`, `ZenValue_call`), compiled native modules can be loaded and invoked directly by interpreted scripts without glue wrappers or marshalling overhead.
+- **High Cache Locality:** AST nodes are stored in contiguous memory arrays (`[kind, line, col, ...]`).
+- **Rapid Compilation:** Parsing and semantic passes traverse flat buffers with minimal pointer chasing.
+- **Instant Teardown:** Entire compiler ASTs are allocated inside dedicated memory arenas that are reclaimed in $O(1)$ time.
+
+### Layer 3: Dual Execution Engine
+1. **Bytecode Virtual Machine (`zen <file.zl>`):**
+   - Compiles AST directly into compact stack-based bytecode instructions.
+   - Powers the interactive REPL (`zen repl`), live test runners, and quick scripting.
+2. **Ahead-of-Time C Transpiler (`zen build <file.zl>`):**
+   - Transpiles AST into clean, standard ISO C99 code.
+   - Compiles via GCC/Clang with full `-O3` optimizations into standalone native executables.
 
 ---
 
-## Layer 2: Zero-Overhead Compiler IR
+## 3. Compiler Pipeline Stages
 
-To eliminate garbage-collection pressure and dictionary lookups during compilation, the self-hosted compiler (`selfhost/compiler/`) represents all lexical and syntactic entities as flat positional tuples:
-
-### 1. Zero-Copy Token Spans (`Token.zl`)
-Tokens are 7-element positional lists holding integer offsets into the original source text buffer:
-```zen
-[kind, start, length, line, column, end_line, end_column]
-```
-Lexeme materialization is deferred until code generation or error reporting, eliminating millions of intermediate string allocations.
-
-### 2. Positional AST Nodes (`AST.zl`)
-AST nodes are compact positional lists indexed by integer header offsets:
-```zen
-[kind, line, column, ...payload]
-```
-Accessors (`ast_kind(n)`, `ast_line(n)`, `bin_left(n)`, `fn_body(n)`) compile down to direct index lookups in C (`n.as.list->items[i]`).
-
-### 3. Chunk-Chained Bump Arenas
-AST nodes and token arrays allocate from thread-local memory arenas via `ZenRuntime_allocate`. Compilation units execute inside a scoped arena (`with memory.create_arena(...)`), providing maximum cache locality during parsing/typechecking and instantaneous $O(1)$ memory reclamation upon code emission.
-
-### 4. Source-Mapped Caret Diagnostics (`Diagnostics.zl`)
-When the parser or typechecker encounters an error, `Diagnostics.zl` uses the token's `line`, `col`, and `length` to extract the exact source line and render precise Clang/Rust-style carets:
-```
-error: Return type mismatch: expected Integer got String
-  --> src/main.zl:14:5
-  |
-14 |     <- result
-  |     ^
-```
-
----
-
-## Layer 3: Dual Execution Paths
-
-### 1. The Script & VM Path (`Bytecode.zl` & `zen_vm.c`)
-For rapid development, REPL sessions, and short-lived Unix scripts:
-- `Bytecode.zl` compiles AST nodes into compact bytecode instruction chunks (`OP_CONST`, `OP_LOAD`, `OP_STORE`, `OP_ADD`, `OP_CALL`, `OP_JUMP_IF_FALSE`).
-- The C stack virtual machine (`runtime/concurrency/zen_vm.c`) executes instructions with near-native loop speeds and zero GCC compile latency.
-
-### 2. The Native AOT C Path (`Codegen.zl` & `CLink.zl`)
-For production CLI tools, long-running services, and standalone binaries:
-- `Codegen.zl` translates AST nodes into clean, readable, ANSI C code.
-- Functions, closures, and pattern-matching constructs map directly to optimized C functions.
-- `CLink.zl` invokes the host C compiler (`gcc`, `clang`, or `tcc`) with `-O2`/`-O3` optimization, linking directly against the pre-compiled runtime archive (`output/selfhost_rt/bootstrap_runtime.o`).
-- Produces a standalone, zero-dependency ELF binary.
-
----
-
-## Self-Hosting Pipeline & Build Cycle
-
-The Zenlang compiler is fully self-hosting and capable of complete native self-rebuild (`ZEN_SELFHOST_REBUILD=1`):
-
-```bash
-# 1. Selfhost binary compiles its own source tree to C
-./bin/zen-selfhost compile selfhost/zen.zl output/zen_self.c
-
-# 2. Host C compiler links the secondary compiler executable
-gcc output/zen_self.c -I runtime/ -o output/zen_from_self -O2 -lm -lpthread
-
-# 3. Secondary compiler compiles test fixtures and builds working binaries
-./output/zen_from_self compile tests/hello.zl output/hello.c
-gcc output/hello.c -I runtime/ -o output/hello
-./output/hello  # Output: Hello, Zen!
-```
+1. **Lexical Analysis (`Lexer.zl`):** Scans UTF-8 source text into token arrays.
+2. **Syntactic Parsing (`Parser.zl`):** Constructs positional AST nodes.
+3. **Semantic Analysis & Type Checking (`TypeChecker.zl`):** Validates type constraints, struct definitions, and variable scopes.
+4. **Code Generation:**
+   - **Bytecode Emitter (`Bytecode.zl`):** Generates bytecode chunks with constant pools.
+   - **C Codegen (`Codegen.zl`):** Emits optimized C source code with forward declarations and multi-unit support (`--multi`).
+5. **Execution / Linking:**
+   - VM executes bytecode directly.
+   - Native builds link against the shared C runtime (`runtime/libzen_runtime.a`).

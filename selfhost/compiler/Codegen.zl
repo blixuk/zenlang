@@ -3178,6 +3178,12 @@ function emit_literal_node(node) {
         <- `ZEN_NOTHING_VAL`
     }
     let tid -> Tok.kind_id(AST.lit_tok_kind(node))
+    when tid == 20 {
+        <- `ZEN_DEFAULT_VAL`
+    }
+    when tid == 19 {
+        <- `ZEN_NOTHING_VAL`
+    }
     // 24 STRING, 25 RUNE (Token.kind_id). Also accept leftover name strings.
     when tid == 24 or tid == 25 {
         let s -> Str.to_string(AST.lit_val(node))
@@ -3204,18 +3210,63 @@ function emit_literal(value) {
     when s == `false` or s == `False` {
         <- `ZenValue_make_boolean(0)`
     }
-    when s == `Nothing` or s == `Nothing` or s == `None` {
+    when s == `Nothing` or s == `nothing` or s == `None` {
         <- `ZEN_NOTHING_VAL`
+    }
+    when s == `Default` or s == `default` {
+        <- `ZEN_DEFAULT_VAL`
     }
     // Integers may already be numeric values; to_string should still yield digits.
     when looks_int(s) {
-        <- `ZenValue_make_integer(` + s + `LL)`
+        let clean -> strip_underscores(s)
+        when Str.length(clean) > 2 and Str.at(clean, 0) == `0` and (Str.at(clean, 1) == `o` or Str.at(clean, 1) == `O`) {
+            let oct_digits -> `01234567`
+            let acc -> 0
+            let oi -> 2
+            do while oi < Str.length(clean) {
+                let ch -> Str.at(clean, oi)
+                let d -> Str.index_of(oct_digits, ch)
+                when d != -1 { acc -> (acc * 8) + d }
+                oi -> oi + 1
+            }
+            <- `ZenValue_make_integer(` + Str.to_string(acc) + `LL)`
+        } or when Str.length(clean) > 2 and Str.at(clean, 0) == `0` and (Str.at(clean, 1) == `b` or Str.at(clean, 1) == `B`) {
+            let acc -> 0
+            let bi -> 2
+            do while bi < Str.length(clean) {
+                let ch -> Str.at(clean, bi)
+                when ch == `1` { acc -> (acc * 2) + 1 }
+                or when ch == `0` { acc -> acc * 2 }
+                bi -> bi + 1
+            }
+            <- `ZenValue_make_integer(` + Str.to_string(acc) + `LL)`
+        }
+        <- `ZenValue_make_integer(` + clean + `LL)`
     }
     when looks_dec(s) {
-        <- `ZenValue_make_decimal(` + s + `)`
+        let clean -> strip_underscores(s)
+        <- `ZenValue_make_decimal(` + clean + `)`
     }
     let esc -> escape_c_string(s)
     <- `ZenValue_make_string("` + esc + `")`
+}
+
+function strip_underscores(s) {
+    let s_str -> Str.to_string(s)
+    when Str.index_of(s_str, `_`) == -1 {
+        <- s_str
+    }
+    let n -> Str.length(s_str)
+    let res -> ``
+    let i -> 0
+    do while i < n {
+        let ch -> Str.at(s_str, i)
+        when ch != `_` {
+            res -> res + ch
+        }
+        i -> i + 1
+    }
+    <- res
 }
 
 function looks_int(s) {
@@ -3238,8 +3289,12 @@ function looks_int(s) {
     when n > i + 2 and Str.at(s, i) == `0` and (Str.at(s, i + 1) == `b` or Str.at(s, i + 1) == `B`) {
         <- bin_digits_only(s, i + 2, n)
     }
+    // Octal literals: 0o... / 0O...
+    when n > i + 2 and Str.at(s, i) == `0` and (Str.at(s, i + 1) == `o` or Str.at(s, i + 1) == `O`) {
+        <- oct_digits_only(s, i + 2, n)
+    }
     // Digit-class strings like "0123456789" must stay strings (also invalid C octal).
-    when Str.at(s, i) == `0` and n > i + 1 {
+    when Str.at(s, i) == `0` and n > i + 1 and not (Str.at(s, i + 1) == `x` or Str.at(s, i + 1) == `b` or Str.at(s, i + 1) == `o`) {
         <- false
     }
     <- digits_only(s, i, n)
@@ -3250,7 +3305,7 @@ function hex_digits_only(s, i, n) {
         <- true
     }
     let ch -> Str.at(s, i)
-    when not _is_hex_digit(ch) {
+    when ch != `_` and not _is_hex_digit(ch) {
         <- false
     }
     <- hex_digits_only(s, i + 1, n)
@@ -3261,10 +3316,21 @@ function bin_digits_only(s, i, n) {
         <- true
     }
     let ch -> Str.at(s, i)
-    when ch != `0` and ch != `1` {
+    when ch != `_` and ch != `0` and ch != `1` {
         <- false
     }
     <- bin_digits_only(s, i + 1, n)
+}
+
+function oct_digits_only(s, i, n) {
+    when i >= n {
+        <- true
+    }
+    let ch -> Str.at(s, i)
+    when ch != `_` and (ch < `0` or ch > `7`) {
+        <- false
+    }
+    <- oct_digits_only(s, i + 1, n)
 }
 
 function digits_only(s, i, n) {
@@ -3272,7 +3338,7 @@ function digits_only(s, i, n) {
         <- true
     }
     let ch -> Str.at(s, i)
-    when not _is_digit(ch) {
+    when ch != `_` and not _is_digit(ch) {
         <- false
     }
     <- digits_only(s, i + 1, n)
@@ -3309,6 +3375,8 @@ function looks_dec(s) {
             dots -> dots + 1
         } or when _is_digit(ch) {
             digits -> digits + 1
+        } or when ch == `_` {
+            // allow underscore
         } or {
             <- false
         }
@@ -3383,11 +3451,14 @@ function emit_binary(op, l, r) {
     when op == `--` {
         <- `ZenValue_op_remove(` + l + `, ` + r + `)`
     }
-    when op == `..` {
+    when op == `..` or op == `..-` {
         <- `ZenValue_range(` + l + `, ` + r + `)`
     }
     when op == `..=` or op == `...` {
         <- `ZenValue_range_inclusive(` + l + `, ` + r + `)`
+    }
+    when op == `..+` {
+        <- `ZenValue_range_open_start_inclusive(` + l + `, ` + r + `)`
     }
     when op == `+` {
         <- `ZenValue_add(` + l + `, ` + r + `)`
@@ -3474,9 +3545,14 @@ function is_type_name_str(s) {
 function emit_call(node) {
     let callee -> AST.call_callee(node)
     let args -> AST.call_args(node)
-    // variable call: name(args) — or ClassName(args) → Class_new
-    when cg_is_kind(callee, AST.K_VARIABLE) {
-        let raw -> Str.to_string(AST.var_name(callee))
+    // variable call: name(args) — or ClassName(args) → Class_new — or TypeName(val) → cast
+    when cg_is_kind(callee, AST.K_VARIABLE) or cg_is_kind(callee, AST.K_LITERAL) {
+        let raw -> ``
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            raw -> Str.to_string(AST.var_name(callee))
+        } or {
+            raw -> Str.to_string(AST.lit_val(callee))
+        }
         let alist -> emit_args(args)
         when is_registered_class(raw) {
             let ctor -> c_ident(class_method_c_name(raw, `new`))
@@ -3492,24 +3568,26 @@ function emit_call(node) {
             }
             <- `ZenValue_cast(ZEN_NOTHING_VAL, "` + raw + `")`
         }
-        // Named free function → direct C call
-        when is_free_fn(raw) {
-            let fname -> c_ident(raw)
-            when alist == `` {
-                <- fname + `()`
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            // Named free function → direct C call
+            when is_free_fn(raw) {
+                let fname -> c_ident(raw)
+                when alist == `` {
+                    <- fname + `()`
+                }
+                <- fname + `(` + alist + `)`
             }
-            <- fname + `(` + alist + `)`
+            // Local/closure value → ZenValue_apply
+            let fv -> c_ident(raw)
+            let argc -> 0
+            when args != Nothing {
+                argc -> args.length
+            }
+            when alist == `` {
+                <- `ZenValue_apply(` + fv + `, 0)`
+            }
+            <- `ZenValue_apply(` + fv + `, ` + Str.to_string(argc) + `, ` + alist + `)`
         }
-        // Local/closure value → ZenValue_apply
-        let fv -> c_ident(raw)
-        let argc -> 0
-        when args != Nothing {
-            argc -> args.length
-        }
-        when alist == `` {
-            <- `ZenValue_apply(` + fv + `, 0)`
-        }
-        <- `ZenValue_apply(` + fv + `, ` + Str.to_string(argc) + `, ` + alist + `)`
     }
     // member call: obj.meth(args) → class Type_method or runtime dispatch
     when cg_is_kind(callee, AST.K_GET) {

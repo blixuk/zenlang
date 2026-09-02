@@ -141,7 +141,7 @@ static int zen_range_as_codepoint(ZenValue v, long long* out) {
     return 0;
 }
 
-static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive) {
+static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive, int open_start) {
     long long s = 0, e = 0;
     int sm = zen_range_as_codepoint(start, &s);
     int em = zen_range_as_codepoint(end, &e);
@@ -154,8 +154,9 @@ static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive) {
     ZenValue list_v = ZenValue_from_list(list);
 
     if (s <= e) {
+        long long begin = open_start ? (s + 1) : s;
         long long stop = inclusive ? (e + 1) : e;
-        for (long long i = s; i < stop; i++) {
+        for (long long i = begin; i < stop; i++) {
             if (as_char) {
                 char buf[2] = { (char)i, 0 };
                 ZenList_append_value(list_v, ZenValue_make_string(buf));
@@ -164,8 +165,9 @@ static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive) {
             }
         }
     } else {
+        long long begin = open_start ? (s - 1) : s;
         long long stop = inclusive ? (e - 1) : e;
-        for (long long i = s; i > stop; i--) {
+        for (long long i = begin; i > stop; i--) {
             if (as_char) {
                 char buf[2] = { (char)i, 0 };
                 ZenList_append_value(list_v, ZenValue_make_string(buf));
@@ -179,12 +181,17 @@ static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive) {
 
 // Half-open range a..b  → [a, a+1, ..., b-1]
 ZenValue ZenValue_range(ZenValue start, ZenValue end) {
-    return zen_range_build(start, end, 0);
+    return zen_range_build(start, end, 0, 0);
 }
 
 // Inclusive range a..=b → [a, a+1, ..., b]
 ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end) {
-    return zen_range_build(start, end, 1);
+    return zen_range_build(start, end, 1, 0);
+}
+
+// Inclusive end range a..+b → [a+1, a+2, ..., b]
+ZenValue ZenValue_range_open_start_inclusive(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 1, 1);
 }
 
 // Back-compat alias used by older generated code / builtins.

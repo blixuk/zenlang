@@ -487,6 +487,19 @@ function parse_function(i) {
     }
     let name -> val_of(name_t)
     let j -> i + 1
+    let ret_type -> Nothing
+
+    // Check if return type precedes parameters: function foo : ReturnType
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.TYPE_SET) or is_val(tj, `:`) {
+        let tr -> parse_type_name(j + 1)
+        when tr[`err`] != Nothing {
+            <- tr
+        }
+        ret_type -> tr[`node`]
+        j -> tr[`i`]
+    }
+
     // optional ()
     when is_kind(tok_at(j), TokenType.LEFT_PAREN) {
         let pr -> parse_param_list(j + 1, [])
@@ -496,9 +509,23 @@ function parse_function(i) {
         when not is_kind(tok_at(pr[`i`]), TokenType.RIGHT_PAREN) {
             <- fail(pr[`i`], `Expected ')'.`)
         }
-        <- parse_function_after_params(name, pr[`stmts`], name_t, pr[`i`] + 1)
+        j -> pr[`i`] + 1
+
+        // If return type was not before params, check if it follows params: function foo(params) : ReturnType
+        when ret_type == Nothing {
+            let tj2 -> tok_at(j)
+            when is_kind(tj2, TokenType.TYPE_SET) or is_val(tj2, `:`) {
+                let tr2 -> parse_type_name(j + 1)
+                when tr2[`err`] != Nothing {
+                    <- tr2
+                }
+                ret_type -> tr2[`node`]
+                j -> tr2[`i`]
+            }
+        }
+        <- parse_function_body(name, pr[`stmts`], name_t, ret_type, j)
     }
-    <- parse_function_after_params(name, [], name_t, j)
+    <- parse_function_body(name, [], name_t, ret_type, j)
 }
 
 function parse_function_after_params(name, params, name_t, j) {
@@ -515,7 +542,7 @@ function parse_function_after_params(name, params, name_t, j) {
 
 function parse_function_body(name, params, name_t, ret, j) {
     let tj -> tok_at(j)
-    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) {
+    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) or is_kind(tj, TokenType.ASSIGNMENT) or is_val(tj, `->`) {
         let er -> parse_expression(j + 1)
         when er[`err`] != Nothing {
             <- er
@@ -532,10 +559,10 @@ function parse_function_body(name, params, name_t, ret, j) {
 }
 
 /!
- Lambda: after 'function', next is '(' or '{' (no name).
+ Lambda: after 'function', next is '(' or '{' or '->' or '<-' (no name).
  !/
 function parse_function_expression(i) {
-    // i at '(' or '{'
+    // i at '(' or '{' or arrow
     let t0 -> tok_at(i - 1)
     let params -> []
     let j -> i
@@ -554,6 +581,16 @@ function parse_function_expression(i) {
     when is_kind(tok_at(j), TokenType.TYPE_SET) or is_val(tok_at(j), `:`) {
         let tr -> parse_type_name(j + 1)
         j -> tr[`i`]
+    }
+    let tj -> tok_at(j)
+    when is_kind(tj, TokenType.RETURN) or is_val(tj, `<-`) or is_kind(tj, TokenType.ASSIGNMENT) or is_val(tj, `->`) {
+        let er -> parse_expression(j + 1)
+        when er[`err`] != Nothing {
+            <- er
+        }
+        let ret_stmt -> AST.return_stmt(er[`node`], line_of(tj), col_of(tj))
+        let body_node -> AST.block([ret_stmt], line_of(tj), col_of(tj))
+        <- parser_ok(AST.function_expr(params, body_node, line_of(t0), col_of(t0)), er[`i`])
     }
     let br -> parse_block(j)
     when br[`err`] != Nothing {
@@ -580,6 +617,7 @@ function is_name_token(t) {
     // Needed for `when value is List` in stdlib (json.zl).
     when is_kind(t, TokenType.LIST) or is_kind(t, TokenType.MAP) or is_kind(t, TokenType.SET) or
          is_kind(t, TokenType.STRING) or is_kind(t, TokenType.RUNE) or
+         is_kind(t, TokenType.BYTE) or is_kind(t, TokenType.BYTES) or
          is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or is_kind(t, TokenType.BOOLEAN) or
          is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.VOID) or is_kind(t, TokenType.VARIANT) or
          is_kind(t, TokenType.FUNCTION) or is_kind(t, TokenType.ENUMERATOR) or is_kind(t, TokenType.STRUCTURE) or
@@ -1693,7 +1731,9 @@ function parse_range(i) {
     }
     let j -> left[`i`]
     let t -> tok_at(j)
-    when is_kind(t, TokenType.RANGE) or is_kind(t, TokenType.RANGE_INCLUSIVE) {
+    when is_kind(t, TokenType.RANGE) or is_kind(t, TokenType.RANGE_INCLUSIVE) or
+         is_kind(t, TokenType.RANGE_INCL_END) or is_kind(t, TokenType.RANGE_EXCL_END) or
+         is_kind(t, TokenType.RANGE_FULL_INCL) {
         let op -> val_of(t)
         let right -> parse_term(j + 1)
         when right[`err`] != Nothing {
@@ -1942,7 +1982,7 @@ function parse_primary(i) {
         when blk[`err`] != Nothing {
             <- blk
         }
-        <- parser_ok(AST.block(blk[`stmts`], line_of(t), col_of(t)), blk[`i`])
+        <- blk
     }
     // structure init: Name { field -> expr, ... } or Name { x, y }
     // Ambiguity: `do for i in xs { ... }` must not parse `xs {` as struct init.

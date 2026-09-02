@@ -108,6 +108,8 @@ class Lexer(Comments, Identifiers, Numbers, Strings, Operators, Symbols):
             self.make_type_cast()
         elif self.peek(1) == "-":
             self.make_return()
+        elif self.peek(1) == "~":
+            self.make_yield_arrow()
         elif self.peek(1) == "<":
             self.make_operator()
         else:

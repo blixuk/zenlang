@@ -1,9 +1,15 @@
 # Zenlang Interactive Stateful REPL Guide
 
-> [!NOTE]
-> Zenlang Interactive Stateful REPL (`zen repl`). View this guide in your terminal with `zen view doc/REPL.zm`.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Interactive REPL User Guide |
+| **Authority** | Tooling Manual |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
-## Overview
+---
+
+## 1. Overview
 
 The Zenlang REPL provides an interactive development shell featuring persistent session state, automatic `_` and `_N` result history, state snapshotting (`:save` / `:load` with Zen Data `.zd`), multi-line block entry, live syntax highlighting, and tab autocompletion.
 

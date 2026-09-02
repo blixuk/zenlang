@@ -36,6 +36,8 @@ Core ladder (must stay green for “language works”):
 - Range operators: `tests/language/range_syntax_01.zl` (core + parity)
 - Closures (by-value capture): `tests/language/closure_01.zl` (core + parity)
 - Extended operators (`++` / `--`): `tests/language/test_extended_operators.zl` (core + parity)
+- Frontend syntax parity (bases, strings, arrow bodies, 4-boundary ranges): `tests/language/test_frontend_parity_01.zl`
+- Sentinels & type casting (`Nothing`, `Default`, `<:`, `Type(val)`): `tests/language/test_nothing_default_01.zl`
 - Directional guard returns & concise functions: `tests/core/test_guard_concise_syntax.zl` (core + parity)
 - Diagnostic source frames, Zen Data & Zen Mark Callouts: `tests/core/test_diagnostics.zl` (core + parity)
 - Individual: `python3 bootstrap/Zen.py path/to/test.zl` or `./bin/zen` after `./scripts/zen install`

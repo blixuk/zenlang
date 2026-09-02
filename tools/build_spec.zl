@@ -30,7 +30,7 @@ function _chap_01() {
                 [`Return`, `<- result`, `Visual flow from function back to caller`],
                 [`Guard Exit`, `when error <- 1`, `Concise single-line early return`],
                 [`Sentinels`, `Nothing, Default`, `Explicit absent and zero states`],
-                [`Range`, `0 .. 10, 0 ..= 10`, `Exclusive and inclusive numeric intervals`],
+                [`Range`, `0 ... 10, 0 ..- 10`, `Full inclusive and exclusive-end numeric intervals`],
                 [`Pattern Matching`, `when val is [a, b]`, `Zero-overhead structural destructuring`]
             ]
         }),
@@ -138,9 +138,9 @@ let hex_val     -> 0x2A
 let binary_val  -> 0b101010
 let float_val   -> 3.14159
 
-// String Literals
-let simple_str  -> "Standard double-quoted string with \\n escapes"
-let raw_str     -> \`Raw backtick string with no escaping needed\`
+// String Literals (Strictly enclosed in backticks)
+let simple_str  -> \`Standard string with backticks\`
+let interpolated -> f\`Value is {decimal_int}\`
 
 // Collections
 let numbers_list -> [1, 2, 3, 4, 5]
@@ -162,12 +162,12 @@ function _chap_05() {
         }),
         zm.Heading({ `text` -> `Binding (let) and Mutation (set)`, `size` -> 2 }),
         zm.Paragraph({
-            `text` -> `Variables are introduced into scope using the let keyword followed by an identifier, the right arrow (->), and an initializing expression. Subsequent reassignments use the set keyword to make mutability intentional and explicit.`
+            `text` -> `Variables are introduced into scope using the let keyword followed by an identifier, the right arrow (->), and an initializing expression:`
         }),
         zm.CodeBlock({
             `language` -> `zen`,
             `code` -> `let count -> 0           // Variable binding with initial value
-set count -> count + 1   // Reassignment using set keyword
+count -> count + 1       // Reassignment using flow arrow
 
 // Destructuring assignment
 let [first, second] -> [10, 20]
@@ -186,12 +186,13 @@ function _chap_06() {
         zm.Table({
             `headers` -> [`Category`, `Operators`, `Description`],
             `rows` -> [
-                [`Flow`, `-> , <-`, `Assignment flow into target, return flow out of scope`],
+                [`Flow`, `-> , <- , <~`, `Assignment flow, return flow, yield stream flow`],
                 [`Arithmetic`, `+ , - , * , / , %`, `Standard numeric arithmetic and string concatenation`],
                 [`Comparison`, `== , != , < , <= , > , >=`, `Value equality and relational ordering`],
-                [`Logical`, `and , or , not`, `Short-circuiting boolean operations`],
-                [`Range`, `.. , ..=`, `Half-open [a, b) and closed [a, b] ranges`],
-                [`Extended`, `++ , --`, `In-place increment and decrement`]
+                [`Logical`, `and , or , not`, `Words for boolean operations`],
+                [`Bitwise`, `&& , || , !! , ^^`, `Doubled symbols for bitwise operations`],
+                [`Range`, `.. , ..+ , ..- , ...`, `4-boundary interval range system`],
+                [`Extended`, `++ , --`, `In-place stepped increment and decrement`]
             ]
         }),
         zm.HorizontalRule({ `symbol` -> `*` })
@@ -211,11 +212,11 @@ function _chap_07() {
         zm.CodeBlock({
             `language` -> `zen`,
             `code` -> `when status_code == 200 {
-    io.writeln("Request succeeded")
+    io.writeln(\`Request succeeded\`)
 } or when status_code == 404 {
-    io.writeln("Resource not found")
+    io.writeln(\`Resource not found\`)
 } or {
-    io.writeln("Unexpected status code")
+    io.writeln(\`Unexpected status code\`)
 }`
         }),
         zm.Heading({ `text` -> `Single-Line Guard Returns`, `size` -> 2 }),
@@ -241,14 +242,14 @@ function _chap_07() {
             `code` -> `// 1. While Loop
 let i -> 0
 do while i < 5 {
-    io.writeln("Index: " + Str.to_string(i))
-    set i -> i + 1
+    io.writeln(\`Index: \` + Str.to_string(i))
+    i -> i + 1
 }
 
 // 2. Collection Iteration
-let fruits -> ["Apple", "Banana", "Cherry"]
+let fruits -> [\`Apple\`, \`Banana\`, \`Cherry\`]
 do for fruit in fruits {
-    io.writeln("Fruit: " + fruit)
+    io.writeln(\`Fruit: \` + fruit)
 }`
         }),
         zm.HorizontalRule({ `symbol` -> `*` })
@@ -263,19 +264,19 @@ function _chap_08() {
         }),
         zm.Heading({ `text` -> `Concise Expression Functions`, `size` -> 2 }),
         zm.Paragraph({
-            `text` -> `Short single-expression functions can be written on a single line using function name(params) <- expr:`
+            `text` -> `Short single-expression functions can be written on a single line using function name(params) -> expr:`
         }),
         zm.CodeBlock({
             `language` -> `zen`,
-            `code` -> `// Concise single-expression functions
-function square(x) <- x * x
-function add(a, b) <- a + b
-function is_even(n) <- n % 2 == 0
+            `code` -> `// Concise single-expression arrow functions
+function square(x: Integer) : Integer -> x * x
+function add(a: Integer, b: Integer) : Integer -> a + b
+function is_even(n: Integer) : Boolean -> (n % 2) == 0
 
 // Higher-order function with capture-by-value closure
 function make_multiplier(factor) {
     // factor is snapshotted by value
-    <- function(x) <- x * factor
+    <- function(x) -> x * factor
 }`
         }),
         zm.HorizontalRule({ `symbol` -> `*` })
@@ -307,8 +308,8 @@ let r -> Rect { origin -> p, width -> 100, height -> 50 }
 
 // Pattern matching and destructuring
 when r is Rect { origin -> Point { x, y }, width, height } {
-    io.writeln("Origin: " + Str.to_string(x) + ", " + Str.to_string(y))
-    io.writeln("Area: " + Str.to_string(width * height))
+    io.writeln(\`Origin: \` + Str.to_string(x) + \`, \` + Str.to_string(y))
+    io.writeln(\`Area: \` + Str.to_string(width * height))
 }`
         }),
         zm.HorizontalRule({ `symbol` -> `*` })
@@ -331,7 +332,7 @@ function _chap_10() {
     }
     
     function speak() {
-        <- "Some generic animal sound"
+        <- \`Some generic animal sound\`
     }
 }
 
@@ -344,7 +345,7 @@ class Dog extends Animal {
     }
     
     function speak() {
-        <- "Woof! My name is " + self.name
+        <- \`Woof! My name is \` + self.name
     }
 }`
         }),
@@ -411,7 +412,7 @@ function process_batch_in_arena(items) {
     with memory.create_arena(32 * 1024 * 1024) as arena {
         do for item in items {
             // Memory allocated within this block lives inside the arena
-            let processed -> item + "_processed"
+            let processed -> item + \`_processed\`
             io.writeln(processed)
         }
     }
@@ -478,11 +479,12 @@ function main() {
         _chap_14()
     ], entry)
     
-    let pdf_out -> zm.render_pdf(doc, `doc/Specification/Zenlang.pdf`)
-    io.writeln(`[SPEC] Successfully generated modular doc/Specification/Zenlang.pdf (` + Str.to_string(Str.length(pdf_out)) + ` bytes)`)
+    let pdf_out -> zm.render_pdf(doc, `doc/SPECIFICATION.pdf`)
+    io.writeln(`[SPEC] Successfully generated doc/SPECIFICATION.pdf (` + Str.to_string(Str.length(pdf_out)) + ` bytes)`)
     
     let html_out -> zm.render_html(doc)
-    f.write(`doc/Specification/Zenlang.html`, html_out)
-    io.writeln(`[SPEC] Successfully generated HTML preview doc/Specification/Zenlang.html (` + Str.to_string(Str.length(html_out)) + ` bytes)`)
+    f.write(`doc/SPECIFICATION.html`, html_out)
+    io.writeln(`[SPEC] Successfully generated HTML preview doc/SPECIFICATION.html (` + Str.to_string(Str.length(html_out)) + ` bytes)`)
     <- 0
 }
+

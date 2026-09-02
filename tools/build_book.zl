@@ -1,0 +1,343 @@
+import zen.io.file as f
+import zen.io.io as io
+import zen.text.string as Str
+import zen.zenmark as zm
+
+function _book_chap_01() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 1: Getting Started`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Welcome to Zenlang! This chapter walks you through installing the compiler, writing your first program, and using the built-in developer tools.`
+        }),
+        zm.Heading({ `text` -> `1. Installation & Environment`, `size` -> 2 }),
+        zm.CodeBlock({
+            `language` -> `bash`,
+            `code` -> `# 1. Install the standalone compiler router
+./scripts/zen install
+
+# 2. Run your first script
+./bin/zen examples/getting_started/01_hello.zl
+
+# 3. Launch interactive REPL
+./bin/zen repl`
+        }),
+        zm.Heading({ `text` -> `2. Your First Program`, `size` -> 2 }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `use zen.io
+
+function main() {
+    io.writeln(\`Hello, Zenlang!\`)
+    <- 0
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_02() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 2: Visual Data Flow`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang is founded on the principle of directional clarity: code syntax reflects the physical movement of data through variables, transformations, and function returns.`
+        }),
+        zm.Heading({ `text` -> `1. The Assignment Arrow (->)`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Values flow left-to-right into their variable targets. Use let for mutable bindings and set for immutable constants:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let score -> 100
+score -> score + 25
+
+set MAX_LIMIT : Integer -> 500`
+        }),
+        zm.Heading({ `text` -> `2. The Return Arrow (<-)`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Functions emit results outward to their caller using the visual return arrow:`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `function multiply(a: Integer, b: Integer) : Integer {
+    <- a * b
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_03() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 3: Types, The 5 Collections & Sentinels`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang provides a robust, optionally typed type system, capitalization-strict sentinels (Nothing and Default), and 5 distinct collection primitives.`
+        }),
+        zm.Table({
+            `headers` -> [`Collection`, `Ordering`, `Size`, `Mutability`, `Literals`],
+            `rows` -> [
+                [`List`, `Ordered`, `Dynamic`, `Mutable`, `[1, 2, 3], List{...}, L{...}`],
+                [`Set`, `Unordered`, `Dynamic`, `Mutable`, `Set{1, 2}, S{1, 2}`],
+                [`Vector`, `Ordered`, `Fixed`, `Immutable`, `Vector{10, 20}, V{10, 20}`],
+                [`Tuple`, `Ordered`, `Fixed`, `Immutable`, `Tuple{1, 'a'}, (1, 'a')`],
+                [`Map`, `Unordered`, `Dynamic`, `Mutable`, `{ 'k' -> 'v' }, Map{...}`]
+            ]
+        }),
+        zm.Heading({ `text` -> `Sentinels: Nothing vs Default`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Nothing denotes absence of a value (null/nil replacement). Default represents the type-declared zero state (0, 0.0, empty string, [], {}).`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let avatar : String  -> Nothing  // Explicit absent state
+let buffer : List    -> Default  // Materializes as []
+let count  : Integer -> Default  // Materializes as 0`
+        }),
+        zm.Heading({ `text` -> `Type Casting (<: and Type(val))`, `size` -> 2 }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let b : Byte -> 0x41
+let int_val -> b <: Integer  // 65
+let str_val -> b <: String   // \`0x41\`
+let num     -> Integer(\`42\`)  // 42`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_04() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 4: Control Flow, Ranges & Pattern Matching`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Clean conditional branching with when ... or, 4-boundary ranges, structured do loops with empty fallbacks, and multi-way check matching.`
+        }),
+        zm.Table({
+            `headers` -> [`Range Operator`, `Name`, `Interval`, `Example`],
+            `rows` -> [
+                [`..`, `Range Between`, `(start, end)`, `1..5 -> [2, 3, 4]`],
+                [`..+`, `Inclusive End`, `(start, end]`, `1..+5 -> [2, 3, 4, 5]`],
+                [`..-`, `Exclusive End`, `[start, end)`, `1..-5 -> [1, 2, 3, 4]`],
+                [`...`, `Full Inclusive`, `[start, end]`, `1...5 -> [1, 2, 3, 4, 5]`]
+            ]
+        }),
+        zm.Heading({ `text` -> `Multi-Way Switch (check)`, `size` -> 2 }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `let code -> check cmd {
+    case \`start\`   <- 0,
+    case \`stop\`    <- 1,
+    case \`restart\` <- 2
+} or <- -1`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_05() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 5: Functions, Arrow Bodies & Closures`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Functions feature parameterless declarations, return type positioning, single-expression arrow bodies, and snapshot-by-value closures.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `// Parameterless function:
+function say_hello { <- \`Hello\` }
+
+// Arrow function:
+function square(x: Integer) : Integer -> x * x
+
+// Arrow lambda:
+let is_even -> function(x) -> (x % 2) == 0`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_06() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 6: The Three Container Tiers & Object Architecture`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang unifies data structures into three distinct tiers:`
+        }),
+        zm.Table({
+            `headers` -> [`Tier`, `Keyword`, `Memory Model`, `Primary Use`],
+            `rows` -> [
+                [`Low Tier`, `structure`, `Value semantics, flat C ABI`, `High-throughput records, Vector math`],
+                [`Middle Tier`, `object`, `Dynamic hash map, bound self`, `Fluid entities, 1:1 Zen Data (.zd) interop`],
+                [`High Tier`, `class`, `Nominal OOP, single inheritance`, `Class hierarchies, extends, init constructors`]
+            ]
+        }),
+        zm.Heading({ `text` -> `Enumerators (enumerator / enum)`, `size` -> 2 }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `enumerator Direction { North -> 1, South -> 2, East -> 3, West -> 4 }
+let d -> Direction.North
+io.writeln(d.name + \`: \` + Str.to_string(d.value))`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_07() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 7: The Error Handling Triad`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang rejects try/catch complexity, using an explicit error triad: raise (^), check (?), and assert (!).`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `function divide : [Decimal, Error] (a: Decimal, b: Decimal) {
+    when b == 0.0 { ^ \`DivisionByZero\` with \`Zero divisor\` }
+    <- a / b
+}
+
+// Graceful recovery:
+let safe -> check divide(10.0, 0.0) or 0.0
+
+// Invariant assertion:
+assert safe >= 0.0 raise \`NegativeResult\``
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_08() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 8: Modules, Namespaces & Packaging`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Modules organize code cleanly with use, from, and import. Every file has access to an intrinsic module metadata object.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `use zen.io
+use zen.text.string as Str
+from zen.math.math import abs, min, max
+
+function main() {
+    io.info(\`Running module: \` + module.name)
+    io.info(\`Canonical path: \` + module.path)
+    <- 0
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_09() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 9: Terminal Mastery & UI Canvas`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang is a terminal-first programming language. Sub-millisecond ANSI canvas rendering, 60 FPS redraws, raw keyboard polling, and layout widgets are native standard library primitives.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `use zen.ui.canvas as canvas
+use zen.sys.term as term
+
+function main() {
+    let cv -> canvas.create(80, 24)
+    canvas.draw_box(cv, 0, 0, 79, 23, \`rounded\`)
+    canvas.draw_text(cv, 10, 5, \`* Zenlang Terminal Canvas *\`)
+    canvas.render(cv)
+    <- 0
+}`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_10() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 10: Dual Execution & The C Runtime`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Every Zenlang program runs identically in the script VM during development and under ahead-of-time (AOT) C compilation for standalone binary distribution.`
+        }),
+        zm.Table({
+            `headers` -> [`Pipeline`, `Command`, `Output`, `Target Use`],
+            `rows` -> [
+                [`Bytecode VM`, `zen script.zl`, `Direct execution`, `Rapid iteration, REPL`],
+                [`Native C AOT`, `zen compile main.zl -o app`, `Standalone ELF binary`, `Production services, CLI utilities`]
+            ]
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_11() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 11: Practical Projects`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Real-world capstones combining file I/O, string parsing, color formatting, and terminal user interfaces into complete applications.`
+        }),
+        zm.Paragraph({
+            `text` -> `Projects include the zen-count Unix utility, log stream analyzers, and live interactive dashboards.`
+        }),
+        zm.HorizontalRule({ `symbol` -> `*` })
+    ]
+}
+
+function _book_chap_12() {
+    <- [
+        zm.Heading({ `text` -> `Chapter 12: Concurrency & The Unified Task Substrate`, `size` -> 1 }),
+        zm.Paragraph({
+            `text` -> `Zenlang eliminates the Function Color Problem (async/await) with a single task primitive running on lightweight M:N runtime fibers.`
+        }),
+        zm.CodeBlock({
+            `language` -> `zen`,
+            `code` -> `task fetch_profile : String (id: Integer) {
+    <- net.get(\`https://api.example.com/users/\` + Str.to_string(id))
+}
+
+function main() {
+    let h1 -> fetch_profile(101).spawn
+    let h2 -> fetch_profile(102).spawn
+
+    let p1 -> h1.wait
+    let p2 -> h2.wait
+    io.writeln(\`Profiles loaded cleanly\`)
+    <- 0
+}`
+        }),
+        zm.Heading({ `text` -> `Structured Concurrency with with task_group`, `size` -> 2 }),
+        zm.Paragraph({
+            `text` -> `Child tasks are bounded to their parent group lifetime. Any unhandled error cancels sibling tasks automatically with zero orphaned fibers.`
+        })
+    ]
+}
+
+function main() {
+    io.writeln(`[BOOK] Compiling The Zen of Programming Book PDF via Zen Mark...`)
+    
+    let entry -> zm.Entry({
+        `title` -> `The Zen of Programming`,
+        `author` -> `The Zenlang Core Development Team`,
+        `date` -> `2026-09-02`,
+        `version` -> `1.0.0`,
+        `archetype` -> `book`,
+        `theme` -> `antiquarian`
+    })
+    
+    let doc -> zm.Document([
+        zm.TableOfContents({ `title` -> `Table of Contents`, `max_depth` -> 2 }),
+        _book_chap_01(),
+        _book_chap_02(),
+        _book_chap_03(),
+        _book_chap_04(),
+        _book_chap_05(),
+        _book_chap_06(),
+        _book_chap_07(),
+        _book_chap_08(),
+        _book_chap_09(),
+        _book_chap_10(),
+        _book_chap_11(),
+        _book_chap_12()
+    ], entry)
+    
+    let pdf_out -> zm.render_pdf(doc, `doc/book/Zen_Book.pdf`)
+    io.writeln(`[BOOK] Successfully generated doc/book/Zen_Book.pdf (` + Str.to_string(Str.length(pdf_out)) + ` bytes)`)
+    
+    let html_out -> zm.render_html(doc)
+    f.write(`doc/book/Zen_Book.html`, html_out)
+    io.writeln(`[BOOK] Successfully generated doc/book/Zen_Book.html (` + Str.to_string(Str.length(html_out)) + ` bytes)`)
+    <- 0
+}

@@ -1,8 +1,17 @@
 # Zenlang Terminal File Manager (`zenfm`)
 
-The **Zenlang Terminal File Manager** (`zenfm`) is an interactive, high-performance split-pane terminal file manager and code explorer. It provides instant directory traversal, file size calculations, and real-time syntax-highlighted code previews without requiring external tools.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Terminal File Manager Manual |
+| **Authority** | Tooling Manual |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
 ---
+
+## 1. Overview
+
+The **Zenlang Terminal File Manager** (`zenfm`) is an interactive, high-performance split-pane terminal file manager and code explorer. It provides instant directory traversal, file size calculations, and real-time syntax-highlighted code previews without requiring external tools.
 
 ## 🚀 Quick Start
 

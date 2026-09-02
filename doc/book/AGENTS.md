@@ -26,5 +26,8 @@ Owned by Zenlang documentation authors and educators.
 - 09_terminal_mastery.md: Terminal graphics, canvas, widgets, and TUI design
 - 10_dual_execution_and_c.md: Dual execution (interpreter vs `-g` native)
 - 11_practical_projects.md: Complete capstone projects (CLI tools, TUI apps)
-- Zen_Book.typ: Master Typst book definition (compiled via `build.sh` to `Zen_Book.pdf`)
-- build.sh: Compilation script for generating `Zen_Book.pdf` via Typst
+- 12_concurrency_and_tasks.md: The Unified Task Substrate, structured concurrency, and channels
+- build.sh: Compilation script for generating `Zen_Book.pdf` via native Zen Mark
+- tools/build_book.zl: Pure-Zenlang vector PDF & HTML book generator
+
+

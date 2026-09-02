@@ -111,6 +111,10 @@
           {
             "type": ":>",
             "named": false
+          },
+          {
+            "type": "<~",
+            "named": false
           }
         ]
       },
@@ -217,6 +221,18 @@
             "named": false
           },
           {
+            "type": "..+",
+            "named": false
+          },
+          {
+            "type": "..-",
+            "named": false
+          },
+          {
+            "type": "...",
+            "named": false
+          },
+          {
             "type": "..=",
             "named": false
           },
@@ -226,6 +242,10 @@
           },
           {
             "type": "<",
+            "named": false
+          },
+          {
+            "type": "<:",
             "named": false
           },
           {
@@ -761,7 +781,49 @@
         "required": true,
         "types": [
           {
+            "type": "->",
+            "named": false
+          },
+          {
+            "type": "<-",
+            "named": false
+          },
+          {
             "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "expression": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "assignment_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "member_expression",
+            "named": true
+          },
+          {
+            "type": "primary",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
             "named": true
           }
         ]
@@ -778,7 +840,7 @@
       },
       "parameters": {
         "multiple": false,
-        "required": true,
+        "required": false,
         "types": [
           {
             "type": "parameter_list",
@@ -925,15 +987,78 @@
   {
     "type": "lambda",
     "named": true,
-    "fields": {},
+    "fields": {
+      "body": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "->",
+            "named": false
+          },
+          {
+            "type": "<-",
+            "named": false
+          },
+          {
+            "type": "block",
+            "named": true
+          }
+        ]
+      },
+      "expression": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "assignment_expression",
+            "named": true
+          },
+          {
+            "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "call_expression",
+            "named": true
+          },
+          {
+            "type": "index_expression",
+            "named": true
+          },
+          {
+            "type": "member_expression",
+            "named": true
+          },
+          {
+            "type": "primary",
+            "named": true
+          },
+          {
+            "type": "unary_expression",
+            "named": true
+          }
+        ]
+      },
+      "return_type": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "generic_type",
+            "named": true
+          },
+          {
+            "type": "type_name",
+            "named": true
+          }
+        ]
+      }
+    },
     "children": {
-      "multiple": true,
-      "required": true,
+      "multiple": false,
+      "required": false,
       "types": [
-        {
-          "type": "block",
-          "named": true
-        },
         {
           "type": "parameter_list",
           "named": true
@@ -1779,6 +1904,18 @@
     "named": false
   },
   {
+    "type": "..+",
+    "named": false
+  },
+  {
+    "type": "..-",
+    "named": false
+  },
+  {
+    "type": "...",
+    "named": false
+  },
+  {
     "type": "..=",
     "named": false
   },
@@ -1807,7 +1944,15 @@
     "named": false
   },
   {
+    "type": "<:",
+    "named": false
+  },
+  {
     "type": "<=",
+    "named": false
+  },
+  {
+    "type": "<~",
     "named": false
   },
   {
@@ -1820,6 +1965,10 @@
   },
   {
     "type": ">=",
+    "named": false
+  },
+  {
+    "type": "Default",
     "named": false
   },
   {
@@ -1872,6 +2021,10 @@
   },
   {
     "type": "continue",
+    "named": false
+  },
+  {
+    "type": "default",
     "named": false
   },
   {
@@ -1968,6 +2121,10 @@
   },
   {
     "type": "until",
+    "named": false
+  },
+  {
+    "type": "use",
     "named": false
   },
   {

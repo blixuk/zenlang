@@ -11,6 +11,7 @@ if (($# > 0)); then
 fi
 
 TEST_FILES=(
+  tests/lib/test_bytes.zl
   tests/lib/test_cli.zl
   tests/lib/test_collections.zl
   tests/lib/test_core.zl

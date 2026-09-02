@@ -46,19 +46,8 @@ The zen compiler should be able to staticly link and dynamically link.
 Zen should have built in documentation, like man pages, on the command line. 
 zen documents that can be queried for information about any keyword or symbol in the language.
 
+Hot reloading.
+Only compiling files that have changed.
+Static linking and dynamic linking and the ability to mix
+
 ---
-Zen should have a keyword for every symbol.
-
-Keyword: assign, Symbol: -> 
-Keyword: assignin, Symbol: :>
-Keyword: type, Symbol: :
-Keyword: cast, Symbol: <:
-Keyword: return, Symbol: <- 
-Keyword: check, Symbol: ?
-Keyword: assert, Symbol: !
-Keyword: raise, Symbol: ^
-
-Keyword: defer, Symbol: ~
-Keyword: yeild, Symbol: <~
-
-Keyword: , Symbol: 

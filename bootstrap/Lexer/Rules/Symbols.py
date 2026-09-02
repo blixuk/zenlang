@@ -81,10 +81,10 @@ class Symbols:
         if self.peek() == ".":
             self.advance()
             if self.peek() == ".":
-                # `...` rest/spread (list patterns, etc.)
+                # `...` full inclusive range or ellipsis
                 self.advance()
                 self.add_token(
-                    TokenType.ELLIPSIS,
+                    TokenType.RANGE_FULL_INCLUSIVE,
                     "...",
                     start_line,
                     start_column,
@@ -92,11 +92,33 @@ class Symbols:
                     self.column_number,
                 )
             elif self.peek() == "=":
-                # `..=` inclusive range (Rust-style); exclusive remains `..`
+                # `..=` inclusive range (legacy compatibility)
                 self.advance()
                 self.add_token(
                     TokenType.RANGE_INCLUSIVE,
                     "..=",
+                    start_line,
+                    start_column,
+                    self.line_number,
+                    self.column_number,
+                )
+            elif self.peek() == "+":
+                # `..+` inclusive end range
+                self.advance()
+                self.add_token(
+                    TokenType.RANGE_INCLUSIVE_END,
+                    "..+",
+                    start_line,
+                    start_column,
+                    self.line_number,
+                    self.column_number,
+                )
+            elif self.peek() == "-":
+                # `..-` exclusive end range
+                self.advance()
+                self.add_token(
+                    TokenType.RANGE_EXCLUSIVE_END,
+                    "..-",
                     start_line,
                     start_column,
                     self.line_number,
@@ -135,6 +157,22 @@ class Symbols:
             self.line_number,
             self.column_number,
         )
+
+    def make_yield_arrow(self) -> None:
+        start_line: int = self.line_number
+        start_column: int = self.column_number
+
+        self.advance()
+        self.advance()
+        self.add_token(
+            TokenType.YIELD_ARROW,
+            "<~",
+            start_line,
+            start_column,
+            self.line_number,
+            self.column_number,
+        )
+
 
     def make_type_cast(self) -> None:
         start_line: int = self.line_number

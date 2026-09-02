@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Zen of Programming</title>
+  <style>
+:root {
+  --zm-bg: #f6f4ee;
+  --zm-fg: #0e221f;
+  --zm-accent: #c27803;
+  --zm-border: #c2bcb0;
+  --zm-code-bg: #eae5d9;
+  --zm-code-fg: #1e3a34;
+  --zm-font-body: Georgia, "Times New Roman", serif;
+  --zm-font-mono: "Courier New", monospace;
+}
+
+body {
+  margin: 0;
+  padding: 40px 20px;
+  background-color: var(--zm-bg);
+  color: var(--zm-fg);
+  font-family: var(--zm-font-body);
+  line-height: 1.6;
+}
+.zen-document {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.zen-archetype-badge {
+  display: inline-block;
+  font-family: var(--zm-font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background-color: var(--zm-accent);
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+h1, h2, h3, h4, h5, h6 {
+  color: var(--zm-accent);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  line-height: 1.25;
+}
+h1 { font-size: 2.2rem; border-bottom: 1px solid var(--zm-border); padding-bottom: 8px; }
+h2 { font-size: 1.6rem; }
+h3 { font-size: 1.25rem; }
+p {
+  margin: 1em 0;
+}
+kbd.zen-key {
+  font-family: var(--zm-font-mono);
+  font-size: 0.85em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background-color: var(--zm-border);
+  color: var(--zm-fg);
+  border: 1px solid var(--zm-border);
+  box-shadow: 0 2px 0 var(--zm-border);
+}
+code.zen-code {
+  font-family: var(--zm-font-mono);
+  font-size: 0.9em;
+  background-color: var(--zm-code-bg);
+  color: var(--zm-code-fg);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+pre.zen-code-block {
+  background-color: var(--zm-code-bg);
+  color: var(--zm-code-fg);
+  padding: 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  border: 1px solid var(--zm-border);
+}
+table.zen-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5em 0;
+}
+table.zen-table th, table.zen-table td {
+  border: 1px solid var(--zm-border);
+  padding: 10px 14px;
+  text-align: left;
+}
+table.zen-table th {
+  background-color: var(--zm-code-bg);
+  color: var(--zm-accent);
+  font-weight: 600;
+}
+hr.zen-hr {
+  border: 0;
+  height: 1px;
+  background-color: var(--zm-border);
+  margin: 2em 0;
+}
+  </style>
+</head>
+<body>
+  <div class="zen-document">
+    <div class="zen-archetype-badge">ZEN MONOGRAPH</div>
+    <h1>Chapter 1: Getting Started</h1>
+    <p>Welcome to Zenlang! This chapter walks you through installing the compiler, writing your first program, and using the built-in developer tools.</p>
+    <h2>1. Installation & Environment</h2>
+    <pre class="zen-code-block"><code class="language-bash"># 1. Install the standalone compiler router
+./scripts/zen install
+
+# 2. Run your first script
+./bin/zen examples/getting_started/01_hello.zl
+
+# 3. Launch interactive REPL
+./bin/zen repl</code></pre>
+    <h2>2. Your First Program</h2>
+    <pre class="zen-code-block"><code class="language-zen">use zen.io
+
+function main() {
+    io.writeln(`Hello, Zenlang!`)
+    <- 0
+}</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 2: Visual Data Flow</h1>
+    <p>Zenlang is founded on the principle of directional clarity: code syntax reflects the physical movement of data through variables, transformations, and function returns.</p>
+    <h2>1. The Assignment Arrow (->)</h2>
+    <p>Values flow left-to-right into their variable targets. Use let for mutable bindings and set for immutable constants:</p>
+    <pre class="zen-code-block"><code class="language-zen">let score -> 100
+score -> score + 25
+
+set MAX_LIMIT : Integer -> 500</code></pre>
+    <h2>2. The Return Arrow (<-)</h2>
+    <p>Functions emit results outward to their caller using the visual return arrow:</p>
+    <pre class="zen-code-block"><code class="language-zen">function multiply(a: Integer, b: Integer) : Integer {
+    <- a * b
+}</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 3: Types, The 5 Collections & Sentinels</h1>
+    <p>Zenlang provides a robust, optionally typed type system, capitalization-strict sentinels (Nothing and Default), and 5 distinct collection primitives.</p>
+    <table class="zen-table">
+      <thead><tr><th>Collection</th><th>Ordering</th><th>Size</th><th>Mutability</th><th>Literals</th></tr></thead>
+      <tbody>
+        <tr><td>List</td><td>Ordered</td><td>Dynamic</td><td>Mutable</td><td>[1, 2, 3], List{...}, L{...}</td></tr>
+        <tr><td>Set</td><td>Unordered</td><td>Dynamic</td><td>Mutable</td><td>Set{1, 2}, S{1, 2}</td></tr>
+        <tr><td>Vector</td><td>Ordered</td><td>Fixed</td><td>Immutable</td><td>Vector{10, 20}, V{10, 20}</td></tr>
+        <tr><td>Tuple</td><td>Ordered</td><td>Fixed</td><td>Immutable</td><td>Tuple{1, 'a'}, (1, 'a')</td></tr>
+        <tr><td>Map</td><td>Unordered</td><td>Dynamic</td><td>Mutable</td><td>{ 'k' -> 'v' }, Map{...}</td></tr>
+      </tbody>
+    </table>
+    <h2>Sentinels: Nothing vs Default</h2>
+    <p>Nothing denotes absence of a value (null/nil replacement). Default represents the type-declared zero state (0, 0.0, empty string, [], {}).</p>
+    <pre class="zen-code-block"><code class="language-zen">let avatar : String  -> Nothing  // Explicit absent state
+let buffer : List    -> Default  // Materializes as []
+let count  : Integer -> Default  // Materializes as 0</code></pre>
+    <h2>Type Casting (<: and Type(val))</h2>
+    <pre class="zen-code-block"><code class="language-zen">let b : Byte -> 0x41
+let int_val -> b <: Integer  // 65
+let str_val -> b <: String   // `0x41`
+let num     -> Integer(`42`)  // 42</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 4: Control Flow, Ranges & Pattern Matching</h1>
+    <p>Clean conditional branching with when ... or, 4-boundary ranges, structured do loops with empty fallbacks, and multi-way check matching.</p>
+    <table class="zen-table">
+      <thead><tr><th>Range Operator</th><th>Name</th><th>Interval</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>..</td><td>Range Between</td><td>(start, end)</td><td>1..5 -> [2, 3, 4]</td></tr>
+        <tr><td>..+</td><td>Inclusive End</td><td>(start, end]</td><td>1..+5 -> [2, 3, 4, 5]</td></tr>
+        <tr><td>..-</td><td>Exclusive End</td><td>[start, end)</td><td>1..-5 -> [1, 2, 3, 4]</td></tr>
+        <tr><td>...</td><td>Full Inclusive</td><td>[start, end]</td><td>1...5 -> [1, 2, 3, 4, 5]</td></tr>
+      </tbody>
+    </table>
+    <h2>Multi-Way Switch (check)</h2>
+    <pre class="zen-code-block"><code class="language-zen">let code -> check cmd {
+    case `start`   <- 0,
+    case `stop`    <- 1,
+    case `restart` <- 2
+} or <- -1</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 5: Functions, Arrow Bodies & Closures</h1>
+    <p>Functions feature parameterless declarations, return type positioning, single-expression arrow bodies, and snapshot-by-value closures.</p>
+    <pre class="zen-code-block"><code class="language-zen">// Parameterless function:
+function say_hello { <- `Hello` }
+
+// Arrow function:
+function square(x: Integer) : Integer -> x * x
+
+// Arrow lambda:
+let is_even -> function(x) -> (x % 2) == 0</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 6: The Three Container Tiers & Object Architecture</h1>
+    <p>Zenlang unifies data structures into three distinct tiers:</p>
+    <table class="zen-table">
+      <thead><tr><th>Tier</th><th>Keyword</th><th>Memory Model</th><th>Primary Use</th></tr></thead>
+      <tbody>
+        <tr><td>Low Tier</td><td>structure</td><td>Value semantics, flat C ABI</td><td>High-throughput records, Vector math</td></tr>
+        <tr><td>Middle Tier</td><td>object</td><td>Dynamic hash map, bound self</td><td>Fluid entities, 1:1 Zen Data (.zd) interop</td></tr>
+        <tr><td>High Tier</td><td>class</td><td>Nominal OOP, single inheritance</td><td>Class hierarchies, extends, init constructors</td></tr>
+      </tbody>
+    </table>
+    <h2>Enumerators (enumerator / enum)</h2>
+    <pre class="zen-code-block"><code class="language-zen">enumerator Direction { North -> 1, South -> 2, East -> 3, West -> 4 }
+let d -> Direction.North
+io.writeln(d.name + `: ` + Str.to_string(d.value))</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 7: The Error Handling Triad</h1>
+    <p>Zenlang rejects try/catch complexity, using an explicit error triad: raise (^), check (?), and assert (!).</p>
+    <pre class="zen-code-block"><code class="language-zen">function divide : [Decimal, Error] (a: Decimal, b: Decimal) {
+    when b == 0.0 { ^ `DivisionByZero` with `Zero divisor` }
+    <- a / b
+}
+
+// Graceful recovery:
+let safe -> check divide(10.0, 0.0) or 0.0
+
+// Invariant assertion:
+assert safe >= 0.0 raise `NegativeResult`</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 8: Modules, Namespaces & Packaging</h1>
+    <p>Modules organize code cleanly with use, from, and import. Every file has access to an intrinsic module metadata object.</p>
+    <pre class="zen-code-block"><code class="language-zen">use zen.io
+use zen.text.string as Str
+from zen.math.math import abs, min, max
+
+function main() {
+    io.info(`Running module: ` + module.name)
+    io.info(`Canonical path: ` + module.path)
+    <- 0
+}</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 9: Terminal Mastery & UI Canvas</h1>
+    <p>Zenlang is a terminal-first programming language. Sub-millisecond ANSI canvas rendering, 60 FPS redraws, raw keyboard polling, and layout widgets are native standard library primitives.</p>
+    <pre class="zen-code-block"><code class="language-zen">use zen.ui.canvas as canvas
+use zen.sys.term as term
+
+function main() {
+    let cv -> canvas.create(80, 24)
+    canvas.draw_box(cv, 0, 0, 79, 23, `rounded`)
+    canvas.draw_text(cv, 10, 5, `* Zenlang Terminal Canvas *`)
+    canvas.render(cv)
+    <- 0
+}</code></pre>
+    <hr class="zen-hr" />
+    <h1>Chapter 10: Dual Execution & The C Runtime</h1>
+    <p>Every Zenlang program runs identically in the script VM during development and under ahead-of-time (AOT) C compilation for standalone binary distribution.</p>
+    <table class="zen-table">
+      <thead><tr><th>Pipeline</th><th>Command</th><th>Output</th><th>Target Use</th></tr></thead>
+      <tbody>
+        <tr><td>Bytecode VM</td><td>zen script.zl</td><td>Direct execution</td><td>Rapid iteration, REPL</td></tr>
+        <tr><td>Native C AOT</td><td>zen compile main.zl -o app</td><td>Standalone ELF binary</td><td>Production services, CLI utilities</td></tr>
+      </tbody>
+    </table>
+    <hr class="zen-hr" />
+    <h1>Chapter 11: Practical Projects</h1>
+    <p>Real-world capstones combining file I/O, string parsing, color formatting, and terminal user interfaces into complete applications.</p>
+    <p>Projects include the zen-count Unix utility, log stream analyzers, and live interactive dashboards.</p>
+    <hr class="zen-hr" />
+    <h1>Chapter 12: Concurrency & The Unified Task Substrate</h1>
+    <p>Zenlang eliminates the Function Color Problem (async/await) with a single task primitive running on lightweight M:N runtime fibers.</p>
+    <pre class="zen-code-block"><code class="language-zen">task fetch_profile : String (id: Integer) {
+    <- net.get(`https://api.example.com/users/` + Str.to_string(id))
+}
+
+function main() {
+    let h1 -> fetch_profile(101).spawn
+    let h2 -> fetch_profile(102).spawn
+
+    let p1 -> h1.wait
+    let p2 -> h2.wait
+    io.writeln(`Profiles loaded cleanly`)
+    <- 0
+}</code></pre>
+    <h2>Structured Concurrency with with task_group</h2>
+    <p>Child tasks are bounded to their parent group lifetime. Any unhandled error cancels sibling tasks automatically with zero orphaned fibers.</p>
+  </div>
+</body>
+</html>

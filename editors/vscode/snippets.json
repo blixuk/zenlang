@@ -260,5 +260,38 @@
       "}"
     ],
     "description": "check … or { } error handling"
+  },
+  "Arrow function": {
+    "prefix": ["fnarrow", "fna"],
+    "body": [
+      "function ${1:name}(${2:params}) -> ${0:expression}"
+    ],
+    "description": "Concise arrow function"
+  },
+  "Arrow lambda": {
+    "prefix": ["lambda", "fnlambda"],
+    "body": [
+      "function(${1:params}) -> ${0:expression}"
+    ],
+    "description": "Concise arrow lambda expression"
+  },
+  "Parameterless function": {
+    "prefix": "fn0",
+    "body": [
+      "function ${1:name} {",
+      "\t${0}",
+      "}"
+    ],
+    "description": "Parameterless function"
+  },
+  "Multiline string": {
+    "prefix": "str3",
+    "body": [
+      "```",
+      "${0}",
+      "```"
+    ],
+    "description": "Triple-backtick multiline string"
   }
 }
+

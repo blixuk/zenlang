@@ -1,0 +1,81 @@
+import zen.test as test
+
+// 1. Parameterless functions (block and arrow)
+function get_version {
+    <- `1.0.0`
+}
+
+function get_magic : Integer -> 42
+
+// 2. Return type preceding parameters
+function compute_area : Integer (w: Integer, h: Integer) -> w * h
+
+// 3. Arrow function
+function square(x: Integer) : Integer -> x * x
+
+function test_number_literals() {
+    let dec -> 1_000_000
+    let hex -> 0xDEAD_BEEF
+    let bin -> 0b1010_0101
+    let oct -> 0o755
+
+    let pass -> test.assert_equal(dec, 1000000, `decimal with underscore separators`)
+    pass -> pass and test.assert_equal(hex, 3735928559, `hex with underscore separators`)
+    pass -> pass and test.assert_equal(bin, 165, `binary literal with underscore separators`)
+    pass -> pass and test.assert_equal(oct, 493, `octal literal`)
+    <- pass
+}
+
+function test_multiline_strings() {
+    let multi -> ```
+Hello,
+Zenlang!
+```
+    let pass -> test.assert_true(multi.length > 0, `multiline string has length`)
+    <- pass
+}
+
+function test_function_syntax_parities() {
+    let pass -> test.assert_equal(get_version(), `1.0.0`, `parameterless function with block`)
+    pass -> pass and test.assert_equal(get_magic(), 42, `parameterless arrow function with return type`)
+    pass -> pass and test.assert_equal(compute_area(6, 7), 42, `return type preceding parameters`)
+    pass -> pass and test.assert_equal(square(9), 81, `arrow function with parameters`)
+
+    // Arrow lambda
+    let add_ten -> function(x) -> x + 10
+    pass -> pass and test.assert_equal(add_ten(5), 15, `concise arrow lambda`)
+    <- pass
+}
+
+function test_four_boundary_ranges() {
+    // 1. Range Between or Exclusive End (.. or ..-)
+    let r_excl -> 1..-5
+    let pass -> test.assert_equal(r_excl, [1, 2, 3, 4], `1..-5 is [1, 2, 3, 4]`)
+
+    // 2. Full Inclusive (...)
+    let r_incl -> 1...5
+    pass -> pass and test.assert_equal(r_incl, [1, 2, 3, 4, 5], `1...5 is [1, 2, 3, 4, 5]`)
+
+    // 3. Inclusive End (..+)
+    let r_incl_end -> 1..+5
+    pass -> pass and test.assert_equal(r_incl_end, [2, 3, 4, 5], `1..+5 is [2, 3, 4, 5]`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Frontend.number_literals`, `fn` -> test_number_literals},
+        {`name` -> `Frontend.multiline_strings`, `fn` -> test_multiline_strings},
+        {`name` -> `Frontend.function_syntax`, `fn` -> test_function_syntax_parities},
+        {`name` -> `Frontend.four_boundary_ranges`, `fn` -> test_four_boundary_ranges}
+    ]
+    <- test.run_suite(`Frontend Syntax Parity`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

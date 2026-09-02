@@ -1,0 +1,89 @@
+import zen.test as test
+
+function test_nothing_basics() {
+    let a -> Nothing
+    let pass -> test.assert_true(a == Nothing, `a should be Nothing`)
+    pass -> pass and test.assert_false(a != Nothing, `a != Nothing should be false`)
+    pass -> pass and test.assert_true(a == nothing, `Nothing should equal legacy nothing`)
+
+    let b -> 42
+    pass -> pass and test.assert_true(b != Nothing, `42 != Nothing`)
+    pass -> pass and test.assert_false(b == Nothing, `42 == Nothing should be false`)
+
+    let c -> `hello`
+    pass -> pass and test.assert_true(c != Nothing, `string != Nothing`)
+    <- pass
+}
+
+function test_default_basics() {
+    let d -> Default
+    let pass -> test.assert_true(d == Default, `Default == Default`)
+    pass -> pass and test.assert_true(d == default, `Default == default`)
+    pass -> pass and test.assert_true(d != Nothing, `Default != Nothing`)
+    pass -> pass and test.assert_true(Nothing != Default, `Nothing != Default`)
+
+    // Type zero-state comparisons
+    pass -> pass and test.assert_true(0 == Default, `0 == Default`)
+    pass -> pass and test.assert_true(0.0 == Default, `0.0 == Default`)
+    pass -> pass and test.assert_true(false == Default, `false == Default`)
+    pass -> pass and test.assert_true(`` == Default, `empty string == Default`)
+    pass -> pass and test.assert_true([] == Default, `empty list == Default`)
+    pass -> pass and test.assert_true({} == Default, `empty map == Default`)
+
+    // Non-default values
+    pass -> pass and test.assert_true(1 != Default, `1 != Default`)
+    pass -> pass and test.assert_true(-1 != Default, `-1 != Default`)
+    pass -> pass and test.assert_true(true != Default, `true != Default`)
+    pass -> pass and test.assert_true(`a` != Default, `'a' != Default`)
+    pass -> pass and test.assert_true([0] != Default, `[0] != Default`)
+    pass -> pass and test.assert_true({`a` -> 1} != Default, `map != Default`)
+    <- pass
+}
+
+function test_cast_expressions() {
+    // Int / Integer
+    let x1 -> 42 <: Integer
+    let pass -> test.assert_equal(x1, 42, `x1 is 42`)
+    let x2 -> Integer(`123`)
+    pass -> pass and test.assert_equal(x2, 123, `x2 is 123`)
+    let x3 -> `456` <: Int
+    pass -> pass and test.assert_equal(x3, 456, `x3 is 456`)
+
+    // Float / Decimal
+    let f1 -> Float(`3.14`)
+    pass -> pass and test.assert_true(f1 > 3.1 and f1 < 3.2, `f1 is 3.14`)
+    let f2 -> 10 <: Decimal
+    pass -> pass and test.assert_equal(f2, 10.0, `f2 is 10.0`)
+
+    // String / Str
+    let s1 -> 789 <: String
+    pass -> pass and test.assert_equal(s1, `789`, `s1 is '789'`)
+    let s2 -> Str(true)
+    pass -> pass and test.assert_true(s2 == `true` or s2 == `True`, `s2 is 'true'`)
+
+    // Boolean / Bool
+    let b1 -> 1 <: Boolean
+    pass -> pass and test.assert_equal(b1, true, `b1 is true`)
+    let b2 -> Bool(0)
+    pass -> pass and test.assert_equal(b2, false, `b2 is false`)
+    let b3 -> `true` <: Bool
+    pass -> pass and test.assert_equal(b3, true, `b3 is true`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Sentinels.nothing_basics`, `fn` -> test_nothing_basics},
+        {`name` -> `Sentinels.default_basics`, `fn` -> test_default_basics},
+        {`name` -> `Sentinels.cast_expressions`, `fn` -> test_cast_expressions}
+    ]
+    <- test.run_suite(`Nothing and Default Sentinels`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

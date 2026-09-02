@@ -1,0 +1,85 @@
+// Test Nothing & Default sentinels parity (Phase L)
+import zen.test as test
+import zen.io as io
+
+function test_nothing() {
+    let x -> Nothing
+    let pass -> test.assert_true(x == Nothing, `x should be Nothing`)
+    pass -> pass and test.assert_true(not (x != Nothing), `not (x != Nothing)`)
+    pass -> pass and test.assert_true(x != Default, `Nothing should not equal Default`)
+    pass -> pass and test.assert_true(not (x == Default), `not (Nothing == Default)`)
+    <- pass
+}
+
+function test_default_primitives() {
+    let i : Integer -> Default
+    let pass -> test.assert_equal(i, 0, `Default Integer is 0`)
+    pass -> pass and test.assert_true(i == Default, `i == Default`)
+    pass -> pass and test.assert_true(0 == Default, `0 == Default`)
+    pass -> pass and test.assert_true(5 != Default, `5 != Default`)
+    pass -> pass and test.assert_true(Default == 0, `Default == 0`)
+
+    let d : Decimal -> Default
+    pass -> pass and test.assert_equal(d, 0.0, `Default Decimal is 0.0`)
+    pass -> pass and test.assert_true(d == Default, `d == Default`)
+    pass -> pass and test.assert_true(0.0 == Default, `0.0 == Default`)
+
+    let b : Boolean -> Default
+    pass -> pass and test.assert_true(b == false, `Default Boolean is false`)
+    pass -> pass and test.assert_true(b == Default, `b == Default`)
+    pass -> pass and test.assert_true(false == Default, `false == Default`)
+    pass -> pass and test.assert_true(true != Default, `true != Default`)
+
+    let s : String -> Default
+    pass -> pass and test.assert_equal(s, ``, `Default String is empty`)
+    pass -> pass and test.assert_true(s == Default, `s == Default`)
+    pass -> pass and test.assert_true(`` == Default, `empty string == Default`)
+    pass -> pass and test.assert_true(`hello` != Default, `hello != Default`)
+    pass -> pass and test.assert_true(Default == ``, `Default == empty string`)
+
+    <- pass
+}
+
+function test_default_collections() {
+    let l : List -> Default
+    let pass -> test.assert_equal(l.length, 0, `Default List is empty`)
+    pass -> pass and test.assert_true(l == Default, `l == Default`)
+    pass -> pass and test.assert_true([] == Default, `[] == Default`)
+    pass -> pass and test.assert_true([1] != Default, `[1] != Default`)
+
+    let m : Map -> Default
+    pass -> pass and test.assert_equal(m.keys().length, 0, `Default Map is empty`)
+    pass -> pass and test.assert_true(m == Default, `m == Default`)
+    pass -> pass and test.assert_true({} == Default, `{} == Default`)
+
+    <- pass
+}
+
+function test_sentinels_identity() {
+    let pass -> test.assert_true(Nothing == Nothing, `Nothing == Nothing`)
+    pass -> pass and test.assert_true(Default == Default, `Default == Default`)
+    pass -> pass and test.assert_true(Nothing != Default, `Nothing != Default`)
+    pass -> pass and test.assert_true(Default != Nothing, `Default != Nothing`)
+    pass -> pass and test.assert_true(not (Nothing == Default), `not (Nothing == Default)`)
+    pass -> pass and test.assert_true(not (Default == Nothing), `not (Default == Nothing)`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Sentinels.nothing`, `fn` -> test_nothing},
+        {`name` -> `Sentinels.default_primitives`, `fn` -> test_default_primitives},
+        {`name` -> `Sentinels.default_collections`, `fn` -> test_default_collections},
+        {`name` -> `Sentinels.identity`, `fn` -> test_sentinels_identity}
+    ]
+    <- test.run_suite(`Sentinels Parity`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

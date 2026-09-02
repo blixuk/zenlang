@@ -237,12 +237,36 @@ ZenValue ZenValue_right_shift(ZenValue a, ZenValue b) {
 }
 
 ZenValue ZenValue_equal(ZenValue a, ZenValue b) {
+    if (a.type == ZEN_DEFAULT && b.type == ZEN_DEFAULT) return ZenValue_make_boolean(true);
+    if (a.type == ZEN_DEFAULT) {
+        switch (b.type) {
+            case ZEN_INTEGER: return ZenValue_make_boolean(b.as.integer == 0);
+            case ZEN_DECIMAL: return ZenValue_make_boolean(b.as.decimal == 0.0);
+            case ZEN_BOOLEAN: return ZenValue_make_boolean(b.as.boolean == false);
+            case ZEN_STRING:  return ZenValue_make_boolean(!b.as.string || b.as.string[0] == '\0');
+            case ZEN_LIST:    return ZenValue_make_boolean(!b.as.list || b.as.list->count == 0);
+            case ZEN_MAP:     return ZenValue_make_boolean(!b.as.map || b.as.map->count == 0);
+            default: return ZenValue_make_boolean(false);
+        }
+    }
+    if (b.type == ZEN_DEFAULT) {
+        switch (a.type) {
+            case ZEN_INTEGER: return ZenValue_make_boolean(a.as.integer == 0);
+            case ZEN_DECIMAL: return ZenValue_make_boolean(a.as.decimal == 0.0);
+            case ZEN_BOOLEAN: return ZenValue_make_boolean(a.as.boolean == false);
+            case ZEN_STRING:  return ZenValue_make_boolean(!a.as.string || a.as.string[0] == '\0');
+            case ZEN_LIST:    return ZenValue_make_boolean(!a.as.list || a.as.list->count == 0);
+            case ZEN_MAP:     return ZenValue_make_boolean(!a.as.map || a.as.map->count == 0);
+            default: return ZenValue_make_boolean(false);
+        }
+    }
     if (a.type != b.type) {
         if (a.type == ZEN_INTEGER && b.type == ZEN_DECIMAL) return ZenValue_make_boolean((double)a.as.integer == b.as.decimal);
         if (a.type == ZEN_DECIMAL && b.type == ZEN_INTEGER) return ZenValue_make_boolean(a.as.decimal == (double)b.as.integer);
         return ZenValue_make_boolean(false);
     }
     switch (a.type) {
+        case ZEN_DEFAULT: return ZenValue_make_boolean(true);
         case ZEN_NOTHING: return ZenValue_make_boolean(true);
         case ZEN_INTEGER: return ZenValue_make_boolean(a.as.integer == b.as.integer);
         case ZEN_DECIMAL: return ZenValue_make_boolean(a.as.decimal == b.as.decimal);
@@ -504,6 +528,16 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
     if (strcmp(target_type, "Map") == 0) {
         if (val.type == ZEN_MAP) return val;
         return ZenValue_from_map(ZenMap_new());
+    }
+
+    /* 10. Target: Default */
+    if (strcmp(target_type, "Default") == 0 || strcmp(target_type, "default") == 0) {
+        return ZEN_DEFAULT_VAL;
+    }
+
+    /* 11. Target: Nothing */
+    if (strcmp(target_type, "Nothing") == 0 || strcmp(target_type, "nothing") == 0) {
+        return ZEN_NOTHING_VAL;
     }
     
     return val;

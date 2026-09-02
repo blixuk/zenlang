@@ -1,8 +1,17 @@
 # Zenlang Tooling & Developer Ecosystem
 
-Zenlang provides a unified, Unix-native developer ecosystem covering compilation, interpretation, automated testing, documentation generation, syntax formatting, and editor language servers.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Developer Toolchain & CLI Ecosystem Guide |
+| **Authority** | Tooling Manual |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
 ---
+
+## 1. Overview
+
+Zenlang provides a unified, Unix-native developer ecosystem covering compilation, interpretation, automated testing, documentation generation, syntax formatting, and editor language servers.
 
 ## 1. The Zen Command-Line Interface (`zen`)
 

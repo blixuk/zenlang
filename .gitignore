@@ -13,6 +13,8 @@ build/
 out/
 bin/
 tmp/
+.tmp_fs_tree/
+**/.tmp_fs_tree/
 self_hosted_output.c
 self_hosted_test.c
 

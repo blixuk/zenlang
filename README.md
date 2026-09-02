@@ -9,9 +9,12 @@ Unix-native programming language for scripts, terminal apps, and networked servi
 
 ## Quick start
 
+**The Language Specification (Single Source of Truth):** [doc/SPECIFICATION.md](doc/SPECIFICATION.md) — canonical specification for syntax, grammar, types, operators, and semantics.  
+**Documentation Standards:** [doc/DOCUMENTATION_STANDARDS.md](doc/DOCUMENTATION_STANDARDS.md) — formatting rules and documentation governance.  
+**Feature Proposals & RFCs:** [doc/proposals/README.md](doc/proposals/README.md) — formal review process for language evolution.  
 **The Official Book:** [doc/book/README.md](doc/book/README.md) — *The Zen of Programming: A Practical Guide to Zenlang*.  
-**Tutorial:** [doc/Getting_Started.md](doc/Getting_Started.md) — quick language tour and design patterns.  
-**Module / reflect / plugins:** [doc/Language_Module_and_Reflect.md](doc/Language_Module_and_Reflect.md).
+**Tutorial & On-Ramp:** [doc/Getting_Started.md](doc/Getting_Started.md) — hands-on language tour and patterns.  
+**Standard Library Reference:** [doc/Standard_Library_Reference.md](doc/Standard_Library_Reference.md) — standard library package index.
 
 ```bash
 # Host-1.0 daily CLI (selfhost primary, bootstrap fallback)

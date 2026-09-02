@@ -1,8 +1,17 @@
 # Zenlang Terminal Playground & Code Lab
 
-The **Zenlang Terminal Playground** is an interactive, split-pane terminal development environment and live code laboratory. It allows developers to write, experiment with, and execute Zenlang code in real-time with zero external IDE dependencies.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Interactive Terminal Playground Guide |
+| **Authority** | Tooling Manual |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
 ---
+
+## 1. Overview
+
+The **Zenlang Terminal Playground** is an interactive, split-pane terminal development environment and live code laboratory. It allows developers to write, experiment with, and execute Zenlang code in real-time with zero external IDE dependencies.
 
 ## 🚀 Quick Start
 

@@ -1,112 +1,144 @@
-# Chapter 6: Structures, Classes & OOP
+# Chapter 6: The Three Container Tiers & Object Architecture
 
-Zenlang supports both lightweight data structures and full object-oriented classes with methods and state encapsulation.
-
----
-
-## 1. Structures (`struct`)
-
-Structures are pure, named data records:
-
-```zenlang
-struct Point {
-    x: Integer,
-    y: Integer
-}
-
-function main() {
-    let p -> Point(10, 20)
-    io.writeln(`Point coordinates: ` + Str.to_string(p.x) + `, ` + Str.to_string(p.y))
-    <- 0
-}
-```
+Zenlang provides a three-tiered container hierarchy that satisfies every systems and application need: low-level C ABI records (`structure`), fluid dynamic objects (`object`), and nominal OOP classes (`class`).
 
 ---
 
-## 2. Classes & Object-Oriented Programming (`class`)
+## 1. Low Tier: Value Records (`structure`)
 
-Classes encapsulate both state and behavior. Methods receive an implicit `self` reference:
+Structures are pure, stack-allocated (or arena-allocated) value records with zero indirection. They directly match the host C ABI layout:
 
-```zenlang
+```zl
 use zen.io
 use zen.text.string as Str
 
-class Counter {
-    let count -> 0
+// 1. Minimal untyped field declaration:
+structure Vector2 { x, y }
 
-    function increment() {
-        self.count -> self.count + 1
-        <- self.count
-    }
-
-    function decrement() {
-        self.count -> self.count - 1
-        <- self.count
-    }
-
-    function reset() {
-        self.count -> 0
-    }
-
-    function get_value() {
-        <- self.count
-    }
+// 2. Typed structure with default values:
+structure Vector3 {
+    x: Integer -> 0,
+    y: Integer -> 0,
+    z: Integer -> 0
 }
 
 function main() {
-    let c -> Counter()
-    c.increment()
-    c.increment()
-    io.writeln(`Count is: ` + Str.to_string(c.get_value())) // 2
+    // Instantiation:
+    let pt -> Vector2{ x -> 10, y -> 20 }
+    let v3 -> Vector3{ z -> 50 } // x and y default to 0
+
+    io.writeln(`pt.x: ` + Str.to_string(pt.x))
     <- 0
-}
-```
-
-### Constructors with Initialization
-
-```zenlang
-class Rectangle {
-    let width -> 0
-    let height -> 0
-
-    function area() {
-        <- self.width * self.height
-    }
-
-    function perimeter() {
-        <- 2 * (self.width + self.height)
-    }
-}
-
-function create_rect(w, h) {
-    let r -> Rectangle()
-    r.width -> w
-    r.height -> h
-    <- r
 }
 ```
 
 ---
 
-## 3. Algebraic Data Types (ADTs)
+## 2. Middle Tier: Fluid Dynamic Objects (`object`)
 
-ADTs allow modeling domain entities as closed sets of variants:
+An `object` is a heap-allocated runtime entity with dynamic fields, bound `self`, and direct 1:1 fidelity with **Zen Data (`.zd`)**:
 
-```zenlang
-enum Shape {
-    Circle(radius: Decimal),
-    Rect(width: Decimal, height: Decimal)
+```zl
+use zen.io
+
+// 1. Declaring an Object Blueprint or Instance:
+let Player -> object {
+    name   : String   -> `Hero`,
+    health : Integer  -> 100,
+    attack : Integer  -> 15,
+    speak  : Function -> function(msg: String) -> self.name + `: ` + msg
 }
 
-function describe_shape(shape) {
-    check shape {
-        case Shape.Circle(r) {
-            io.writeln(`Circle with radius: ` + Str.to_string(r))
-        },
-        case Shape.Rect(w, h) {
-            io.writeln(`Rectangle: ` + Str.to_string(w) + `x` + Str.to_string(h))
-        }
+let player -> Player
+
+// 2. Dynamic Field Additions:
+player.weapon -> `Excalibur`
+player.level  :> 1           // Type-locked to Integer
+
+// 3. Dynamic Field Removal:
+player.remove(`weapon`)
+
+// 4. Bound Method Invocation:
+io.writeln(player.speak(`Ready for the quest!`))
+```
+
+### 1:1 Zen Data (`.zd`) Roundtrip
+Objects serialize directly into human-readable Zen Data and deserialize back into active runtime objects without JSON/YAML schemas:
+
+```zl
+use zen.data.zendata as zd
+
+let serialized -> zd.stringify(player)
+let restored   -> zd.parse(serialized)
+```
+
+---
+
+## 3. High Tier: Nominal Classes & Single Inheritance (`class`)
+
+Classes provide formal nominal object-oriented programming with constructors (`init`), single inheritance (`extends`), `self`, and `parent`:
+
+```zl
+use zen.io
+use zen.text.string as Str
+
+class Entity {
+    let id: Integer
+    let name: String
+
+    function init(id: Integer, name: String) {
+        self.id -> id
+        self.name -> name
     }
+
+    function describe() : String {
+        <- `#` + Str.to_string(self.id) + `: ` + self.name
+    }
+}
+
+class Monster extends Entity {
+    let power: Integer
+
+    function init(id: Integer, name: String, power: Integer) {
+        parent.init(id, name)
+        self.power -> power
+    }
+
+    function describe() : String {
+        <- parent.describe() + ` [Power: ` + Str.to_string(self.power) + `]`
+    }
+}
+
+function main() {
+    let dragon -> Monster(1, `Red Dragon`, 9000)
+    io.writeln(dragon.describe())
+    <- 0
+}
+```
+
+---
+
+## 4. Enumerators & Reflection (`enumerator` / `enum`)
+
+Enumerators define named variant states with first-class introspection properties:
+
+```zl
+enumerator Direction {
+    North -> 1,
+    South -> 2,
+    East  -> 3,
+    West  -> 4
+}
+
+// Built-in Reflection Properties:
+Direction.names        // (`North`, `South`, `East`, `West`)
+Direction.values       // (1, 2, 3, 4)
+Direction.North.name   // `North`
+Direction.North.value  // 1
+
+let heading -> Direction.East
+when heading is Direction.East {
+    io.info(`Heading towards sunrise`)
 }
 ```
 

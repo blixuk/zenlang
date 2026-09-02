@@ -1,77 +1,94 @@
-# Chapter 5: Functions & Closures
+# Chapter 5: Functions, Arrow Bodies & Closures
 
-Functions are the primary building blocks of Zenlang programs. They support first-class treatment, higher-order compositions, and safe snapshot-by-value closures.
+Functions are the primary procedural building blocks in Zenlang. They feature visual return flow (`<-`), parameterless signatures, arrow function bodies, and snapshot-by-value closures.
 
 ---
 
 ## 1. Defining Functions
 
-Functions are defined with the `function` keyword:
+### 1.1 Standard Block Functions
+Functions are declared using the `function` keyword. Return values emit outward using the return arrow (`<-`):
 
-```zenlang
+```zl
 use zen.io
 use zen.text.string as Str
 
-function greet(name) {
-    io.writeln(`Hello, ` + name + `!`)
+// Parameterless function (empty parentheses omitted):
+function say_hello {
+    <- `Hello, World!`
 }
 
-function add(a, b) {
+// Function with return type annotation:
+function get_number : Integer {
+    <- 42
+}
+
+// Typed function with parameters:
+function add : Integer (a: Integer, b: Integer) {
     <- a + b
 }
+```
 
-function main() {
-    greet(`Zen Programmer`)
-    let sum -> add(10, 20)
-    io.writeln(`Sum: ` + Str.to_string(sum))
-    <- 0
-}
+### 1.2 Single-Expression Arrow Bodies (`->`)
+For concise functions, Zenlang allows arrow bodies (`->`), omitting braces and the `<-` keyword:
+
+```zl
+// Parameterless arrow function:
+function get_status -> `System Operational`
+
+// Typed parameterless arrow function:
+function get_code : Integer -> 200
+
+// Typed arrow function with parameters:
+function greet : String (name: String) -> `Hello, ` + name
+
+// Mathematical computation:
+function multiply : Integer (a: Integer, b: Integer) -> a * b
 ```
 
 ---
 
-## 2. First-Class & Anonymous Functions
+## 2. Anonymous Functions & Lambdas
 
-In Zenlang, functions are first-class values: you can assign them to variables, pass them to other functions, and return them:
+Functions are first-class values that can be assigned to variables, passed into algorithms, or stored in collections:
 
-```zenlang
-// Anonymous function / Lambda
-let double -> function(x) {
-    <- x * 2
-}
+### 2.1 Arrow Lambdas
+```zl
+// Parameterless inline lambda:
+let get_greeting -> function <- `Welcome!`
 
-let result -> double(21) // 42
+// Typed inline lambda:
+let get_magic : Function<Integer> -> function <- 42
+
+// Parameterized arrow lambda:
+let square -> function(x: Integer) -> x * x
+let is_even -> function(x: Integer) -> (x % 2) == 0
 ```
 
-### Higher-Order Functions
-
+### 2.2 Higher-Order Functions
 A higher-order function is a function that accepts another function as an argument:
 
-```zenlang
+```zl
 function apply_twice(fn, value) {
     let first -> fn(value)
     <- fn(first)
 }
 
-function increment(x) {
-    <- x + 1
-}
+function increment(x: Integer) : Integer -> x + 1
 
-let val -> apply_twice(increment, 5) // 7
+let val -> apply_twice(increment, 5) // Evaluates to 7
 ```
 
 ---
 
 ## 3. Closures & Snapshot-By-Value Capture
 
-When an anonymous function references variables from its surrounding scope, it forms a **closure**.
+When an anonymous function references variables from its surrounding scope, it forms a **closure**. In Zenlang, outer local variables are captured **by value (snapshot)**:
 
-In Zenlang, outer local variables are captured **by value (snapshot)**:
-
-```zenlang
-function make_adder(offset) {
-    let adder -> function(x) {
-        <- x + offset // offset is captured by value
+```zl
+function make_adder(offset: Integer) {
+    let adder -> function(x: Integer) {
+        <- x + offset // offset is captured by value snapshot
     }
     <- adder
 }
@@ -84,12 +101,14 @@ io.writeln(Str.to_string(add_50(5)))  // Prints: 55
 ```
 
 ### Why Snapshot-By-Value?
-- **Concurrency Safety**: Tasks and closures cannot inadvertently mutate each other's outer stack variables.
-- **Predictable Behavior**: The captured value remains constant even if the outer scope changes later.
+- **Concurrency Safety:** Concurrent tasks and closures cannot inadvertently mutate each other's outer stack frames.
+- **Deterministic Lifetimes:** The captured state remains immutable and valid even after the enclosing scope terminates.
 
 ---
 
 ## 💡 Chapter Exercises
 
-1. Write a `map_list(items, transform_fn)` function that applies `transform_fn` to every element in `items` and returns a new list.
-2. Write a `filter_list(items, predicate_fn)` function that keeps only items where `predicate_fn(item) == true`.
+1. Write a single-line arrow function `celsius_to_fahrenheit(c: Decimal) : Decimal -> ...`.
+2. Write a higher-order function `filter_list(items, predicate_fn)` using `do for` and an arrow lambda.
+3. Create a function generator `make_multiplier(factor)` that returns a closure multiplying any input by `factor`.
+

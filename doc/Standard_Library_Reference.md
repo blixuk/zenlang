@@ -1,8 +1,17 @@
 # Zenlang Standard Library API Reference
 
-Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Standard Library Package Catalog & API Reference |
+| **Authority** | Derived API Reference |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
-**Keyword:** `use` is an alias for `import` (and `from path use name` for `from path import name`). Prefer `use` in new code; default binding without `as` is the last path segment (`use zen.io` → binds `io` → `lib/zen/io/io.zl`).
+---
+
+## 1. Overview
+
+Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports using `use`. Default binding without `as` is the last path segment (e.g. `use zen.io` → binds `io` → `lib/zen/io/io.zl`).
 
 ## Import map (canonical)
 

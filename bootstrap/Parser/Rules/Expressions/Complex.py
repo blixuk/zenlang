@@ -36,10 +36,33 @@ class ComplexExpressionsMixin:
             )
             return_type = getattr(type, "value", "infer_type")
 
-        self.token_handler.expect_type(
-            TokenType.LEFT_BRACE, "Expected `{` after `function` keyword"
-        )
-        block = self.block_expression("function")
+        if (
+            self.token_handler.match_type(TokenType.RETURN)
+            or self.token_handler.match_type(TokenType.ASSIGNMENT)
+            or self.token_handler.match_type_value(TokenType.KEYWORD, "return")
+        ):
+            expr = self.expression()
+            ret_stmt = ReturnStatement(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                value=expr,
+                inferred_type=None,
+            )
+            block = BlockExpression(
+                line=expr.line,
+                column=expr.column,
+                scope_level=self.scope_manager.get_current_scope_level(),
+                statements=[ret_stmt],
+                scope_type="function",
+                return_type=TypeVoid,
+            )
+        else:
+            self.token_handler.expect_type(
+                TokenType.LEFT_BRACE, "Expected `{`, `<-`, or `->` after `function` parameters"
+            )
+            block = self.block_expression("function")
+
 
         if (
             return_type == "infer_type"

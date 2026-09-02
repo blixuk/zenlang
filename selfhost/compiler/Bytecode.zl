@@ -103,6 +103,24 @@ function vm_map_values(m) {
 
 // --- Chunk Constructor & Helpers ---
 
+function strip_underscores(s) {
+    let s_str -> Str.to_string(s)
+    when Str.index_of(s_str, `_`) == -1 {
+        <- s_str
+    }
+    let n -> Str.length(s_str)
+    let res -> ``
+    let i -> 0
+    do while i < n {
+        let ch -> Str.at(s_str, i)
+        when ch != `_` {
+            res -> res + ch
+        }
+        i -> i + 1
+    }
+    <- res
+}
+
 function looks_int_str(s) {
     let s_str -> Str.to_string(s)
     let n -> Str.length(s_str)
@@ -114,7 +132,7 @@ function looks_int_str(s) {
         let i -> 2
         do while i < n {
             let ch -> Str.at(s_str, i)
-            when Str.index_of(hex_digits, ch) == -1 {
+            when ch != `_` and Str.index_of(hex_digits, ch) == -1 {
                 <- false
             }
             i -> i + 1
@@ -125,7 +143,19 @@ function looks_int_str(s) {
         let i -> 2
         do while i < n {
             let ch -> Str.at(s_str, i)
-            when ch != `0` and ch != `1` {
+            when ch != `_` and ch != `0` and ch != `1` {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `o` or Str.at(s_str, 1) == `O`) {
+        let oct_digits -> `01234567`
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` and Str.index_of(oct_digits, ch) == -1 {
                 <- false
             }
             i -> i + 1
@@ -142,7 +172,7 @@ function looks_int_str(s) {
     }
     do while i < n {
         let ch -> Str.at(s_str, i)
-        when Str.index_of(digits, ch) == -1 {
+        when ch != `_` and Str.index_of(digits, ch) == -1 {
             <- false
         }
         i -> i + 1
@@ -166,9 +196,11 @@ function parse_int_str(s) {
         let i -> 2
         do while i < n {
             let ch -> Str.at(hex_lower, i)
-            let d -> Str.index_of(hex_digits, ch)
-            when d != -1 {
-                acc -> (acc * 16) + d
+            when ch != `_` {
+                let d -> Str.index_of(hex_digits, ch)
+                when d != -1 {
+                    acc -> (acc * 16) + d
+                }
             }
             i -> i + 1
         }
@@ -183,6 +215,22 @@ function parse_int_str(s) {
                 acc -> (acc * 2) + 1
             } or when ch == `0` {
                 acc -> acc * 2
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `o` or Str.at(s_str, 1) == `O`) {
+        let oct_digits -> `01234567`
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` {
+                let d -> Str.index_of(oct_digits, ch)
+                when d != -1 {
+                    acc -> (acc * 8) + d
+                }
             }
             i -> i + 1
         }
@@ -206,9 +254,11 @@ function parse_int_str(s) {
     let digits -> `0123456789`
     do while i < n {
         let ch -> Str.at(s_str, i)
-        let d -> Str.index_of(digits, ch)
-        when d != -1 {
-            acc -> acc * 10 + d
+        when ch != `_` {
+            let d -> Str.index_of(digits, ch)
+            when d != -1 {
+                acc -> acc * 10 + d
+            }
         }
         i -> i + 1
     }
@@ -475,6 +525,59 @@ export function compile_program(prog) {
     }
 }
 
+function is_default_literal(expr) {
+    when expr == Nothing { <- false }
+    when expr == Default { <- true }
+    when not (expr is List) or expr.length < 4 { <- false }
+    let k -> expr[0]
+    when k == 2 { // K_LITERAL
+        let v -> expr[3]
+        when v == Default { <- true }
+        let tk -> ``
+        when expr.length > 4 and expr[4] != Nothing { tk -> expr[4] }
+        let tks -> Str.to_string(tk)
+        when tk == 20 or tks == `20` or tks == `DEFAULT` { <- true }
+        let vs -> Str.to_string(v)
+        when vs == `Default` or vs == `default` { <- true }
+    }
+    when k == 4 or k == 30 { // K_VARIABLE or K_IDENTIFIER
+        let vs -> Str.to_string(expr[3])
+        when vs == `Default` or vs == `default` { <- true }
+    }
+    <- false
+}
+
+function emit_zero_of_type(ctx, type_ann, line) {
+    let n -> ``
+    when type_ann != Nothing and (type_ann is List) and type_ann.length > 3 {
+        n -> Str.to_string(type_ann[3])
+    } or {
+        n -> Str.to_string(type_ann)
+    }
+    when n == `Integer` or n == `Int` or n == `int` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 3, line)  // ZEN_INTEGER
+    } or when n == `Decimal` or n == `Float` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 4, line)  // ZEN_DECIMAL
+    } or when n == `Boolean` or n == `Bool` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 2, line)  // ZEN_BOOLEAN
+    } or when n == `String` or n == `Str` or n == `Rune` or n == `Char` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 5, line)  // ZEN_STRING
+    } or when n == `List` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 6, line)  // ZEN_LIST
+    } or when n == `Map` {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 7, line)  // ZEN_MAP
+    } or {
+        emit_byte(ctx, 3, line) // OP_DEFAULT
+        emit_u16(ctx, 1, line)  // ZEN_DEFAULT
+    }
+}
+
 function compile_statement(ctx, stmt) {
     let kind -> stmt[0]
     let line -> stmt[1]
@@ -486,8 +589,16 @@ function compile_statement(ctx, stmt) {
         }
         name -> Str.to_string(name)
         let init -> stmt[4]
+        let type_ann -> Nothing
+        when stmt.length > 5 {
+            type_ann -> stmt[5]
+        }
         when init != Nothing {
-            compile_expression(ctx, init)
+            when is_default_literal(init) and type_ann != Nothing {
+                emit_zero_of_type(ctx, type_ann, line)
+            } or {
+                compile_expression(ctx, init)
+            }
         } or {
             emit_byte(ctx, 2, line) // OP_NOTHING
         }
@@ -1706,7 +1817,8 @@ function compile_expression(ctx, expr) {
         when tok_kind == 19 or tok_kind_str == `19` or tok_kind_str == `NOTHING` or val == Nothing {
             emit_byte(ctx, 2, line) // OP_NOTHING
         } or when tok_kind == 20 or tok_kind_str == `20` or tok_kind_str == `DEFAULT` {
-            emit_byte(ctx, 2, line) // OP_NOTHING
+            emit_byte(ctx, 3, line) // OP_DEFAULT
+            emit_u16(ctx, 1, line)  // ZEN_DEFAULT
         } or when tok_kind == 26 or tok_kind_str == `26` or tok_kind_str == `BOOLEAN` or (val is Boolean) {
             when val == true or val == `true` or val == `True` {
                 emit_byte(ctx, 4, line) // OP_TRUE
@@ -1725,7 +1837,7 @@ function compile_expression(ctx, expr) {
             when val is Decimal {
                 emit_constant(ctx, val, line)
             } or {
-                let num_str -> Str.to_string(val)
+                let num_str -> strip_underscores(Str.to_string(val))
                 emit_constant(ctx, num_str.to_number(), line)
             }
         } or {
@@ -1740,8 +1852,11 @@ function compile_expression(ctx, expr) {
             name -> name[3]
         }
         name -> Str.to_string(name)
-        when name == `Nothing` or name == `nothing` or name == `Default` or name == `default` {
+        when name == `Nothing` or name == `nothing` {
             emit_byte(ctx, 2, line) // OP_NOTHING
+        } or when name == `Default` or name == `default` {
+            emit_byte(ctx, 3, line) // OP_DEFAULT
+            emit_u16(ctx, 1, line)  // ZEN_DEFAULT
         } or when name == `True` or name == `true` {
             emit_byte(ctx, 4, line) // OP_TRUE
         } or when name == `False` or name == `false` {
@@ -1796,6 +1911,7 @@ function compile_expression(ctx, expr) {
         or when op == `*` { emit_byte(ctx, 50, line) } // OP_MUL
         or when op == `/` { emit_byte(ctx, 51, line) } // OP_DIV
         or when op == `%` { emit_byte(ctx, 52, line) } // OP_MOD
+        or when op == `**` { emit_byte(ctx, 61, line) } // OP_POW
         or when op == `&` or op == `&&` { emit_byte(ctx, 56, line) } // OP_BIT_AND
         or when op == `|` or op == `||` { emit_byte(ctx, 57, line) } // OP_BIT_OR
         or when op == `^` or op == `^^` { emit_byte(ctx, 58, line) } // OP_BIT_XOR
@@ -1807,8 +1923,9 @@ function compile_expression(ctx, expr) {
         or when op == `<=` { emit_byte(ctx, 67, line) } // OP_LTE
         or when op == `>` { emit_byte(ctx, 68, line) }  // OP_GT
         or when op == `>=` { emit_byte(ctx, 69, line) } // OP_GTE
-        or when op == `..` { emit_byte(ctx, 88, line) } // OP_RANGE_EXCL
-        or when op == `..=` { emit_byte(ctx, 89, line) } // OP_RANGE_INCL
+        or when op == `..` or op == `..-` { emit_byte(ctx, 88, line) } // OP_RANGE_EXCL
+        or when op == `..=` or op == `...` { emit_byte(ctx, 89, line) } // OP_RANGE_INCL
+        or when op == `..+` { emit_byte(ctx, 93, line) } // OP_RANGE_INCL_END
         or when op == `++` { emit_byte(ctx, 90, line) } // OP_CONCAT_APPEND
         or when op == `--` { emit_byte(ctx, 91, line) } // OP_DROP
         <- Nothing
@@ -1817,7 +1934,7 @@ function compile_expression(ctx, expr) {
     when kind == 5 { // K_CALL
         let callee -> expr[3]
         let args -> expr[4]
-        when callee != Nothing and callee[0] == 4 { // K_VARIABLE
+        when callee != Nothing and (callee[0] == 4 or callee[0] == 2) { // K_VARIABLE or K_LITERAL
             let cname -> Str.to_string(callee[3])
             when is_type_name_str(cname) {
                 when args != Nothing and args.length >= 1 {
@@ -3597,6 +3714,19 @@ export function invoke_callable_g(callee, args, globals) {
                     }
                     <- invoke_callable_g(fn_val, call_args, globals)
                 }
+                when m == `get` or m == `at` {
+                    when args.length > 0 {
+                        let k -> args[0]
+                        when vm_map_has(recv, k) {
+                            <- recv[k]
+                        }
+                        when args.length > 1 {
+                            <- args[1]
+                        }
+                        <- Nothing
+                    }
+                    <- Nothing
+                }
                 when m == `has` or m == `has_key` {
                     when args.length > 0 {
                         <- vm_map_has(recv, args[0])
@@ -3680,6 +3810,34 @@ export function invoke_callable_g(callee, args, globals) {
     <- __builtin_reflect.apply(callee, args)
 }
 
+function vm_is_default(v) {
+    when v == Default { <- true }
+    when (v is Map) and v[`kind`] == `DefaultSentinel` { <- true }
+    <- false
+}
+
+function vm_is_zero(v) {
+    when v == 0 or v == 0.0 or v == false or v == `` { <- true }
+    when (v is List) and v.length == 0 { <- true }
+    when (v is Map) and v.keys().length == 0 { <- true }
+    <- false
+}
+
+function vm_equal(a, b) {
+    let a_def -> vm_is_default(a)
+    let b_def -> vm_is_default(b)
+    when a_def and b_def { <- true }
+    when a_def {
+        when b == Nothing { <- false }
+        <- vm_is_zero(b)
+    }
+    when b_def {
+        when a == Nothing { <- false }
+        <- vm_is_zero(a)
+    }
+    <- a == b
+}
+
 export function eval_chunk(chunk, globals) {
     when globals == Nothing or globals.keys().length == 0 {
         globals -> create_vm_prelude()
@@ -3688,24 +3846,21 @@ export function eval_chunk(chunk, globals) {
     let consts -> chunk[`constants`]
     let stack -> []
     let locals -> []
-    
-    // Allocate locals
     let li -> 0
     let num_loc -> chunk[`num_locals`]
     do while li < num_loc {
         locals.append(Nothing)
         li -> li + 1
     }
-
     let ip -> 0
-    let code_len -> code.length
+    let n -> code.length
 
-    do while ip < code_len {
+    do while ip < n {
         let op -> code[ip]
         ip -> ip + 1
 
         when op == 0 { // OP_NOP
-            // pass
+            // do nothing
         }
         or when op == 1 { // OP_CONST
             let hi -> code[ip]
@@ -3716,6 +3871,27 @@ export function eval_chunk(chunk, globals) {
         }
         or when op == 2 { // OP_NOTHING
             stack.append(Nothing)
+        }
+        or when op == 3 { // OP_DEFAULT
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let tid -> (hi * 256) + lo
+            when tid == 3 {
+                stack.append(0)
+            } or when tid == 4 {
+                stack.append(0.0)
+            } or when tid == 2 {
+                stack.append(false)
+            } or when tid == 5 {
+                stack.append(``)
+            } or when tid == 6 {
+                stack.append([])
+            } or when tid == 7 {
+                stack.append({})
+            } or {
+                stack.append(Default)
+            }
         }
         or when op == 4 { // OP_TRUE
             stack.append(true)
@@ -3850,15 +4026,20 @@ export function eval_chunk(chunk, globals) {
             let a -> stack.pop()
             stack.append(parse_int_str(a) >> parse_int_str(b))
         }
+        or when op == 61 { // OP_POW
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_pow_vm(a, b))
+        }
         or when op == 64 { // OP_EQ
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a == b)
+            stack.append(vm_equal(a, b))
         }
         or when op == 65 { // OP_NEQ
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a != b)
+            stack.append(not vm_equal(a, b))
         }
         or when op == 66 { // OP_LT
             let b -> stack.pop()
@@ -4085,15 +4266,20 @@ export function eval_chunk(chunk, globals) {
                 `is_closure` -> true
             })
         }
-        or when op == 88 { // OP_RANGE_EXCL (a..b)
+        or when op == 88 { // OP_RANGE_EXCL (a..b or a..-b)
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(eval_range_vm(a, b, false))
+            stack.append(eval_range_vm(a, b, false, false))
         }
-        or when op == 89 { // OP_RANGE_INCL (a..=b)
+        or when op == 89 { // OP_RANGE_INCL (a..=b or a...b)
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(eval_range_vm(a, b, true))
+            stack.append(eval_range_vm(a, b, true, false))
+        }
+        or when op == 93 { // OP_RANGE_INCL_END (a..+b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, true, true))
         }
         or when op == 90 { // OP_CONCAT_APPEND (a ++ b)
             let b -> stack.pop()
@@ -4273,6 +4459,27 @@ function eval_chunk_fn(chunk, args, globals, captures) {
         or when op == 2 { // OP_NOTHING
             stack.append(Nothing)
         }
+        or when op == 3 { // OP_DEFAULT
+            let hi -> code[ip]
+            let lo -> code[ip + 1]
+            ip -> ip + 2
+            let tid -> (hi * 256) + lo
+            when tid == 3 {
+                stack.append(0)
+            } or when tid == 4 {
+                stack.append(0.0)
+            } or when tid == 2 {
+                stack.append(false)
+            } or when tid == 5 {
+                stack.append(``)
+            } or when tid == 6 {
+                stack.append([])
+            } or when tid == 7 {
+                stack.append({})
+            } or {
+                stack.append(Default)
+            }
+        }
         or when op == 4 { // OP_TRUE
             stack.append(true)
         }
@@ -4426,6 +4633,11 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(parse_int_str(a) >> parse_int_str(b))
+        }
+        or when op == 61 { // OP_POW
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_pow_vm(a, b))
         }
         or when op == 64 { // OP_EQ
             let b -> stack.pop()
@@ -4662,15 +4874,20 @@ function eval_chunk_fn(chunk, args, globals, captures) {
                 `is_closure` -> true
             })
         }
-        or when op == 88 { // OP_RANGE_EXCL (a..b)
+        or when op == 88 { // OP_RANGE_EXCL (a..b or a..-b)
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(eval_range_vm(a, b, false))
+            stack.append(eval_range_vm(a, b, false, false))
         }
-        or when op == 89 { // OP_RANGE_INCL (a..=b)
+        or when op == 89 { // OP_RANGE_INCL (a..=b or a...b)
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(eval_range_vm(a, b, true))
+            stack.append(eval_range_vm(a, b, true, false))
+        }
+        or when op == 93 { // OP_RANGE_INCL_END (a..+b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, true, true))
         }
         or when op == 90 { // OP_CONCAT_APPEND (a ++ b)
             let b -> stack.pop()
@@ -5110,11 +5327,12 @@ export function eval_bytecode_file(zbc_path, globals) {
     <- eval_chunk(chunk, globals)
 }
 
-function eval_range_vm(st, en, inclusive) {
+function eval_range_vm(st, en, inclusive, open_start) {
     let res -> []
     when st is Integer and en is Integer {
         when st <= en {
             let cur -> st
+            when open_start { cur -> cur + 1 }
             let limit -> en
             when inclusive { limit -> limit + 1 }
             do while cur < limit {
@@ -5123,6 +5341,7 @@ function eval_range_vm(st, en, inclusive) {
             }
         } or {
             let cur -> st
+            when open_start { cur -> cur - 1 }
             let limit -> en
             when inclusive { limit -> limit - 1 }
             do while cur > limit {
@@ -5141,6 +5360,7 @@ function eval_range_vm(st, en, inclusive) {
             let chars -> `abcdefghijklmnopqrstuvwxyz`
             when c0 <= c1 {
                 let cur -> c0
+                when open_start { cur -> cur + 1 }
                 let limit -> c1
                 when inclusive { limit -> limit + 1 }
                 do while cur < limit {
@@ -5149,6 +5369,7 @@ function eval_range_vm(st, en, inclusive) {
                 }
             } or {
                 let cur -> c0
+                when open_start { cur -> cur - 1 }
                 let limit -> c1
                 when inclusive { limit -> limit - 1 }
                 do while cur > limit {
@@ -5160,6 +5381,22 @@ function eval_range_vm(st, en, inclusive) {
         }
     }
     <- res
+}
+
+function eval_pow_vm(a, b) {
+    when a == Nothing or b == Nothing { <- 0 }
+    let base -> a
+    let exp -> b
+    when exp is Integer and exp >= 0 {
+        let res -> 1
+        let i -> 0
+        do while i < exp {
+            res -> res * base
+            i -> i + 1
+        }
+        <- res
+    }
+    <- __builtin_math.pow(a, b)
 }
 
 function eval_is_type_vm(val, type_name) {
@@ -5382,7 +5619,13 @@ function eval_cast_vm(val, target_type) {
         when val == true { <- 1.0 }
         when val == false { <- 0.0 }
         when val == Nothing { <- 0.0 }
-        when val is String { <- parse_int_str(val) + 0.0 }
+        when val is String {
+            let clean -> strip_underscores(val)
+            let num -> clean.to_number()
+            when num is Decimal { <- num }
+            when num is Integer { <- num + 0.0 }
+            <- 0.0
+        }
         <- 0.0
     }
     when target_type == `String` or target_type == `Str` {
@@ -5474,6 +5717,12 @@ function eval_cast_vm(val, target_type) {
             <- val
         }
         <- {}
+    }
+    when target_type == `Default` or target_type == `default` {
+        <- Default
+    }
+    when target_type == `Nothing` or target_type == `nothing` {
+        <- Nothing
     }
     <- val
 }

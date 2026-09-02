@@ -123,6 +123,7 @@ static int const_instruction(const char* name, ZenChunk* chunk, int offset) {
         else if (v.type == ZEN_DECIMAL) printf("%g", v.as.decimal);
         else if (v.type == ZEN_BOOLEAN) printf("%s", v.as.boolean ? "True" : "False");
         else if (v.type == ZEN_NOTHING) printf("Nothing");
+        else if (v.type == ZEN_DEFAULT) printf("Default");
         else printf("[type %d]", v.type);
     }
     printf("'\n");
@@ -363,7 +364,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     case ZEN_STRING: push(vm, ZenValue_make_string("")); break;
                     case ZEN_LIST: push(vm, ZenValue_from_list(ZenList_new())); break;
                     case ZEN_MAP: push(vm, ZenValue_from_map(ZenMap_new())); break;
-                    default: push(vm, ZEN_NOTHING_VAL); break;
+                    default: push(vm, ZEN_DEFAULT_VAL); break;
                 }
                 NEXT();
             }
@@ -809,6 +810,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     else if (val.type == ZEN_DECIMAL) printf("%g", val.as.decimal);
                     else if (val.type == ZEN_BOOLEAN) printf("%s", val.as.boolean ? "True" : "False");
                     else if (val.type == ZEN_NOTHING) printf("Nothing");
+                    else if (val.type == ZEN_DEFAULT) printf("Default");
                     else printf("[object %p]", val.as.object);
                     if (i > 0) printf(" ");
                 }

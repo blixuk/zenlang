@@ -1,8 +1,17 @@
 # Zenlang Code Formatter (`zenfmt`)
 
-The **Zenlang Code Formatter** (`zenfmt`) is an opinionated, automated code formatting tool for Zenlang source files (`.zl`). It standardizes indentation, enforces consistent spacing around data flow operators, and maintains clean whitespace formatting across codebases.
+| Attribute | Value |
+|:---|:---|
+| **Role** | Code Formatter Manual |
+| **Authority** | Tooling Manual |
+| **Specification Reference** | [doc/SPECIFICATION.md](SPECIFICATION.md) |
+| **Documentation Standards** | [doc/DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
 ---
+
+## 1. Overview
+
+The **Zenlang Code Formatter** (`zenfmt`) is an opinionated, automated code formatting tool for Zenlang source files (`.zl`). It standardizes indentation, enforces consistent spacing around data flow operators, and maintains clean whitespace formatting across codebases.
 
 ## 🚀 Quick Start
 

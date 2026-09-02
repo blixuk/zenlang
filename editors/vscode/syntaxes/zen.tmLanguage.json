@@ -96,6 +96,23 @@
     "strings": {
       "patterns": [
         {
+          "name": "string.quoted.triple.zenlang",
+          "begin": "```",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.zenlang" }
+          },
+          "end": "```",
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.zenlang" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.zenlang",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
           "name": "string.quoted.other.zenlang",
           "begin": "([a-zA-Z_][a-zA-Z0-9_]*)?(`)",
           "beginCaptures": {
@@ -134,7 +151,7 @@
       "patterns": [
         {
           "name": "keyword.control.zenlang",
-          "match": "\\b(when|or|and|not|xor|nor|nand|xnor|do|while|until|for|in|break|continue|return|case|with|check|raise|assert|defer|export|extends?|object|scope|task|assign|is|type)\\b"
+          "match": "\\b(when|or|and|not|xor|nor|nand|xnor|do|while|until|for|in|break|continue|return|case|with|check|raise|assert|defer|export|extends?|object|scope|task|assign|is|type|yield|before|after)\\b"
         },
         {
           "name": "storage.type.zenlang",
@@ -154,7 +171,7 @@
         },
         {
           "name": "constant.language.null.zenlang",
-          "match": "\\b(Nothing|nothing|Default|Void)\\b"
+          "match": "\\b(Nothing|nothing|Default|default|Void)\\b"
         }
       ]
     },
@@ -162,7 +179,7 @@
       "patterns": [
         {
           "name": "support.type.builtin.zenlang",
-          "match": "\\b(Void|Nothing|Variant|Integer|Decimal|String|Boolean|Rune|List|Map|Dictionary|Tuple|Vector|Set|Iterable|Iterator|Auto|Function|Structure|Class|Object|Enumerator|Error|Task)\\b"
+          "match": "\\b(Void|Nothing|Variant|Integer|Int|Decimal|Float|String|Str|Boolean|Bool|Rune|Char|Byte|Bytes|Buffer|List|Map|Dictionary|Tuple|Vector|Set|Iterable|Iterator|Auto|Function|Structure|Class|Object|Enumerator|Error|Task)\\b"
         },
         {
           "name": "entity.name.type.zenlang",
@@ -202,11 +219,11 @@
       "patterns": [
         {
           "name": "keyword.operator.assignment.zenlang",
-          "match": "->|<-|:>|=>"
+          "match": "->|<-|<~|:>|=>|<:"
         },
         {
           "name": "keyword.operator.range.zenlang",
-          "match": "\\.\\.=|\\.\\."
+          "match": "\\.\\.\\.|\\.\\.\\+|\\.\\.\\-|\\.\\.=|\\.\\."
         },
         {
           "name": "keyword.operator.comparison.zenlang",
@@ -239,6 +256,10 @@
         {
           "name": "constant.numeric.binary.zenlang",
           "match": "\\b0[bB][01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.octal.zenlang",
+          "match": "\\b0[oO][0-7_]+\\b"
         },
         {
           "name": "constant.numeric.decimal.zenlang",

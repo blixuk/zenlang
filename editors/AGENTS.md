@@ -8,12 +8,12 @@ Owned by the editor support / tooling effort.
 
 # Local Contracts
 
-- Syntax definitions must stay aligned with lexer/spec keywords (`doc/Specification/keywords.typ`, bootstrap lexer).
+- Syntax definitions must stay aligned with lexer/spec keywords (`doc/SPECIFICATION.md`, bootstrap lexer).
 - **VS Code / Cursor / Antigravity:** `vscode/` — TextMate grammars (`zen.tmLanguage.json`, `zendata.tmLanguage.json`, `zenmark.tmLanguage.json`, `zsp.tmLanguage.json`), snippets, JS extension with native Zenlang LSP client bridge (`bin/zen lsp`) providing real-time diagnostics, completions, hover, definitions, and document symbols (with bootstrap `--check` fallback). Support for `.zl`/`.zs` (Code), `.zd`/`.zen` (Data), `.zm` (Mark), and `.zsp` (Syntax Patterns).
 - **Zed:** `zed/` — language extension; requires Tree-sitter grammar in `tree-sitter-zen/`.
 - **Tree-sitter:** `tree-sitter-zen/` — `grammar.js` + generated `src/parser.c` + `queries/`.
 - **Sublime:** `sublime/zenlang.sublime-syntax`.
-- Changes to keywords, operators (`->`, `<-`, `..`, `..=`), or string syntax require updates in **all** active grammars.
+- Changes to keywords (`yield`, `before`, `after`, `task`, `object`), operators (`->`, `<-`, `<~`, `:>`, `<:`, `..`, `..=`, `..+`, `..-`, `...`), types (`Byte`, `Bytes`, `Int`, `Str`), or string syntax (triple-backtick multiline strings) require updates in **all** active grammars.
 
 # Work Guidance
 
@@ -21,7 +21,7 @@ Owned by the editor support / tooling effort.
 - After `grammar.js` changes: `cd editors/tree-sitter-zen && npx tree-sitter generate`, then copy `queries/*.scm` → `zed/languages/zen/` (or run `scripts/setup_zed_extension.sh`).
 - Commit generated `tree-sitter-zen/src/parser.c` (and related) so Zed can build without regenerating.
 - Do not commit `node_modules/`.
-- Keep snippets idiomatic (nested imports, `when` without required parens, `<-` returns).
+- Keep snippets idiomatic (nested imports, `when` without required parens, `<-` returns, arrow functions).
 
 # Verification
 
@@ -47,5 +47,4 @@ Manual:
 - zed/ — extension.toml, languages/zen/, README.md
 - tree-sitter-zen/ — grammar.js, src/, queries/, package.json, README.md
 - sublime/ — zenlang.sublime-syntax
-- typst/ — doc syntax styles
 - `scripts/setup_zed_extension.sh` — generate grammar + patch Zed file:// path

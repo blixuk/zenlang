@@ -2105,8 +2105,13 @@ function eval_arg_list(arg_nodes, i, env, args) {
 
 function eval_call(node, env) {
     let callee_node -> AST.call_callee(node)
-    when is_kind(callee_node, AST.K_VARIABLE) {
-        let cname -> Str.to_string(AST.var_name(callee_node))
+    when is_kind(callee_node, AST.K_VARIABLE) or is_kind(callee_node, AST.K_LITERAL) {
+        let cname -> ``
+        when is_kind(callee_node, AST.K_VARIABLE) {
+            cname -> Str.to_string(AST.var_name(callee_node))
+        } or {
+            cname -> Str.to_string(AST.lit_val(callee_node))
+        }
         when is_type_name_str(cname) {
             let arg_nodes -> AST.call_args(node)
             let args -> eval_arg_list(arg_nodes, 0, env, [])
@@ -2190,7 +2195,13 @@ function eval_cast(val, target_type) {
         when val == true { <- 1.0 }
         when val == false { <- 0.0 }
         when val == Nothing { <- 0.0 }
-        when val is String { <- parse_int_str(val) + 0.0 }
+        when val is String {
+            let clean -> strip_underscores(val)
+            let num -> clean.to_number()
+            when num is Decimal { <- num }
+            when num is Integer { <- num + 0.0 }
+            <- 0.0
+        }
         <- 0.0
     }
     when target_type == `String` or target_type == `Str` {
@@ -2430,6 +2441,15 @@ function eval_bound_builtin(callee, args) {
         }
     }
     when mtype == `map` {
+        when mname == `get` or mname == `at` {
+            when a0 != Nothing and tgt.has(a0) {
+                <- tgt[a0]
+            }
+            when args.length > 1 {
+                <- args[1]
+            }
+            <- Nothing
+        }
         when mname == `has` or mname == `has_key` {
             <- tgt.has(a0)
         }
@@ -2753,6 +2773,20 @@ function eval_binary(op, l, r) {
     when op == `%` {
         <- l % r
     }
+    when op == `**` {
+        let base -> l
+        let exp -> r
+        when exp is Integer and exp >= 0 {
+            let res -> 1
+            let i -> 0
+            do while i < exp {
+                res -> res * base
+                i -> i + 1
+            }
+            <- res
+        }
+        <- __builtin_math.pow(l, r)
+    }
     when op == `==` or op == `=` {
         <- values_equal(l, r)
     }
@@ -2798,11 +2832,14 @@ function eval_binary(op, l, r) {
         }
         <- false
     }
-    when op == `..` {
-        <- eval_range(l, r, false)
+    when op == `..` or op == `..-` {
+        <- eval_range(l, r, false, false)
     }
-    when op == `..=` {
-        <- eval_range(l, r, true)
+    when op == `..=` or op == `...` {
+        <- eval_range(l, r, true, false)
+    }
+    when op == `..+` {
+        <- eval_range(l, r, true, true)
     }
     <- Nothing
 }
@@ -2843,7 +2880,7 @@ function codepoint_to_char(code) {
     <- ``
 }
 
-function eval_range(start, end, inclusive) {
+function eval_range(start, end, inclusive, open_start) {
     let out -> []
     let as_char -> false
     let s -> 0
@@ -2858,7 +2895,7 @@ function eval_range(start, end, inclusive) {
     }
     when s <= e {
         let stop -> when inclusive == true { e + 1 } or { e }
-        let cur -> s
+        let cur -> when open_start == true { s + 1 } or { s }
         do while cur < stop {
             when as_char == true {
                 out.append(codepoint_to_char(cur))
@@ -2869,7 +2906,7 @@ function eval_range(start, end, inclusive) {
         }
     } or {
         let stop -> when inclusive == true { e - 1 } or { e }
-        let cur -> s
+        let cur -> when open_start == true { s - 1 } or { s }
         do while cur > stop {
             when as_char == true {
                 out.append(codepoint_to_char(cur))
@@ -3048,7 +3085,7 @@ function zero_of_type(type_ann) {
     when n == `Boolean` or n == `Bool` {
         <- false
     }
-    when n == `String` or n == `Rune` {
+    when n == `String` or n == `Str` or n == `Rune` or n == `Char` {
         <- ``
     }
     when n == `List` {
@@ -3087,6 +3124,25 @@ function zero_of_value(v) {
     }
     when v == Nothing {
         <- Nothing
+    }
+    let k -> v.kind
+    when k == `List` {
+        <- []
+    }
+    when k == `Map` {
+        <- {}
+    }
+    when k == `Integer` or k == `Int` {
+        <- 0
+    }
+    when k == `Decimal` or k == `Float` {
+        <- 0.0
+    }
+    when k == `Boolean` or k == `Bool` {
+        <- false
+    }
+    when k == `String` or k == `Str` or k == `Rune` or k == `Char` {
+        <- ``
     }
     let s -> Str.to_string(v)
     when looks_int_str(s) {
@@ -3156,21 +3212,75 @@ function coerce_literal(value) {
     <- value
 }
 
+function strip_underscores(s) {
+    let s_str -> Str.to_string(s)
+    when Str.index_of(s_str, `_`) == -1 {
+        <- s_str
+    }
+    let n -> Str.length(s_str)
+    let res -> ``
+    let i -> 0
+    do while i < n {
+        let ch -> Str.at(s_str, i)
+        when ch != `_` {
+            res -> res + ch
+        }
+        i -> i + 1
+    }
+    <- res
+}
+
 function looks_int_str(s) {
-    let n -> Str.length(s)
+    let s_str -> Str.to_string(s)
+    let n -> Str.length(s_str)
     when n == 0 {
         <- false
     }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `x` or Str.at(s_str, 1) == `X`) {
+        let hex_digits -> `0123456789abcdefABCDEF`
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` and Str.index_of(hex_digits, ch) == -1 {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `b` or Str.at(s_str, 1) == `B`) {
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` and ch != `0` and ch != `1` {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `o` or Str.at(s_str, 1) == `O`) {
+        let oct_digits -> `01234567`
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` and Str.index_of(oct_digits, ch) == -1 {
+                <- false
+            }
+            i -> i + 1
+        }
+        <- true
+    }
     let digits -> `0123456789`
     let i -> 0
-    let ch0 -> Str.at(s, 0)
+    let ch0 -> Str.at(s_str, 0)
     when ch0 == `-` {
         when n == 1 {
             <- false
         }
         i -> 1
     }
-    <- all_digits(s, i, n, digits)
+    <- all_digits(s_str, i, n, digits)
 }
 
 function all_digits(s, i, n, digits) {
@@ -3178,7 +3288,7 @@ function all_digits(s, i, n, digits) {
         <- true
     }
     let ch -> Str.at(s, i)
-    when Str.index_of(digits, ch) == -1 {
+    when ch != `_` and Str.index_of(digits, ch) == -1 {
         <- false
     }
     <- all_digits(s, i + 1, n, digits)
@@ -3196,9 +3306,11 @@ function parse_int_str(s) {
         let i -> 2
         do while i < n {
             let ch -> Str.at(hex_lower, i)
-            let d -> Str.index_of(hex_digits, ch)
-            when d != -1 {
-                acc -> (acc * 16) + d
+            when ch != `_` {
+                let d -> Str.index_of(hex_digits, ch)
+                when d != -1 {
+                    acc -> (acc * 16) + d
+                }
             }
             i -> i + 1
         }
@@ -3213,6 +3325,22 @@ function parse_int_str(s) {
                 acc -> (acc * 2) + 1
             } or when ch == `0` {
                 acc -> acc * 2
+            }
+            i -> i + 1
+        }
+        <- acc
+    }
+    when n > 2 and Str.at(s_str, 0) == `0` and (Str.at(s_str, 1) == `o` or Str.at(s_str, 1) == `O`) {
+        let oct_digits -> `01234567`
+        let acc -> 0
+        let i -> 2
+        do while i < n {
+            let ch -> Str.at(s_str, i)
+            when ch != `_` {
+                let d -> Str.index_of(oct_digits, ch)
+                when d != -1 {
+                    acc -> (acc * 8) + d
+                }
             }
             i -> i + 1
         }
@@ -3236,11 +3364,12 @@ function parse_int_str(s) {
     let digits -> `0123456789`
     do while i < n {
         let ch -> Str.at(s_str, i)
-        let d -> Str.index_of(digits, ch)
-        when d == -1 {
-            break
+        when ch != `_` {
+            let d -> Str.index_of(digits, ch)
+            when d != -1 {
+                acc -> acc * 10 + d
+            }
         }
-        acc -> acc * 10 + d
         i -> i + 1
     }
     when neg {

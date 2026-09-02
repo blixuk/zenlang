@@ -121,17 +121,24 @@ class DeclarationParserMixin:
         # Identifer
         identifer = self.handle_identifier()
 
-        # Parameters
-        if self.token_handler.check_type(TokenType.LEFT_PAREN):
+        # Parameters and Return Type (flexible order: `(params) : Type` or `: Type (params)`)
+        if self.token_handler.check_type(TokenType.TYPE_SET):
+            inferred_return_type, _ = self.handle_typing()
+            if self.token_handler.check_type(TokenType.LEFT_PAREN):
+                parameters = self.expression_handler.parse_parameters()
+        elif self.token_handler.check_type(TokenType.LEFT_PAREN):
             parameters = self.expression_handler.parse_parameters()
+            if self.token_handler.check_type(TokenType.TYPE_SET):
+                inferred_return_type, _ = self.handle_typing()
 
-        # Return Type
-        inferred_return_type, _ = self.handle_typing()
-
-        # Block Scope or Concise Expression Return (<- expr)
+        # Block Scope or Concise Expression Return (<- expr or -> expr)
         if self.token_handler.check_type(TokenType.LEFT_BRACE):
             block = self.block_statement("function")
-        elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+        elif (
+            self.token_handler.match_type(TokenType.RETURN)
+            or self.token_handler.match_type(TokenType.ASSIGNMENT)
+            or self.token_handler.match_type_value(TokenType.KEYWORD, "return")
+        ):
             expr = self.expression_handler.expression()
             ret_stmt = ReturnStatement(
                 line=expr.line,
@@ -149,7 +156,7 @@ class DeclarationParserMixin:
             )
         else:
             raise self.logger.error_expect_token(
-                "Expected `{` or `<-` after function declaration", self.token_handler.peek()
+                "Expected `{`, `<-`, or `->` after function declaration", self.token_handler.peek()
             )
 
         statement = FunctionStatement(

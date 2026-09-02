@@ -12,6 +12,7 @@ typedef char* ZenString;
 
 typedef enum {
     ZEN_NOTHING,
+    ZEN_DEFAULT,
     ZEN_INTEGER,
     ZEN_DECIMAL,
     ZEN_BOOLEAN,
@@ -48,6 +49,7 @@ struct ZenValue {
 };
 
 #define ZEN_NOTHING_VAL ((ZenValue){ZEN_NOTHING, {0}})
+#define ZEN_DEFAULT_VAL ((ZenValue){ZEN_DEFAULT, {0}})
 
 // Value Constructors
 #define ZenValue_make_integer(v) ((ZenValue){.type = ZEN_INTEGER, .as.integer = (long long)(v)})
@@ -56,6 +58,7 @@ struct ZenValue {
 
 ZenValue ZenValue_make_string(const char* s);
 ZenValue ZenValue_make_nothing(void);
+ZenValue ZenValue_make_default(void);
 ZenValue ZenValue_from_list(struct ZenList* l);
 ZenValue ZenValue_from_map(struct ZenMap* m);
 ZenValue ZenValue_from_object(void* o);

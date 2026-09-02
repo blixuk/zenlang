@@ -36,6 +36,8 @@ Most programming languages force you into a compromise:
 - **[Chapter 9: Terminal Mastery & UI](09_terminal_mastery.md)** — Direct terminal control, ANSI buffers, declarative tables (`zen.ui.table`), spinners (`zen.ui.spinner`), and live interactive apps.
 - **[Chapter 10: Dual Execution & The C Runtime](10_dual_execution_and_c.md)** — How Zenlang interprets and compiles to C, memory management, and self-hosting.
 - **[Chapter 11: Practical Projects](11_practical_projects.md)** — Step-by-step capstones: building a Unix log analyzer CLI, an interactive dashboard, and a terminal mini-game.
+- **[Chapter 12: Concurrency & The Unified Task Substrate](12_concurrency_and_tasks.md)** — Asynchronous execution without `async`/`await`, `.spawn`, `.wait`, `with task_group`, and channels.
+
 
 ---
 
@@ -47,8 +49,13 @@ Most programming languages force you into a compromise:
 
 ## 📕 Compiling to PDF
 
-You can compile the entire book into a formatted PDF document ([Zen_Book.pdf](Zen_Book.pdf)) with full syntax highlighting using the Typst build script:
+You can compile the entire book into a formatted vector PDF document ([Zen_Book.pdf](Zen_Book.pdf)) with full syntax highlighting and section numbering using native Zen Mark:
 
 ```bash
+# Using the central Zen developer CLI:
+./scripts/zen doc-pdf
+
+# Or using the local book build script:
 bash doc/book/build.sh
 ```
+

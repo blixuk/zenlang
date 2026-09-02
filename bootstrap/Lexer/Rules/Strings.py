@@ -9,6 +9,48 @@ class Strings:
         start_column: int = self.column_number
         quote: str | None = self.advance()
 
+        if quote == "`" and self.peek() == "`" and self.peek(1) == "`":
+            self.advance() # 2nd `
+            self.advance() # 3rd `
+            while (character := self.peek()) is not None:
+                if character == "`" and self.peek(1) == "`" and self.peek(2) == "`":
+                    break
+                string += self.advance()
+
+            if self.peek() is None:
+                snippet = self.get_snippet(
+                    start_line, start_column, int(self.column_number - start_column)
+                )
+                self.add_token(
+                    TokenType.ERROR_UNTERMINATED_STRING_EOF,
+                    snippet,
+                    start_line,
+                    start_column,
+                    self.line_number,
+                    self.column_number,
+                )
+                raise self.logger.error_token(
+                    TokenType.ERROR_UNTERMINATED_STRING_EOF.name,
+                    start_line,
+                    start_column,
+                    snippet,
+                )
+
+            self.advance()
+            self.advance()
+            self.advance()
+            self.add_token(
+                TokenType.STRING,
+                string,
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+            if prefix:
+                self.tokens[-1].prefix = prefix
+            return
+
         while (character := self.peek()) and character != quote:
             if character == "\\":
                 self.advance() # consume \

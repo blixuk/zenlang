@@ -23,6 +23,8 @@ class TokenType(Enum):
     RUNE = "RUNE"
     STRING = "STRING"
     BOOLEAN = "BOOLEAN"
+    BYTE = "BYTE"
+    BYTES = "BYTES"
 
     FUNCTION = "FUNCTION"
     STRUCTURE = "STRUCTURE"
@@ -36,6 +38,7 @@ class TokenType(Enum):
     CASE = "CASE"
     WITH = "WITH"
     TASK = "TASK"
+    YIELD = "YIELD"
     AWAIT = "AWAIT"
 
     LIST = "LIST"
@@ -110,6 +113,11 @@ class TokenType(Enum):
     QUOTIENT = "QUOTIENT"
     RANGE = "RANGE"
     RANGE_INCLUSIVE = "RANGE_INCLUSIVE"
+    RANGE_INCLUSIVE_END = "RANGE_INCLUSIVE_END"
+    RANGE_EXCLUSIVE_END = "RANGE_EXCLUSIVE_END"
+    RANGE_FULL_INCLUSIVE = "RANGE_FULL_INCLUSIVE"
+    YIELD_ARROW = "YIELD_ARROW"
+
 
     NUMBER = "NUMBER"
     TEXT = "TEXT"
@@ -211,7 +219,10 @@ KEYWORDS: list = [
     "from",
     "as",
     "task",
+    "yield",
     "await",
+    "before",
+    "after",
     "source",
     "target",
     "owned",
@@ -223,10 +234,19 @@ TYPES: list = [
     "Nothing",
     "Variant",
     "Integer",
+    "Int",
     "Decimal",
+    "Float",
     "String",
+    "Str",
     "Character",
+    "Char",
+    "Rune",
+    "Byte",
+    "Bytes",
+    "Buffer",
     "Boolean",
+    "Bool",
     "Structure",
     "Function",
     "Class",
@@ -257,6 +277,8 @@ TYPE_TOKENS: list = [
     TokenType.DECIMAL,
     TokenType.STRING,
     TokenType.RUNE,
+    TokenType.BYTE,
+    TokenType.BYTES,
     TokenType.BOOLEAN,
     TokenType.STRUCTURE,
     TokenType.FUNCTION,
@@ -275,6 +297,7 @@ TYPE_TOKENS: list = [
 ASSIGNMENTS: dict = {
     "->": TokenType.ASSIGNMENT,
     "<-": TokenType.RETURN,
+    "<~": TokenType.YIELD_ARROW,
     ":": TokenType.TYPE_SET,
     ":>": TokenType.TYPE_LET,
     "<:": TokenType.TYPE_CAST,

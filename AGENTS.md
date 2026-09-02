@@ -115,7 +115,7 @@ Project-level ownership rests with the Zenlang developers/maintainers. Every age
 ### Local Contracts (project-wide)
 - The Python bootstrap in `bootstrap/` is the complete authoritative implementation until selfhost stage parity. `selfhost/` targets full parity (see `selfhost/PARITY.md`); Stage 1 = Token+Lexer.
 - Canonical C runtime is top-level `runtime/`. `bootstrap/Transpiler/runtime` must remain a symlink (or equivalent) to that tree.
-- Follow [doc/Zen Manifesto.md](doc/Zen%20Manifesto.md) and [doc/Zenlang Explained.md](doc/Zenlang%20Explained.md). Learner on-ramp: [doc/Getting_Started.md](doc/Getting_Started.md).
+- Follow [doc/SPECIFICATION.md](doc/SPECIFICATION.md) (single source of truth) and [doc/Zen Manifesto.md](doc/Zen%20Manifesto.md). Learner on-ramp: [doc/Getting_Started.md](doc/Getting_Started.md). Standards: [doc/DOCUMENTATION_STANDARDS.md](doc/DOCUMENTATION_STANDARDS.md).
 - Transient artifacts (`build/`, `out/`, `bin/`, `output/`, `tmp/`, `venv/`, `__pycache__/`, `*.log`, `*.o`, `*.bak`) are never hand-edited; gitignored.
 - `ZEN_PATH` includes project root, `selfhost/`, and `lib/`.
 - Dual execution parity (interpreter vs native `-g`) and dual-layer testing remain invariants.

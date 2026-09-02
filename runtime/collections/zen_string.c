@@ -93,6 +93,7 @@ ZenValue ZenValue_to_string(ZenValue value) {
         case ZEN_BOOLEAN: return ZenValue_make_string(value.as.boolean ? "true" : "false");
         case ZEN_STRING: return value;
         case ZEN_NOTHING: return ZenValue_make_string("Nothing");
+        case ZEN_DEFAULT: return ZenValue_make_string("Default");
         case ZEN_ERROR: return ZenValue_make_string("Error");
         case ZEN_ARENA: return ZenValue_make_string("Arena");
         case ZEN_SET: {

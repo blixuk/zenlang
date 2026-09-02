@@ -27,9 +27,10 @@ void ZenRuntime_initialize(void);
 ZenValue ZenValue_make_error_message(ZenValue message);
 ZenValue ZenValue_make_error_literal(ZenValue message);
 
-// Range operators: a..b (exclusive end), a..=b (inclusive end)
+// Range operators: a..b (exclusive end), a..=b (inclusive end), a..+b (open start, inclusive end)
 ZenValue ZenValue_range(ZenValue start, ZenValue end);
 ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end);
+ZenValue ZenValue_range_open_start_inclusive(ZenValue start, ZenValue end);
 ZenValue ZenRange_make(ZenValue start, ZenValue end); // alias of exclusive
 
 // Time capability (__builtin_time)
