@@ -7,7 +7,6 @@
   Learn: when / or when / or, do while, ranges (..), and / or / not.
 !/
 
-import zen.io.io as io
 import zen.text.string as Str
 
 function label(n) {
@@ -21,9 +20,9 @@ function label(n) {
 }
 
 function main() {
-    io.writeln(`grade 95 -> ` + label(95))
-    io.writeln(`grade 82 -> ` + label(82))
-    io.writeln(`grade 70 -> ` + label(70))
+    writeln(`grade 95 -> ` + label(95))
+    writeln(`grade 82 -> ` + label(82))
+    writeln(`grade 70 -> ` + label(70))
 
     let i -> 0
     let sum -> 0
@@ -31,15 +30,15 @@ function main() {
         sum -> sum + i
         i -> i + 1
     }
-    io.writeln(`sum 0..4 = ` + Str.to_string(sum))
+    writeln(`sum 0..4 = ` + Str.to_string(sum))
 
     // Ranges build lists
     let xs -> 1..=3
-    io.writeln(`range 1..=3 length = ` + Str.to_string(xs.length))
+    writeln(`range 1..=3 length = ` + Str.to_string(xs.length))
 
     let ok -> True
     when ok and sum == 10 {
-        io.writeln(`and/or/not: conditions use words, not && ||`)
+        writeln(`and/or/not: conditions use words, not && ||`)
     }
 
     <- 0

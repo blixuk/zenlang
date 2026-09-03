@@ -107,6 +107,7 @@ function opcode_name(op) {
     when op == 32 { <- `OP_SET_INDEX` }
     when op == 33 { <- `OP_GET_FIELD` }
     when op == 34 { <- `OP_SET_FIELD` }
+    when op == 95 { <- `OP_IN` }
     <- `OP_UNKNOWN(` + Str.to_string(op) + `)`
 }
 

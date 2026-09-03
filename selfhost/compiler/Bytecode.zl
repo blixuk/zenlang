@@ -1941,6 +1941,7 @@ function compile_expression(ctx, expr) {
         or when op == `..+` { emit_byte(ctx, 93, line) } // OP_RANGE_INCL_END
         or when op == `++` { emit_byte(ctx, 90, line) } // OP_CONCAT_APPEND
         or when op == `--` { emit_byte(ctx, 91, line) } // OP_DROP
+        or when op == `in` { emit_byte(ctx, 95, line) } // OP_IN
         <- Nothing
     }
 
@@ -2441,7 +2442,22 @@ function vm_term_height() {
     <- 24
 }
 function vm_sys_args() {
-    <- __builtin_sys.get_args()
+    let raw -> __builtin_sys.get_args()
+    when raw == Nothing { <- [] }
+    let n -> raw.length
+    when n > 1 {
+        let a0 -> Str.to_string(raw[0])
+        when a0 == `zen` or Str.ends_with(a0, `/zen`) or Str.ends_with(a0, `zen-selfhost`) {
+            let sliced -> []
+            let i -> 1
+            do while i < n {
+                sliced.append(raw[i])
+                i -> i + 1
+            }
+            <- sliced
+        }
+    }
+    <- raw
 }
 function vm_sys_exit(code) {
     <- __builtin_sys.exit(code)
@@ -4404,6 +4420,11 @@ export function eval_chunk(chunk, globals) {
                 stack.append(top)
             }
         }
+        or when op == 95 { // OP_IN (a in b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_in_vm(a, b))
+        }
         or when op == 96 { // OP_JUMP
             let hi -> code[ip]
             let lo -> code[ip + 1]
@@ -5011,6 +5032,11 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             } or {
                 stack.append(top)
             }
+        }
+        or when op == 95 { // OP_IN (a in b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_in_vm(a, b))
         }
         or when op == 96 { // OP_JUMP
             let hi -> code[ip]
@@ -5685,6 +5711,33 @@ function eval_drop_vm(a, b) {
         <- res
     }
     <- a
+}
+
+function eval_in_vm(item, container) {
+    when container == Nothing {
+        <- false
+    }
+    when container is List {
+        let i -> 0
+        let n -> container.length
+        do while i < n {
+            when container[i] == item {
+                <- true
+            }
+            i -> i + 1
+        }
+        <- false
+    }
+    when container is Map {
+        <- container.has(item)
+    }
+    when container is Set {
+        <- container.has(item)
+    }
+    when container is String {
+        <- Str.contains(container, Str.to_string(item))
+    }
+    <- false
 }
 
 function is_type_name_str(s) {

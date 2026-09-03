@@ -281,6 +281,11 @@ class ExpressionHandler:
             expression.resolved_type = TypeList(None, [TypeElement(None, TypeVariant())])
             return expression.resolved_type
 
+        if operator == "in":
+            expression.type = TypeBoolean()
+            expression.resolved_type = TypeBoolean()
+            return expression.resolved_type
+
         # Extended '++' (append/prepend/concat) and '--' (drop start/end/decrement)
         if operator == "++":
             if isinstance(left_type, TypeString) or left_type == TypeString or \

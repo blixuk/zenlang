@@ -360,6 +360,7 @@ Zenlang features complete 7-gate digital logic across both boolean and binary do
 | **`>`** | Greater Than | `score > 100` |
 | **`<=`** | Less Than or Equal | `count <= max_count` |
 | **`>=`** | Greater Than or Equal | `level >= 5` |
+| **`in`** | Membership / Containment (List, Map, Set, String, Range) | `42 in nums`, `'key' in map`, `'zen' in str` |
 | **`is`** | Type / Pattern Match | `when val is Integer` |
 | **`is not`** | Negative Type Test | `when val is not Nothing` |
 
@@ -435,7 +436,7 @@ Zenlang provides 1:1 keyword equivalents for visual operators:
 | **4** | Multiplicative | `*`, `/`, `//`, `%`, `%%`, `**` | Left | Multiplication, division, modulo, power |
 | **5** | Additive | `+`, `-`, `++`, `--` | Left | Addition, subtraction, concat, postfix ops |
 | **6** | Bitwise Shift | `<<`, `>>` | Left | Binary bit shifts |
-| **7** | Relational | `<`, `<=`, `>`, `>=`, `is`, `is not` | Left | Comparison and type checking |
+| **7** | Relational | `<`, `<=`, `>`, `>=`, `in`, `is`, `is not` | Left | Comparison, membership, and type checking |
 | **8** | Equality | `==`, `!=` | Left | Structural deep equality |
 | **9** | Bitwise Logic | `&&`, `^^`, `\|\|`, `!&`, `!\|`, `!^` | Left | Complete 7-gate bitwise logic |
 | **10** | Logical Logic | `and`, `xor`, `or`, `nand`, `nor`, `xnor` | Left | Complete 7-gate boolean logic |
@@ -766,6 +767,23 @@ let multiplier -> function(x) { <- x * factor } // Captures factor == 10
 
 factor -> 99
 let result -> multiplier(5) // Returns 50 (5 * 10)
+```
+
+### 10.5 Entry Points & Dynamic Program Arguments (`main`)
+Executable Zenlang programs define their entry point via `function main`:
+- **Dynamic Arity Binding:** `function main(args)` dynamically accepts command-line arguments as a Zenlang `List` of strings.
+- **Zero-Parameter Entry:** `function main()` or `function main { ... }` is also valid for zero-argument entry points.
+- **Ambient Globals:** All scripts and functions have ambient access to `args` (a `List` of CLI strings) and `env` (a `Map` of process environment variables) without requiring imports.
+- **Exit Status:** Returning an `Integer` from `main` sets the process exit code (`<- 0` for success).
+
+```zl
+function main(args) {
+    writeln(`Executing: ` + args[0])
+    when args.length > 1 {
+        writeln(`Argument: ` + args[1])
+    }
+    <- 0
+}
 ```
 
 ---
@@ -1238,8 +1256,47 @@ do for val in fibonacci(50) {
 
 ---
 
-### 15.8 Structured Stream Output (`zen.io`)
-Zenlang routes output through environment-aware streams:
+### 15.8 Native Console I/O, Ambient Streams & Structured Output
+Zenlang treats standard I/O streams as first-class ambient instances and provides universal console preludes available across all scopes with **zero imports**:
+
+#### Universal Console I/O Preludes (No Imports)
+- `write(value)`: Writes string representation of value directly to standard output without a trailing newline.
+- `writeln(value)`: Writes string representation of value directly to standard output followed by a newline.
+- `read(prompt?)`: Reads from standard input with an optional prompt string.
+- `readln(prompt?)`: Reads a line from standard input with an optional prompt string.
+
+```zl
+write(`Loading... `)
+writeln(`Done!`)
+let name -> readln(`Your name: `)
+```
+
+> **Design Note:** Zenlang rejects legacy `print` and `println` keywords. Use `write(...)` or `writeln(...)`.
+
+#### Native Ambient Streams (`stdout`, `stderr`, `stdin`)
+Zenlang adheres to the Unix philosophy by exposing standard streams natively as ambient stream objects with direct member methods:
+
+| Stream | Method | Signature | Description |
+|:---|:---|:---|:---|
+| `stdout` | `.write(val)` | `(val: Any) -> Nothing` | Writes to stdout without newline |
+| `stdout` | `.writeln(val)` | `(val: Any) -> Nothing` | Writes to stdout with newline |
+| `stdout` | `.flush()` | `() -> Nothing` | Flushes stdout buffer |
+| `stderr` | `.write(val)` | `(val: Any) -> Nothing` | Writes to stderr without newline |
+| `stderr` | `.writeln(val)` | `(val: Any) -> Nothing` | Writes to stderr with newline |
+| `stderr` | `.flush()` | `() -> Nothing` | Flushes stderr buffer |
+| `stdin` | `.read(prompt?)` | `(prompt: String?) -> String` | Reads from stdin |
+| `stdin` | `.readln(prompt?)` | `(prompt: String?) -> String` | Reads next line from stdin |
+| `stdin` | `.lines()` | `() -> List<String>` | Reads all remaining lines as a list |
+
+```zl
+stdout.write(`status: ok `)
+stdout.flush()
+stderr.writeln(`error: missing configuration`)
+let input -> stdin.readln(`> `)
+```
+
+#### Structured Stream Output (`zen.io`)
+For tagged and ANSI-styled terminal messaging, the standard library `zen.io` package extends stream handling:
 - `io.write(text)`: Raw text output
 - `io.writeln(text)`: Line output with terminal newline
 - `io.info(text)`: Informational output (tagged/colored)

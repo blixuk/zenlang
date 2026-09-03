@@ -23,6 +23,7 @@ ZenValue ZenValue_peek(ZenValue self);
 ZenValue ZenValue_remove(ZenValue self, ZenValue value);
 ZenValue ZenValue_remove_at(ZenValue self, ZenValue index);
 ZenValue ZenValue_contains(ZenValue self, ZenValue value);
+ZenValue ZenValue_in(ZenValue value, ZenValue container);
 ZenValue ZenValue_get_keys(ZenValue self);
 ZenValue ZenValue_get_values(ZenValue self);
 ZenValue ZenValue_get_items(ZenValue self);

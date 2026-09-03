@@ -130,6 +130,11 @@ class OperationsParserMixin:
                     left=node,
                     right=right
                 )
+            elif self.token_handler.check_type_value(TokenType.KEYWORD, "in"):
+                self.token_handler.advance() # consume 'in'
+                operator = self.token_handler.previous()
+                right = self.range_op(allow_instantiation=allow_instantiation)
+                node = BinaryOperation(getattr(operator, "line"), getattr(operator, "column"), "in", node, right)
             else:
                 break
 

@@ -1712,7 +1712,8 @@ function parse_comparison_tail(left) {
     let j -> left[`i`]
     let t -> tok_at(j)
     when is_kind(t, TokenType.LESS_THAN) or is_kind(t, TokenType.GREATER_THAN) or
-         is_kind(t, TokenType.LESS_THAN_OR_EQUAL) or is_kind(t, TokenType.GREATER_THAN_OR_EQUAL) {
+         is_kind(t, TokenType.LESS_THAN_OR_EQUAL) or is_kind(t, TokenType.GREATER_THAN_OR_EQUAL) or
+         is_val(t, `in`) {
         let op -> val_of(t)
         let right -> parse_range(j + 1)
         when right[`err`] != Nothing {

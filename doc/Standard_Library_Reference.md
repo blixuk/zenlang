@@ -64,6 +64,48 @@ Default process entry is `function main()`. Setting `module.entry` bypasses `mai
 
 ---
 
+# Built-in: Console I/O, Ambient Streams & Program Arguments (no import)
+
+Zenlang provides built-in console I/O preludes, ambient standard streams, and CLI argument bindings that require no imports.
+
+### Universal Console I/O Preludes
+
+| Function | Signature | Description |
+|:---|:---|:---|
+| `write(val)` | `(val: Any) -> Nothing` | Writes string representation to stdout without a newline. |
+| `writeln(val)` | `(val: Any) -> Nothing` | Writes string representation to stdout followed by a newline. |
+| `read(prompt?)` | `(prompt: String?) -> String` | Reads a line from stdin with an optional prompt. |
+| `readln(prompt?)` | `(prompt: String?) -> String` | Reads a line from stdin with an optional prompt. |
+
+> **Note:** Legacy `print` and `println` keywords are deprecated. Always use `write(...)` or `writeln(...)`.
+
+### Ambient Standard Streams (`stdout`, `stderr`, `stdin`)
+
+| Stream | Method | Signature | Description |
+|:---|:---|:---|:---|
+| `stdout` | `.write(val)` | `(val: Any) -> Nothing` | Writes to stdout without newline |
+| `stdout` | `.writeln(val)` | `(val: Any) -> Nothing` | Writes to stdout with newline |
+| `stdout` | `.flush()` | `() -> Nothing` | Flushes stdout buffer |
+| `stderr` | `.write(val)` | `(val: Any) -> Nothing` | Writes to stderr without newline |
+| `stderr` | `.writeln(val)` | `(val: Any) -> Nothing` | Writes to stderr with newline |
+| `stderr` | `.flush()` | `() -> Nothing` | Flushes stderr buffer |
+| `stdin` | `.read(prompt?)` | `(prompt: String?) -> String` | Reads from stdin |
+| `stdin` | `.readln(prompt?)` | `(prompt: String?) -> String` | Reads line from stdin |
+| `stdin` | `.lines()` | `() -> List<String>` | Reads all remaining lines as a list |
+
+### Ambient Program Arguments & Environment
+
+| Global | Type | Description |
+|:---|:---|:---|
+| `args` | `List<String>` | Command-line arguments passed to the script/executable. |
+| `env` | `Map<String, String>` | Process environment variables. |
+
+### Dynamic Entry Points
+
+Entry functions declare `function main(args)` to receive CLI arguments directly as a `List`, while zero-parameter `function main()` remains supported for applications that do not require CLI arguments.
+
+---
+
 # Module: zen.reflect
 
 > Value introspection and dynamic call. Import: `use zen.reflect as reflect`.

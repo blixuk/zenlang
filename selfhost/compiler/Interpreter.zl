@@ -2887,6 +2887,32 @@ function eval_binary(op, l, r) {
     when op == `..+` {
         <- eval_range(l, r, true, true)
     }
+    when op == `in` {
+        when r == Nothing {
+            <- false
+        }
+        when r is List {
+            let i -> 0
+            let n -> r.length
+            do while i < n {
+                when values_equal(l, r[i]) {
+                    <- true
+                }
+                i -> i + 1
+            }
+            <- false
+        }
+        when r is Map {
+            <- r.has(l)
+        }
+        when r is Set {
+            <- r.has(l)
+        }
+        when r is String {
+            <- Str.contains(r, Str.to_string(l))
+        }
+        <- false
+    }
     <- Nothing
 }
 

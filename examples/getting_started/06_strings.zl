@@ -7,18 +7,17 @@
   Learn: zen.text.string free functions — trim, split, join, to_string.
 !/
 
-import zen.io.io as io
 import zen.text.string as Str
 
 function main() {
     let raw -> `  hello, zen  `
     let s -> Str.trim(raw)
-    io.writeln(`trimmed: [` + s + `]`)
+    writeln(`trimmed: [` + s + `]`)
 
     let parts -> Str.split(`a,b,c`, `,`)
-    io.writeln(`joined: ` + Str.join(parts, ` | `))
-    io.writeln(`length: ` + Str.to_string(Str.length(s)))
-    io.writeln(`number as text: ` + Str.to_string(42))
+    writeln(`joined: ` + Str.join(parts, ` | `))
+    writeln(`length: ` + Str.to_string(Str.length(s)))
+    writeln(`number as text: ` + Str.to_string(42))
 
     <- 0
 }

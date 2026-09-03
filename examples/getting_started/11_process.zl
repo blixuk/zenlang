@@ -8,23 +8,22 @@
 !/
 
 import zen.sys.process as process
-import zen.io.io as io
 import zen.text.string as Str
 
 function main() {
-    io.writeln(`=== process demo ===`)
+    writeln(`=== process demo ===`)
 
     when process.ok(`test -d lib/zen`) {
-        io.writeln(`ok: lib/zen is a directory`)
+        writeln(`ok: lib/zen is a directory`)
     } or {
-        io.writeln(`note: run from repo root for best results`)
+        writeln(`note: run from repo root for best results`)
     }
 
     let uname -> Str.trim(process.shell(`uname -s`))
-    io.writeln(`uname: ` + uname)
+    writeln(`uname: ` + uname)
 
     let head -> process.shell(`printf 'alpha\nbeta\ngamma\n' | head -2`)
-    io.write(`piped sample:\n` + head)
+    write(`piped sample:\n` + head)
 
     <- 0
 }

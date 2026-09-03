@@ -7,11 +7,9 @@
     ./bin/zen -g examples/ztree.zl .
 !/
 
-import zen.sys.sys as sys
 import zen.sys.term as term
 import zen.io.file as file
 import zen.io.path as path
-import zen.io.io as io
 import zen.text.string as Str
 
 function collect_children(dir) {
@@ -89,12 +87,11 @@ function print_entry(p, prefix, is_last) {
         }
         term.write(name)
         term.reset()
-        io.writeln(``)
+        writeln(``)
     }
 }
 
-function main() {
-    let args -> sys.get_args()
+function main(args) {
     let root -> `.`
     when args.length > 1 {
         root -> args[1]
@@ -102,7 +99,7 @@ function main() {
 
     when not file.exists(root) {
         term.color(`red`, `black`)
-        io.writeln(`ztree: no such path: ` + root)
+        stderr.writeln(`ztree: no such path: ` + root)
         term.reset()
         <- 1
     }
@@ -111,7 +108,7 @@ function main() {
     term.write(root)
     when file.is_dir(root) { term.write(`/`) }
     term.reset()
-    io.writeln(``)
+    writeln(``)
 
     when file.is_dir(root) {
         let ordered -> collect_children(root)

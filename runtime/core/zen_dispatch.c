@@ -183,7 +183,10 @@ ZenValue ZenValue_contains(ZenValue self, ZenValue value) {
     if (self.type == ZEN_SET) return ZenSet_contains_value(self, value);
     if (self.type == ZEN_STRING) return ZenValue_make_boolean(ZenString_find_index(self, value).as.integer != -1);
     return ZenValue_make_boolean(false);
+}
 
+ZenValue ZenValue_in(ZenValue value, ZenValue container) {
+    return ZenValue_contains(container, value);
 }
 
 ZenValue ZenValue_get_keys(ZenValue self) {

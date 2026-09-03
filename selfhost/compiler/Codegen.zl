@@ -3515,6 +3515,9 @@ function emit_binary(op, l, r) {
     when op == `>=` {
         <- `ZenValue_greater_than_or_equal(` + l + `, ` + r + `)`
     }
+    when op == `in` {
+        <- `ZenValue_in(` + l + `, ` + r + `)`
+    }
     <- `ZenValue_add(` + l + `, ` + r + `)`
 }
 

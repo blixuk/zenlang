@@ -6,13 +6,14 @@
     python3 bootstrap/Zen.py examples/getting_started/01_hello.zl
     ./bin/zen -g examples/getting_started/01_hello.zl
 
-  Learn: entry point main(), backtick strings, nested imports, <- exit code.
+  Learn: entry point main(args), backtick strings, built-in writeln (no import needed), <- exit code.
 !/
 
-use zen.io
-
-function main() {
-    io.writeln(`Hello, Zenlang!`)
-    io.writeln(`Visual flow: values move with -> and <-`)
+function main(args) {
+    writeln(`Hello, Zenlang!`)
+    writeln(`Visual flow: values move with -> and <-`)
+    when args.length > 0 {
+        writeln(`CLI argument: ` + args[0])
+    }
     <- 0
 }

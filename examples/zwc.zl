@@ -7,10 +7,8 @@
     ./bin/zen -g examples/zwc.zl lib/zen/sys/term.zl
 !/
 
-import zen.sys.sys as sys
 import zen.sys.term as term
 import zen.io.file as file
-import zen.io.io as io
 import zen.text.string as Str
 
 function count_words(text) {
@@ -101,12 +99,11 @@ function analyze(path) {
 }
 
 function usage() {
-    io.writeln(`zwc — visual word/line/byte counts`)
-    io.writeln(`usage: zwc <file> [file ...]`)
+    writeln(`zwc — visual word/line/byte counts`)
+    writeln(`usage: zwc <file> [file ...]`)
 }
 
-function main() {
-    let args -> sys.get_args()
+function main(args) {
     when args.length < 2 {
         usage()
         <- 1
@@ -127,12 +124,12 @@ function main() {
         i -> i + 1
         when not file.exists(p) {
             term.color(`red`, `black`)
-            io.writeln(`zwc: no such file: ` + p)
+            stderr.writeln(`zwc: no such file: ` + p)
             term.reset()
         } or {
             when file.is_dir(p) {
                 term.color(`red`, `black`)
-                io.writeln(`zwc: is a directory: ` + p)
+                stderr.writeln(`zwc: is a directory: ` + p)
                 term.reset()
             } or {
                 let row -> analyze(p)
@@ -180,7 +177,7 @@ function main() {
         term.write(pad_left(Str.to_string(row.bytes), 8))
         term.write(` `)
         draw_bar(row.lines, max_lines, bar_w, `green`)
-        io.writeln(``)
+        writeln(``)
 
         // secondary bars for words / bytes (compact)
         term.write(` ` + pad_right(``, name_w) + ` `)
@@ -197,7 +194,7 @@ function main() {
         draw_bar(row.words, max_words, half, `yellow`)
         term.write(` `)
         draw_bar(row.bytes, max_bytes, half, `magenta`)
-        io.writeln(``)
+        writeln(``)
 
         r -> r + 1
     }
@@ -210,7 +207,7 @@ function main() {
     term.write(pad_left(Str.to_string(sum_bytes), 8) + ` `)
     term.write(pad_right(``, bar_w))
     term.reset()
-    io.writeln(``)
+    writeln(``)
 
     <- 0
 }

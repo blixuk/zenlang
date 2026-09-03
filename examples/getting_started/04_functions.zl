@@ -8,7 +8,6 @@
   Learn: function, <- return, optional types, recursion.
 !/
 
-import zen.io.io as io
 import zen.text.string as Str
 
 function add(a, b) {
@@ -23,7 +22,7 @@ function fib(n: Integer) : Integer {
 }
 
 function main() {
-    io.writeln(`2 + 3 = ` + Str.to_string(add(2, 3)))
-    io.writeln(`fib(10) = ` + Str.to_string(fib(10)))
+    writeln(`2 + 3 = ` + Str.to_string(add(2, 3)))
+    writeln(`fib(10) = ` + Str.to_string(fib(10)))
     <- 0
 }

@@ -346,6 +346,7 @@ class MIRHandler:
             "..=": "ZenValue_range_inclusive",
             "++": "ZenValue_op_append",
             "--": "ZenValue_op_remove",
+            "in": "ZenValue_in",
         }
         if instr.left == "":
             unary_ops = {"-": "ZenValue_negate", "not": "ZenValue_not", "~": "ZenValue_bitwise_not"}

@@ -767,6 +767,15 @@ class ExpressionHandler:
         return self._evaluate_binary_operation(op_str, left, right)
 
     def _evaluate_binary_operation(self, operation: str, left: Any, right: Any) -> any:
+        if operation == "in":
+            if isinstance(right, (list, tuple, set)):
+                return left in right
+            if isinstance(right, dict):
+                return left in right
+            if isinstance(right, str):
+                return str(left) in right
+            return False
+
         if operation == "++":
             if isinstance(left, list) and isinstance(right, list):
                 return list(left) + list(right)

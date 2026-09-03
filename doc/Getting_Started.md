@@ -37,16 +37,50 @@ Zenlang is a modern, Unix-native programming language designed for clarity, visu
 
 ### 3.1 Hello World
 ```zl
-use zen.io
-
-function main() {
-    io.writeln(`Hello, Zenlang!`)
+function main(args) {
+    writeln(`Hello, Zenlang!`)
 }
 ```
 
-### 3.2 Variables, Constants & Sentinels
+### 3.2 Native Console I/O, Streams & Arguments
+Zenlang treats the terminal as a first-class execution environment. Universal console I/O preludes, ambient streams, and program arguments are available globally with **zero imports**:
+
 ```zl
-use zen.io
+use zen.text.string as Str
+
+// 1. Universal Console I/O Preludes
+write(`Loading modules... `)
+writeln(`Done!`)
+
+let name -> readln(`Enter username: `)
+writeln(`Hello, ` + name)
+
+// 2. Native Ambient Streams (stdout, stderr, stdin)
+stdout.write(`stdout raw`)
+stdout.writeln(`stdout line`)
+stdout.flush()
+
+stderr.writeln(`[error] Operation timed out`)
+stderr.flush()
+
+// 3. Dynamic Program Arguments
+function main(args) {
+    writeln(`CLI arguments count: ` + Str.to_string(args.length))
+    when args.length > 0 {
+        writeln(`First argument: ` + args[0])
+    }
+    <- 0
+}
+
+// Top-level scripts also have ambient access:
+let cli_args -> args   // List of CLI strings
+let sys_env  -> env    // Map of environment variables
+```
+
+> **Note:** Zenlang does not use `print` or `println` keywords. Use built-in `write(...)`, `writeln(...)`, or `stdout.writeln(...)`.
+
+### 3.3 Variables, Constants & Sentinels
+```zl
 use zen.text.string as Str
 
 // Mutable variable (let)
@@ -64,10 +98,10 @@ let avatar : String -> Nothing
 let items  : List   -> Default // Evaluates to []
 let flags  : Map    -> Default // Evaluates to {}
 
-io.writeln(APP_NAME + `: Count is ` + Str.to_string(count))
+writeln(APP_NAME + `: Count is ` + Str.to_string(count))
 ```
 
-### 3.3 Numeric Prefixes & Byte Scalars
+### 3.4 Numeric Prefixes & Byte Scalars
 ```zl
 let hex_val -> 0x7B             // Hexadecimal
 let oct_val -> 0o173            // Octal
@@ -79,7 +113,7 @@ let char_code -> a <: Integer   // 65
 let hex_str   -> a <: String    // `0x41`
 ```
 
-### 3.4 Control Flow (`when ... or` and `check`)
+### 3.5 Control Flow (`when ... or` and `check`)
 ```zl
 use zen.io
 
@@ -106,7 +140,7 @@ let exit_code -> check command {
 } or <- -1
 ```
 
-### 3.5 Looping Constructs (`do`)
+### 3.6 Looping Constructs (`do`)
 ```zl
 use zen.io
 use zen.text.string as Str
@@ -124,7 +158,7 @@ do while has_tasks() {
 }
 ```
 
-### 3.6 The 5 Core Collections
+### 3.7 The 5 Core Collections
 ```zl
 use zen.io
 
@@ -148,7 +182,7 @@ let tags -> Set{ `web`, `systems`, `terminal` }
 let entry -> Tuple{ `Attack`, 100, True }
 ```
 
-### 3.7 Functions & Arrow Bodies
+### 3.8 Functions & Arrow Bodies
 ```zl
 use zen.io
 
@@ -164,7 +198,7 @@ function greet : String (name: String) -> `Hello, ` + name
 let square -> function(x) -> x * x
 ```
 
-### 3.8 The Three Container Tiers: Struct, Object & Class
+### 3.9 The Three Container Tiers: Struct, Object & Class
 ```zl
 use zen.io
 use zen.text.string as Str
@@ -197,17 +231,8 @@ class Monster extends Entity {
 }
 ```
 
-### 3.9 Error Handling: `raise` (`^`), `check` (`?`), and `assert` (`!`)
+### 3.10 Error Handling: `check`, `raise`, and `assert`
 ```zl
-use zen.io
-
-function divide : [Decimal, Error] (a: Decimal, b: Decimal) {
-    when b == 0 {
-        ^ `DivisionByZeroError` // Immediate error return via symbol
-    }
-    <- a / b
-}
-
 // Recover with fallback value:
 let safe -> check divide(10.0, 0.0) or 0.0
 
@@ -215,7 +240,7 @@ let safe -> check divide(10.0, 0.0) or 0.0
 assert safe >= 0.0 raise `NegativeResult`
 ```
 
-### 3.10 Concurrency: The Unified `task` Substrate
+### 3.11 Concurrency: The Unified `task` Substrate
 ```zl
 use zen.io
 use zen.text.string as Str

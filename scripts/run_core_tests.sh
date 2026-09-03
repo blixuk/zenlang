@@ -23,6 +23,7 @@ CORE=(
   tests/language/range_syntax_01.zl
   tests/language/closure_01.zl
   tests/language/test_extended_operators.zl
+  tests/language/test_in_operator.zl
 )
 
 fail=0

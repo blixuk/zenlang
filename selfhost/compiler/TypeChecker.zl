@@ -1203,7 +1203,7 @@ function infer_binary(op, lt, rt) {
         }
         <- Ty.t_integer()
     }
-    when op == `==` or op == `=` or op == `!=` or op == `<` or op == `>` or op == `<=` or op == `>=` {
+    when op == `==` or op == `=` or op == `!=` or op == `<` or op == `>` or op == `<=` or op == `>=` or op == `in` {
         <- Ty.t_boolean()
     }
     when op == `..` or op == `..=` {

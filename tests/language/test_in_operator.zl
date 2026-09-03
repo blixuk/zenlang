@@ -1,0 +1,86 @@
+import zen.test as test
+
+function test_list_in() {
+    let nums -> [10, 20, 30, 42, 50]
+    let pass -> test.assert_true(42 in nums, `42 should be in nums`)
+    pass -> pass and test.assert_false(99 in nums, `99 should not be in nums`)
+    pass -> pass and test.assert_false(1 in [], `1 should not be in empty list`)
+
+    let words -> [`zen`, `unix`, `clean`]
+    pass -> pass and test.assert_true(`zen` in words, `zen should be in words`)
+    pass -> pass and test.assert_false(`magic` in words, `magic should not be in words`)
+    <- pass
+}
+
+function test_map_in() {
+    let m -> {
+        `name` -> `Zenlang`,
+        `version` -> 1,
+        `speed` -> `fast`
+    }
+    let pass -> test.assert_true(`name` in m, `name key should be in map`)
+    pass -> pass and test.assert_true(`speed` in m, `speed key should be in map`)
+    pass -> pass and test.assert_false(`missing` in m, `missing key should not be in map`)
+    <- pass
+}
+
+function test_string_in() {
+    let s -> `Zenlang is the future of Unix-native programming.`
+    let pass -> test.assert_true(`Unix` in s, `Unix should be in string`)
+    pass -> pass and test.assert_true(`Zenlang` in s, `Zenlang should be in string`)
+    pass -> pass and test.assert_false(`Windows` in s, `Windows should not be in string`)
+    pass -> pass and test.assert_true(`` in s, `empty string is in string`)
+    <- pass
+}
+
+function test_set_in() {
+    let s -> Set([1, 2, 3, 5, 8])
+    let pass -> test.assert_true(5 in s, `5 should be in set`)
+    pass -> pass and test.assert_false(7 in s, `7 should not be in set`)
+    <- pass
+}
+
+function test_range_in() {
+    let r -> 1..=10
+    let pass -> test.assert_true(5 in r, `5 should be in 1..=10`)
+    pass -> pass and test.assert_false(15 in r, `15 should not be in 1..=10`)
+    <- pass
+}
+
+function test_conditionals() {
+    let xs -> [100, 200, 300]
+    let matched -> false
+    when 200 in xs {
+        matched -> true
+    }
+    let pass -> test.assert_true(matched, `when condition should trigger on in`)
+
+    let not_matched -> false
+    when not (999 in xs) {
+        not_matched -> true
+    }
+    pass -> pass and test.assert_true(not_matched, `when condition should trigger on not in`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `in.list`, `fn` -> test_list_in},
+        {`name` -> `in.map`, `fn` -> test_map_in},
+        {`name` -> `in.string`, `fn` -> test_string_in},
+        {`name` -> `in.set`, `fn` -> test_set_in},
+        {`name` -> `in.range`, `fn` -> test_range_in},
+        {`name` -> `in.conditionals`, `fn` -> test_conditionals}
+    ]
+    <- test.run_suite(`Native Binary in Operator`, tests)
+}
+
+function main() {
+    when run_tests() {
+        writeln(`Native Binary in Operator tests passed!`)
+        <- 0
+    } or {
+        writeln(`Native Binary in Operator tests failed!`)
+        <- 1
+    }
+}

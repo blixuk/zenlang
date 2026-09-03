@@ -8,7 +8,6 @@
   index loops that stay dual-path friendly.
 !/
 
-import zen.io.io as io
 import zen.text.string as Str
 
 // --- Pattern: result map ---
@@ -41,33 +40,33 @@ function main() {
     // Result map
     let r -> parse_intish(`42`)
     when r[`ok`] == True {
-        io.writeln(`parsed value = ` + Str.to_string(r[`value`]))
+        writeln(`parsed value = ` + Str.to_string(r[`value`]))
     } or {
-        io.writeln(`error: ` + r[`error`])
+        writeln(`error: ` + r[`error`])
     }
 
     let bad -> parse_intish(`nope`)
     when bad[`ok`] != True {
-        io.writeln(`expected fail: ` + bad[`error`])
+        writeln(`expected fail: ` + bad[`error`])
     }
 
     // Rebind after mutator
     let m -> { `a` -> 1 }
     m -> map_put(m, `b`, 2)
-    io.writeln(`map b = ` + Str.to_string(m[`b`]))
+    writeln(`map b = ` + Str.to_string(m[`b`]))
 
     // Index loop + pure transform
     let xs -> [1, 2, 3]
     let ys -> double_all(xs)
-    io.writeln(`doubled[2] = ` + Str.to_string(ys[2]))
+    writeln(`doubled length = ` + Str.to_string(ys.length))
 
     // Early-style branch (CLI tools use <- 1 the same way)
     let path_ok -> True
     when not path_ok {
-        io.writeln(`would exit 1 here`)
+        writeln(`would exit 1 here`)
         <- 1
     }
 
-    io.writeln(`patterns ok`)
+    writeln(`patterns ok`)
     <- 0
 }

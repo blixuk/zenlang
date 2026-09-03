@@ -9,21 +9,18 @@
   Defaults: root=`.`, substring=`` (list all files).
 !/
 
-import zen.sys.sys as sys
 import zen.sys.term as term
 import zen.io.file as file
-import zen.io.io as io
 import zen.text.string as Str
 
 function usage() {
-    io.writeln(`zfind — find files by name substring`)
-    io.writeln(`usage: zfind [root] [substring]`)
-    io.writeln(`  root       directory to search (default .)`)
-    io.writeln(`  substring  match against full path (default: all files)`)
+    writeln(`zfind — find files by name substring`)
+    writeln(`usage: zfind [root] [substring]`)
+    writeln(`  root       directory to search (default .)`)
+    writeln(`  substring  match against full path (default: all files)`)
 }
 
-function main() {
-    let args -> sys.get_args()
+function main(args) {
     let root -> `.`
     let needle -> ``
 
@@ -36,7 +33,7 @@ function main() {
 
     when not file.exists(root) {
         term.color(`red`, `black`)
-        io.writeln(`zfind: no such path: ` + root)
+        stderr.writeln(`zfind: no such path: ` + root)
         term.reset()
         <- 1
     }
@@ -55,13 +52,13 @@ function main() {
             term.color(`green`, `black`)
             term.write(p)
             term.reset()
-            io.writeln(``)
+            writeln(``)
         }
         i -> i + 1
     }
 
     term.color(`cyan`, `black`)
-    io.writeln(`-- ` + Str.to_string(hits) + ` match(es) under ` + root + ` --`)
+    writeln(`-- ` + Str.to_string(hits) + ` match(es) under ` + root + ` --`)
     term.reset()
     <- 0
 }

@@ -11,10 +11,8 @@
   With no files, reads nothing and prints usage (stdin cat can be added later).
 !/
 
-import zen.sys.sys as sys
 import zen.sys.term as term
 import zen.io.file as file
-import zen.io.io as io
 import zen.text.string as Str
 
 function pad_left(s, width) {
@@ -42,19 +40,19 @@ function print_header(path, nlines) {
     term.color(`cyan`, `black`)
     term.write(` ` + Str.to_string(nlines) + ` lines `)
     term.reset()
-    io.writeln(``)
+    writeln(``)
 }
 
 function cat_file(path) {
     when not file.exists(path) {
         term.color(`red`, `black`)
-        io.writeln(`zcat: no such file: ` + path)
+        stderr.writeln(`zcat: no such file: ` + path)
         term.reset()
         <- false
     }
     when file.is_dir(path) {
         term.color(`red`, `black`)
-        io.writeln(`zcat: is a directory: ` + path)
+        stderr.writeln(`zcat: is a directory: ` + path)
         term.reset()
         <- false
     }
@@ -95,20 +93,19 @@ function cat_file(path) {
         } or {
             term.write(line)
         }
-        io.writeln(``)
+        writeln(``)
         i -> i + 1
     }
-    io.writeln(``)
+    writeln(``)
     <- true
 }
 
 function usage() {
-    io.writeln(`zcat — visual cat with line numbers`)
-    io.writeln(`usage: zcat <file> [file ...]`)
+    writeln(`zcat — visual cat with line numbers`)
+    writeln(`usage: zcat <file> [file ...]`)
 }
 
-function main() {
-    let args -> sys.get_args()
+function main(args) {
     // args[0] = script path; rest are files
     when args.length < 2 {
         usage()
