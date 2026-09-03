@@ -7,6 +7,13 @@
 void ZenSystem_initialize_arguments(int argc, char** argv);
 ZenValue ZenSystem_get_args(void);
 
+/* Built-in ambient globals: stdout, stderr, stdin, args, env */
+extern ZenValue z_stdout;
+extern ZenValue z_stderr;
+extern ZenValue z_stdin;
+extern ZenValue z_args;
+extern ZenValue z_env;
+
 /* Built-in `module` map: name, path, file, dir, is_entry (boolean).
  * Process-level for native binaries; set once before user main. */
 extern ZenValue module;
@@ -14,6 +21,7 @@ void ZenModule_initialize(const char* name, const char* path,
                           const char* file, const char* dir, int is_entry);
 ZenValue ZenSystem_exit(ZenValue code);
 ZenValue ZenSystem_get_env(ZenValue name);
+ZenValue ZenSystem_get_env_map(void);
 ZenValue ZenSystem_get_cwd(void);
 ZenValue ZenSystem_chdir(ZenValue path);
 ZenValue ZenSystem_platform(void);

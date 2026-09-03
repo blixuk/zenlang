@@ -446,6 +446,8 @@ class MIRHandler:
             # Prefer value write for bare write when not already mapped.
             if callee_str == "write":
                 callee_str = "ZenIO_write_value"
+        elif callee_str in ("read", "readln", "read_line", "io_read", "io_readln"):
+            callee_str = "ZenIO_read_value"
         if callee_str == "List_from_args": callee_str = "ZenList_make_from_arguments"
         elif callee_str == "Map_from_args": callee_str = "ZenMap_make_from_arguments"
         elif callee_str == "Value_get_index": callee_str = "ZenValue_get_at"
@@ -503,7 +505,7 @@ class MIRHandler:
                      pass
             elif obj_name in self.global_enums and prop_name and prop_name[0].isupper():
                 callee_str = f"ZenVariant_{obj_name}_{prop_name}"
-            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net"):
+            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net"):
                 if prop_name in ("create_arena", "__builtin_create_arena"):
                     callee_str = "ZenMemory_create_arena"
                     if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
@@ -577,6 +579,31 @@ class MIRHandler:
                         or str(call_args[0]).startswith("__builtin")
                         or (instr.args and instr.args[0] == obj_name and obj_name in ("IO", "io"))
                     ):
+                        call_args = call_args[1:]
+                elif obj_name in ("stdout", "z_stdout"):
+                    if prop_name == "write":
+                        callee_str = "ZenIO_write_value"
+                    elif prop_name in ("writeln", "write_line"):
+                        callee_str = "ZenIO_write_line"
+                    elif prop_name == "flush":
+                        callee_str = "ZenIO_flush"
+                    if call_args and call_args[0] in ("stdout", "z_stdout", obj_name):
+                        call_args = call_args[1:]
+                elif obj_name in ("stderr", "z_stderr"):
+                    if prop_name == "write":
+                        callee_str = "ZenIO_write_stderr"
+                    elif prop_name in ("writeln", "write_line"):
+                        callee_str = "ZenIO_write_line_stderr"
+                    elif prop_name == "flush":
+                        callee_str = "ZenIO_flush_stderr"
+                    if call_args and call_args[0] in ("stderr", "z_stderr", obj_name):
+                        call_args = call_args[1:]
+                elif obj_name in ("stdin", "z_stdin"):
+                    if prop_name in ("read", "readln", "read_line"):
+                        callee_str = "ZenIO_read_value"
+                    elif prop_name == "lines":
+                        callee_str = "ZenIO_stdin_lines"
+                    if call_args and call_args[0] in ("stdin", "z_stdin", obj_name):
                         call_args = call_args[1:]
                 elif obj_name in ("__builtin_math", "Math", "math"):
                      if prop_name == "pow": prop_name = "power"
@@ -806,6 +833,11 @@ class MIRHandler:
             enum_name = callee_str[len("ZenVariant_"):].rsplit("_", 1)[0]
             if call_args and call_args[0] == enum_name:
                 call_args = call_args[1:]
+
+        if callee_str in ("ZenIO_write_line", "ZenIO_write_line_stderr") and len(call_args) == 0:
+            call_args = ['ZenValue_make_string("")']
+        elif callee_str in ("ZenIO_write_value", "ZenIO_write_stderr", "ZenIO_read_value") and len(call_args) == 0:
+            call_args = ['ZenValue_make_nothing()']
         
         args_str = ", ".join(call_args)
 

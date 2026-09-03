@@ -180,6 +180,14 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("io", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_output", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_input", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("stdout", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("stderr", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("stdin", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("args", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("env", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("writeln", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("read", TypeVariant(), None, False, SymbolKind.FUNCTION, 0))
+        self.scope.define(Symbol("readln", TypeVariant(), None, False, SymbolKind.FUNCTION, 0))
 
         # Built-in Enums
         self.scope.define(Symbol("Result", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))

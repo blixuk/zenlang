@@ -50,6 +50,8 @@ class MangleHandler:
             return "__builtin_time"
         if name == "term" and not (hasattr(self, "module_aliases") and "term" in self.module_aliases):
             return "__builtin_term"
+        if name in ("stdout", "stderr", "stdin", "args", "env"):
+            return f"z_{name}"
              
         return name
 
@@ -161,6 +163,20 @@ class MangleHandler:
                 return f"ZenValue_{raw_prop}"
 
             # Standard mapping for built-ins
+            if obj_name in ("stdout", "z_stdout"):
+                if raw_prop == "write": return "ZenIO_write_value"
+                if raw_prop in ("write_line", "writeln"): return "ZenIO_write_line"
+                if raw_prop == "flush": return "ZenIO_flush"
+                return "ZenIO_write_value"
+            if obj_name in ("stderr", "z_stderr"):
+                if raw_prop == "write": return "ZenIO_write_stderr"
+                if raw_prop in ("write_line", "writeln"): return "ZenIO_write_line_stderr"
+                if raw_prop == "flush": return "ZenIO_flush_stderr"
+                return "ZenIO_write_stderr"
+            if obj_name in ("stdin", "z_stdin"):
+                if raw_prop in ("read", "readln", "read_line"): return "ZenIO_read_value"
+                if raw_prop == "lines": return "ZenIO_stdin_lines"
+                return "ZenIO_read_value"
             if obj_name == "__builtin_output":
                 if raw_prop == "write": return "ZenIO_write_value"
                 if raw_prop in ("write_line", "writeln"): return "ZenIO_write_line"
@@ -386,15 +402,23 @@ class MangleHandler:
         if hasattr(node, "symbol") and node.symbol:
             level = node.symbol.scope_level
 
-        # Local variables named `out`/`in`/`file`/… must not become builtins
-        # (e.g. `let out -> []` was incorrectly rewritten to `__builtin_output`).
-        is_local_var = (
-            hasattr(node, "symbol")
-            and node.symbol
-            and node.symbol.kind == SymbolKind.VARIABLE
-            and level > 0
-        )
-        if not is_local_var:
+        # Local variables and parameters (e.g. `args`, `env`, `out`, `in`, `file`)
+        # must not become builtins or ambient globals.
+        is_local_or_param = False
+        if node.__class__.__name__ in ("Parameter", "ParameterLiteral"):
+            is_local_or_param = True
+        elif hasattr(node, "symbol") and node.symbol:
+            if node.symbol.kind in (SymbolKind.VARIABLE, SymbolKind.PARAMETER) and level > 0:
+                is_local_or_param = True
+        if getattr(self, "current_function", None) is not None:
+            params = getattr(self.current_function, "parameters", None) or []
+            param_names = {getattr(p, "name", str(p)) for p in params}
+            if name in param_names:
+                is_local_or_param = True
+            elif name in getattr(self, "local_types", {}):
+                is_local_or_param = True
+
+        if not is_local_or_param:
             mapped_name = self.map_builtin_name(name)
             if mapped_name != name:
                 return mapped_name

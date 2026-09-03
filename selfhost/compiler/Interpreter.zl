@@ -862,6 +862,19 @@ function env_prelude() {
     global -> env_define(global, `reflect`, make_builtin_mod(`reflect`), false)
     global -> env_define(global, `Result`, make_builtin_enum(`Result`, [`Ok`, `Error`, `Err`]), false)
     global -> env_define(global, `Option`, make_builtin_enum(`Option`, [`Some`, `None`]), false)
+    global -> env_define(global, `stdout`, make_builtin_mod(`stdout`), false)
+    global -> env_define(global, `stderr`, make_builtin_mod(`stderr`), false)
+    global -> env_define(global, `stdin`, make_builtin_mod(`stdin`), false)
+    global -> env_define(global, `write`, make_builtin(`stdout`, `write`), false)
+    global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
+    global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
+    global -> env_define(global, `readln`, make_builtin(`stdin`, `readln`), false)
+    let cli_args -> __builtin_sys.get_args()
+    when cli_args == Nothing { cli_args -> [] }
+    global -> env_define(global, `args`, cli_args, false)
+    let env_map -> __builtin_sys.get_env_map()
+    when env_map == Nothing { env_map -> {} }
+    global -> env_define(global, `env`, env_map, false)
     <- global
 }
 
@@ -1025,7 +1038,13 @@ function call_entry_main(env, last) {
     when fv[`kind`] != `fn` {
         <- {`ok` -> true, `value` -> last, `error` -> Nothing}
     }
-    let r -> call_fn(fv, [], env)
+    let m_args -> []
+    when fv[`params`] != Nothing and fv[`params`].length > 0 {
+        let a -> __builtin_sys.get_args()
+        when a == Nothing { a -> [] }
+        m_args -> [a]
+    }
+    let r -> call_fn(fv, m_args, env)
     when get_error() != Nothing {
         <- {`ok` -> false, `value` -> Nothing, `error` -> get_error()}
     }
@@ -2570,13 +2589,40 @@ function eval_builtin(name, args) {
     when name == `file.is_file` {
         <- __builtin_file.is_file(a0)
     }
-    when name == `io.write_line` or name == `io.writeln` or name == `output.write_line` or name == `output.writeln` {
+    when name == `stdout.write` or name == `io.write` or name == `output.write` {
+        io.write(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `stdout.writeln` or name == `stdout.write_line` or name == `io.write_line` or name == `io.writeln` or name == `output.write_line` or name == `output.writeln` {
         io.writeln(Str.to_string(a0))
         <- Nothing
     }
-    when name == `io.write` or name == `output.write` {
-        io.write(Str.to_string(a0))
+    when name == `stdout.flush` or name == `io.flush` {
+        __builtin_io.flush()
         <- Nothing
+    }
+    when name == `stderr.write` {
+        __builtin_io.write_stderr(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `stderr.writeln` or name == `stderr.write_line` {
+        __builtin_io.write_line_stderr(Str.to_string(a0))
+        <- Nothing
+    }
+    when name == `stderr.flush` {
+        __builtin_io.flush_stderr()
+        <- Nothing
+    }
+    when name == `stdin.read` {
+        when a0 != Nothing { <- io.read(a0) }
+        <- __builtin_io.read_line()
+    }
+    when name == `stdin.readln` or name == `stdin.read_line` {
+        when a0 != Nothing { <- io.read(a0) }
+        <- __builtin_io.read_line()
+    }
+    when name == `stdin.lines` {
+        <- __builtin_io.stdin_lines()
     }
     when name == `output.info` {
         io.info(Str.to_string(a0))

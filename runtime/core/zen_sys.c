@@ -16,6 +16,59 @@
 #include <sys/ioctl.h>
 #endif
 
+extern char **environ;
+
+ZenValue z_stdout;
+ZenValue z_stderr;
+ZenValue z_stdin;
+ZenValue z_args;
+ZenValue z_env;
+
+static ZenValue zen_stream_method_write(void* self_ptr, ZenValue args) {
+    ZenValue val = (args.type == ZEN_LIST && args.as.list && args.as.list->count > 0) ? args.as.list->items[0] : ZEN_NOTHING_VAL;
+    ZenValue self = ZenValue_from_map((struct ZenMap*)self_ptr);
+    ZenValue name_val = ZenMap_get_value_at_key(self, ZenValue_make_string("name"));
+    if (name_val.type == ZEN_STRING && name_val.as.string && strcmp(name_val.as.string, "stderr") == 0) {
+        return ZenIO_write_stderr(val);
+    }
+    return ZenIO_write_value(val);
+}
+
+static ZenValue zen_stream_method_writeln(void* self_ptr, ZenValue args) {
+    ZenValue val = (args.type == ZEN_LIST && args.as.list && args.as.list->count > 0) ? args.as.list->items[0] : ZenValue_make_string("");
+    ZenValue self = ZenValue_from_map((struct ZenMap*)self_ptr);
+    ZenValue name_val = ZenMap_get_value_at_key(self, ZenValue_make_string("name"));
+    if (name_val.type == ZEN_STRING && name_val.as.string && strcmp(name_val.as.string, "stderr") == 0) {
+        return ZenIO_write_line_stderr(val);
+    }
+    return ZenIO_write_line(val);
+}
+
+static ZenValue zen_stream_method_flush(void* self_ptr, ZenValue args) {
+    ZenValue self = ZenValue_from_map((struct ZenMap*)self_ptr);
+    ZenValue name_val = ZenMap_get_value_at_key(self, ZenValue_make_string("name"));
+    if (name_val.type == ZEN_STRING && name_val.as.string && strcmp(name_val.as.string, "stderr") == 0) {
+        return ZenIO_flush_stderr();
+    }
+    return ZenIO_flush();
+}
+
+static ZenValue zen_stream_method_read(void* self_ptr, ZenValue args) {
+    ZenValue prompt = (args.type == ZEN_LIST && args.as.list && args.as.list->count > 0) ? args.as.list->items[0] : ZEN_NOTHING_VAL;
+    return ZenIO_read_value(prompt);
+}
+
+static ZenValue zen_stream_method_readln(void* self_ptr, ZenValue args) {
+    ZenValue prompt = (args.type == ZEN_LIST && args.as.list && args.as.list->count > 0) ? args.as.list->items[0] : ZEN_NOTHING_VAL;
+    return ZenIO_read_value(prompt);
+}
+
+static ZenValue zen_stream_method_lines(void* self_ptr, ZenValue args) {
+    (void)self_ptr;
+    (void)args;
+    return ZenIO_stdin_lines();
+}
+
 void ZenRuntime_initialize(void) {
     __builtin_output = ZenValue_make_nothing();
     __builtin_input = ZenValue_make_nothing();
@@ -31,6 +84,56 @@ void ZenRuntime_initialize(void) {
     __builtin_term = ZenValue_make_nothing();
     module = ZenValue_make_nothing();
     ZenReflect_runtime_init();
+
+    // Stream methods
+    ZenReflect_register_method("Stream", "write", zen_stream_method_write);
+    ZenReflect_register_method("Stream", "writeln", zen_stream_method_writeln);
+    ZenReflect_register_method("Stream", "write_line", zen_stream_method_writeln);
+    ZenReflect_register_method("Stream", "flush", zen_stream_method_flush);
+    ZenReflect_register_method("Stream", "read", zen_stream_method_read);
+    ZenReflect_register_method("Stream", "readln", zen_stream_method_readln);
+    ZenReflect_register_method("Stream", "read_line", zen_stream_method_readln);
+    ZenReflect_register_method("Stream", "lines", zen_stream_method_lines);
+
+    // Ambient streams
+    z_stdout = ZenMap_make_from_arguments(0);
+    ZenMap_set_value_at_key(z_stdout, ZenValue_make_string("__type"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stdout, ZenValue_make_string("kind"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stdout, ZenValue_make_string("name"), ZenValue_make_string("stdout"));
+    ZenMap_set_value_at_key(z_stdout, ZenValue_make_string("fd"), ZenValue_make_integer(1));
+    ZenReflect_tag_object(z_stdout.as.map, "Stream");
+
+    z_stderr = ZenMap_make_from_arguments(0);
+    ZenMap_set_value_at_key(z_stderr, ZenValue_make_string("__type"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stderr, ZenValue_make_string("kind"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stderr, ZenValue_make_string("name"), ZenValue_make_string("stderr"));
+    ZenMap_set_value_at_key(z_stderr, ZenValue_make_string("fd"), ZenValue_make_integer(2));
+    ZenReflect_tag_object(z_stderr.as.map, "Stream");
+
+    z_stdin = ZenMap_make_from_arguments(0);
+    ZenMap_set_value_at_key(z_stdin, ZenValue_make_string("__type"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stdin, ZenValue_make_string("kind"), ZenValue_make_string("Stream"));
+    ZenMap_set_value_at_key(z_stdin, ZenValue_make_string("name"), ZenValue_make_string("stdin"));
+    ZenMap_set_value_at_key(z_stdin, ZenValue_make_string("fd"), ZenValue_make_integer(0));
+    ZenReflect_tag_object(z_stdin.as.map, "Stream");
+
+    z_args = ZenValue_from_list(ZenList_new());
+
+    z_env = ZenMap_make_from_arguments(0);
+    if (environ) {
+        for (char **e = environ; *e != NULL; e++) {
+            char* eq = strchr(*e, '=');
+            if (eq) {
+                size_t klen = (size_t)(eq - *e);
+                char kbuf[256];
+                if (klen < sizeof(kbuf)) {
+                    memcpy(kbuf, *e, klen);
+                    kbuf[klen] = '\0';
+                    ZenMap_set_value_at_key(z_env, ZenValue_make_string(kbuf), ZenValue_make_string(eq + 1));
+                }
+            }
+        }
+    }
 
     ZenTask_scheduler_init();
 }
@@ -53,12 +156,17 @@ void ZenModule_initialize(const char* name, const char* path,
                             ZenValue_make_string(dir ? dir : ""));
     ZenMap_set_value_at_key(module, ZenValue_make_string("is_entry"),
                             ZenValue_make_boolean(is_entry ? true : false));
+    ZenMap_set_value_at_key(module, ZenValue_make_string("args"), z_args);
 }
 
 void ZenSystem_initialize_arguments(int argc, char** argv) {
     ZenSystem_global_arguments = ZenList_new();
     for (int i = 0; i < argc; i++) {
         ZenList_append_value(ZenValue_from_list(ZenSystem_global_arguments), ZenValue_make_string(argv[i]));
+    }
+    z_args = ZenValue_from_list(ZenSystem_global_arguments);
+    if (module.type == ZEN_MAP) {
+        ZenMap_set_value_at_key(module, ZenValue_make_string("args"), z_args);
     }
 }
 
@@ -78,6 +186,10 @@ ZenValue ZenSystem_get_env(ZenValue name_value) {
     if (!name) return ZenValue_make_nothing();
     char* val = getenv(name);
     return val ? ZenValue_make_string(val) : ZenValue_make_nothing();
+}
+
+ZenValue ZenSystem_get_env_map(void) {
+    return z_env;
 }
 
 ZenValue ZenSystem_get_cwd(void) {

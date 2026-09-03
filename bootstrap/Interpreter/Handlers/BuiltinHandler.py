@@ -114,14 +114,29 @@ class BuiltinHandler:
             "info": _out_info,
             "warn": _out_warn,
             "error": _out_error,
-            "debug": _out_debug
+            "debug": _out_debug,
+            "flush": lambda: (sys.stdout.flush(), None)[1]
         })
 
         self.global_environment.define(
             "__builtin_output", out_obj, mutable=False, type="OutputStream"
         )
+        err_obj = OutputStream("stderr", {
+            "write": lambda v: (sys.stderr.write(str(v)), sys.stderr.flush(), None)[2],
+            "writeln": lambda v="": (sys.stderr.write(str(v) + "\n"), sys.stderr.flush(), None)[2],
+            "write_line": lambda v="": (sys.stderr.write(str(v) + "\n"), sys.stderr.flush(), None)[2],
+            "flush": lambda: (sys.stderr.flush(), None)[1]
+        })
+        self.global_environment.define("stdout", out_obj, mutable=False, type="OutputStream")
+        self.global_environment.define("stderr", err_obj, mutable=False, type="OutputStream")
+        self.global_environment.define("stdin", in_obj, mutable=False, type="InputStream")
         self.global_environment.define("write", _out_write, mutable=False, type="Function")
-        self.global_environment.define("write_line", lambda v: _out_write(str(v) + "\n"), mutable=False, type="Function")
+        self.global_environment.define("write_line", lambda v="": _out_write(str(v) + "\n"), mutable=False, type="Function")
+        self.global_environment.define("writeln", lambda v="": _out_write(str(v) + "\n"), mutable=False, type="Function")
+        self.global_environment.define("read", _input_read, mutable=False, type="Function")
+        self.global_environment.define("readln", _input_read_line, mutable=False, type="Function")
+        self.global_environment.define("args", sys.argv[1:], mutable=False, type="List")
+        self.global_environment.define("env", dict(os.environ), mutable=False, type="Map")
  
         # Register '__builtin' object
         def _builtin_error(msg):
@@ -357,6 +372,7 @@ class BuiltinHandler:
             "get_args": lambda: self.execution_arguments,
             "exit": lambda code=0: os._exit(code),
             "get_env": lambda key: os.environ.get(key, ""),
+            "get_env_map": lambda: dict(os.environ),
             "get_cwd": lambda: os.getcwd(),
             "chdir": _chdir,
             "platform": lambda: sys.platform,

@@ -33,6 +33,7 @@ ZenValue ZenIO_write_value(ZenValue value);
 ZenValue ZenIO_write_line(ZenValue value);
 ZenValue ZenIO_write_raw(ZenValue str);
 ZenValue ZenIO_read_value(ZenValue prompt);
+ZenValue ZenIO_read(ZenValue prompt);
 ZenValue ZenIO_read_line(void);
 ZenValue ZenIO_read_exact(ZenValue count);
 ZenValue ZenIO_write_info(ZenValue value);
@@ -40,6 +41,10 @@ ZenValue ZenIO_write_warning(ZenValue value);
 ZenValue ZenIO_write_debug(ZenValue value);
 ZenValue ZenIO_write_error(ZenValue value);
 ZenValue ZenIO_flush(void);
+ZenValue ZenIO_write_stderr(ZenValue value);
+ZenValue ZenIO_write_line_stderr(ZenValue value);
+ZenValue ZenIO_flush_stderr(void);
+ZenValue ZenIO_stdin_lines(void);
 
 // File IO
 ZenValue ZenIO_file_exists(ZenValue path);

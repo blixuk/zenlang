@@ -497,11 +497,16 @@ export function compile_program(prog) {
     let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
     let n -> stmts.length
     let has_main -> false
+    let main_takes_args -> false
     let i -> 0
     do while i < n {
         let s -> stmts[i]
         when s != Nothing and (AST.is_function(s) or s[0] == 21) and Str.to_string(AST.fn_name(s)) == `main` {
             has_main -> true
+            let params -> AST.fn_params(s)
+            when params != Nothing and params.length > 0 {
+                main_takes_args -> true
+            }
         }
         compile_statement(ctx, stmts[i])
         i -> i + 1
@@ -510,8 +515,16 @@ export function compile_program(prog) {
         let m_idx -> add_constant(ctx, `main`)
         emit_byte(ctx, 34, 0) // OP_LOAD_GLOBAL
         emit_u16(ctx, m_idx, 0)
-        emit_byte(ctx, 112, 0) // OP_CALL
-        emit_u16(ctx, 0, 0)   // 0 args
+        when main_takes_args == true {
+            let a_idx -> add_constant(ctx, `args`)
+            emit_byte(ctx, 34, 0) // OP_LOAD_GLOBAL args
+            emit_u16(ctx, a_idx, 0)
+            emit_byte(ctx, 112, 0) // OP_CALL
+            emit_u16(ctx, 1, 0)   // 1 arg
+        } or {
+            emit_byte(ctx, 112, 0) // OP_CALL
+            emit_u16(ctx, 0, 0)   // 0 args
+        }
     } or {
         emit_byte(ctx, 2, 0)  // OP_NOTHING
     }
@@ -2506,6 +2519,50 @@ export function create_vm_prelude() {
     g[`io`] -> io_mod
     g[`IO`] -> io_mod
     g[`__builtin_io`] -> io_mod
+
+    // Ambient streams & preludes
+    let stdout_mod -> {
+        `write` -> make_native(`io_write`),
+        `write_line` -> make_native(`io_writeln`),
+        `writeln` -> make_native(`io_writeln`),
+        `flush` -> make_native(`io_flush`),
+        `name` -> `stdout`,
+        `kind` -> `Stream`
+    }
+    g[`stdout`] -> stdout_mod
+
+    let stderr_mod -> {
+        `write` -> make_native(`io_write_stderr`),
+        `write_line` -> make_native(`io_writeln_stderr`),
+        `writeln` -> make_native(`io_writeln_stderr`),
+        `flush` -> make_native(`io_flush_stderr`),
+        `name` -> `stderr`,
+        `kind` -> `Stream`
+    }
+    g[`stderr`] -> stderr_mod
+
+    let stdin_mod -> {
+        `read` -> make_native(`io_read`),
+        `read_line` -> make_native(`io_readln`),
+        `readln` -> make_native(`io_readln`),
+        `lines` -> make_native(`io_stdin_lines`),
+        `name` -> `stdin`,
+        `kind` -> `Stream`
+    }
+    g[`stdin`] -> stdin_mod
+
+    g[`write`] -> make_native(`io_write`)
+    g[`writeln`] -> make_native(`io_writeln`)
+    g[`read`] -> make_native(`io_read`)
+    g[`readln`] -> make_native(`io_readln`)
+
+    let cli_args -> vm_sys_args()
+    when cli_args == Nothing { cli_args -> [] }
+    g[`args`] -> cli_args
+
+    let env_map -> __builtin_sys.get_env_map()
+    when env_map == Nothing { env_map -> {} }
+    g[`env`] -> env_map
     
     let builtin_mod -> {
         `error` -> make_native(`builtin_error`),
@@ -3094,11 +3151,30 @@ export function invoke_callable_g(callee, args, globals) {
                 when args.length > 0 { <- __builtin_io.write_line(args[0]) }
                 <- __builtin_io.write_line(``)
             }
+            when nfn == `io_flush` {
+                <- __builtin_io.flush()
+            }
+            when nfn == `io_write_stderr` {
+                when args.length > 0 { <- __builtin_io.write_stderr(args[0]) }
+                <- Nothing
+            }
+            when nfn == `io_writeln_stderr` {
+                when args.length > 0 { <- __builtin_io.write_line_stderr(args[0]) }
+                <- __builtin_io.write_line_stderr(``)
+            }
+            when nfn == `io_flush_stderr` {
+                <- __builtin_io.flush_stderr()
+            }
             when nfn == `io_read` {
+                when args.length > 0 { <- __builtin_io.read(args[0]) }
                 <- __builtin_io.read_line()
             }
             when nfn == `io_readln` {
+                when args.length > 0 { <- __builtin_io.read(args[0]) }
                 <- __builtin_io.read_line()
+            }
+            when nfn == `io_stdin_lines` {
+                <- __builtin_io.stdin_lines()
             }
             when nfn == `builtin_error` {
                 let msg -> ``
@@ -3688,6 +3764,35 @@ export function invoke_callable_g(callee, args, globals) {
                 }
                 when m == `to_list` {
                     <- __builtin_set.to_list(recv)
+                }
+            }
+            when (recv is Map) and (recv[`kind`] == `Stream` or recv[`__type__`] == `Stream`) {
+                when m == `write` {
+                    let val -> Nothing
+                    when args.length > 0 { val -> args[0] }
+                    when recv[`name`] == `stderr` { <- __builtin_io.write_stderr(val) }
+                    <- __builtin_io.write(val)
+                }
+                when m == `writeln` or m == `write_line` {
+                    let val -> ``
+                    when args.length > 0 { val -> args[0] }
+                    when recv[`name`] == `stderr` { <- __builtin_io.write_line_stderr(val) }
+                    <- __builtin_io.write_line(val)
+                }
+                when m == `flush` {
+                    when recv[`name`] == `stderr` { <- __builtin_io.flush_stderr() }
+                    <- __builtin_io.flush()
+                }
+                when m == `read` {
+                    when args.length > 0 { <- __builtin_io.read(args[0]) }
+                    <- __builtin_io.read_line()
+                }
+                when m == `readln` or m == `read_line` {
+                    when args.length > 0 { <- __builtin_io.read(args[0]) }
+                    <- __builtin_io.read_line()
+                }
+                when m == `lines` {
+                    <- __builtin_io.stdin_lines()
                 }
             }
             when recv is Map {

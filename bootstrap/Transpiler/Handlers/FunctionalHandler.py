@@ -552,15 +552,14 @@ class FunctionalHandler:
             Program as ProgramNode,
         )
 
-        has_user_main = any(
-            (isinstance(s, FS) and s.name == "main")
-            or (
-                (isinstance(s, ExportStatement) or s.__class__.__name__ == "ExportStatement")
-                and isinstance(getattr(s, "statement", None), FS)
-                and s.statement.name == "main"
-            )
-            for s in program.statements
-        )
+        has_user_main = False
+        user_main_params = 0
+        for s in program.statements:
+            actual = s.statement if (isinstance(s, ExportStatement) or s.__class__.__name__ == "ExportStatement") else s
+            if isinstance(actual, FS) and actual.name == "main":
+                has_user_main = True
+                user_main_params = len(actual.parameters or [])
+                break
         entry_callables = self._collect_entry_callables(program)
 
         self.emit("int main(int argc, char** argv) {")
@@ -677,7 +676,10 @@ class FunctionalHandler:
         self.emit("  }")
         self.emit("} else {")
         if has_user_main:
-            self.emit("  __ret_val = zen_user_main();")
+            if user_main_params > 0:
+                self.emit("  __ret_val = zen_user_main(ZenSystem_get_args());")
+            else:
+                self.emit("  __ret_val = zen_user_main();")
         else:
             # Script-only: top-level already ran; optional zen_entry
             self.emit("  /* no function main; top-level only */")

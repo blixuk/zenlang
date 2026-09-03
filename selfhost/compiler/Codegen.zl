@@ -947,18 +947,31 @@ function emit_main_wrapper_named(init_name) {
     when iname == Nothing or iname == `` {
         iname -> `zen_module_init`
     }
+    let takes_args -> was_emitted(`main_takes_args`)
     cg_emit(`#ifndef ZEN_NO_HOST_MAIN`)
     when was_emitted(`zen_main`) {
-        cg_emit(`extern ZenValue zen_main(void);`)
+        when takes_args {
+            cg_emit(`extern ZenValue zen_main(ZenValue);`)
+        } or {
+            cg_emit(`extern ZenValue zen_main(void);`)
+        }
     } or {
-        cg_emit(`__attribute__((weak)) ZenValue zen_main(void) { return ZEN_NOTHING_VAL; }`)
+        when takes_args {
+            cg_emit(`__attribute__((weak)) ZenValue zen_main(ZenValue a) { (void)a; return ZEN_NOTHING_VAL; }`)
+        } or {
+            cg_emit(`__attribute__((weak)) ZenValue zen_main(void) { return ZEN_NOTHING_VAL; }`)
+        }
     }
     cg_emit(`int main(int argc, char** argv) {`)
     push_indent()
     cg_emit(`ZenRuntime_initialize();`)
     cg_emit(`ZenSystem_initialize_arguments(argc, argv);`)
     cg_emit(iname + `();`)
-    cg_emit(`ZenValue __r = zen_main();`)
+    when takes_args {
+        cg_emit(`ZenValue __r = zen_main(ZenSystem_get_args());`)
+    } or {
+        cg_emit(`ZenValue __r = zen_main();`)
+    }
     cg_emit(`if (__r.type == ZEN_INTEGER) return (int)__r.as.integer;`)
     cg_emit(`return 0;`)
     pop_indent()
@@ -999,6 +1012,12 @@ function cg_walk_stmt_slice(stmts, i, n, mode) {
             let raw -> Str.to_string(AST.fn_name(s))
             let fname -> c_fn_ident(raw)
             register_free_fn(raw)
+            when raw == `main` {
+                let params -> AST.fn_params(s)
+                when params != Nothing and params.length > 0 {
+                    mark_emitted(`main_takes_args`)
+                }
+            }
             // Multi-file merge: first free-function definition wins.
             when mode == 0 {
                 when was_emitted(fname) == false {
@@ -3577,6 +3596,30 @@ function emit_call(node) {
                 }
                 <- fname + `(` + alist + `)`
             }
+            when raw == `write` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenIO_write_value(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenIO_write_value(ZEN_NOTHING_VAL)`
+            }
+            when raw == `writeln` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenIO_write_line(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenIO_write_line(ZenValue_make_string(""))`
+            }
+            when raw == `read` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenIO_read_value(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenIO_read_line()`
+            }
+            when raw == `readln` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenIO_read_value(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenIO_read_line()`
+            }
             // Local/closure value → ZenValue_apply
             let fv -> c_ident(raw)
             let argc -> 0
@@ -3717,7 +3760,7 @@ function is_module_alias_name(oname) {
          oname == `reflect` or oname == `zd` or oname == `zm` or oname == `fs` or
          oname == `math` or oname == `themes` or oname == `archetypes` or oname == `arch` or
          oname == `pdf` or oname == `pdf_ren` or oname == `ui` or oname == `text` or
-         oname == `log` or oname == `path` {
+         oname == `log` or oname == `path` or oname == `stdout` or oname == `stderr` or oname == `stdin` {
         <- true
     }
     // Soft: leading uppercase → type/module style (AST, Str, Ty, Parser, …)
@@ -3829,6 +3872,44 @@ function emit_builtin_call(oname, m, alist) {
     when oname == `__builtin_input` {
         when m == `read` {
             <- `ZenIO_read_value(` + alist + `)`
+        }
+        <- `ZenIO_` + m + `(` + alist + `)`
+    }
+    when oname == `stdout` {
+        when m == `write` {
+            <- `ZenIO_write_value(` + alist + `)`
+        }
+        when m == `writeln` or m == `write_line` {
+            <- `ZenIO_write_line(` + alist + `)`
+        }
+        when m == `flush` {
+            <- `ZenIO_flush()`
+        }
+        <- `ZenIO_` + m + `(` + alist + `)`
+    }
+    when oname == `stderr` {
+        when m == `write` {
+            <- `ZenIO_write_stderr(` + alist + `)`
+        }
+        when m == `writeln` or m == `write_line` {
+            <- `ZenIO_write_line_stderr(` + alist + `)`
+        }
+        when m == `flush` {
+            <- `ZenIO_flush_stderr()`
+        }
+        <- `ZenIO_` + m + `_stderr(` + alist + `)`
+    }
+    when oname == `stdin` {
+        when m == `read` {
+            when alist == `` { <- `ZenIO_read_line()` }
+            <- `ZenIO_read_value(` + alist + `)`
+        }
+        when m == `readln` or m == `read_line` {
+            when alist == `` { <- `ZenIO_read_line()` }
+            <- `ZenIO_read_value(` + alist + `)`
+        }
+        when m == `lines` {
+            <- `ZenIO_stdin_lines()`
         }
         <- `ZenIO_` + m + `(` + alist + `)`
     }

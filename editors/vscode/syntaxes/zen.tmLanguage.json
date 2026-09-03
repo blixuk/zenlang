@@ -159,7 +159,11 @@
         },
         {
           "name": "variable.language.zenlang",
-          "match": "\\b(self|parent)\\b"
+          "match": "\\b(self|parent|stdin|stdout|stderr|args|env)\\b"
+        },
+        {
+          "name": "support.function.builtin.zenlang",
+          "match": "\\b(write|writeln|read|readln)\\b(?=\\s*\\()"
         }
       ]
     },

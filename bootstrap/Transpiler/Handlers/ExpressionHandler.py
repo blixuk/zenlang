@@ -199,6 +199,12 @@ class ExpressionHandler:
                     "__builtin_time",
                     "__builtin_term",
                     "__builtin_regex",
+                    "stdout",
+                    "stderr",
+                    "stdin",
+                    "z_stdout",
+                    "z_stderr",
+                    "z_stdin",
                 ):
                     is_method = False
                 

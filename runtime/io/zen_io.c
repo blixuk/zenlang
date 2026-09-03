@@ -25,42 +25,75 @@ typedef struct ZenFileHandle {
 } ZenFileHandle;
 
 // Internal Print helpers
-void ZenIO_internal_print_value(ZenValue value) {
+void ZenIO_internal_print_value_to(FILE* f, ZenValue value) {
+    if (!f) f = stdout;
     switch (value.type) {
-        case ZEN_INTEGER: printf("%lld", value.as.integer); break;
-        case ZEN_DECIMAL: printf("%g", value.as.decimal); break;
-        case ZEN_BOOLEAN: printf("%s", value.as.boolean ? "true" : "false"); break;
-        case ZEN_STRING: printf("%s", value.as.string ? value.as.string : ""); break;
-        case ZEN_NOTHING: printf("nothing"); break;
-        case ZEN_ERROR: printf("Error(%s)", value.as.string ? value.as.string : ""); break;
+        case ZEN_INTEGER: fprintf(f, "%lld", value.as.integer); break;
+        case ZEN_DECIMAL: fprintf(f, "%g", value.as.decimal); break;
+        case ZEN_BOOLEAN: fprintf(f, "%s", value.as.boolean ? "true" : "false"); break;
+        case ZEN_STRING: fprintf(f, "%s", value.as.string ? value.as.string : ""); break;
+        case ZEN_NOTHING: fprintf(f, "nothing"); break;
+        case ZEN_ERROR: fprintf(f, "Error(%s)", value.as.string ? value.as.string : ""); break;
         case ZEN_LIST:
         case ZEN_MAP:
         case ZEN_VARIANT:
         case ZEN_SET: {
             ZenValue s = ZenValue_to_string(value);
             if (s.type == ZEN_STRING && s.as.string) {
-                printf("%s", s.as.string);
+                fprintf(f, "%s", s.as.string);
             } else {
-                printf("<value>");
+                fprintf(f, "<value>");
             }
             break;
         }
-        default: printf("<object %p>", value.as.object); break;
+        default: fprintf(f, "<object %p>", value.as.object); break;
     }
+}
+
+void ZenIO_internal_print_value(ZenValue value) {
+    ZenIO_internal_print_value_to(stdout, value);
 }
 
 // Zenlang IO API
 ZenValue ZenIO_write_value(ZenValue value) {
-    ZenIO_internal_print_value(value);
+    ZenIO_internal_print_value_to(stdout, value);
     fflush(stdout);
     return ZEN_NOTHING_VAL;
 }
 
 ZenValue ZenIO_write_line(ZenValue value) {
-    ZenIO_internal_print_value(value);
-    printf("\n");
+    ZenIO_internal_print_value_to(stdout, value);
+    fprintf(stdout, "\n");
     fflush(stdout);
     return ZEN_NOTHING_VAL;
+}
+
+ZenValue ZenIO_write_stderr(ZenValue value) {
+    ZenIO_internal_print_value_to(stderr, value);
+    fflush(stderr);
+    return ZEN_NOTHING_VAL;
+}
+
+ZenValue ZenIO_write_line_stderr(ZenValue value) {
+    ZenIO_internal_print_value_to(stderr, value);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    return ZEN_NOTHING_VAL;
+}
+
+ZenValue ZenIO_flush_stderr(void) {
+    fflush(stderr);
+    return ZEN_NOTHING_VAL;
+}
+
+ZenValue ZenIO_stdin_lines(void) {
+    ZenValue list_val = ZenValue_from_list(ZenList_new());
+    char buffer[4096];
+    while (fgets(buffer, sizeof(buffer), stdin)) {
+        buffer[strcspn(buffer, "\r\n")] = 0;
+        ZenList_append_value(list_val, ZenValue_make_string(buffer));
+    }
+    return list_val;
 }
 
 ZenValue ZenIO_read_value(ZenValue prompt) {
@@ -73,6 +106,10 @@ ZenValue ZenIO_read_value(ZenValue prompt) {
         return ZenValue_make_string(buffer);
     }
     return ZEN_NOTHING_VAL;
+}
+
+ZenValue ZenIO_read(ZenValue prompt) {
+    return ZenIO_read_value(prompt);
 }
 
 ZenValue ZenIO_read_line(void) {

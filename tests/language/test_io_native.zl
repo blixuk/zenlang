@@ -1,0 +1,30 @@
+function test_write_preludes() {
+    write(`test write: `)
+    writeln(`ok`)
+}
+
+function test_streams() {
+    stdout.write(`stdout write: `)
+    stdout.writeln(`ok`)
+    stdout.flush()
+
+    stderr.write(`[test stderr write] `)
+    stderr.writeln(`ok`)
+    stderr.flush()
+}
+
+function test_ambient_globals() {
+    check args is List
+    check env is Map
+    writeln(`ambient args length: ` + args.length)
+}
+
+function main(cli_args) {
+    writeln(`--- native io test start ---`)
+    check cli_args is List
+    test_write_preludes()
+    test_streams()
+    test_ambient_globals()
+    writeln(`--- native io test end ---`)
+    <- 0
+}

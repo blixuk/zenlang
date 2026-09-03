@@ -24,6 +24,7 @@ Runtime / native execution maintainers.
 - Public surface via `bootstrap_runtime.h` / `zen_*.h` and `ZenTerm_*` / `ZenProcess_*` / `ZenTime_*` / `ZenMemory_*` / `ZenRegex_*` sys APIs in `core/`.
 - File IO (`io/zen_io.c`): `ZenIO_list_dir` returns empty list on failure; `ZenIO_file_exists` uses `stat`; `ZenIO_mkdir` / `ZenIO_mkdir_p` for directories.
 - Net (`core/zen_net.c`): `ZenNet_http_request` via curl (`-g`); interpret uses urllib. Returns `{status, body, headers}`.
+- Ambient Streams & CLI Globals (`core/zen_sys.c`, `io/zen_io.c`): `z_stdout`, `z_stderr`, `z_stdin` are ambient stream map instances exposing `write`, `writeln`, `flush`, `read`, `readln`, `lines`. `z_args` holds CLI arguments list (`module.args` attached). `z_env` holds process environment map. `ZenIO_write_stderr`, `ZenIO_write_line_stderr`, `ZenIO_flush_stderr`, `ZenIO_read`, `ZenIO_stdin_lines`, and `ZenSystem_get_env_map`.
 - Built-in `module` map: global `ZenValue module` + `ZenModule_initialize(...)` in `core/zen_sys.c` (entry file context for `-g`; `module.entry` set by generated host after init).
 - Maps: open-addressed hash index + insertion-order `entries` (`ZenMap_get`/`has`/`set` are O(1) average). `ZenMap_get_items` / `ZenValue_get_items` → list of `{key,value}` maps (for `m.items()` / `zen.reflect`).
 - Reflect: `core/zen_reflect.c` — type registry, `ZenReflect_tag_object`, `ZenReflect_register_method` + `ZenReflect_call` for map plugins and class method tables.
