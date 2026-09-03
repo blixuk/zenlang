@@ -1,58 +1,41 @@
 /!
   Standard Input/Output module for Zenlang.
+  Provides console I/O, stream access, and formatted output helpers.
+  Dual-naming standard: Full Name is primary, Short Name is alias.
 !/
 
 /!
-  Writes a value to the standard output.
+  Writes a value to standard output without a trailing newline.
+  @param v The value to write.
 !/
 export function write(v) {
     __builtin_output.write(v)
 }
 
 /!
-  Writes a value followed by a newline to the standard output.
+  Writes a value followed by a newline to standard output.
+  Primary full-name function.
+  @param v The value to write.
 !/
 export function write_line(v) {
     __builtin_output.write_line(v)
 }
 
+/!
+  Writes a value followed by a newline to standard output.
+  Ergonomic short-name alias for `write_line`.
+  @param v The value to write.
+!/
 export function writeln(v) {
     __builtin_output.write_line(v)
 }
 
 /!
   Writes raw text directly to standard output without formatting or trailing newline.
+  @param v The raw text to write.
 !/
 export function write_raw(v) {
     __builtin_output.write_raw(v)
-}
-
-/!
-  Writes a formatted info message.
-!/
-export function info(v) {
-    __builtin_output.info(v)
-}
-
-/!
-  Writes a formatted warning message.
-!/
-export function warn(v) {
-    __builtin_output.warn(v)
-}
-
-/!
-  Writes a formatted error message.
-!/
-export function error(v) {
-    __builtin_output.error(v)
-}
-
-/!
-  Writes a formatted debug message if debugging is enabled.
-!/
-export function debug(v) {
-    __builtin_output.debug(v)
 }
 
 /!
@@ -63,20 +46,28 @@ export function flush() {
 }
 
 /!
-  Reads a line of text from the standard input with optional prompt.
+  Reads a line of text from standard input with an optional prompt.
   @param prompt An optional prompt to display before reading.
+  @return The string read from standard input.
 !/
 export function read(prompt) {
     <- __builtin_input.read(prompt)
 }
 
 /!
-  Reads a full line from standard input up to newline.
+  Reads a full line from standard input up to the newline.
+  Primary full-name function.
+  @return The line read from standard input.
 !/
 export function read_line() {
     <- __builtin_input.read_line()
 }
 
+/!
+  Reads a full line from standard input up to the newline.
+  Ergonomic short-name alias for `read_line`.
+  @return The line read from standard input.
+!/
 export function readln() {
     <- __builtin_input.read_line()
 }
@@ -84,35 +75,40 @@ export function readln() {
 /!
   Reads exactly count bytes from standard input.
   @param count Number of bytes to read.
+  @return The string containing the read bytes.
 !/
 export function read_exact(count) {
     <- __builtin_input.read_exact(count)
 }
 
 /!
-  Reads the entire contents of a file as a string.
+  Writes a formatted info message to standard output.
+  @param v The message to format.
 !/
-export function read_file(path) {
-    <- __builtin_file.read(path)
+export function info(v) {
+    __builtin_output.info(v)
 }
 
 /!
-  Writes a string to a file.
+  Writes a formatted warning message to standard output.
+  @param v The message to format.
 !/
-export function write_file(path, content) {
-    <- __builtin_file.write(path, content)
+export function warn(v) {
+    __builtin_output.warn(v)
 }
 
 /!
-  Checks if a file or directory exists at the given path.
+  Writes a formatted error message to standard error.
+  @param v The message to format.
 !/
-export function exists(path) {
-    <- __builtin_file.exists(path)
+export function error(v) {
+    __builtin_output.error(v)
 }
 
 /!
-  Appends a string to a file.
+  Writes a formatted debug message if debugging is enabled.
+  @param v The message to format.
 !/
-export function append(path, content) {
-    <- __builtin_file.append(path, content)
+export function debug(v) {
+    __builtin_output.debug(v)
 }

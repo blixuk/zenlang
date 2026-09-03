@@ -606,7 +606,7 @@ function cg_flush_buf() {
         <- false
     }
     let s -> join_parts_tree(b, b.length)
-    io.write_file(p, s)
+    __builtin_file.write(p, s)
     CG[`wrote`] -> true
     CG[`buf`] -> []
     <- true

@@ -2568,8 +2568,10 @@ export function create_vm_prelude() {
     g[`stdin`] -> stdin_mod
 
     g[`write`] -> make_native(`io_write`)
+    g[`write_line`] -> make_native(`io_writeln`)
     g[`writeln`] -> make_native(`io_writeln`)
     g[`read`] -> make_native(`io_read`)
+    g[`read_line`] -> make_native(`io_readln`)
     g[`readln`] -> make_native(`io_readln`)
     g[`type`] -> make_native(`builtin_type`)
 

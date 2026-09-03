@@ -76,7 +76,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
 - log/: structured logging
 - memory/: arena / memory primitives
 - time/: clocks, Duration, Timer, cron (5-field schedule parsing & matching)
-- io/: io, file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `remove_tree`), path
+- io/: io (console I/O, write/write_line/writeln, read/read_line/readln, flush, info/warn/error/debug), file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `remove_tree`), path
 - sys/: sys, process (`which`/`run_result`/pipelines/shell_env), term (`is_tty`/style/mouse/`spinner_frame`), cli (`--opt=val`, `_rest`, `parse_args`), env
 - net/: http (dual-path GET/POST via urllib / curl), socket, url (parse/build/query/encode/decode), mime (lookup/extension), ip (v4/v6 parsing, CIDR, private detection), server (router, request dispatch, text/json response builders)
 - text/: string (pad_left/pad_right), text, lorem (classical Latin words, sentences, paragraphs, titles, seedable generation), regex, markdown, columns, zenmark, wrap (wrap/fill/indent/dedent/shorten), template ({{ var }}, #if, #each), diff (diff_lines, unified_diff), html (escape/unescape, builders, parse_attributes, find_tags), fuzzy (Levenshtein, search, rank), inflect (camel, snake, kebab, Pascal, title, slugify, pluralize)

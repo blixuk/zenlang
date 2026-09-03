@@ -1,27 +1,12 @@
 import zen.io.io as io
 import zen.test as test
 
-let io_path -> `tests/lib/.tmp_io_module.txt`
-
-function cleanup() {
-    when io.exists(io_path) {
-        __builtin_file.remove(io_path)
-    }
-}
-
-function test_file_helpers() {
-    cleanup()
-    io.write_file(io_path, `io payload`)
-    let pass -> test.assert_true(io.exists(io_path), `write_file should create the file`)
-    pass -> pass and test.assert_equal(io.read_file(io_path), `io payload`, `read_file should return the written content`)
-    cleanup()
-    <- pass
-}
-
 function test_output_helpers() {
     io.write(``)
-    io.writeln(``)
     io.write_line(``)
+    io.writeln(``)
+    io.write_raw(``)
+    io.flush()
     io.info(`io.info smoke`)
     io.warn(`io.warn smoke`)
     io.error(`io.error smoke`)
@@ -29,10 +14,18 @@ function test_output_helpers() {
     <- test.assert_true(true, `output helpers should be callable`)
 }
 
+function test_input_helpers() {
+    let pass -> test.assert_true(io.read != Nothing, `io.read should be callable`)
+    pass -> pass and test.assert_true(io.read_line != Nothing, `io.read_line should be defined`)
+    pass -> pass and test.assert_true(io.readln != Nothing, `io.readln should be defined`)
+    pass -> pass and test.assert_true(io.read_exact != Nothing, `io.read_exact should be callable`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
-        {`name` -> `IO.file_helpers`, `fn` -> test_file_helpers},
-        {`name` -> `IO.output_helpers`, `fn` -> test_output_helpers}
+        {`name` -> `IO.output_helpers`, `fn` -> test_output_helpers},
+        {`name` -> `IO.input_helpers`, `fn` -> test_input_helpers}
     ]
 
     <- test.run_suite(`IO Library`, tests)

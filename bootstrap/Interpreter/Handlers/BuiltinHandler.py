@@ -134,6 +134,7 @@ class BuiltinHandler:
         self.global_environment.define("write_line", lambda v="": _out_write(str(v) + "\n"), mutable=False, type="Function")
         self.global_environment.define("writeln", lambda v="": _out_write(str(v) + "\n"), mutable=False, type="Function")
         self.global_environment.define("read", _input_read, mutable=False, type="Function")
+        self.global_environment.define("read_line", _input_read_line, mutable=False, type="Function")
         self.global_environment.define("readln", _input_read_line, mutable=False, type="Function")
         self.global_environment.define("args", sys.argv[1:], mutable=False, type="List")
         self.global_environment.define("env", dict(os.environ), mutable=False, type="Map")
