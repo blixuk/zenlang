@@ -608,12 +608,9 @@ class ExpressionHandler:
             return [val]
         if target_type == "Set":
             if isinstance(val, list):
-                res = []
-                for x in val:
-                    if x not in res: res.append(x)
-                return res
-            if isinstance(val, str): return list(dict.fromkeys(val))
-            return [val]
+                return set(val)
+            if isinstance(val, str): return set(val)
+            return set([val])
         if target_type == "Map":
             if isinstance(val, dict): return val
             return {}

@@ -137,6 +137,35 @@ class BuiltinHandler:
         self.global_environment.define("readln", _input_read_line, mutable=False, type="Function")
         self.global_environment.define("args", sys.argv[1:], mutable=False, type="List")
         self.global_environment.define("env", dict(os.environ), mutable=False, type="Map")
+
+        def _zen_type(v=None):
+            if v is None: return "Nothing"
+            if isinstance(v, bool): return "Boolean"
+            if isinstance(v, int): return "Integer"
+            if isinstance(v, float): return "Decimal"
+            if isinstance(v, str): return "String"
+            if isinstance(v, list): return "List"
+            if isinstance(v, set): return "Set"
+            if isinstance(v, dict):
+                if "kind" in v and v["kind"] is not None: return str(v["kind"])
+                if "__type__" in v and v["__type__"] is not None: return str(v["__type__"])
+                return "Map"
+            if hasattr(v, "type_name"): return getattr(v, "type_name")
+            if hasattr(v, "kind"): return str(getattr(v, "kind"))
+            if type(v).__name__ == "_DefaultSentinel" or str(v) == "Default": return "Default"
+            return "Variant"
+
+        import math as _py_math
+        self.global_environment.define("type", _zen_type, mutable=False, type="Function")
+        self.global_environment.define("abs", lambda x: abs(x), mutable=False, type="Function")
+        self.global_environment.define("min", lambda a, b: min(a, b), mutable=False, type="Function")
+        self.global_environment.define("max", lambda a, b: max(a, b), mutable=False, type="Function")
+        self.global_environment.define("clamp", lambda x, lo, hi: max(lo, min(x, hi)), mutable=False, type="Function")
+        self.global_environment.define("round", lambda x: round(x) if isinstance(x, int) else float(round(x)), mutable=False, type="Function")
+        self.global_environment.define("floor", lambda x: _py_math.floor(x) if isinstance(x, int) else float(_py_math.floor(x)), mutable=False, type="Function")
+        self.global_environment.define("ceil", lambda x: _py_math.ceil(x) if isinstance(x, int) else float(_py_math.ceil(x)), mutable=False, type="Function")
+        self.global_environment.define("sqrt", lambda x: _py_math.sqrt(x), mutable=False, type="Function")
+        self.global_environment.define("pow", lambda b, e: b ** e, mutable=False, type="Function")
  
         # Register '__builtin' object
         def _builtin_error(msg):

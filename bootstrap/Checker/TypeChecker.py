@@ -188,6 +188,16 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("writeln", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
         self.scope.define(Symbol("read", TypeVariant(), None, False, SymbolKind.FUNCTION, 0))
         self.scope.define(Symbol("readln", TypeVariant(), None, False, SymbolKind.FUNCTION, 0))
+        self.scope.define(Symbol("type", TypeString(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("abs", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("min", TypeVariant(), None, False, SymbolKind.FUNCTION, 2))
+        self.scope.define(Symbol("max", TypeVariant(), None, False, SymbolKind.FUNCTION, 2))
+        self.scope.define(Symbol("clamp", TypeVariant(), None, False, SymbolKind.FUNCTION, 3))
+        self.scope.define(Symbol("round", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("floor", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("ceil", TypeVariant(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("sqrt", TypeDecimal(), None, False, SymbolKind.FUNCTION, 1))
+        self.scope.define(Symbol("pow", TypeVariant(), None, False, SymbolKind.FUNCTION, 2))
 
         # Built-in Enums
         self.scope.define(Symbol("Result", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))

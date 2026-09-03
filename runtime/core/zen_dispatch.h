@@ -12,6 +12,7 @@ ZenValue ZenValue_get_field(ZenValue obj, const char* name);
 
 // Runtime type name for `.kind` (Integer, String, Map, …); Map may override via field
 ZenValue ZenValue_get_kind(ZenValue obj);
+ZenValue ZenValue_type(ZenValue obj);
 
 // Dynamic dispatch helpers
 ZenValue ZenValue_get_length(ZenValue self);

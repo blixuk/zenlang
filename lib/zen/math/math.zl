@@ -38,6 +38,17 @@ function max(a, b) {
 }
 
 /!
+ Returns the value clamped between min and max bounds.
+ @param val The value to clamp.
+ @param min_val The lower bound.
+ @param max_val The upper bound.
+ @return The clamped value.
+ !/
+function clamp(val, min_val, max_val) {
+    <- when val < min_val { min_val } or when val > max_val { max_val } or { val }
+}
+
+/!
  Returns the square root of x.
  @param x The number.
  @return The square root.
@@ -90,4 +101,13 @@ function floor(x) {
  !/
 function ceil(x) {
     <- __builtin_math.ceil(x)
+}
+
+/!
+ Returns x rounded to the nearest integer.
+ @param x The number.
+ @return The rounded value.
+ !/
+function round(x) {
+    <- __builtin_math.round(x)
 }

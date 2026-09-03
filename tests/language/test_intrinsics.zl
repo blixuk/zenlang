@@ -1,0 +1,72 @@
+import zen.test as test
+
+function test_type_introspection() {
+    let pass -> test.assert_equal(type(42), `Integer`, `type(42) should be Integer`)
+    pass -> pass and test.assert_equal(type(3.14), `Decimal`, `type(3.14) should be Decimal`)
+    pass -> pass and test.assert_equal(type(`hello`), `String`, `type(hello) should be String`)
+    pass -> pass and test.assert_equal(type(True), `Boolean`, `type(True) should be Boolean`)
+    pass -> pass and test.assert_equal(type(False), `Boolean`, `type(False) should be Boolean`)
+    pass -> pass and test.assert_equal(type([1, 2, 3]), `List`, `type([]) should be List`)
+    pass -> pass and test.assert_equal(type({`key` -> 1}), `Map`, `type({}) should be Map`)
+    pass -> pass and test.assert_equal(type(Set([1, 2])), `Set`, `type(Set) should be Set`)
+    pass -> pass and test.assert_equal(type(Nothing), `Nothing`, `type(Nothing) should be Nothing`)
+    pass -> pass and test.assert_equal(type(Default), `Default`, `type(Default) should be Default`)
+    <- pass
+}
+
+function test_abs() {
+    let pass -> test.assert_equal(abs(-42), 42, `abs(-42) should be 42`)
+    pass -> pass and test.assert_equal(abs(42), 42, `abs(42) should be 42`)
+    pass -> pass and test.assert_equal(abs(0), 0, `abs(0) should be 0`)
+    pass -> pass and test.assert_equal(abs(-3.5), 3.5, `abs(-3.5) should be 3.5`)
+    <- pass
+}
+
+function test_min_max() {
+    let pass -> test.assert_equal(min(10, 20), 10, `min(10, 20) should be 10`)
+    pass -> pass and test.assert_equal(min(20, 10), 10, `min(20, 10) should be 10`)
+    pass -> pass and test.assert_equal(min(-5, -15), -15, `min(-5, -15) should be -15`)
+
+    pass -> pass and test.assert_equal(max(10, 20), 20, `max(10, 20) should be 20`)
+    pass -> pass and test.assert_equal(max(20, 10), 20, `max(20, 10) should be 20`)
+    pass -> pass and test.assert_equal(max(-5, -15), -5, `max(-5, -15) should be -5`)
+    <- pass
+}
+
+function test_clamp() {
+    let pass -> test.assert_equal(clamp(15, 0, 10), 10, `clamp(15, 0, 10) should clamp to 10`)
+    pass -> pass and test.assert_equal(clamp(-5, 0, 10), 0, `clamp(-5, 0, 10) should clamp to 0`)
+    pass -> pass and test.assert_equal(clamp(7, 0, 10), 7, `clamp(7, 0, 10) should keep 7`)
+    <- pass
+}
+
+function test_rounding_and_powers() {
+    let pass -> test.assert_equal(floor(3.9), 3.0, `floor(3.9) should be 3.0`)
+    pass -> pass and test.assert_equal(ceil(3.1), 4.0, `ceil(3.1) should be 4.0`)
+    pass -> pass and test.assert_equal(round(3.2), 3.0, `round(3.2) should be 3.0`)
+    pass -> pass and test.assert_equal(round(3.7), 4.0, `round(3.7) should be 4.0`)
+    pass -> pass and test.assert_equal(sqrt(16.0), 4.0, `sqrt(16.0) should be 4.0`)
+    pass -> pass and test.assert_equal(pow(2, 3), 8.0, `pow(2, 3) should be 8.0`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `intrinsics.type`, `fn` -> test_type_introspection},
+        {`name` -> `intrinsics.abs`, `fn` -> test_abs},
+        {`name` -> `intrinsics.min_max`, `fn` -> test_min_max},
+        {`name` -> `intrinsics.clamp`, `fn` -> test_clamp},
+        {`name` -> `intrinsics.rounding_powers`, `fn` -> test_rounding_and_powers}
+    ]
+    <- test.run_suite(`Universal Preludes & Math Intrinsics`, tests)
+}
+
+function main() {
+    when run_tests() {
+        writeln(`All intrinsics tests passed!`)
+        <- 0
+    } or {
+        writeln(`Intrinsics tests failed!`)
+        <- 1
+    }
+}

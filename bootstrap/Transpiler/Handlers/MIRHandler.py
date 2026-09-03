@@ -449,6 +449,26 @@ class MIRHandler:
                 callee_str = "ZenIO_write_value"
         elif callee_str in ("read", "readln", "read_line", "io_read", "io_readln"):
             callee_str = "ZenIO_read_value"
+        elif callee_str == "type":
+            callee_str = "ZenValue_get_kind"
+        elif callee_str in ("abs", "math_abs"):
+            callee_str = "ZenMath_abs"
+        elif callee_str in ("min", "math_min"):
+            callee_str = "ZenMath_min"
+        elif callee_str in ("max", "math_max"):
+            callee_str = "ZenMath_max"
+        elif callee_str in ("clamp", "math_clamp"):
+            callee_str = "ZenMath_clamp"
+        elif callee_str in ("round", "math_round"):
+            callee_str = "ZenMath_round"
+        elif callee_str in ("floor", "math_floor"):
+            callee_str = "ZenMath_floor"
+        elif callee_str in ("ceil", "math_ceil"):
+            callee_str = "ZenMath_ceil"
+        elif callee_str in ("sqrt", "math_sqrt"):
+            callee_str = "ZenMath_sqrt"
+        elif callee_str in ("pow", "math_pow", "math_power"):
+            callee_str = "ZenMath_power"
         if callee_str == "List_from_args": callee_str = "ZenList_make_from_arguments"
         elif callee_str == "Map_from_args": callee_str = "ZenMap_make_from_arguments"
         elif callee_str == "Value_get_index": callee_str = "ZenValue_get_at"

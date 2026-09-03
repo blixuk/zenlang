@@ -3623,6 +3623,66 @@ function emit_call(node) {
                 }
                 <- `ZenIO_read_line()`
             }
+            when raw == `type` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenValue_get_kind(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_string("Nothing")`
+            }
+            when raw == `abs` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenMath_abs(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `min` {
+                when args != Nothing and args.length >= 2 {
+                    <- `ZenMath_min(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `max` {
+                when args != Nothing and args.length >= 2 {
+                    <- `ZenMath_max(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `clamp` {
+                when args != Nothing and args.length >= 3 {
+                    <- `ZenMath_clamp(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `, ` + emit_expr(args[2]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `round` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenMath_round(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `floor` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenMath_floor(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `ceil` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenMath_ceil(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
+            when raw == `sqrt` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenMath_sqrt(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenValue_make_decimal(0.0)`
+            }
+            when raw == `pow` {
+                when args != Nothing and args.length >= 2 {
+                    <- `ZenMath_power(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `)`
+                }
+                <- `ZenValue_make_integer(0)`
+            }
             // Local/closure value → ZenValue_apply
             let fv -> c_ident(raw)
             let argc -> 0
@@ -4139,8 +4199,8 @@ function emit_builtin_call(oname, m, alist) {
         <- `ZenMath_` + m + `(` + alist + `)`
     }
     when oname == `__builtin_reflect` {
-        when m == `type_of` {
-            <- `ZenReflect_type_of(` + alist + `)`
+        when m == `type` or m == `type_name` or m == `type_of` {
+            <- `ZenValue_get_kind(` + alist + `)`
         }
         when m == `is_type` {
             <- `ZenReflect_is_type(` + alist + `)`

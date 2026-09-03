@@ -2571,6 +2571,16 @@ export function create_vm_prelude() {
     g[`writeln`] -> make_native(`io_writeln`)
     g[`read`] -> make_native(`io_read`)
     g[`readln`] -> make_native(`io_readln`)
+    g[`type`] -> make_native(`builtin_type`)
+    g[`abs`] -> make_native(`math_abs`)
+    g[`min`] -> make_native(`math_min`)
+    g[`max`] -> make_native(`math_max`)
+    g[`clamp`] -> make_native(`math_clamp`)
+    g[`round`] -> make_native(`math_round`)
+    g[`floor`] -> make_native(`math_floor`)
+    g[`ceil`] -> make_native(`math_ceil`)
+    g[`sqrt`] -> make_native(`math_sqrt`)
+    g[`pow`] -> make_native(`math_pow`)
 
     let cli_args -> vm_sys_args()
     when cli_args == Nothing { cli_args -> [] }
@@ -3154,6 +3164,86 @@ export function invoke_callable_g(callee, args, globals) {
             }
             when nfn == `path_is_absolute` {
                 <- Str.starts_with(args[0], `/`)
+            }
+            when nfn == `builtin_type` {
+                when args.length > 0 {
+                    let a0 -> args[0]
+                    when a0 == Nothing { <- `Nothing` }
+                    when (a0 is Map) and a0[`kind`] == `DefaultSentinel` { <- `Default` }
+                    when a0 is Integer { <- `Integer` }
+                    when a0 is Decimal { <- `Decimal` }
+                    when a0 is Boolean { <- `Boolean` }
+                    when a0 is String { <- `String` }
+                    when a0 is List { <- `List` }
+                    when a0 is Set { <- `Set` }
+                    when a0 is Map {
+                        when a0[`kind`] != Nothing { <- Str.to_string(a0[`kind`]) }
+                        when a0[`__type__`] != Nothing { <- Str.to_string(a0[`__type__`]) }
+                        <- `Map`
+                    }
+                    when vm_is_default(a0) { <- `Default` }
+                    <- `Variant`
+                }
+                <- `Nothing`
+            }
+            when nfn == `math_abs` {
+                when args.length > 0 {
+                    let a0 -> args[0]
+                    when a0 is Integer {
+                        when a0 < 0 { <- 0 - a0 }
+                        <- a0
+                    }
+                    when a0 is Decimal {
+                        when a0 < 0.0 { <- 0.0 - a0 }
+                        <- a0
+                    }
+                }
+                <- 0
+            }
+            when nfn == `math_min` {
+                when args.length >= 2 {
+                    when args[0] < args[1] { <- args[0] }
+                    <- args[1]
+                }
+                <- 0
+            }
+            when nfn == `math_max` {
+                when args.length >= 2 {
+                    when args[0] > args[1] { <- args[0] }
+                    <- args[1]
+                }
+                <- 0
+            }
+            when nfn == `math_clamp` {
+                when args.length >= 3 {
+                    let v -> args[0]
+                    let lo -> args[1]
+                    let hi -> args[2]
+                    when v < lo { <- lo }
+                    when v > hi { <- hi }
+                    <- v
+                }
+                <- 0
+            }
+            when nfn == `math_round` {
+                when args.length > 0 { <- __builtin_math.round(args[0]) }
+                <- 0
+            }
+            when nfn == `math_floor` {
+                when args.length > 0 { <- __builtin_math.floor(args[0]) }
+                <- 0
+            }
+            when nfn == `math_ceil` {
+                when args.length > 0 { <- __builtin_math.ceil(args[0]) }
+                <- 0
+            }
+            when nfn == `math_sqrt` {
+                when args.length > 0 { <- __builtin_math.sqrt(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_pow` {
+                when args.length >= 2 { <- __builtin_math.pow(args[0], args[1]) }
+                <- 0
             }
             when nfn == `io_write` {
                 when args.length > 0 { <- __builtin_io.write(args[0]) }
@@ -5848,23 +5938,15 @@ function eval_cast_vm(val, target_type) {
         <- [val]
     }
     when target_type == `Set` {
+        when val is Set { <- val }
         when val is List {
-            let res -> []
-            let i -> 0
-            do while i < val.length {
-                let item -> val[i]
-                when not res.contains(item) {
-                    res.append(item)
-                }
-                i -> i + 1
-            }
-            <- res
+            <- __builtin_set.from_list(val)
         }
         when val is String {
             let list_val -> eval_cast_vm(val, `List`)
-            <- eval_cast_vm(list_val, `Set`)
+            <- __builtin_set.from_list(list_val)
         }
-        <- [val]
+        <- __builtin_set.from_list([val])
     }
     when target_type == `Map` {
         when val is Map { <- val }

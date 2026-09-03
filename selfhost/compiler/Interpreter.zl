@@ -869,6 +869,16 @@ function env_prelude() {
     global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
     global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
     global -> env_define(global, `readln`, make_builtin(`stdin`, `readln`), false)
+    global -> env_define(global, `type`, make_builtin(`reflect`, `type`), false)
+    global -> env_define(global, `abs`, make_builtin(`math`, `abs`), false)
+    global -> env_define(global, `min`, make_builtin(`math`, `min`), false)
+    global -> env_define(global, `max`, make_builtin(`math`, `max`), false)
+    global -> env_define(global, `clamp`, make_builtin(`math`, `clamp`), false)
+    global -> env_define(global, `round`, make_builtin(`math`, `round`), false)
+    global -> env_define(global, `floor`, make_builtin(`math`, `floor`), false)
+    global -> env_define(global, `ceil`, make_builtin(`math`, `ceil`), false)
+    global -> env_define(global, `sqrt`, make_builtin(`math`, `sqrt`), false)
+    global -> env_define(global, `pow`, make_builtin(`math`, `pow`), false)
     let cli_args -> __builtin_sys.get_args()
     when cli_args == Nothing { cli_args -> [] }
     global -> env_define(global, `args`, cli_args, false)
@@ -2285,23 +2295,15 @@ function eval_cast(val, target_type) {
         <- [val]
     }
     when target_type == `Set` {
+        when val is Set { <- val }
         when val is List {
-            let res -> []
-            let i -> 0
-            do while i < val.length {
-                let item -> val[i]
-                when not res.contains(item) {
-                    res.append(item)
-                }
-                i -> i + 1
-            }
-            <- res
+            <- __builtin_set.from_list(val)
         }
         when val is String {
             let list_val -> eval_cast(val, `List`)
-            <- eval_cast(list_val, `Set`)
+            <- __builtin_set.from_list(list_val)
         }
-        <- [val]
+        <- __builtin_set.from_list([val])
     }
     when target_type == `Map` {
         when val is Map { <- val }
@@ -2547,6 +2549,62 @@ function eval_builtin(name, args) {
     let a0 -> nth_arg(args, 0)
     let a1 -> nth_arg(args, 1)
     let a2 -> nth_arg(args, 2)
+    when name == `reflect.type` or name == `type` {
+        when a0 == Nothing { <- `Nothing` }
+        when (a0 is Map) and a0[`kind`] == `DefaultSentinel` { <- `Default` }
+        when a0 is Integer { <- `Integer` }
+        when a0 is Decimal { <- `Decimal` }
+        when a0 is Boolean { <- `Boolean` }
+        when a0 is String { <- `String` }
+        when a0 is List { <- `List` }
+        when a0 is Set { <- `Set` }
+        when a0 is Map {
+            when a0[`kind`] != Nothing { <- Str.to_string(a0[`kind`]) }
+            when a0[`__type__`] != Nothing { <- Str.to_string(a0[`__type__`]) }
+            <- `Map`
+        }
+        when a0 == Default { <- `Default` }
+        <- `Variant`
+    }
+    when name == `math.abs` or name == `abs` {
+        when a0 is Integer {
+            when a0 < 0 { <- 0 - a0 }
+            <- a0
+        }
+        when a0 is Decimal {
+            when a0 < 0.0 { <- 0.0 - a0 }
+            <- a0
+        }
+        <- 0
+    }
+    when name == `math.min` or name == `min` {
+        when a0 < a1 { <- a0 }
+        <- a1
+    }
+    when name == `math.max` or name == `max` {
+        when a0 > a1 { <- a0 }
+        <- a1
+    }
+    when name == `math.clamp` or name == `clamp` {
+        when a0 < a1 { <- a1 }
+        when a0 > a2 { <- a2 }
+        <- a0
+    }
+    when name == `math.round` or name == `round` {
+        <- __builtin_math.round(a0)
+    }
+    when name == `math.floor` or name == `floor` {
+        <- __builtin_math.floor(a0)
+    }
+    when name == `math.ceil` or name == `ceil` {
+        <- __builtin_math.ceil(a0)
+    }
+    when name == `math.sqrt` or name == `sqrt` {
+        <- __builtin_math.sqrt(a0)
+    }
+    when name == `math.pow` or name == `pow` {
+        <- __builtin_math.pow(a0, a1)
+    }
     when name == `string.to_string` {
         <- Str.to_string(a0)
     }

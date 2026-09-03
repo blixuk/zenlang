@@ -506,6 +506,40 @@ Byte(`0x41`)      // 0x41
 | **`Map`** | `.length` | `.length` float | `.length & 0xFF` | String representation | `len > 0` | ```` ```` | Key list | Identity |
 | **`Nothing`** | `0` | `0.0` | `0x00` | ```` ```` | `False` | ```` ```` | `[]` | `{}` |
 
+### 7.3 Universal Type Introspection (`type(x)`)
+
+Zenlang provides `type(x)` as a first-class universal prelude available without imports. It returns a string naming the underlying Zen type:
+
+```zl
+let t1 -> type(42)            // "Integer"
+let t2 -> type(3.14)          // "Decimal"
+let t3 -> type("zen")         // "String"
+let t4 -> type(True)          // "Boolean"
+let t5 -> type([1, 2, 3])     // "List"
+let t6 -> type({"a" -> 1})    // "Map"
+let t7 -> type(Set([1, 2]))   // "Set"
+let t8 -> type(Nothing)       // "Nothing"
+let t9 -> type(Default)       // "Default"
+```
+
+For custom structures, classes, or maps declaring a `kind` or `__type__` attribute, `type(x)` returns that declared type name.
+
+### 7.4 Built-in Math Intrinsics
+
+Essential mathematical operations are built into the language prelude without requiring `import zen.math`:
+
+| Intrinsic | Signature | Description |
+|:---|:---|:---|
+| `abs(x)` | `(Number) -> Number` | Absolute value of integer or decimal |
+| `min(a, b)` | `(Number, Number) -> Number` | Minimum of two numbers |
+| `max(a, b)` | `(Number, Number) -> Number` | Maximum of two numbers |
+| `clamp(val, min, max)` | `(Number, Number, Number) -> Number` | Constrain value within `[min, max]` |
+| `round(x)` | `(Decimal) -> Decimal` | Round to nearest integer |
+| `floor(x)` | `(Decimal) -> Decimal` | Largest integer less than or equal to `x` |
+| `ceil(x)` | `(Decimal) -> Decimal` | Smallest integer greater than or equal to `x` |
+| `sqrt(x)` | `(Number) -> Decimal` | Square root |
+| `pow(base, exp)` | `(Number, Number) -> Number` | Exponentiation |
+
 ---
 
 ## 8. Control Flow & Branching

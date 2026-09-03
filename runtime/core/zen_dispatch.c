@@ -84,6 +84,10 @@ ZenValue ZenValue_get_kind(ZenValue obj) {
     }
 }
 
+ZenValue ZenValue_type(ZenValue obj) {
+    return ZenValue_get_kind(obj);
+}
+
 ZenValue ZenValue_apply(ZenValue value, int argc, ...) {
     if (value.type != ZEN_FUNCTION || !value.as.object) {
         /* Legacy: bare func pointer in as.func (pre-closure layout) */
