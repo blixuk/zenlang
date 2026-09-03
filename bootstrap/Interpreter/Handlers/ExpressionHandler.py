@@ -819,6 +819,11 @@ class ExpressionHandler:
             return left * right
 
         if operation == "/":
+            if right == 0:
+                if isinstance(left, (int, float)):
+                    if left > 0: return float('inf')
+                    elif left < 0: return float('-inf')
+                    else: return float('nan')
             if isinstance(left, int) and isinstance(right, int):
                 return left // right
             return left / right

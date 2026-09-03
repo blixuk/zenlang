@@ -5,6 +5,13 @@
 
 ZenValue ZenMath_sin(ZenValue x);
 ZenValue ZenMath_cos(ZenValue x);
+ZenValue ZenMath_tan(ZenValue x);
+ZenValue ZenMath_asin(ZenValue x);
+ZenValue ZenMath_acos(ZenValue x);
+ZenValue ZenMath_atan(ZenValue x);
+ZenValue ZenMath_atan2(ZenValue y, ZenValue x);
+ZenValue ZenMath_exp(ZenValue x);
+ZenValue ZenMath_log(ZenValue x);
 ZenValue ZenMath_sqrt(ZenValue x);
 ZenValue ZenMath_floor(ZenValue x);
 ZenValue ZenMath_ceil(ZenValue x);

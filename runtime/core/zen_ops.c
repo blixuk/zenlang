@@ -88,7 +88,7 @@ ZenValue ZenValue_multiply(ZenValue a, ZenValue b) {
 
 ZenValue ZenValue_divide(ZenValue a, ZenValue b) {
     if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) {
-        if (b.as.integer == 0) return ZenValue_make_nothing();
+        if (b.as.integer == 0) return ZenValue_make_decimal((double)a.as.integer / 0.0);
         // Prefer integer results for exact integer division (matches interpreter).
         if (a.as.integer % b.as.integer == 0) {
             return ZenValue_make_integer(a.as.integer / b.as.integer);
@@ -97,7 +97,6 @@ ZenValue ZenValue_divide(ZenValue a, ZenValue b) {
     }
     double va = (a.type == ZEN_INTEGER) ? (double)a.as.integer : a.as.decimal;
     double vb = (b.type == ZEN_INTEGER) ? (double)b.as.integer : b.as.decimal;
-    if (vb == 0) return ZenValue_make_nothing();
     return ZenValue_make_decimal(va / vb);
 }
 

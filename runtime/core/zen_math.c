@@ -4,6 +4,17 @@
 
 ZenValue ZenMath_sin(ZenValue x) { return ZenValue_make_decimal(sin(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
 ZenValue ZenMath_cos(ZenValue x) { return ZenValue_make_decimal(cos(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_tan(ZenValue x) { return ZenValue_make_decimal(tan(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_asin(ZenValue x) { return ZenValue_make_decimal(asin(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_acos(ZenValue x) { return ZenValue_make_decimal(acos(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_atan(ZenValue x) { return ZenValue_make_decimal(atan(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_atan2(ZenValue y, ZenValue x) {
+    double dy = (y.type == ZEN_INTEGER) ? (double)y.as.integer : y.as.decimal;
+    double dx = (x.type == ZEN_INTEGER) ? (double)x.as.integer : x.as.decimal;
+    return ZenValue_make_decimal(atan2(dy, dx));
+}
+ZenValue ZenMath_exp(ZenValue x) { return ZenValue_make_decimal(exp(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
+ZenValue ZenMath_log(ZenValue x) { return ZenValue_make_decimal(log(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
 ZenValue ZenMath_sqrt(ZenValue x) { return ZenValue_make_decimal(sqrt(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
 ZenValue ZenMath_floor(ZenValue x) { return ZenValue_make_decimal(floor(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }
 ZenValue ZenMath_ceil(ZenValue x) { return ZenValue_make_decimal(ceil(x.type == ZEN_INTEGER ? (double)x.as.integer : x.as.decimal)); }

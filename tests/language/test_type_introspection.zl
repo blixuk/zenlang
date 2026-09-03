@@ -1,0 +1,59 @@
+import zen.test as test
+
+structure Point {
+    x: Integer,
+    y: Integer
+}
+
+function test_primitive_types() {
+    let pass -> test.assert_equal(type(42), `Integer`, `type(42) should be Integer`)
+    pass -> pass and test.assert_equal(type(-100), `Integer`, `type(-100) should be Integer`)
+    pass -> pass and test.assert_equal(type(3.14), `Decimal`, `type(3.14) should be Decimal`)
+    pass -> pass and test.assert_equal(type(`hello`), `String`, `type(hello) should be String`)
+    pass -> pass and test.assert_equal(type(``), `String`, `type("") should be String`)
+    pass -> pass and test.assert_equal(type(True), `Boolean`, `type(True) should be Boolean`)
+    pass -> pass and test.assert_equal(type(False), `Boolean`, `type(False) should be Boolean`)
+    <- pass
+}
+
+function test_sentinel_types() {
+    let pass -> test.assert_equal(type(Nothing), `Nothing`, `type(Nothing) should be Nothing`)
+    pass -> pass and test.assert_equal(type(Default), `Default`, `type(Default) should be Default`)
+    <- pass
+}
+
+function test_collection_types() {
+    let pass -> test.assert_equal(type([1, 2, 3]), `List`, `type([1, 2, 3]) should be List`)
+    pass -> pass and test.assert_equal(type([]), `List`, `type([]) should be List`)
+    pass -> pass and test.assert_equal(type({`a` -> 1}), `Map`, `type({a -> 1}) should be Map`)
+    pass -> pass and test.assert_equal(type({}), `Map`, `type({}) should be Map`)
+    pass -> pass and test.assert_equal(type(Set([1, 2])), `Set`, `type(Set) should be Set`)
+    <- pass
+}
+
+function test_structure_types() {
+    let pt -> Point(10, 20)
+    let pass -> test.assert_equal(type(pt), `Point`, `type(Point) should be Point`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `type.primitives`, `fn` -> test_primitive_types},
+        {`name` -> `type.sentinels`, `fn` -> test_sentinel_types},
+        {`name` -> `type.collections`, `fn` -> test_collection_types},
+        {`name` -> `type.structures`, `fn` -> test_structure_types}
+    ]
+
+    <- test.run_suite(`Universal Type Introspection Suite`, tests)
+}
+
+function main() {
+    when run_tests() {
+        writeln(`All type introspection tests passed!`)
+        <- 0
+    } or {
+        writeln(`Type introspection tests failed!`)
+        <- 1
+    }
+}

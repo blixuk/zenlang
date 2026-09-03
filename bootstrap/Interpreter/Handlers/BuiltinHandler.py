@@ -152,20 +152,11 @@ class BuiltinHandler:
                 return "Map"
             if hasattr(v, "type_name"): return getattr(v, "type_name")
             if hasattr(v, "kind"): return str(getattr(v, "kind"))
+            if hasattr(v, "name") and getattr(v, "name"): return getattr(v, "name")
             if type(v).__name__ == "_DefaultSentinel" or str(v) == "Default": return "Default"
             return "Variant"
 
-        import math as _py_math
         self.global_environment.define("type", _zen_type, mutable=False, type="Function")
-        self.global_environment.define("abs", lambda x: abs(x), mutable=False, type="Function")
-        self.global_environment.define("min", lambda a, b: min(a, b), mutable=False, type="Function")
-        self.global_environment.define("max", lambda a, b: max(a, b), mutable=False, type="Function")
-        self.global_environment.define("clamp", lambda x, lo, hi: max(lo, min(x, hi)), mutable=False, type="Function")
-        self.global_environment.define("round", lambda x: round(x) if isinstance(x, int) else float(round(x)), mutable=False, type="Function")
-        self.global_environment.define("floor", lambda x: _py_math.floor(x) if isinstance(x, int) else float(_py_math.floor(x)), mutable=False, type="Function")
-        self.global_environment.define("ceil", lambda x: _py_math.ceil(x) if isinstance(x, int) else float(_py_math.ceil(x)), mutable=False, type="Function")
-        self.global_environment.define("sqrt", lambda x: _py_math.sqrt(x), mutable=False, type="Function")
-        self.global_environment.define("pow", lambda b, e: b ** e, mutable=False, type="Function")
  
         # Register '__builtin' object
         def _builtin_error(msg):
@@ -605,8 +596,16 @@ class BuiltinHandler:
             "pow": lambda x, y: math.pow(x, y),
             "sin": lambda x: math.sin(x),
             "cos": lambda x: math.cos(x),
+            "tan": lambda x: math.tan(x),
+            "asin": lambda x: math.asin(x),
+            "acos": lambda x: math.acos(x),
+            "atan": lambda x: math.atan(x),
+            "atan2": lambda y, x: math.atan2(y, x),
+            "exp": lambda x: math.exp(x),
+            "log": lambda x: math.log(x),
             "floor": lambda x: math.floor(x),
             "ceil": lambda x: math.ceil(x),
+            "round": lambda x: round(x) if isinstance(x, int) else float(round(x)),
             "pi": math.pi,
             "e": math.e,
         })

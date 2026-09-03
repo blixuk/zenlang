@@ -37,7 +37,7 @@ Core ladder (must stay green for “language works”):
 - Closures (by-value capture): `tests/language/closure_01.zl` (core + parity)
 - Extended operators (`++` / `--`): `tests/language/test_extended_operators.zl` (core + parity)
 - Binary membership operator (`in`): `tests/language/test_in_operator.zl` (core + parity)
-- Type introspection & math intrinsics: `tests/language/test_intrinsics.zl` (core + parity)
+- Type introspection: `tests/language/test_type_introspection.zl` (core + parity)
 - Frontend syntax parity (bases, strings, arrow bodies, 4-boundary ranges): `tests/language/test_frontend_parity_01.zl`
 - Sentinels & type casting (`Nothing`, `Default`, `<:`, `Type(val)`): `tests/language/test_nothing_default_01.zl`
 - Directional guard returns & concise functions: `tests/core/test_guard_concise_syntax.zl` (core + parity)

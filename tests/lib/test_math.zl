@@ -1,46 +1,97 @@
 import zen.test as test
 import zen.math.math as math
 
-function test_abs() {
-    let pass -> test.assert_equal(math.abs(-5), 5, `abs(-5) should be 5`)
-    pass -> pass and test.assert_equal(math.abs(10), 10, `abs(10) should be 10`)
-    pass -> pass and test.assert_equal(math.abs(0), 0, `abs(0) should be 0`)
+function test_arithmetic_powers() {
+    let pass -> test.assert_equal(math.absolute(-42), 42, `absolute(-42)`)
+    pass -> pass and test.assert_equal(math.abs(-42), 42, `abs(-42)`)
+    pass -> pass and test.assert_equal(math.minimum(10, 20), 10, `minimum(10, 20)`)
+    pass -> pass and test.assert_equal(math.min(10, 20), 10, `min(10, 20)`)
+    pass -> pass and test.assert_equal(math.maximum(10, 20), 20, `maximum(10, 20)`)
+    pass -> pass and test.assert_equal(math.max(10, 20), 20, `max(10, 20)`)
+    pass -> pass and test.assert_equal(math.square(5), 25, `square(5)`)
+    pass -> pass and test.assert_equal(math.sqr(5), 25, `sqr(5)`)
+    pass -> pass and test.assert_equal(math.square_root(16.0), 4.0, `square_root(16.0)`)
+    pass -> pass and test.assert_equal(math.sqrt(16.0), 4.0, `sqrt(16.0)`)
+    pass -> pass and test.assert_equal(math.power(2, 3), 8.0, `power(2, 3)`)
+    pass -> pass and test.assert_equal(math.pow(2, 3), 8.0, `pow(2, 3)`)
+    pass -> pass and test.assert_equal(math.cube(3), 27, `cube(3)`)
+    pass -> pass and test.assert_equal(math.cube_root(27.0), 3.0, `cube_root(27.0)`)
+    pass -> pass and test.assert_equal(math.cbrt(27.0), 3.0, `cbrt(27.0)`)
     <- pass
 }
 
-function test_min_max() {
-    let pass -> test.assert_equal(math.min(10, 20), 10, `min(10, 20) should be 10`)
-    pass -> pass and test.assert_equal(math.max(10, 20), 20, `max(10, 20) should be 20`)
-    pass -> pass and test.assert_equal(math.min(-5, -2), -5, `min(-5, -2) should be -5`)
-    pass -> pass and test.assert_equal(math.max(-5, -2), -2, `max(-5, -2) should be -2`)
+function test_rounding_bounds() {
+    let pass -> test.assert_equal(math.ceiling(3.1), 4.0, `ceiling(3.1)`)
+    pass -> pass and test.assert_equal(math.cil(3.1), 4.0, `cil(3.1)`)
+    pass -> pass and test.assert_equal(math.ceil(3.1), 4.0, `ceil(3.1)`)
+    pass -> pass and test.assert_equal(math.floor(3.9), 3.0, `floor(3.9)`)
+    pass -> pass and test.assert_equal(math.flr(3.9), 3.0, `flr(3.9)`)
+    pass -> pass and test.assert_equal(math.round(3.2), 3.0, `round(3.2)`)
+    pass -> pass and test.assert_equal(math.rnd(3.7), 4.0, `rnd(3.7)`)
+    pass -> pass and test.assert_equal(math.clamp(15, 0, 10), 10, `clamp(15, 0, 10)`)
+    pass -> pass and test.assert_equal(math.clp(-5, 0, 10), 0, `clp(-5, 0, 10)`)
+    pass -> pass and test.assert_equal(math.truncate(3.9), 3.0, `truncate(3.9)`)
+    pass -> pass and test.assert_equal(math.trc(-3.9), -3.0, `trc(-3.9)`)
+    pass -> pass and test.assert_equal(math.step(5.0, 3.0), 0.0, `step(5.0, 3.0)`)
+    pass -> pass and test.assert_equal(math.stp(5.0, 7.0), 1.0, `stp(5.0, 7.0)`)
     <- pass
 }
 
-function test_pow() {
-    <- test.assert_equal(math.pow(2, 3), 8, `2^3 should be 8`)
+function test_trigonometry() {
+    let pass -> test.assert_equal(math.sine(0.0), 0.0, `sine(0)`)
+    pass -> pass and test.assert_equal(math.sin(0.0), 0.0, `sin(0)`)
+    pass -> pass and test.assert_equal(math.cosine(0.0), 1.0, `cosine(0)`)
+    pass -> pass and test.assert_equal(math.cos(0.0), 1.0, `cos(0)`)
+    pass -> pass and test.assert_equal(math.tangent(0.0), 0.0, `tangent(0)`)
+    pass -> pass and test.assert_equal(math.tan(0.0), 0.0, `tan(0)`)
+    pass -> pass and test.assert_equal(math.hypotenuse(3.0, 4.0), 5.0, `hypotenuse(3, 4)`)
+    pass -> pass and test.assert_equal(math.hyp(3.0, 4.0), 5.0, `hyp(3, 4)`)
+    <- pass
 }
 
-function test_floor_ceil() {
-    let pass -> test.assert_equal(math.floor(3.7), 3, `floor(3.7) should be 3`)
-    pass -> pass and test.assert_equal(math.ceil(3.2), 4, `ceil(3.2) should be 4`)
+function test_interpolation_signals() {
+    let pass -> test.assert_equal(math.linear_interpolate(10.0, 20.0, 0.5), 15.0, `linear_interpolate(10, 20, 0.5)`)
+    pass -> pass and test.assert_equal(math.lerp(10.0, 20.0, 0.5), 15.0, `lerp(10, 20, 0.5)`)
+    pass -> pass and test.assert_equal(math.inverse_linear_interpolate(10.0, 20.0, 15.0), 0.5, `inverse_linear_interpolate(10, 20, 15)`)
+    pass -> pass and test.assert_equal(math.ilrp(10.0, 20.0, 15.0), 0.5, `ilrp(10, 20, 15)`)
+    pass -> pass and test.assert_equal(math.smooth_interpolate(0.0, 10.0, 5.0), 0.5, `smooth_interpolate(0, 10, 5)`)
+    pass -> pass and test.assert_equal(math.serp(0.0, 10.0, 5.0), 0.5, `serp(0, 10, 5)`)
+    pass -> pass and test.assert_equal(math.sign(-10), -1, `sign(-10)`)
+    pass -> pass and test.assert_equal(math.sgn(10), 1, `sgn(10)`)
+    pass -> pass and test.assert_equal(math.sgn(0), 0, `sgn(0)`)
+    pass -> pass and test.assert_equal(math.float_modulo(7.0, 3.0), 1.0, `float_modulo(7, 3)`)
+    pass -> pass and test.assert_equal(math.fmod(7.0, 3.0), 1.0, `fmod(7, 3)`)
+    <- pass
+}
+
+function test_classification() {
+    let pass -> test.assert_equal(math.is_finite(42.0), true, `is_finite(42)`)
+    pass -> pass and test.assert_equal(math.fnt(42.0), true, `fnt(42)`)
+    pass -> pass and test.assert_equal(math.is_infinite(1.0 / 0.0), true, `is_infinite(1/0)`)
+    pass -> pass and test.assert_equal(math.inf(1.0 / 0.0), true, `inf(1/0)`)
+    pass -> pass and test.assert_equal(math.is_not_a_number(0.0 / 0.0), true, `is_not_a_number(0/0)`)
+    pass -> pass and test.assert_equal(math.nan(0.0 / 0.0), true, `nan(0/0)`)
     <- pass
 }
 
 function run_tests() {
     let tests -> [
-        {`name` -> `Math.abs`, `fn` -> test_abs},
-        {`name` -> `Math.min_max`, `fn` -> test_min_max},
-        {`name` -> `Math.pow`, `fn` -> test_pow},
-        {`name` -> `Math.floor_ceil`, `fn` -> test_floor_ceil}
+        {`name` -> `Math.arithmetic_powers`, `fn` -> test_arithmetic_powers},
+        {`name` -> `Math.rounding_bounds`, `fn` -> test_rounding_bounds},
+        {`name` -> `Math.trigonometry`, `fn` -> test_trigonometry},
+        {`name` -> `Math.interpolation_signals`, `fn` -> test_interpolation_signals},
+        {`name` -> `Math.classification`, `fn` -> test_classification}
     ]
 
-    <- test.run_suite(`Math Library`, tests)
+    <- test.run_suite(`Math Library Dual Naming Suite`, tests)
 }
 
 function main() {
     when run_tests() {
+        writeln(`All math library tests passed!`)
         <- 0
     } or {
+        writeln(`Math library tests failed!`)
         <- 1
     }
 }

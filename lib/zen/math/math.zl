@@ -1,6 +1,7 @@
 /!
  Mathematics module.
- Provides common mathematical constants and functions.
+ Provides comprehensive mathematical operations, trigonometry, interpolations, and constants.
+ All functions declare their full descriptive name as primary, with ergonomic short-name aliases.
  !/
 
 /!
@@ -13,29 +14,130 @@ set PI -> __builtin_math.pi
  !/
 set E -> __builtin_math.e
 
-function abs(x) {
+// ============================================================================
+// 1. Basic Arithmetic & Powers
+// ============================================================================
+
+/!
+ Returns the absolute value of x.
+ @param x A numeric value.
+ @return The absolute value.
+ !/
+function absolute(x) {
     <- when x < 0 { -x } or { x }
 }
+set abs -> absolute
 
 /!
  Returns the minimum of two numbers.
  @param a The first number.
  @param b The second number.
- @return The smaller of a and b.
+ @return The smaller value.
  !/
-function min(a, b) {
+function minimum(a, b) {
     <- when a < b { a } or { b }
 }
+set min -> minimum
 
 /!
  Returns the maximum of two numbers.
  @param a The first number.
  @param b The second number.
- @return The larger of a and b.
+ @return The larger value.
  !/
-function max(a, b) {
+function maximum(a, b) {
     <- when a > b { a } or { b }
 }
+set max -> maximum
+
+/!
+ Returns the square of x (x * x).
+ @param x A numeric value.
+ @return x squared.
+ !/
+function square(x) {
+    <- x * x
+}
+set sqr -> square
+
+/!
+ Returns the square root of x.
+ @param x A non-negative number.
+ @return The square root.
+ !/
+function square_root(x) {
+    <- __builtin_math.sqrt(x)
+}
+set sqrt -> square_root
+
+/!
+ Returns x raised to the power of y (x^y).
+ @param x The base.
+ @param y The exponent.
+ @return x^y.
+ !/
+function power(x, y) {
+    <- __builtin_math.pow(x, y)
+}
+set pow -> power
+
+/!
+ Returns the cube of x (x * x * x).
+ @param x A numeric value.
+ @return x cubed.
+ !/
+function cube(x) {
+    <- x * x * x
+}
+
+/!
+ Returns the cube root of x.
+ @param x A numeric value.
+ @return The cube root of x.
+ !/
+function cube_root(x) {
+    when x == 0 { <- 0.0 }
+    when x < 0 {
+        <- -power(-x, 1.0 / 3.0)
+    }
+    <- power(x, 1.0 / 3.0)
+}
+set cbrt -> cube_root
+
+// ============================================================================
+// 2. Rounding & Bounds
+// ============================================================================
+
+/!
+ Returns the smallest integer greater than or equal to x.
+ @param x A number.
+ @return The ceiling value.
+ !/
+function ceiling(x) {
+    <- __builtin_math.ceil(x)
+}
+set cil -> ceiling
+set ceil -> ceiling
+
+/!
+ Returns the largest integer less than or equal to x.
+ @param x A number.
+ @return The floor value.
+ !/
+function floor(x) {
+    <- __builtin_math.floor(x)
+}
+set flr -> floor
+
+/!
+ Returns x rounded to the nearest integer.
+ @param x A number.
+ @return The rounded value.
+ !/
+function round(x) {
+    <- __builtin_math.round(x)
+}
+set rnd -> round
 
 /!
  Returns the value clamped between min and max bounds.
@@ -47,67 +149,429 @@ function max(a, b) {
 function clamp(val, min_val, max_val) {
     <- when val < min_val { min_val } or when val > max_val { max_val } or { val }
 }
+set clp -> clamp
 
 /!
- Returns the square root of x.
- @param x The number.
- @return The square root.
+ Returns the fractional part of x (x - floor(x)).
+ @param x A number.
+ @return The fractional component.
  !/
-function sqrt(x) {
-    <- __builtin_math.sqrt(x)
+function fraction(x) {
+    <- x - floor(x)
 }
+set frc -> fraction
 
 /!
- Returns x raised to the power of y.
- @param x The base.
- @param y The exponent.
- @return x^y.
+ Truncates x towards zero, discarding the fractional part.
+ @param x A number.
+ @return The truncated integer value.
  !/
-function pow(x, y) {
-    <- __builtin_math.pow(x, y)
+function truncate(x) {
+    <- when x >= 0 { floor(x) } or { ceiling(x) }
 }
+set trc -> truncate
+
+/!
+ Returns 0.0 if x < edge, otherwise 1.0.
+ @param edge The step threshold.
+ @param x The value to evaluate.
+ @return 0.0 or 1.0.
+ !/
+function step(edge, x) {
+    <- when x < edge { 0.0 } or { 1.0 }
+}
+set stp -> step
+
+// ============================================================================
+// 3. Trigonometry
+// ============================================================================
 
 /!
  Returns the sine of x (in radians).
  @param x The angle in radians.
- @return The sine value.
+ @return The sine.
  !/
-function sin(x) {
+function sine(x) {
     <- __builtin_math.sin(x)
 }
+set sin -> sine
 
 /!
  Returns the cosine of x (in radians).
  @param x The angle in radians.
- @return The cosine value.
+ @return The cosine.
  !/
-function cos(x) {
+function cosine(x) {
     <- __builtin_math.cos(x)
 }
+set cos -> cosine
 
 /!
- Returns the largest integer less than or equal to x.
- @param x The number.
- @return The floor value.
+ Returns the tangent of x (in radians).
+ @param x The angle in radians.
+ @return The tangent.
  !/
-function floor(x) {
-    <- __builtin_math.floor(x)
+function tangent(x) {
+    <- __builtin_math.tan(x)
 }
+set tan -> tangent
 
 /!
- Returns the smallest integer greater than or equal to x.
- @param x The number.
- @return The ceiling value.
+ Returns the cotangent of x (1.0 / tan(x)).
+ @param x The angle in radians.
+ @return The cotangent.
  !/
-function ceil(x) {
-    <- __builtin_math.ceil(x)
+function cotangent(x) {
+    <- 1.0 / tangent(x)
 }
+set cot -> cotangent
 
 /!
- Returns x rounded to the nearest integer.
- @param x The number.
- @return The rounded value.
+ Returns the secant of x (1.0 / cos(x)).
+ @param x The angle in radians.
+ @return The secant.
  !/
-function round(x) {
-    <- __builtin_math.round(x)
+function secant(x) {
+    <- 1.0 / cosine(x)
 }
+set sec -> secant
+
+/!
+ Returns the cosecant of x (1.0 / sin(x)).
+ @param x The angle in radians.
+ @return The cosecant.
+ !/
+function cosecant(x) {
+    <- 1.0 / sine(x)
+}
+set csc -> cosecant
+
+/!
+ Returns the arc tangent of x in radians.
+ @param x A numeric value.
+ @return The arc tangent in radians [-pi/2, pi/2].
+ !/
+function arc_tangent(x) {
+    <- __builtin_math.atan(x)
+}
+set atan -> arc_tangent
+
+/!
+ Returns the angle theta from rectangular coordinates (y, x).
+ @param y The y-coordinate.
+ @param x The x-coordinate.
+ @return The arc tangent angle in radians [-pi, pi].
+ !/
+function arc_tangent_2(y, x) {
+    <- __builtin_math.atan2(y, x)
+}
+set atan2 -> arc_tangent_2
+
+/!
+ Returns the arc sine of x in radians.
+ @param x A value in [-1, 1].
+ @return The arc sine in radians.
+ !/
+function arc_sine(x) {
+    <- __builtin_math.asin(x)
+}
+set asin -> arc_sine
+
+/!
+ Returns the arc cosine of x in radians.
+ @param x A value in [-1, 1].
+ @return The arc cosine in radians.
+ !/
+function arc_cosine(x) {
+    <- __builtin_math.acos(x)
+}
+set acos -> arc_cosine
+
+/!
+ Returns the hypotenuse sqrt(x*x + y*y).
+ @param x First leg length.
+ @param y Second leg length.
+ @return The hypotenuse length.
+ !/
+function hypotenuse(x, y) {
+    <- square_root(x * x + y * y)
+}
+set hyp -> hypotenuse
+
+// ============================================================================
+// 4. Interpolation & Signals
+// ============================================================================
+
+/!
+ Linearly interpolates between a and b by factor t.
+ @param a Start value.
+ @param b End value.
+ @param t Interpolation factor (typically 0.0 to 1.0).
+ @return The interpolated value: a + (b - a) * t.
+ !/
+function linear_interpolate(a, b, t) {
+    <- a + (b - a) * t
+}
+set lerp -> linear_interpolate
+
+/!
+ Computes the inverse linear interpolation factor of x between a and b.
+ @param a Start value.
+ @param b End value.
+ @param x Current value.
+ @return The factor t such that lerp(a, b, t) == x.
+ !/
+function inverse_linear_interpolate(a, b, x) {
+    when a == b { <- 0.0 }
+    <- (x - a) / (b - a)
+}
+set ilrp -> inverse_linear_interpolate
+
+/!
+ Performs smooth Hermite interpolation between edge0 and edge1.
+ @param edge0 Lower bound.
+ @param edge1 Upper bound.
+ @param x Source value.
+ @return The smooth interpolated value between 0.0 and 1.0.
+ !/
+function smooth_interpolate(edge0, edge1, x) {
+    let t -> clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0)
+    <- t * t * (3.0 - 2.0 * t)
+}
+set serp -> smooth_interpolate
+set smoothstep -> smooth_interpolate
+
+/!
+ Extracts the sign of x (-1 for negative, 1 for positive, 0 for zero).
+ @param x A numeric value.
+ @return -1, 0, or 1.
+ !/
+function sign(x) {
+    <- when x < 0 { -1 } or when x > 0 { 1 } or { 0 }
+}
+set sgn -> sign
+set signum -> sign
+
+/!
+ Computes the floating-point remainder of a / b.
+ @param a Dividend.
+ @param b Divisor.
+ @return The remainder with same sign as a.
+ !/
+function float_modulo(a, b) {
+    <- a - b * truncate(a / b)
+}
+set fmod -> float_modulo
+
+// ============================================================================
+// 5. Exponentials & Logarithms
+// ============================================================================
+
+/!
+ Computes the natural exponential e^x.
+ @param x A number.
+ @return e^x.
+ !/
+function exponential(x) {
+    <- __builtin_math.exp(x)
+}
+set exp -> exponential
+
+/!
+ Computes 2^x.
+ @param x A number.
+ @return 2^x.
+ !/
+function exponential_base_2(x) {
+    <- power(2.0, x)
+}
+set exp2 -> exponential_base_2
+
+/!
+ Computes the natural logarithm ln(x).
+ @param x A positive number.
+ @return ln(x).
+ !/
+function logarithm(x) {
+    <- __builtin_math.log(x)
+}
+set log -> logarithm
+
+/!
+ Computes the base-10 logarithm log10(x).
+ @param x A positive number.
+ @return log10(x).
+ !/
+function logarithm_base_10(x) {
+    <- logarithm(x) / logarithm(10.0)
+}
+set log10 -> logarithm_base_10
+
+/!
+ Computes the base-2 logarithm log2(x).
+ @param x A positive number.
+ @return log2(x).
+ !/
+function logarithm_base_2(x) {
+    <- logarithm(x) / logarithm(2.0)
+}
+set log2 -> logarithm_base_2
+
+// ============================================================================
+// 6. Hyperbolic Functions
+// ============================================================================
+
+/!
+ Computes the hyperbolic sine of x.
+ @param x A number in radians.
+ @return Hyperbolic sine: (e^x - e^(-x)) / 2.
+ !/
+function hyperbolic_sine(x) {
+    <- (exponential(x) - exponential(-x)) / 2.0
+}
+set sinh -> hyperbolic_sine
+
+/!
+ Computes the hyperbolic cosine of x.
+ @param x A number in radians.
+ @return Hyperbolic cosine: (e^x + e^(-x)) / 2.
+ !/
+function hyperbolic_cosine(x) {
+    <- (exponential(x) + exponential(-x)) / 2.0
+}
+set cosh -> hyperbolic_cosine
+
+/!
+ Computes the hyperbolic tangent of x.
+ @param x A number in radians.
+ @return Hyperbolic tangent: sinh(x) / cosh(x).
+ !/
+function hyperbolic_tangent(x) {
+    <- hyperbolic_sine(x) / hyperbolic_cosine(x)
+}
+set tanh -> hyperbolic_tangent
+
+/!
+ Computes the hyperbolic cotangent of x (1.0 / tanh(x)).
+ @param x A number.
+ @return Hyperbolic cotangent.
+ !/
+function hyperbolic_cotangent(x) {
+    <- 1.0 / hyperbolic_tangent(x)
+}
+set coth -> hyperbolic_cotangent
+
+/!
+ Computes the hyperbolic secant of x (1.0 / cosh(x)).
+ @param x A number.
+ @return Hyperbolic secant.
+ !/
+function hyperbolic_secant(x) {
+    <- 1.0 / hyperbolic_cosine(x)
+}
+set sech -> hyperbolic_secant
+
+/!
+ Computes the hyperbolic cosecant of x (1.0 / sinh(x)).
+ @param x A number.
+ @return Hyperbolic cosecant.
+ !/
+function hyperbolic_cosecant(x) {
+    <- 1.0 / hyperbolic_sine(x)
+}
+set csch -> hyperbolic_cosecant
+
+/!
+ Computes the inverse hyperbolic sine asinh(x).
+ @param x A number.
+ @return ln(x + sqrt(x^2 + 1)).
+ !/
+function arc_hyperbolic_sine(x) {
+    <- logarithm(x + square_root(x * x + 1.0))
+}
+set asinh -> arc_hyperbolic_sine
+
+/!
+ Computes the inverse hyperbolic cosine acosh(x).
+ @param x A number >= 1.
+ @return ln(x + sqrt(x^2 - 1)).
+ !/
+function arc_hyperbolic_cosine(x) {
+    <- logarithm(x + square_root(x * x - 1.0))
+}
+set acosh -> arc_hyperbolic_cosine
+
+/!
+ Computes the inverse hyperbolic tangent atanh(x).
+ @param x A number in (-1, 1).
+ @return 0.5 * ln((1 + x) / (1 - x)).
+ !/
+function arc_hyperbolic_tangent(x) {
+    <- 0.5 * logarithm((1.0 + x) / (1.0 - x))
+}
+set atanh -> arc_hyperbolic_tangent
+
+/!
+ Computes the inverse hyperbolic cotangent acoth(x).
+ @param x A number with |x| > 1.
+ @return 0.5 * ln((x + 1) / (x - 1)).
+ !/
+function arc_hyperbolic_cotangent(x) {
+    <- 0.5 * logarithm((x + 1.0) / (x - 1.0))
+}
+set acoth -> arc_hyperbolic_cotangent
+
+/!
+ Computes the inverse hyperbolic secant asech(x).
+ @param x A number in (0, 1].
+ @return acosh(1.0 / x).
+ !/
+function arc_hyperbolic_secant(x) {
+    <- arc_hyperbolic_cosine(1.0 / x)
+}
+set asech -> arc_hyperbolic_secant
+
+/!
+ Computes the inverse hyperbolic cosecant acsch(x).
+ @param x A non-zero number.
+ @return asinh(1.0 / x).
+ !/
+function arc_hyperbolic_cosecant(x) {
+    <- arc_hyperbolic_sine(1.0 / x)
+}
+set acsch -> arc_hyperbolic_cosecant
+
+// ============================================================================
+// 7. Float Classification
+// ============================================================================
+
+/!
+ Returns true if x is positive or negative infinity.
+ @param x A numeric value.
+ @return true if x is infinity.
+ !/
+function is_infinite(x) {
+    <- x == (1.0 / 0.0) or x == (-1.0 / 0.0)
+}
+set inf -> is_infinite
+
+/!
+ Returns true if x is NaN (not a number).
+ In IEEE 754, NaN != NaN.
+ @param x A numeric value.
+ @return true if x is NaN.
+ !/
+function is_not_a_number(x) {
+    <- x != x
+}
+set nan -> is_not_a_number
+
+/!
+ Returns true if x is a finite number (not NaN and not infinite).
+ @param x A numeric value.
+ @return true if finite.
+ !/
+function is_finite(x) {
+    <- not is_infinite(x) and not is_not_a_number(x)
+}
+set fnt -> is_finite

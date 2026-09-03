@@ -511,34 +511,78 @@ Byte(`0x41`)      // 0x41
 Zenlang provides `type(x)` as a first-class universal prelude available without imports. It returns a string naming the underlying Zen type:
 
 ```zl
-let t1 -> type(42)            // "Integer"
-let t2 -> type(3.14)          // "Decimal"
-let t3 -> type("zen")         // "String"
-let t4 -> type(True)          // "Boolean"
-let t5 -> type([1, 2, 3])     // "List"
-let t6 -> type({"a" -> 1})    // "Map"
-let t7 -> type(Set([1, 2]))   // "Set"
-let t8 -> type(Nothing)       // "Nothing"
-let t9 -> type(Default)       // "Default"
+let t1 -> type(42)            // `Integer`
+let t2 -> type(3.14)          // `Decimal`
+let t3 -> type(`zen`)         // `String`
+let t4 -> type(True)          // `Boolean`
+let t5 -> type([1, 2, 3])     // `List`
+let t6 -> type({`a` -> 1})    // `Map`
+let t7 -> type(Set([1, 2]))   // `Set`
+let t8 -> type(Nothing)       // `Nothing`
+let t9 -> type(Default)       // `Default`
 ```
 
 For custom structures, classes, or maps declaring a `kind` or `__type__` attribute, `type(x)` returns that declared type name.
 
-### 7.4 Built-in Math Intrinsics
+### 7.4 Standard Math Library (`zen.math`)
 
-Essential mathematical operations are built into the language prelude without requiring `import zen.math`:
+All mathematical operations, trigonometry, interpolations, and constants reside in the standard math module (`import zen.math.math as math` or `use zen.math as math`).
 
-| Intrinsic | Signature | Description |
-|:---|:---|:---|
-| `abs(x)` | `(Number) -> Number` | Absolute value of integer or decimal |
-| `min(a, b)` | `(Number, Number) -> Number` | Minimum of two numbers |
-| `max(a, b)` | `(Number, Number) -> Number` | Maximum of two numbers |
-| `clamp(val, min, max)` | `(Number, Number, Number) -> Number` | Constrain value within `[min, max]` |
-| `round(x)` | `(Decimal) -> Decimal` | Round to nearest integer |
-| `floor(x)` | `(Decimal) -> Decimal` | Largest integer less than or equal to `x` |
-| `ceil(x)` | `(Decimal) -> Decimal` | Smallest integer greater than or equal to `x` |
-| `sqrt(x)` | `(Number) -> Decimal` | Square root |
-| `pow(base, exp)` | `(Number, Number) -> Number` | Exponentiation |
+Zenlang implements a **Full Name Primary + Short Name Alias** duality: full descriptive names are declared as the primary functions for readability, while standardized short names (and common industry aliases) are exported as aliases for concise computation:
+
+| Operation | Primary Full Name | Short Name Alias | Additional Aliases |
+|:---|:---|:---|:---|
+| **Absolute Value** | `absolute(x)` | `abs` | |
+| **Minimum** | `minimum(a, b)` | `min` | |
+| **Maximum** | `maximum(a, b)` | `max` | |
+| **Square** | `square(x)` | `sqr` | |
+| **Square Root** | `square_root(x)` | `sqrt` | |
+| **Power** | `power(base, exp)` | `pow` | |
+| **Cube** | `cube(x)` | `cube` | |
+| **Cube Root** | `cube_root(x)` | `cbrt` | |
+| **Ceiling** | `ceiling(x)` | `cil` | `ceil` |
+| **Floor** | `floor(x)` | `flr` | |
+| **Round** | `round(x)` | `rnd` | |
+| **Clamp** | `clamp(val, lo, hi)` | `clp` | |
+| **Sine** | `sine(x)` | `sin` | |
+| **Cosine** | `cosine(x)` | `cos` | |
+| **Tangent** | `tangent(x)` | `tan` | |
+| **Cotangent** | `cotangent(x)` | `cot` | |
+| **Secant** | `secant(x)` | `sec` | |
+| **Cosecant** | `cosecant(x)` | `csc` | |
+| **Arc Tangent** | `arc_tangent(x)` | `atan` | |
+| **Arc Tangent 2** | `arc_tangent_2(y, x)` | `atan2` | |
+| **Arc Sine** | `arc_sine(x)` | `asin` | |
+| **Arc Cosine** | `arc_cosine(x)` | `acos` | |
+| **Hypotenuse** | `hypotenuse(x, y)` | `hyp` | |
+| **Linear Interpolation** | `linear_interpolate(a, b, t)` | `lerp` | |
+| **Inverse Lerp** | `inverse_linear_interpolate(a, b, x)` | `ilrp` | |
+| **Smooth Interpolation** | `smooth_interpolate(e0, e1, x)` | `serp` | `smoothstep` |
+| **Sign** | `sign(x)` | `sgn` | `signum` |
+| **Float Modulo** | `float_modulo(a, b)` | `fmod` | |
+| **Exponential** | `exponential(x)` | `exp` | |
+| **Base-2 Exponent** | `exponential_base_2(x)` | `exp2` | |
+| **Natural Logarithm** | `logarithm(x)` | `log` | |
+| **Base-10 Logarithm** | `logarithm_base_10(x)` | `log10` | |
+| **Base-2 Logarithm** | `logarithm_base_2(x)` | `log2` | |
+| **Fractional Part** | `fraction(x)` | `frc` | |
+| **Truncate** | `truncate(x)` | `trc` | |
+| **Step Threshold** | `step(edge, x)` | `stp` | |
+| **Hyperbolic Sine** | `hyperbolic_sine(x)` | `sinh` | |
+| **Hyperbolic Cosine** | `hyperbolic_cosine(x)` | `cosh` | |
+| **Hyperbolic Tangent** | `hyperbolic_tangent(x)` | `tanh` | |
+| **Hyperbolic Cotangent** | `hyperbolic_cotangent(x)` | `coth` | |
+| **Hyperbolic Secant** | `hyperbolic_secant(x)` | `sech` | |
+| **Hyperbolic Cosecant** | `hyperbolic_cosecant(x)` | `csch` | |
+| **Arc Hyperbolic Sine** | `arc_hyperbolic_sine(x)` | `asinh` | |
+| **Arc Hyperbolic Cosine** | `arc_hyperbolic_cosine(x)` | `acosh` | |
+| **Arc Hyperbolic Tangent** | `arc_hyperbolic_tangent(x)` | `atanh` | |
+| **Arc Hyperbolic Cotangent** | `arc_hyperbolic_cotangent(x)` | `acoth` | |
+| **Arc Hyperbolic Secant** | `arc_hyperbolic_secant(x)` | `asech` | |
+| **Arc Hyperbolic Cosecant** | `arc_hyperbolic_cosecant(x)` | `acsch` | |
+| **Is Infinite** | `is_infinite(x)` | `inf` | |
+| **Is Not-A-Number** | `is_not_a_number(x)` | `nan` | |
+| **Is Finite** | `is_finite(x)` | `fnt` | |
 
 ---
 

@@ -2572,15 +2572,6 @@ export function create_vm_prelude() {
     g[`read`] -> make_native(`io_read`)
     g[`readln`] -> make_native(`io_readln`)
     g[`type`] -> make_native(`builtin_type`)
-    g[`abs`] -> make_native(`math_abs`)
-    g[`min`] -> make_native(`math_min`)
-    g[`max`] -> make_native(`math_max`)
-    g[`clamp`] -> make_native(`math_clamp`)
-    g[`round`] -> make_native(`math_round`)
-    g[`floor`] -> make_native(`math_floor`)
-    g[`ceil`] -> make_native(`math_ceil`)
-    g[`sqrt`] -> make_native(`math_sqrt`)
-    g[`pow`] -> make_native(`math_pow`)
 
     let cli_args -> vm_sys_args()
     when cli_args == Nothing { cli_args -> [] }
@@ -2674,20 +2665,42 @@ export function create_vm_prelude() {
         `sqrt` -> make_native(`math_sqrt`),
         `sin` -> make_native(`math_sin`),
         `cos` -> make_native(`math_cos`),
+        `tan` -> make_native(`math_tan`),
+        `asin` -> make_native(`math_asin`),
+        `acos` -> make_native(`math_acos`),
+        `atan` -> make_native(`math_atan`),
+        `atan2` -> make_native(`math_atan2`),
+        `exp` -> make_native(`math_exp`),
+        `log` -> make_native(`math_log`),
         `floor` -> make_native(`math_floor`),
         `ceil` -> make_native(`math_ceil`),
+        `round` -> make_native(`math_round`),
         `abs` -> make_native(`math_abs`),
-        `pow` -> make_native(`math_pow`)
+        `pow` -> make_native(`math_pow`),
+        `min` -> make_native(`math_min`),
+        `max` -> make_native(`math_max`),
+        `clamp` -> make_native(`math_clamp`)
     }
     g[`math`] -> math_mod
     g[`__builtin_math`] -> math_mod
     g[`__builtin_math_sqrt`] -> make_native(`math_sqrt`)
     g[`__builtin_math_sin`] -> make_native(`math_sin`)
     g[`__builtin_math_cos`] -> make_native(`math_cos`)
+    g[`__builtin_math_tan`] -> make_native(`math_tan`)
+    g[`__builtin_math_asin`] -> make_native(`math_asin`)
+    g[`__builtin_math_acos`] -> make_native(`math_acos`)
+    g[`__builtin_math_atan`] -> make_native(`math_atan`)
+    g[`__builtin_math_atan2`] -> make_native(`math_atan2`)
+    g[`__builtin_math_exp`] -> make_native(`math_exp`)
+    g[`__builtin_math_log`] -> make_native(`math_log`)
     g[`__builtin_math_floor`] -> make_native(`math_floor`)
     g[`__builtin_math_ceil`] -> make_native(`math_ceil`)
+    g[`__builtin_math_round`] -> make_native(`math_round`)
     g[`__builtin_math_abs`] -> make_native(`math_abs`)
     g[`__builtin_math_pow`] -> make_native(`math_pow`)
+    g[`__builtin_math_min`] -> make_native(`math_min`)
+    g[`__builtin_math_max`] -> make_native(`math_max`)
+    g[`__builtin_math_clamp`] -> make_native(`math_clamp`)
     
     // Term
     let term_mod -> {
@@ -3613,6 +3626,65 @@ export function invoke_callable_g(callee, args, globals) {
             }
             when nfn == `math_pow` {
                 when args.length > 1 { <- __builtin_math.pow(args[0], args[1]) }
+                <- 0
+            }
+            when nfn == `math_tan` {
+                when args.length > 0 { <- __builtin_math.tan(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_asin` {
+                when args.length > 0 { <- __builtin_math.asin(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_acos` {
+                when args.length > 0 { <- __builtin_math.acos(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_atan` {
+                when args.length > 0 { <- __builtin_math.atan(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_atan2` {
+                when args.length > 1 { <- __builtin_math.atan2(args[0], args[1]) }
+                <- 0.0
+            }
+            when nfn == `math_exp` {
+                when args.length > 0 { <- __builtin_math.exp(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_log` {
+                when args.length > 0 { <- __builtin_math.log(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_round` {
+                when args.length > 0 { <- __builtin_math.round(args[0]) }
+                <- 0.0
+            }
+            when nfn == `math_min` {
+                when args.length > 1 {
+                    when args[0] < args[1] { <- args[0] }
+                    <- args[1]
+                }
+                when args.length > 0 { <- args[0] }
+                <- 0
+            }
+            when nfn == `math_max` {
+                when args.length > 1 {
+                    when args[0] > args[1] { <- args[0] }
+                    <- args[1]
+                }
+                when args.length > 0 { <- args[0] }
+                <- 0
+            }
+            when nfn == `math_clamp` {
+                when args.length > 2 {
+                    let v -> args[0]
+                    let lo -> args[1]
+                    let hi -> args[2]
+                    when v < lo { <- lo }
+                    when v > hi { <- hi }
+                    <- v
+                }
                 <- 0
             }
             when nfn == `set_from_list` {
