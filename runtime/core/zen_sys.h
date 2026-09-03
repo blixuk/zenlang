@@ -21,6 +21,8 @@ void ZenModule_initialize(const char* name, const char* path,
                           const char* file, const char* dir, int is_entry);
 ZenValue ZenSystem_exit(ZenValue code);
 ZenValue ZenSystem_get_env(ZenValue name);
+ZenValue ZenSystem_set_env(ZenValue name, ZenValue value);
+ZenValue ZenSystem_unset_env(ZenValue name);
 ZenValue ZenSystem_get_env_map(void);
 ZenValue ZenSystem_get_cwd(void);
 ZenValue ZenSystem_chdir(ZenValue path);
@@ -35,11 +37,15 @@ void ZenRuntime_initialize(void);
 ZenValue ZenValue_make_error_message(ZenValue message);
 ZenValue ZenValue_make_error_literal(ZenValue message);
 
-// Range operators: a..b (exclusive end), a..=b (inclusive end), a..+b (open start, inclusive end)
-ZenValue ZenValue_range(ZenValue start, ZenValue end);
-ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end);
+// 4-Range Boundary System (SPEC 6.4):
+// a..b (between, open interval), a..+b (inclusive end), a..-b (exclusive end), a...b (full inclusive)
+ZenValue ZenValue_range_between(ZenValue start, ZenValue end);
 ZenValue ZenValue_range_open_start_inclusive(ZenValue start, ZenValue end);
-ZenValue ZenRange_make(ZenValue start, ZenValue end); // alias of exclusive
+ZenValue ZenValue_range_exclusive_end(ZenValue start, ZenValue end);
+ZenValue ZenValue_range(ZenValue start, ZenValue end); // alias for exclusive end (..-)
+ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end); // alias for full inclusive (...)
+ZenValue ZenValue_range_full_inclusive(ZenValue start, ZenValue end);
+ZenValue ZenRange_make(ZenValue start, ZenValue end); // back-compat alias
 
 // Time capability (__builtin_time)
 ZenValue ZenTime_now(void);

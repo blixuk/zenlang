@@ -1,5 +1,6 @@
 import zen.data.csv as csv
 import zen.test as test
+import zen.io.file as file
 
 function test_parse_basic() {
     let data -> `name,age,city\nAlice,30,New York\nBob,25,London`
@@ -45,12 +46,33 @@ function test_stringify() {
     <- test.assert_equal(str, expected, `stringify should quote fields containing delimiter`)
 }
 
+function test_headers_and_file_io() {
+    let records -> [
+        {`name` -> `Alice`, `role` -> `Admin`},
+        {`name` -> `Bob`, `role` -> `User`}
+    ]
+    let headers -> [`name`, `role`]
+    let csv_str -> csv.stringify_with_headers(records, headers, `,`)
+    let pass -> test.assert_equal(csv_str, `name,role\nAlice,Admin\nBob,User`, `stringify_with_headers`)
+
+    let tmp_file -> `tests/lib/.tmp_csv_test.csv`
+    csv.dump_with_headers(tmp_file, records, headers, `,`)
+    let loaded -> csv.load_with_headers(tmp_file, `,`)
+    pass -> pass and test.assert_equal(loaded.length, 2, `load_with_headers length`)
+    pass -> pass and test.assert_equal(loaded[0][`name`], `Alice`, `load_with_headers record 0`)
+    pass -> pass and test.assert_equal(loaded[1][`role`], `User`, `load_with_headers record 1`)
+
+    file.remove(tmp_file)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Csv.parse_basic`, `fn` -> test_parse_basic},
         {`name` -> `Csv.parse_with_quotes`, `fn` -> test_parse_with_quotes},
         {`name` -> `Csv.parse_with_headers`, `fn` -> test_parse_with_headers},
-        {`name` -> `Csv.stringify`, `fn` -> test_stringify}
+        {`name` -> `Csv.stringify`, `fn` -> test_stringify},
+        {`name` -> `Csv.headers_and_file_io`, `fn` -> test_headers_and_file_io}
     ]
 
     <- test.run_suite(`CSV Library`, tests)

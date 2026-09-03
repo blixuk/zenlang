@@ -10,10 +10,14 @@
   On transport failure, `status` is `-1` and `body` holds an error message.
 !/
 
+import zen.data.json as zjson
+import zen.crypto.base64 as base64
+import zen.text.string as Str
+
 /!
-  True when HTTP status is 2xx.
+  True when HTTP status is 2xx (success).
 !/
-function ok(resp) {
+export function ok(resp) {
     when resp == Nothing { <- false }
     let s -> resp[`status`]
     when s == Nothing { <- false }
@@ -21,9 +25,46 @@ function ok(resp) {
 }
 
 /!
-  Response body string (empty if missing).
+  Semantic alias for ok(resp).
 !/
-function body(resp) {
+export function is_success(resp) {
+    <- ok(resp)
+}
+
+/!
+  True when HTTP status is 3xx (redirection).
+!/
+export function is_redirect(resp) {
+    when resp == Nothing { <- false }
+    let s -> resp[`status`]
+    when s == Nothing { <- false }
+    <- s >= 300 and s < 400
+}
+
+/!
+  True when HTTP status is 4xx (client error).
+!/
+export function is_client_error(resp) {
+    when resp == Nothing { <- false }
+    let s -> resp[`status`]
+    when s == Nothing { <- false }
+    <- s >= 400 and s < 500
+}
+
+/!
+  True when HTTP status is 5xx (server error).
+!/
+export function is_server_error(resp) {
+    when resp == Nothing { <- false }
+    let s -> resp[`status`]
+    when s == Nothing { <- false }
+    <- s >= 500 and s < 600
+}
+
+/!
+  Response body string (empty string if missing).
+!/
+export function body(resp) {
     when resp == Nothing { <- `` }
     let b -> resp[`body`]
     when b == Nothing { <- `` }
@@ -33,7 +74,7 @@ function body(resp) {
 /!
   Response status code (-1 if missing).
 !/
-function status(resp) {
+export function status(resp) {
     when resp == Nothing { <- -1 }
     let s -> resp[`status`]
     when s == Nothing { <- -1 }
@@ -41,43 +82,276 @@ function status(resp) {
 }
 
 /!
+  Response headers map (empty map if missing).
+!/
+export function headers(resp) {
+    when resp == Nothing { <- {} }
+    let h -> resp[`headers`]
+    when h == Nothing { <- {} }
+    <- h
+}
+
+/!
+  Retrieves a response header with case-insensitive matching.
+  @param resp The response map.
+  @param name Header name (e.g. `content-type`, `Content-Type`).
+  @param default_val Optional fallback if header is absent.
+  @return The header value string, or default_val.
+!/
+export function header(resp, name, default_val) {
+    when resp == Nothing or name == Nothing { <- default_val ?? `` }
+    let hdrs -> headers(resp)
+    when hdrs.has(name) {
+        <- hdrs[name]
+    }
+    let lower_name -> Str.to_lower(name)
+    do for k in hdrs.keys() {
+        when Str.to_lower(k) == lower_name {
+            <- hdrs[k]
+        }
+    }
+    <- default_val ?? ``
+}
+
+/!
+  Standard textual description for HTTP status code.
+  @param code_or_resp Integer status code or response map.
+  @return Human-readable status phrase.
+!/
+export function status_text(code_or_resp) {
+    let code -> code_or_resp
+    when (code_or_resp is Map) {
+        code -> status(code_or_resp)
+    }
+    when code == 200 { <- `OK` }
+    when code == 201 { <- `Created` }
+    when code == 202 { <- `Accepted` }
+    when code == 204 { <- `No Content` }
+    when code == 301 { <- `Moved Permanently` }
+    when code == 302 { <- `Found` }
+    when code == 304 { <- `Not Modified` }
+    when code == 400 { <- `Bad Request` }
+    when code == 401 { <- `Unauthorized` }
+    when code == 403 { <- `Forbidden` }
+    when code == 404 { <- `Not Found` }
+    when code == 405 { <- `Method Not Allowed` }
+    when code == 408 { <- `Request Timeout` }
+    when code == 409 { <- `Conflict` }
+    when code == 422 { <- `Unprocessable Entity` }
+    when code == 429 { <- `Too Many Requests` }
+    when code == 500 { <- `Internal Server Error` }
+    when code == 502 { <- `Bad Gateway` }
+    when code == 503 { <- `Service Unavailable` }
+    when code == 504 { <- `Gateway Timeout` }
+    when code == -1 { <- `Transport Error` }
+    <- `Unknown Status`
+}
+
+/!
   Performs an HTTP GET request.
-  @param url The URL (http, https, or file:// under curl/urllib).
+  @param url The target URL.
+  @param headers Optional map of headers.
   @return Map with status, body, and headers.
 !/
 export function get(url) {
     <- __builtin_net.http_request(url, `GET`, ``, {})
 }
 
+export function get_with_headers(url, headers) {
+    let h -> headers ?? {}
+    <- __builtin_net.http_request(url, `GET`, ``, h)
+}
+
 /!
   Performs an HTTP POST request.
-  @param url The URL.
-  @param body The request body.
-  @param headers Optional map of headers (may be Nothing/`{}`).
+  @param url The target URL.
+  @param body The request body payload.
+  @param headers Optional map of headers.
   @return Map with status, body, and headers.
 !/
 export function post(url, body, headers) {
-    let h -> headers
-    when h == Nothing { h -> {} }
-    let b -> body
-    when b == Nothing { b -> `` }
+    let h -> headers ?? {}
+    let b -> body ?? ``
     <- __builtin_net.http_request(url, `POST`, b, h)
 }
 
 /!
+  Performs an HTTP PUT request.
+  @param url The target URL.
+  @param body The request body payload.
+  @param headers Optional map of headers.
+  @return Map with status, body, and headers.
+!/
+export function put(url, body, headers) {
+    let h -> headers ?? {}
+    let b -> body ?? ``
+    <- __builtin_net.http_request(url, `PUT`, b, h)
+}
+
+/!
+  Performs an HTTP PATCH request.
+  @param url The target URL.
+  @param body The request body payload.
+  @param headers Optional map of headers.
+  @return Map with status, body, and headers.
+!/
+export function patch(url, body, headers) {
+    let h -> headers ?? {}
+    let b -> body ?? ``
+    <- __builtin_net.http_request(url, `PATCH`, b, h)
+}
+
+/!
+  Performs an HTTP DELETE request.
+  @param url The target URL.
+  @return Map with status, body, and headers.
+!/
+export function delete(url) {
+    <- __builtin_net.http_request(url, `DELETE`, ``, {})
+}
+
+export function delete_with_headers(url, headers) {
+    let h -> headers ?? {}
+    <- __builtin_net.http_request(url, `DELETE`, ``, h)
+}
+
+/!
+  Performs an HTTP HEAD request.
+  @param url The target URL.
+  @return Map with status, body (empty), and headers.
+!/
+export function head(url) {
+    <- __builtin_net.http_request(url, `HEAD`, ``, {})
+}
+
+/!
+  Performs an HTTP OPTIONS request.
+  @param url The target URL.
+  @return Map with status, body, and headers.
+!/
+export function options(url) {
+    <- __builtin_net.http_request(url, `OPTIONS`, ``, {})
+}
+
+/!
   Performs a generic HTTP request.
-  @param url The URL.
-  @param method Method (GET, POST, PUT, DELETE, etc.).
-  @param body Optional request body.
+  @param url The target URL.
+  @param method HTTP Method verb (GET, POST, PUT, DELETE, PATCH, etc.).
+  @param body Optional request body string.
   @param headers Optional map of headers.
   @return Map with status, body, and headers.
 !/
 export function request(url, method, body, headers) {
-    let h -> headers
-    when h == Nothing { h -> {} }
-    let b -> body
-    when b == Nothing { b -> `` }
-    let m -> method
-    when m == Nothing { m -> `GET` }
+    let h -> headers ?? {}
+    let b -> body ?? ``
+    let m -> method ?? `GET`
     <- __builtin_net.http_request(url, m, b, h)
 }
+
+/!
+  Sends a JSON-encoded POST request with application/json Content-Type header.
+  @param url Target URL.
+  @param data Zenlang data object (Map, List, etc.) to serialize to JSON.
+  @param headers Optional additional headers.
+  @return Map with status, body, and headers.
+!/
+export function post_json(url, data, headers) {
+    let h -> headers ?? {}
+    let copy_h -> {}
+    do for k in h.keys() {
+        copy_h[k] -> h[k]
+    }
+    copy_h[`Content-Type`] -> `application/json`
+    copy_h[`Accept`] -> copy_h[`Accept`] ?? `application/json`
+    let body_str -> zjson.stringify(data)
+    <- post(url, body_str, copy_h)
+}
+
+/!
+  Sends a JSON-encoded PUT request.
+!/
+export function put_json(url, data, headers) {
+    let h -> headers ?? {}
+    let copy_h -> {}
+    do for k in h.keys() {
+        copy_h[k] -> h[k]
+    }
+    copy_h[`Content-Type`] -> `application/json`
+    copy_h[`Accept`] -> copy_h[`Accept`] ?? `application/json`
+    let body_str -> zjson.stringify(data)
+    <- put(url, body_str, copy_h)
+}
+
+/!
+  Sends a JSON-encoded PATCH request.
+!/
+export function patch_json(url, data, headers) {
+    let h -> headers ?? {}
+    let copy_h -> {}
+    do for k in h.keys() {
+        copy_h[k] -> h[k]
+    }
+    copy_h[`Content-Type`] -> `application/json`
+    copy_h[`Accept`] -> copy_h[`Accept`] ?? `application/json`
+    let body_str -> zjson.stringify(data)
+    <- patch(url, body_str, copy_h)
+}
+
+/!
+  Parses a response's body as a JSON data structure.
+  @param resp Response map returned by get/post/etc.
+  @return Parsed JSON object, or Nothing on parse failure.
+!/
+export function json_body(resp) {
+    let b -> body(resp)
+    when b == `` { <- Nothing }
+    check {
+        <- zjson.parse(b)
+    } or {
+        <- Nothing
+    }
+}
+
+/!
+  Convenience helper: performs GET and parses body as JSON.
+!/
+export function get_json(url) {
+    let resp -> get_with_headers(url, {`Accept` -> `application/json`})
+    <- json_body(resp)
+}
+
+export function get_json_with_headers(url, headers) {
+    let h -> headers ?? {}
+    let copy_h -> {}
+    do for k in h.keys() {
+        copy_h[k] -> h[k]
+    }
+    copy_h[`Accept`] -> copy_h[`Accept`] ?? `application/json`
+    let resp -> get_with_headers(url, copy_h)
+    <- json_body(resp)
+}
+
+/!
+  Builds an Authorization header map for a Bearer token.
+  @param token Bearer token string.
+  @return Map `{ 'Authorization' -> 'Bearer <token>' }`.
+!/
+export function bearer_auth(token) {
+    <- { `Authorization` -> `Bearer ` + (token ?? ``) }
+}
+
+/!
+  Builds an Authorization header map for Basic authentication.
+  @param user Username.
+  @param pass Password.
+  @return Map with base64 encoded Authorization header.
+!/
+export function basic_auth(user, pass) {
+    let creds -> (user ?? ``) + `:` + (pass ?? ``)
+    let encoded -> base64.encode(creds)
+    <- { `Authorization` -> `Basic ` + encoded }
+}
+
+// Ergonomic aliases
+export function fetch(url) { <- get(url) }
+export function json(resp) { <- json_body(resp) }

@@ -56,6 +56,7 @@ from Parser.AST import (
     Identifier,
     ImportStatement,
     IndexExpression,
+    SliceExpression,
     IndexReassignmentStatement,
     IntegerLiteral,
     IteratorLiteral,
@@ -581,6 +582,9 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
 
         elif isinstance(expression, IndexExpression):
             return self.check_index_expression(expression)
+
+        elif isinstance(expression, SliceExpression):
+            return self.check_slice_expression(expression)
 
         elif isinstance(expression, Identifier):
             return self.check_identifier(expression)

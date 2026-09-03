@@ -1,0 +1,48 @@
+import zen.test as test
+
+function test_typed_defaults() {
+    let a : Integer -> Default
+    let b : String -> Default
+    let c : Boolean -> Default
+    let d : List -> Default
+    let e : Map -> Default
+
+    let pass -> test.assert_equal(a, 0, `Integer Default is 0`)
+    pass -> pass and test.assert_equal(b, ``, `String Default is empty string`)
+    pass -> pass and test.assert_equal(c, false, `Boolean Default is false`)
+    pass -> pass and test.assert_equal(d.length, 0, `List Default is empty list`)
+    pass -> pass and test.assert_equal(e, {}, `Map Default is empty map`)
+    <- pass
+}
+
+function test_equality_with_default() {
+    let pass -> test.assert_true(0 == Default, `0 == Default`)
+    pass -> pass and test.assert_false(42 == Default, `42 != Default`)
+    pass -> pass and test.assert_true(`` == Default, `empty string == Default`)
+    pass -> pass and test.assert_false(`zen` == Default, `'zen' != Default`)
+    pass -> pass and test.assert_true(false == Default, `false == Default`)
+    pass -> pass and test.assert_false(true == Default, `true != Default`)
+    pass -> pass and test.assert_true([] == Default, `[] == Default`)
+    pass -> pass and test.assert_false([1] == Default, `[1] != Default`)
+    pass -> pass and test.assert_true({} == Default, `{} == Default`)
+    pass -> pass and test.assert_false(Nothing == Default, `Nothing != Default`)
+    pass -> pass and test.assert_true(Default == Default, `Default == Default`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Default.typed_defaults`, `fn` -> test_typed_defaults},
+        {`name` -> `Default.equality`, `fn` -> test_equality_with_default}
+    ]
+
+    <- test.run_suite(`Default Sentinel (Endgame Plan Phase L)`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -1,5 +1,6 @@
 #include "zen_list.h"
 #include "core/zen_ops.h"
+#include "core/zen_dispatch.h"
 #include "memory/zen_memory.h"
 #include <stdlib.h>
 #include <stdarg.h>
@@ -48,6 +49,7 @@ ZenValue ZenList_get_value_at_index(ZenValue list, ZenValue index) {
     ZenList* l = list.as.list;
     if (!l) return ZenValue_make_nothing();
     int idx = (int)index.as.integer;
+    if (idx < 0) idx += l->count;
     if (idx < 0 || idx >= l->count) return ZenValue_make_nothing();
     return l->items[idx];
 }
@@ -57,6 +59,7 @@ ZenValue ZenList_set_value_at_index(ZenValue list, ZenValue index, ZenValue valu
     ZenList* l = list.as.list;
     if (!l) return list;
     int idx = (int)index.as.integer;
+    if (idx < 0) idx += l->count;
     if (idx < 0 || idx >= l->count) return list;
     l->items[idx] = value;
     return list;
@@ -238,3 +241,176 @@ ZenValue ZenList_drop_end(ZenValue list, long long n) {
 ZenValue ZenList_drop_start(ZenValue list, long long n) {
     return ZenList_slice_from(list, ZenValue_make_integer(n));
 }
+
+static inline bool zen_list_is_truthy(ZenValue v) {
+    if (v.type == ZEN_NOTHING || v.type == ZEN_DEFAULT) return false;
+    if (v.type == ZEN_BOOLEAN) return v.as.boolean;
+    if (v.type == ZEN_INTEGER) return v.as.integer != 0;
+    if (v.type == ZEN_DECIMAL) return v.as.decimal != 0.0;
+    if (v.type == ZEN_STRING) return v.as.string && v.as.string[0] != '\0';
+    if (v.type == ZEN_LIST) return v.as.list && v.as.list->count > 0;
+    if (v.type == ZEN_MAP) return v.as.map && v.as.map->count > 0;
+    return true;
+}
+
+ZenValue ZenList_reverse(ZenValue list) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    out->count = src->count;
+    out->capacity = src->count;
+    if (src->count > 0) {
+        out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)src->count);
+        for (int i = 0; i < src->count; i++) {
+            out->items[i] = src->items[src->count - 1 - i];
+        }
+    } else {
+        out->items = NULL;
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_unique(ZenValue list) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    ZenList* out = ZenList_new();
+    for (int i = 0; i < src->count; i++) {
+        ZenValue item = src->items[i];
+        if (!ZenList_contains_value(ZenValue_from_list(out), item).as.boolean) {
+            ZenList_append_value(ZenValue_from_list(out), item);
+        }
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_flatten(ZenValue list) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    ZenList* out = ZenList_new();
+    for (int i = 0; i < src->count; i++) {
+        ZenValue item = src->items[i];
+        if (item.type == ZEN_LIST && item.as.list) {
+            for (int j = 0; j < item.as.list->count; j++) {
+                ZenList_append_value(ZenValue_from_list(out), item.as.list->items[j]);
+            }
+        } else {
+            ZenList_append_value(ZenValue_from_list(out), item);
+        }
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_chunk(ZenValue list, ZenValue size_v) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    int size = (int)size_v.as.integer;
+    if (size <= 0) size = 1;
+    ZenList* src = list.as.list;
+    ZenList* out = ZenList_new();
+    ZenList* curr = NULL;
+    for (int i = 0; i < src->count; i++) {
+        if (i % size == 0) {
+            curr = ZenList_new();
+            ZenList_append_value(ZenValue_from_list(out), ZenValue_from_list(curr));
+        }
+        ZenList_append_value(ZenValue_from_list(curr), src->items[i]);
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_take(ZenValue list, ZenValue n_v) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    int n = (int)n_v.as.integer;
+    if (n <= 0) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    if (n > src->count) n = src->count;
+    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    out->count = n;
+    out->capacity = n;
+    out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)n);
+    memcpy(out->items, src->items, sizeof(ZenVariant) * (size_t)n);
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_drop(ZenValue list, ZenValue n_v) {
+    return ZenList_drop_start(list, n_v.as.integer);
+}
+
+ZenValue ZenList_map(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    ZenList* out = ZenList_new();
+    for (int i = 0; i < src->count; i++) {
+        ZenValue mapped = ZenValue_apply(fn, 1, src->items[i]);
+        ZenList_append_value(ZenValue_from_list(out), mapped);
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_filter(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
+    ZenList* src = list.as.list;
+    ZenList* out = ZenList_new();
+    for (int i = 0; i < src->count; i++) {
+        ZenValue cond = ZenValue_apply(fn, 1, src->items[i]);
+        if (zen_list_is_truthy(cond)) {
+            ZenList_append_value(ZenValue_from_list(out), src->items[i]);
+        }
+    }
+    return ZenValue_from_list(out);
+}
+
+ZenValue ZenList_reduce(ZenValue list, ZenValue initial, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return initial;
+    ZenList* src = list.as.list;
+    ZenValue acc = initial;
+    for (int i = 0; i < src->count; i++) {
+        acc = ZenValue_apply(fn, 2, acc, src->items[i]);
+    }
+    return acc;
+}
+
+ZenValue ZenList_each(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_make_nothing();
+    ZenList* src = list.as.list;
+    for (int i = 0; i < src->count; i++) {
+        (void)ZenValue_apply(fn, 1, src->items[i]);
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenList_find(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_make_nothing();
+    ZenList* src = list.as.list;
+    for (int i = 0; i < src->count; i++) {
+        ZenValue cond = ZenValue_apply(fn, 1, src->items[i]);
+        if (zen_list_is_truthy(cond)) {
+            return src->items[i];
+        }
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenList_any(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_make_boolean(false);
+    ZenList* src = list.as.list;
+    for (int i = 0; i < src->count; i++) {
+        ZenValue cond = ZenValue_apply(fn, 1, src->items[i]);
+        if (zen_list_is_truthy(cond)) {
+            return ZenValue_make_boolean(true);
+        }
+    }
+    return ZenValue_make_boolean(false);
+}
+
+ZenValue ZenList_all(ZenValue list, ZenValue fn) {
+    if (list.type != ZEN_LIST || !list.as.list) return ZenValue_make_boolean(true);
+    ZenList* src = list.as.list;
+    for (int i = 0; i < src->count; i++) {
+        ZenValue cond = ZenValue_apply(fn, 1, src->items[i]);
+        if (!zen_list_is_truthy(cond)) {
+            return ZenValue_make_boolean(false);
+        }
+    }
+    return ZenValue_make_boolean(true);
+}
+

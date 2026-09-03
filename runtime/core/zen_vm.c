@@ -174,6 +174,7 @@ int ZenChunk_disassemble_instruction(ZenChunk* chunk, int offset) {
         case OP_GET_PROP: return const_instruction("OP_GET_PROP", chunk, offset);
         case OP_SET_PROP: return const_instruction("OP_SET_PROP", chunk, offset);
         case OP_CAST: return const_instruction("OP_CAST", chunk, offset);
+        case OP_SLICE: return simple_instruction("OP_SLICE", offset);
         case OP_JUMP: return i16_instruction("OP_JUMP", chunk, offset);
         case OP_JUMP_IF_FALSE: return i16_instruction("OP_JUMP_IF_FALSE", chunk, offset);
         case OP_JUMP_IF_TRUE: return i16_instruction("OP_JUMP_IF_TRUE", chunk, offset);
@@ -318,6 +319,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
         [OP_GET_PROP] = &&do_OP_GET_PROP,
         [OP_SET_PROP] = &&do_OP_SET_PROP,
         [OP_CAST] = &&do_OP_CAST,
+        [OP_SLICE] = &&do_OP_SLICE,
         [OP_JUMP] = &&do_OP_JUMP,
         [OP_JUMP_IF_FALSE] = &&do_OP_JUMP_IF_FALSE,
         [OP_JUMP_IF_TRUE] = &&do_OP_JUMP_IF_TRUE,
@@ -673,6 +675,15 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 ZenValue val = pop(vm);
                 const char* type_str = (target_type.type == ZEN_STRING && target_type.as.string) ? target_type.as.string : "";
                 push(vm, ZenValue_cast(val, type_str));
+                NEXT();
+            }
+            
+            TARGET(OP_SLICE) {
+                ZenValue step = pop(vm);
+                ZenValue end = pop(vm);
+                ZenValue start = pop(vm);
+                ZenValue obj = pop(vm);
+                push(vm, ZenValue_slice(obj, start, end, step));
                 NEXT();
             }
             

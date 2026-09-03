@@ -18,9 +18,21 @@ function test_basename_dirname() {
 
 function test_extname_absolute() {
     let pass -> test.assert_equal(path.extname(`archive.tar.gz`), `.gz`, `extname should return the final extension`)
+    pass -> pass and test.assert_equal(path.extension(`file.png`), `.png`, `extension alias`)
+    pass -> pass and test.assert_equal(path.ext(`file.png`), `.png`, `ext alias`)
     pass -> pass and test.assert_equal(path.extname(`README`), ``, `extname should be empty when no extension exists`)
     pass -> pass and test.assert_true(path.is_absolute(`/var/tmp`), `absolute paths should be recognized`)
     pass -> pass and test.assert_false(path.is_absolute(`relative/path`), `relative paths should not be recognized as absolute`)
+    pass -> pass and test.assert_true(path.is_relative(`relative/path`), `relative path should be recognized`)
+    <- pass
+}
+
+function test_normalize_and_aliases() {
+    let pass -> test.assert_equal(path.base_name(`/tmp/file.txt`), `file.txt`, `base_name alias`)
+    pass -> pass and test.assert_equal(path.dir_name(`/tmp/file.txt`), `/tmp`, `dir_name alias`)
+    pass -> pass and test.assert_equal(path.normalize(`/a/b/../c/./d`), `/a/c/d`, `normalize absolute`)
+    pass -> pass and test.assert_equal(path.normalize(`a/b/../../c`), `c`, `normalize relative`)
+    pass -> pass and test.assert_equal(path.normalize(`/..`), `/`, `normalize root parent`)
     <- pass
 }
 
@@ -28,7 +40,8 @@ function run_tests() {
     let tests -> [
         {`name` -> `Path.join`, `fn` -> test_join},
         {`name` -> `Path.basename_dirname`, `fn` -> test_basename_dirname},
-        {`name` -> `Path.extname_absolute`, `fn` -> test_extname_absolute}
+        {`name` -> `Path.extname_absolute`, `fn` -> test_extname_absolute},
+        {`name` -> `Path.normalize_and_aliases`, `fn` -> test_normalize_and_aliases}
     ]
 
     <- test.run_suite(`Path Library`, tests)

@@ -188,6 +188,25 @@ ZenValue ZenSystem_get_env(ZenValue name_value) {
     return val ? ZenValue_make_string(val) : ZenValue_make_nothing();
 }
 
+ZenValue ZenSystem_set_env(ZenValue name_value, ZenValue val_value) {
+    const char* name = ZenString_get_pointer(name_value);
+    if (!name) return ZenValue_make_boolean(false);
+    const char* val = ZenString_get_pointer(val_value);
+    if (val) {
+        setenv(name, val, 1);
+    } else {
+        unsetenv(name);
+    }
+    return ZenValue_make_boolean(true);
+}
+
+ZenValue ZenSystem_unset_env(ZenValue name_value) {
+    const char* name = ZenString_get_pointer(name_value);
+    if (!name) return ZenValue_make_boolean(false);
+    unsetenv(name);
+    return ZenValue_make_boolean(true);
+}
+
 ZenValue ZenSystem_get_env_map(void) {
     return z_env;
 }
@@ -291,24 +310,38 @@ static ZenValue zen_range_build(ZenValue start, ZenValue end, int inclusive, int
     return list_v;
 }
 
-// Half-open range a..b  → [a, a+1, ..., b-1]
-ZenValue ZenValue_range(ZenValue start, ZenValue end) {
-    return zen_range_build(start, end, 0, 0);
+// 4-Range Boundary System (SPEC 6.4):
+// Range Between a..b → (a, b) [open interval: both endpoints excluded]
+ZenValue ZenValue_range_between(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 0, 1);
 }
 
-// Inclusive range a..=b → [a, a+1, ..., b]
-ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end) {
-    return zen_range_build(start, end, 1, 0);
-}
-
-// Inclusive end range a..+b → [a+1, a+2, ..., b]
+// Range Inclusive End a..+b → (a, b] [open start, inclusive end]
 ZenValue ZenValue_range_open_start_inclusive(ZenValue start, ZenValue end) {
     return zen_range_build(start, end, 1, 1);
 }
 
+// Range Exclusive End a..-b → [a, b) [closed start, exclusive end]
+ZenValue ZenValue_range_exclusive_end(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 0, 0);
+}
+
+ZenValue ZenValue_range(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 0, 0);
+}
+
+// Range Full Inclusive a...b → [a, b] [closed interval: both endpoints included]
+ZenValue ZenValue_range_inclusive(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 1, 0);
+}
+
+ZenValue ZenValue_range_full_inclusive(ZenValue start, ZenValue end) {
+    return zen_range_build(start, end, 1, 0);
+}
+
 // Back-compat alias used by older generated code / builtins.
 ZenValue ZenRange_make(ZenValue start, ZenValue end) {
-    return ZenValue_range(start, end);
+    return ZenValue_range_exclusive_end(start, end);
 }
 
 /* ---- Time ---- */

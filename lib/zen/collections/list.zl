@@ -1,15 +1,15 @@
 /!
- List utility module.
- Provides functional operations for lists.
- !/
+  List utility module.
+  Provides functional operations, partitioning, and sequence utilities for lists.
+!/
 
 /!
- Applies a function to each element of a list and returns a new list of results.
- @param list The list to map.
- @param fn The function to apply (element -> result).
- @return A new list.
- !/
-function map(list, fn) {
+  Applies a function to each element of a list and returns a new list of results.
+  @param list The list to map.
+  @param fn The function to apply (element -> result).
+  @return A new list.
+!/
+export function map(list, fn) {
     let res -> []
     do for item in list {
         res.append(fn(item))
@@ -18,12 +18,12 @@ function map(list, fn) {
 }
 
 /!
- Filters a list based on a predicate function.
- @param list The list to filter.
- @param fn The predicate function (element -> boolean).
- @return A new list containing only elements that matched the predicate.
- !/
-function filter(list, fn) {
+  Filters a list based on a predicate function.
+  @param list The list to filter.
+  @param fn The predicate function (element -> boolean).
+  @return A new list containing only elements that matched the predicate.
+!/
+export function filter(list, fn) {
     let res -> []
     do for item in list {
         when fn(item) {
@@ -34,13 +34,13 @@ function filter(list, fn) {
 }
 
 /!
- Reduces a list to a single value using an accumulator function.
- @param list The list to reduce.
- @param initial The initial accumulator value.
- @param fn The reducer function (accumulator, element -> new_accumulator).
- @return The final accumulator value.
- !/
-function reduce(list, initial, fn) {
+  Reduces a list to a single value using an accumulator function.
+  @param list The list to reduce.
+  @param initial The initial accumulator value.
+  @param fn The reducer function (accumulator, element -> new_accumulator).
+  @return The final accumulator value.
+!/
+export function reduce(list, initial, fn) {
     let acc -> initial
     do for item in list {
         acc -> fn(acc, item)
@@ -49,23 +49,23 @@ function reduce(list, initial, fn) {
 }
 
 /!
- Executes a function for each element of a list.
- @param list The list.
- @param fn The function to execute (element -> void).
- !/
-function each(list, fn) {
+  Executes a function for each element of a list.
+  @param list The list.
+  @param fn The function to execute (element -> void).
+!/
+export function each(list, fn) {
     do for item in list {
         fn(item)
     }
 }
 
 /!
- Finds the first element in a list that matches a predicate.
- @param list The list.
- @param fn The predicate function.
- @return The element, or Nothing if not found.
- !/
-function find(list, fn) {
+  Finds the first element in a list that matches a predicate.
+  @param list The list.
+  @param fn The predicate function.
+  @return The element, or Nothing if not found.
+!/
+export function find(list, fn) {
     do for item in list {
         when fn(item) {
             <- item
@@ -75,16 +75,152 @@ function find(list, fn) {
 }
 
 /!
- Checks if a list contains a specific value.
- @param list The list.
- @param val The value to search for.
- @return True if found, False otherwise.
- !/
-function contains(list, val) {
+  Checks if a list contains a specific value.
+  Leverages the first-class `in` operator.
+  @param list The list.
+  @param val The value to search for.
+  @return True if found, False otherwise.
+!/
+export function contains(list, val) {
+    <- val in list
+}
+
+/!
+  Reverses a list and returns a new list.
+  @param list The list to reverse.
+  @return A new reversed list.
+!/
+export function reverse(list) {
+    let res -> []
+    let n -> list.length
+    let i -> n - 1
+    do while i >= 0 {
+        res.append(list[i])
+        i -> i - 1
+    }
+    <- res
+}
+
+/!
+  Deduplicates elements while preserving original insertion order.
+  @param list The list to deduplicate.
+  @return A new list containing only unique elements.
+!/
+export function unique(list) {
+    let res -> []
     do for item in list {
-        when item == val {
+        when not (item in res) {
+            res.append(item)
+        }
+    }
+    <- res
+}
+
+/!
+  Flattens a list of lists one level deep.
+  @param list The list to flatten.
+  @return A flattened list.
+!/
+export function flatten(list) {
+    let res -> []
+    do for item in list {
+        when item is List {
+            do for sub in item {
+                res.append(sub)
+            }
+        } or {
+            res.append(item)
+        }
+    }
+    <- res
+}
+
+/!
+  Partitions a list into fixed-size chunks.
+  @param list The list to partition.
+  @param size The size of each chunk.
+  @return A list of chunk lists.
+!/
+export function chunk(list, size) {
+    when size <= 0 { <- [] }
+    let res -> []
+    let cur -> []
+    do for item in list {
+        cur.append(item)
+        when cur.length == size {
+            res.append(cur)
+            cur -> []
+        }
+    }
+    when cur.length > 0 {
+        res.append(cur)
+    }
+    <- res
+}
+
+/!
+  Returns the first n elements from the list.
+  @param list The list.
+  @param n Number of elements to take.
+  @return List of taken elements.
+!/
+export function take(list, n) {
+    when n <= 0 { <- [] }
+    let res -> []
+    let count -> 0
+    do for item in list {
+        when count < n {
+            res.append(item)
+            count -> count + 1
+        }
+    }
+    <- res
+}
+
+/!
+  Drops the first n elements and returns the rest.
+  @param list The list.
+  @param n Number of elements to drop.
+  @return Remaining elements.
+!/
+export function drop(list, n) {
+    let res -> []
+    let count -> 0
+    do for item in list {
+        when count >= n {
+            res.append(item)
+        }
+        count -> count + 1
+    }
+    <- res
+}
+
+/!
+  Checks if at least one element satisfies the predicate.
+  @param list The list.
+  @param fn The predicate function.
+  @return True if any element matches, False otherwise.
+!/
+export function any(list, fn) {
+    do for item in list {
+        when fn(item) {
             <- true
         }
     }
     <- false
+}
+
+/!
+  Checks if all elements satisfy the predicate.
+  @param list The list.
+  @param fn The predicate function.
+  @return True if all elements match, False otherwise.
+!/
+export function all(list, fn) {
+    do for item in list {
+        when not fn(item) {
+            <- false
+        }
+    }
+    <- true
 }

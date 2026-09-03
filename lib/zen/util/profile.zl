@@ -230,8 +230,8 @@ export function profile_summary(profiler) {
 
     // Sort entries descending by self_time_ms (Bubble sort for dual-path compatibility)
     let n -> entry_list.length
-    do for i in 0..n {
-        do for j in 0..(n - 1) {
+    do for i in 0..-n {
+        do for j in 0..-(n - 1) {
             when entry_list[j][`self_time_ms`] < entry_list[j + 1][`self_time_ms`] {
                 let temp -> entry_list[j]
                 entry_list[j] -> entry_list[j + 1]

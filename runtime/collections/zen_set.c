@@ -45,7 +45,7 @@ ZenValue ZenSet_to_list(ZenValue set) {
     if (set.type != ZEN_SET) return ZenValue_make_nothing();
     ZenSet* s = set.as.set;
     if (!s) return ZenValue_make_nothing();
-    return s->list;
+    return ZenList_clone(s->list);
 }
 
 int ZenSet_get_count(ZenValue set) {
@@ -62,3 +62,43 @@ ZenValue ZenSet_remove_value(ZenValue set, ZenValue value) {
     ZenList_remove(s->list, value);
     return set;
 }
+
+ZenValue ZenSet_union(ZenValue a, ZenValue b) {
+    ZenValue res = ZenSet_new();
+    if (a.type == ZEN_SET && a.as.set && a.as.set->list.type == ZEN_LIST && a.as.set->list.as.list) {
+        ZenList* l = a.as.set->list.as.list;
+        for (int i = 0; i < l->count; i++) ZenSet_add_value(res, l->items[i]);
+    }
+    if (b.type == ZEN_SET && b.as.set && b.as.set->list.type == ZEN_LIST && b.as.set->list.as.list) {
+        ZenList* l = b.as.set->list.as.list;
+        for (int i = 0; i < l->count; i++) ZenSet_add_value(res, l->items[i]);
+    }
+    return res;
+}
+
+ZenValue ZenSet_intersection(ZenValue a, ZenValue b) {
+    ZenValue res = ZenSet_new();
+    if (a.type == ZEN_SET && a.as.set && a.as.set->list.type == ZEN_LIST && a.as.set->list.as.list) {
+        ZenList* l = a.as.set->list.as.list;
+        for (int i = 0; i < l->count; i++) {
+            if (ZenSet_contains_value(b, l->items[i]).as.boolean) {
+                ZenSet_add_value(res, l->items[i]);
+            }
+        }
+    }
+    return res;
+}
+
+ZenValue ZenSet_difference(ZenValue a, ZenValue b) {
+    ZenValue res = ZenSet_new();
+    if (a.type == ZEN_SET && a.as.set && a.as.set->list.type == ZEN_LIST && a.as.set->list.as.list) {
+        ZenList* l = a.as.set->list.as.list;
+        for (int i = 0; i < l->count; i++) {
+            if (!ZenSet_contains_value(b, l->items[i]).as.boolean) {
+                ZenSet_add_value(res, l->items[i]);
+            }
+        }
+    }
+    return res;
+}
+

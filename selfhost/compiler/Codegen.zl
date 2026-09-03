@@ -315,7 +315,11 @@ function is_builtin_method_name(m) {
          m == `peek` or m == `push` or m == `remove` or m == `remove_at` or m == `write` or
          m == `writeln` or m == `write_line` or m == `read` or m == `starts_with` or
          m == `ends_with` or m == `join` or m == `substring` or m == `slice` or m == `close` or
-         m == `to_number` or m == `get_stdout` or m == `get_code` or m == `wait` or m == `kill` {
+         m == `to_number` or m == `get_stdout` or m == `get_code` or m == `wait` or m == `kill` or
+         m == `reverse` or m == `unique` or m == `flatten` or m == `chunk` or m == `take` or
+         m == `drop` or m == `map` or m == `filter` or m == `reduce` or m == `each` or
+         m == `find` or m == `any` or m == `all` or m == `merge` or m == `invert` or
+         m == `union` or m == `intersection` or m == `difference` or m == `to_list` or m == `add` {
         <- true
     }
     <- false
@@ -325,8 +329,14 @@ function emit_builtin_method_default(m, obj, alist) {
     when m == `length` or m == `size` or m == `count` {
         <- `ZenValue_get_length(` + obj + `)`
     }
-    when m == `at` or m == `get` {
+    when m == `at` {
         <- `ZenValue_get_at(` + obj + `, ` + alist + `)`
+    }
+    when m == `get` {
+        when Str.contains(alist, `,`) {
+            <- `ZenValue_get(` + obj + `, ` + alist + `)`
+        }
+        <- `ZenValue_get(` + obj + `, ` + alist + `, ZenValue_make_nothing())`
     }
     when m == `set` or m == `set_at` {
         <- `ZenValue_set_at(` + obj + `, ` + alist + `)`
@@ -393,9 +403,9 @@ function emit_builtin_method_default(m, obj, alist) {
     }
     when m == `substring` or m == `slice` {
         when Str.contains(alist, `,`) {
-            <- `ZenValue_slice(` + obj + `, ` + alist + `)`
+            <- `ZenValue_slice(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL)`
         }
-        <- `ZenValue_slice(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL)`
+        <- `ZenValue_slice(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)`
     }
     when m == `close` {
         <- `ZenValue_close(` + obj + `)`
@@ -414,6 +424,66 @@ function emit_builtin_method_default(m, obj, alist) {
     }
     when m == `kill` {
         <- `ZenObject_kill((` + obj + `).as.object)`
+    }
+    when m == `reverse` {
+        <- `ZenList_reverse(` + obj + `)`
+    }
+    when m == `unique` {
+        <- `ZenList_unique(` + obj + `)`
+    }
+    when m == `flatten` {
+        <- `ZenList_flatten(` + obj + `)`
+    }
+    when m == `chunk` {
+        <- `ZenList_chunk(` + obj + `, ` + alist + `)`
+    }
+    when m == `take` {
+        <- `ZenList_take(` + obj + `, ` + alist + `)`
+    }
+    when m == `drop` {
+        <- `ZenList_drop(` + obj + `, ` + alist + `)`
+    }
+    when m == `map` {
+        <- `ZenList_map(` + obj + `, ` + alist + `)`
+    }
+    when m == `filter` {
+        <- `ZenList_filter(` + obj + `, ` + alist + `)`
+    }
+    when m == `reduce` {
+        <- `ZenList_reduce(` + obj + `, ` + alist + `)`
+    }
+    when m == `each` {
+        <- `ZenList_each(` + obj + `, ` + alist + `)`
+    }
+    when m == `find` {
+        <- `ZenList_find(` + obj + `, ` + alist + `)`
+    }
+    when m == `any` {
+        <- `ZenList_any(` + obj + `, ` + alist + `)`
+    }
+    when m == `all` {
+        <- `ZenList_all(` + obj + `, ` + alist + `)`
+    }
+    when m == `merge` {
+        <- `ZenMap_merge(` + obj + `, ` + alist + `)`
+    }
+    when m == `invert` {
+        <- `ZenMap_invert(` + obj + `)`
+    }
+    when m == `union` {
+        <- `ZenSet_union(` + obj + `, ` + alist + `)`
+    }
+    when m == `intersection` {
+        <- `ZenSet_intersection(` + obj + `, ` + alist + `)`
+    }
+    when m == `difference` {
+        <- `ZenSet_difference(` + obj + `, ` + alist + `)`
+    }
+    when m == `to_list` {
+        <- `ZenSet_to_list(` + obj + `)`
+    }
+    when m == `add` {
+        <- `ZenSet_add_value(` + obj + `, ` + alist + `)`
     }
     <- `ZEN_NOTHING_VAL`
 }
@@ -1241,6 +1311,14 @@ function emit_module_global_decl(node) {
     cg_emit(`ZenValue ` + name + `;`)
 }
 
+function type_name_of_ann(ann) {
+    when ann == Nothing { <- `` }
+    when (ann is List) and ann.length > 3 {
+        <- Str.to_string(ann[3])
+    }
+    <- Str.to_string(ann)
+}
+
 function emit_module_global_init(node) {
     let name -> c_ident(AST.let_name(node))
     when AST.let_val(node) == Nothing {
@@ -1249,6 +1327,11 @@ function emit_module_global_init(node) {
     }
     // Map/struct init emits helper statements then yields a temp.
     let init -> emit_expr(AST.let_val(node))
+    let ann -> AST.let_type(node)
+    when ann != Nothing and init == `ZEN_DEFAULT_VAL` {
+        let ty_str -> type_name_of_ann(ann)
+        init -> `ZenValue_default_for_type("` + ty_str + `")`
+    }
     cg_emit(name + ` = ` + init + `;`)
 }
 
@@ -2164,6 +2247,11 @@ function emit_stmt(node) {
         let init -> `ZEN_NOTHING_VAL`
         when AST.let_val(node) != Nothing {
             init -> emit_expr(AST.let_val(node))
+            let ann -> AST.let_type(node)
+            when ann != Nothing and init == `ZEN_DEFAULT_VAL` {
+                let ty_str -> type_name_of_ann(ann)
+                init -> `ZenValue_default_for_type("` + ty_str + `")`
+            }
         }
         let pm -> CG[`params`]
         when pm != Nothing and pm.has(name) {
@@ -2325,10 +2413,10 @@ function emit_for(node) {
     let it_node -> AST.for_iter(node)
     let body -> AST.for_body(node)
 
-    // Integer range: BinaryExpression with op .. or ..=
+    // Integer range: 4-Range Boundary System (SPEC 6.4)
     when cg_is_kind(it_node, AST.K_BINARY) {
         let op -> Str.to_string(AST.bin_op(it_node))
-        when op == `..` or op == `...` or op == `..=` or Str.contains(op, `..`) {
+        when op == `..` or op == `...` or op == `..+` or op == `..-` {
             let lo -> emit_expr(AST.bin_left(it_node))
             let hi -> emit_expr(AST.bin_right(it_node))
             let tlo -> next_temp()
@@ -2336,11 +2424,14 @@ function emit_for(node) {
             let ti -> next_temp()
             cg_emit(`ZenValue ` + tlo + ` = ` + lo + `;`)
             cg_emit(`ZenValue ` + thi + ` = ` + hi + `;`)
-            cg_emit(`long long ` + ti + `_i = (` + tlo + `).as.integer;`)
+            let start_offset -> ``
+            when op == `..` or op == `..+` {
+                start_offset -> ` + 1`
+            }
+            cg_emit(`long long ` + ti + `_i = (` + tlo + `).as.integer` + start_offset + `;`)
             cg_emit(`long long ` + ti + `_end = (` + thi + `).as.integer;`)
-            // exclusive .. by Default; inclusive if op contains =
             let cmp -> `<`
-            when op == `..=` or Str.contains(op, `=`) {
+            when op == `...` or op == `..+` {
                 cmp -> `<=`
             }
             cg_emit(`for (; ` + ti + `_i ` + cmp + ` ` + ti + `_end; ` + ti + `_i++) {`)
@@ -3112,6 +3203,24 @@ function emit_expr(node) {
         cg_emit(`ZenValue ` + t + ` = ZenValue_get_at(` + obj + `, ` + idx + `);`)
         <- t
     }
+    when cg_is_kind(node, AST.K_SLICE) {
+        let obj -> emit_expr(AST.slice_obj(node))
+        let s -> `ZEN_NOTHING_VAL`
+        when AST.slice_start(node) != Nothing {
+            s -> emit_expr(AST.slice_start(node))
+        }
+        let e -> `ZEN_NOTHING_VAL`
+        when AST.slice_end(node) != Nothing {
+            e -> emit_expr(AST.slice_end(node))
+        }
+        let stp -> `ZEN_NOTHING_VAL`
+        when AST.slice_step(node) != Nothing {
+            stp -> emit_expr(AST.slice_step(node))
+        }
+        let t -> next_temp()
+        cg_emit(`ZenValue ` + t + ` = ZenValue_slice(` + obj + `, ` + s + `, ` + e + `, ` + stp + `);`)
+        <- t
+    }
     <- `ZEN_NOTHING_VAL`
 }
 
@@ -3449,6 +3558,9 @@ function escape_rec(s, i, n, acc) {
 }
 
 function emit_binary(op, l, r) {
+    when op == `??` {
+        <- `ZenValue_coalesce(` + l + `, ` + r + `)`
+    }
     when op == `|` {
         <- `ZenValue_bitwise_or(` + l + `, ` + r + `)`
     }
@@ -3470,14 +3582,17 @@ function emit_binary(op, l, r) {
     when op == `--` {
         <- `ZenValue_op_remove(` + l + `, ` + r + `)`
     }
-    when op == `..` or op == `..-` {
-        <- `ZenValue_range(` + l + `, ` + r + `)`
-    }
-    when op == `..=` or op == `...` {
-        <- `ZenValue_range_inclusive(` + l + `, ` + r + `)`
+    when op == `..` {
+        <- `ZenValue_range_between(` + l + `, ` + r + `)`
     }
     when op == `..+` {
         <- `ZenValue_range_open_start_inclusive(` + l + `, ` + r + `)`
+    }
+    when op == `..-` {
+        <- `ZenValue_range_exclusive_end(` + l + `, ` + r + `)`
+    }
+    when op == `...` {
+        <- `ZenValue_range_inclusive(` + l + `, ` + r + `)`
     }
     when op == `+` {
         <- `ZenValue_add(` + l + `, ` + r + `)`

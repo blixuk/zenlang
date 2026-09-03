@@ -35,55 +35,134 @@ scope Map {
     }
 
     /!
-     Checks if a map has a specific key.
-     @param d The map.
-     @param k The key.
-     @return True if found, False otherwise.
-     !/
+      Checks if a map has a specific key.
+      @param d The map.
+      @param k The key.
+      @return True if found, False otherwise.
+      !/
     function has(d, k) {
-        <- __builtin_map.has(d, k)
+        <- k in d
+    }
+
+    /!
+      Merges two maps together. Keys in m2 overwrite keys in m1.
+      @param m1 First map.
+      @param m2 Second map.
+      @return New merged map.
+      !/
+    function merge(m1, m2) {
+        let res -> {}
+        do for k in keys(m1) {
+            res[k] -> m1[k]
+        }
+        do for k in keys(m2) {
+            res[k] -> m2[k]
+        }
+        <- res
+    }
+
+    /!
+      Inverts keys and values of a map.
+      @param m The map to invert.
+      @return Inverted map.
+      !/
+    function invert(m) {
+        let res -> {}
+        do for k in keys(m) {
+            res[m[k]] -> k
+        }
+        <- res
     }
 }
 
 /!
- Set utilities.
- !/
+  Set utilities.
+  !/
 scope Set {
     /!
-     Creates a set from a list of elements.
-     @param l The list.
-     @return A new set.
-     !/
+      Creates a set from a list of elements.
+      @param l The list.
+      @return A new set.
+      !/
     function from_list(l) {
         <- __builtin_set.from_list(l)
     }
 
     /!
-     Converts a set back to a list.
-     @param s The set.
-     @return A list of elements.
-     !/
+      Converts a set back to a list.
+      @param s The set.
+      @return A list of elements.
+      !/
     function to_list(s) {
         <- __builtin_set.to_list(s)
     }
 
     /!
-     Adds an element to a set.
-     @param s The set.
-     @param v The value to add.
-     !/
+      Adds an element to a set.
+      @param s The set.
+      @param v The value to add.
+      !/
     function add(s, v) {
         __builtin_set.add(s, v)
     }
 
     /!
-     Checks if a set contains a value.
-     @param s The set.
-     @param v The value.
-     @return True if found, False otherwise.
-     !/
+      Checks if a set contains a value.
+      @param s The set.
+      @param v The value.
+      @return True if found, False otherwise.
+      !/
     function has(s, v) {
-        <- __builtin_set.has(s, v)
+        <- v in s
+    }
+
+    /!
+      Computes the union of two sets.
+      @param s1 First set.
+      @param s2 Second set.
+      @return New set containing elements from both sets.
+      !/
+    function union(s1, s2) {
+        let l1 -> to_list(s1)
+        let l2 -> to_list(s2)
+        let combined -> []
+        do for x in l1 { combined.append(x) }
+        do for x in l2 { combined.append(x) }
+        <- from_list(combined)
+    }
+
+    /!
+      Computes the intersection of two sets.
+      @param s1 First set.
+      @param s2 Second set.
+      @return New set containing elements present in both sets.
+      !/
+    function intersection(s1, s2) {
+        let l1 -> to_list(s1)
+        let common -> []
+        do for x in l1 {
+            when has(s2, x) {
+                common.append(x)
+            }
+        }
+        <- from_list(common)
+    }
+
+    /!
+      Computes the relative difference of two sets (s1 \ s2).
+      @param s1 First set.
+      @param s2 Second set.
+      @return New set containing elements in s1 but not in s2.
+      !/
+    function difference(s1, s2) {
+        let l1 -> to_list(s1)
+        let diff -> []
+        do for x in l1 {
+            when not has(s2, x) {
+                diff.append(x)
+            }
+        }
+        <- from_list(diff)
     }
 }
 /!

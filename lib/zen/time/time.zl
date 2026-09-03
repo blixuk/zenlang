@@ -94,3 +94,233 @@ class Timer {
         self._running -> False
     }
 }
+
+import zen.text.string as Str
+
+/!
+ Creates a Duration from seconds.
+ @param s Number of seconds.
+ @return Duration instance.
+ !/
+function duration(s) {
+    <- Duration { seconds -> s }
+}
+
+/!
+ Creates a Duration from seconds.
+ @param s Number of seconds.
+ @return Duration instance.
+ !/
+function seconds(s) {
+    <- Duration { seconds -> s }
+}
+
+/!
+ Creates a Duration from milliseconds.
+ @param m Number of milliseconds.
+ @return Duration instance.
+ !/
+function milliseconds(m) {
+    <- Duration { seconds -> m / 1000.0 }
+}
+
+function ms(m) {
+    <- milliseconds(m)
+}
+
+/!
+ Creates a Duration from minutes.
+ @param m Number of minutes.
+ @return Duration instance.
+ !/
+function minutes(m) {
+    <- Duration { seconds -> m * 60.0 }
+}
+
+function mins(m) {
+    <- minutes(m)
+}
+
+/!
+ Creates a Duration from hours.
+ @param h Number of hours.
+ @return Duration instance.
+ !/
+function hours(h) {
+    <- Duration { seconds -> h * 3600.0 }
+}
+
+function hrs(h) {
+    <- hours(h)
+}
+
+/!
+ Creates a Duration from days.
+ @param d Number of days.
+ @return Duration instance.
+ !/
+function days(d) {
+    <- Duration { seconds -> d * 86400.0 }
+}
+
+/!
+ Adds two Duration values.
+ @param d1 First Duration.
+ @param d2 Second Duration.
+ @return Combined Duration.
+ !/
+function duration_add(d1, d2) {
+    <- Duration { seconds -> d1.seconds + d2.seconds }
+}
+
+/!
+ Subtracts d2 from d1.
+ @param d1 First Duration.
+ @param d2 Second Duration.
+ @return Difference Duration.
+ !/
+function duration_sub(d1, d2) {
+    <- Duration { seconds -> d1.seconds - d2.seconds }
+}
+
+/!
+ Multiplies a Duration by a numeric factor.
+ @param d Duration.
+ @param factor Number.
+ @return Scaled Duration.
+ !/
+function duration_mul(d, factor) {
+    <- Duration { seconds -> d.seconds * factor }
+}
+
+/!
+ Converts a Duration to total milliseconds.
+ @param d Duration.
+ @return Milliseconds as Decimal.
+ !/
+function duration_to_ms(d) {
+    <- d.seconds * 1000.0
+}
+
+/!
+ Formats a Duration into a human-readable string.
+ @param d Duration.
+ @return Formatted string.
+ !/
+function duration_to_string(d) {
+    let s -> d.seconds
+    when s < 1.0 {
+        <- Str.to_string(Integer(s * 1000.0)) + `ms`
+    }
+    when s < 60.0 {
+        <- Str.to_string(s) + `s`
+    }
+    let m -> Integer(s / 60.0)
+    let rem_s -> Integer(s) % 60
+    when rem_s == 0 {
+        <- Str.to_string(m) + `m`
+    }
+    <- Str.to_string(m) + `m ` + Str.to_string(rem_s) + `s`
+}
+
+function _pad2(n) {
+    let s -> Str.to_string(n)
+    when Str.length(s) < 2 {
+        <- `0` + s
+    }
+    <- s
+}
+
+/!
+ Converts a Unix epoch timestamp into a Date map { year, month, day, hour, minute, second }.
+ !/
+function to_utc(ts) {
+    let total_secs -> Integer(ts)
+    let rem_secs -> total_secs % 86400
+    when rem_secs < 0 { rem_secs -> rem_secs + 86400 }
+
+    let sec -> rem_secs % 60
+    let rem_mins -> Integer(rem_secs / 60)
+    let min -> rem_mins % 60
+    let hour -> Integer(rem_mins / 60)
+
+    let days -> Integer(total_secs / 86400)
+    let z -> days + 719468
+    let era -> 0
+    when z >= 0 {
+        era -> Integer(z / 146097)
+    } or {
+        era -> Integer((z - 146096) / 146097)
+    }
+    let doe -> z - (era * 146097)
+    let yoe -> Integer((doe - Integer(doe / 1460) + Integer(doe / 36524) - Integer(doe / 146096)) / 365)
+    let y -> yoe + (era * 400)
+    let doy -> doe - ((365 * yoe) + Integer(yoe / 4) - Integer(yoe / 100))
+    let mp -> Integer(((5 * doy) + 2) / 153)
+    let d -> doy - Integer(((153 * mp) + 2) / 5) + 1
+    let m -> 0
+    when mp < 10 {
+        m -> mp + 3
+    } or {
+        m -> mp - 9
+    }
+    when m <= 2 {
+        y -> y + 1
+    }
+    <- {
+        `year` -> y,
+        `month` -> m,
+        `day` -> d,
+        `hour` -> hour,
+        `minute` -> min,
+        `second` -> sec
+    }
+}
+
+/!
+ Formats a Unix timestamp into ISO-8601 string: `YYYY-MM-DDTHH:MM:SSZ`.
+ @param ts Timestamp in seconds.
+ @return Formatted ISO-8601 string.
+ !/
+function format_iso(ts) {
+    let dt -> to_utc(ts)
+    <- Str.to_string(dt[`year`]) + `-` + _pad2(dt[`month`]) + `-` + _pad2(dt[`day`]) + `T` +
+       _pad2(dt[`hour`]) + `:` + _pad2(dt[`minute`]) + `:` + _pad2(dt[`second`]) + `Z`
+}
+
+/!
+ Formats a Unix timestamp into a date string: `YYYY-MM-DD`.
+ @param ts Timestamp in seconds.
+ @return Formatted date string.
+ !/
+function format_date(ts) {
+    let dt -> to_utc(ts)
+    <- Str.to_string(dt[`year`]) + `-` + _pad2(dt[`month`]) + `-` + _pad2(dt[`day`])
+}
+
+/!
+ Formats a Unix timestamp into a time string: `HH:MM:SS`.
+ @param ts Timestamp in seconds.
+ @return Formatted time string.
+ !/
+function format_time(ts) {
+    let dt -> to_utc(ts)
+    <- _pad2(dt[`hour`]) + `:` + _pad2(dt[`minute`]) + `:` + _pad2(dt[`second`])
+}
+
+/!
+ Measures the execution time of a callable function.
+ @param fn Callable function.
+ @return Map containing result, seconds, and ms.
+ !/
+function measure(fn) {
+    let t0 -> monotonic()
+    let res -> fn()
+    let t1 -> monotonic()
+    let elapsed_sec -> t1 - t0
+    <- {
+        `result` -> res,
+        `seconds` -> elapsed_sec,
+        `ms` -> elapsed_sec * 1000.0
+    }
+}

@@ -135,14 +135,15 @@ export enumerator TokenType {
     GREATER_THAN_OR_EQUAL -> `GREATER_THAN_OR_EQUAL`,
     LESS_THAN_OR_EQUAL -> `LESS_THAN_OR_EQUAL`,
 
-    // Ranges / rest
+    // 4-Range Boundary System (SPEC 6.4)
     RANGE -> `RANGE`,
-    RANGE_INCLUSIVE -> `RANGE_INCLUSIVE`,
     RANGE_INCL_END -> `RANGE_INCL_END`,
     RANGE_EXCL_END -> `RANGE_EXCL_END`,
     RANGE_FULL_INCL -> `RANGE_FULL_INCL`,
     YIELD_ARROW -> `YIELD_ARROW`,
     ELLIPSIS -> `ELLIPSIS`,
+    COALESCE -> `COALESCE`,
+    PIPELINE -> `PIPELINE`,
 
 
     // Module / OOP words (also may appear as KEYWORD)
@@ -361,7 +362,6 @@ export function kind_id(kind) {
     when s == `GREATER_THAN_OR_EQUAL` { <- 97 }
     when s == `LESS_THAN_OR_EQUAL` { <- 98 }
     when s == `RANGE` { <- 99 }
-    when s == `RANGE_INCLUSIVE` { <- 100 }
     when s == `ELLIPSIS` { <- 101 }
     when s == `SCOPE` { <- 102 }
     when s == `EXPORT` { <- 103 }
@@ -383,6 +383,8 @@ export function kind_id(kind) {
     when s == `YIELD_ARROW` { <- 119 }
     when s == `BYTE` { <- 120 }
     when s == `BYTES` { <- 121 }
+    when s == `COALESCE` { <- 122 }
+    when s == `PIPELINE` { <- 123 }
     // Already an integer id (native TokenType.X emit).
     when Str.contains(`0123456789`, Str.at(s, 0)) {
         <- kind

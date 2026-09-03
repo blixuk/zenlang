@@ -1,17 +1,17 @@
 /!
- Path manipulation module.
- Provides functions for interacting with Unix-style file paths.
- !/
+  Path manipulation module for Zenlang.
+  Provides Unix-style path manipulation, segment resolution, and normalization.
+!/
 
 import zen.text.string as Str
 
 /!
- Joins two or more path components using the system separator (/).
- @param p1 The first path component.
- @param p2 The second path component.
- @return The joined path string.
- !/
-function join(p1, p2) {
+  Joins two or more path components using the system separator (/).
+  @param p1 The first path component.
+  @param p2 The second path component.
+  @return The joined path string.
+!/
+export function join(p1, p2) {
     when p1 == `` { <- p2 }
     when p2 == `` { <- p1 }
 
@@ -28,16 +28,15 @@ function join(p1, p2) {
 }
 
 /!
- Returns the final component of a path.
- @param p The path string.
- @return The basename of the path.
- !/
-function basename(p) {
+  Returns the final component of a path.
+  @param p The path string.
+  @return The basename of the path.
+!/
+export function basename(p) {
     when p == `` { <- `.` }
     when p == `/` { <- `/` }
 
     let parts -> Str.split(p, `/`)
-    // parts is a List — use .length (Str.length is for strings; native returns 0/Nothing on lists)
     let n -> parts.length
 
     // Handle trailing slash
@@ -51,16 +50,16 @@ function basename(p) {
     <- parts[n - 1]
 }
 
-function base_name(p) {
+export function base_name(p) {
     <- basename(p)
 }
 
 /!
- Returns the parent directory of a path.
- @param p The path string.
- @return The directory name.
- !/
-function dirname(p) {
+  Returns the parent directory of a path.
+  @param p The path string.
+  @return The directory name.
+!/
+export function dirname(p) {
     when p == `` or p == `.` { <- `.` }
     when p == `/` { <- `/` }
 
@@ -96,60 +95,82 @@ function dirname(p) {
     <- result
 }
 
-function dir_name(p) {
+export function dir_name(p) {
     <- dirname(p)
 }
 
 /!
- Checks if a path is absolute (starts with /).
- @param p The path string.
- @return True if absolute, False otherwise.
- !/
-function is_absolute(p) {
+  Checks if a path is absolute (starts with /).
+  @param p The path string.
+  @return True if absolute, False otherwise.
+!/
+export function is_absolute(p) {
     <- Str.starts_with(p, `/`)
 }
 
 /!
- Returns the extension of a path (including the leading dot).
- @param p The path string.
- @return The extension, or empty string if none.
- !/
-function extname(p) {
+  Checks if a path is relative (does not start with /).
+  @param p The path string.
+  @return True if relative, False otherwise.
+!/
+export function is_relative(p) {
+    <- not is_absolute(p)
+}
+
+/!
+  Returns the extension of a path (including the leading dot).
+  @param p The path string.
+  @return The extension, or empty string if none.
+!/
+export function extname(p) {
     when p == `` or p == `.` {
         <- ``
     }
-    let base -> p
-    when Str.contains(p, `/`) {
-        let parts -> Str.split(p, `/`)
-        let pn -> parts.length
-        when pn > 0 {
-            when parts[pn - 1] == `` and pn > 1 {
-                base -> parts[pn - 2]
-            } or {
-                base -> parts[pn - 1]
-            }
-        }
-    }
-    let dot_idx -> Str.index_of(base, `.`)
-    when dot_idx == -1 {
+    let base -> basename(p)
+    let dot_idx -> Str.last_index_of(base, `.`)
+    when dot_idx <= 0 {
         <- ``
     }
-
-    // Find LAST dot
-    let last_dot -> dot_idx
-    let search_from -> last_dot + 1
-    do while search_from < Str.length(base) {
-        let next_dot -> Str.index_of(Str.substring(base, search_from, Str.length(base)), `.`)
-        when next_dot == -1 {
-            break
-        }
-        last_dot -> search_from + next_dot
-        search_from -> last_dot + 1
-    }
-
-    <- Str.substring(base, last_dot, Str.length(base))
+    <- Str.substring(base, dot_idx, Str.length(base))
 }
 
-function extension(p) {
+export function extension(p) {
     <- extname(p)
+}
+
+export function ext(p) {
+    <- extname(p)
+}
+
+/!
+  Normalizes a path, resolving '.' and '..' segments.
+  @param p The path string.
+  @return The normalized path.
+!/
+export function normalize(p) {
+    when p == `` { <- `.` }
+    let is_abs -> is_absolute(p)
+    let raw_parts -> Str.split(p, `/`)
+    let stack -> []
+    do for part in raw_parts {
+        when part == `` or part == `.` {
+            // skip empty segment or current directory
+        } or when part == `..` {
+            when stack.length > 0 and stack[stack.length - 1] != `..` {
+                stack.pop()
+            } or when not is_abs {
+                stack.append(`..`)
+            }
+        } or {
+            stack.append(part)
+        }
+    }
+    let joined -> Str.join(stack, `/`)
+    when is_abs {
+        <- `/` + joined
+    }
+    when joined == `` {
+        <- `.`
+    }
+    <- joined
 }

@@ -57,11 +57,66 @@ function test_request_post_shape() {
     <- pass
 }
 
+function test_http_status_predicates_and_text() {
+    let pass -> test.assert_true(http.is_success({`status` -> 200}), `200 is success`)
+    pass -> pass and test.assert_true(http.is_success({`status` -> 204}), `204 is success`)
+    pass -> pass and test.assert_false(http.is_success({`status` -> 404}), `404 not success`)
+
+    pass -> pass and test.assert_true(http.is_redirect({`status` -> 301}), `301 is redirect`)
+    pass -> pass and test.assert_true(http.is_redirect({`status` -> 302}), `302 is redirect`)
+    pass -> pass and test.assert_false(http.is_redirect({`status` -> 200}), `200 not redirect`)
+
+    pass -> pass and test.assert_true(http.is_client_error({`status` -> 400}), `400 is client error`)
+    pass -> pass and test.assert_true(http.is_client_error({`status` -> 404}), `404 is client error`)
+    pass -> pass and test.assert_false(http.is_client_error({`status` -> 500}), `500 not client error`)
+
+    pass -> pass and test.assert_true(http.is_server_error({`status` -> 500}), `500 is server error`)
+    pass -> pass and test.assert_true(http.is_server_error({`status` -> 503}), `503 is server error`)
+    pass -> pass and test.assert_false(http.is_server_error({`status` -> 404}), `404 not server error`)
+
+    pass -> pass and test.assert_equal(http.status_text(200), `OK`, `status_text 200`)
+    pass -> pass and test.assert_equal(http.status_text(404), `Not Found`, `status_text 404`)
+    pass -> pass and test.assert_equal(http.status_text(500), `Internal Server Error`, `status_text 500`)
+    pass -> pass and test.assert_equal(http.status_text({`status` -> 201}), `Created`, `status_text map 201`)
+    <- pass
+}
+
+function test_http_auth_and_json_helpers() {
+    let b_auth -> http.bearer_auth(`my_secret_token_123`)
+    let pass -> test.assert_equal(b_auth[`Authorization`], `Bearer my_secret_token_123`, `bearer_auth header`)
+
+    let basic -> http.basic_auth(`admin`, `secret`)
+    pass -> pass and test.assert_true(Str.starts_with(basic[`Authorization`], `Basic `), `basic_auth header starts with Basic`)
+
+    // JSON response parsing
+    let mock_resp -> {
+        `status` -> 200,
+        `body` -> `{"user":"alice","id":42,"active":true}`,
+        `headers` -> { `Content-Type` -> `application/json`, `X-Custom-ID` -> `abc999` }
+    }
+    let data -> http.json_body(mock_resp)
+    pass -> pass and test.assert_true(data != Nothing, `json_body non-nothing`)
+    pass -> pass and test.assert_equal(data[`user`], `alice`, `json user`)
+    pass -> pass and test.assert_equal(data[`id`], 42, `json id`)
+    pass -> pass and test.assert_equal(data[`active`], true, `json active`)
+
+    // Case-insensitive header lookup
+    let h1 -> http.header(mock_resp, `content-type`, ``)
+    pass -> pass and test.assert_equal(h1, `application/json`, `header case-insensitive content-type`)
+    let h2 -> http.header(mock_resp, `X-CUSTOM-ID`, ``)
+    pass -> pass and test.assert_equal(h2, `abc999`, `header case-insensitive custom`)
+    let h3 -> http.header(mock_resp, `missing-hdr`, `default_val`)
+    pass -> pass and test.assert_equal(h3, `default_val`, `header default fallback`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Http.file_url`, `fn` -> test_helpers_and_file_url},
         {`name` -> `Http.error_shape`, `fn` -> test_connection_error_shape},
-        {`name` -> `Http.post_shape`, `fn` -> test_request_post_shape}
+        {`name` -> `Http.post_shape`, `fn` -> test_request_post_shape},
+        {`name` -> `Http.status_predicates`, `fn` -> test_http_status_predicates_and_text},
+        {`name` -> `Http.auth_and_json`, `fn` -> test_http_auth_and_json_helpers}
     ]
     <- test.run_suite(`HTTP Library`, tests)
 }

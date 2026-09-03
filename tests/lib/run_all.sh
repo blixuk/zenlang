@@ -50,6 +50,8 @@ TEST_FILES=(
   tests/lib/test_zencode.zl
   tests/lib/test_zenmark.zl
   tests/lib/test_pdf.zl
+  tests/lib/test_http.zl
+  tests/lib/test_url.zl
 )
 
 echo "===================================="

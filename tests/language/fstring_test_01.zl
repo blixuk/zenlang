@@ -1,0 +1,37 @@
+import zen.test as test
+
+function test_fstring_simple() {
+    let name -> `Bob`
+    let age -> 25
+    let s -> f`Hello {name}, age is {age}!`
+    let pass -> test.assert_equal(s, `Hello Bob, age is 25!`, `simple fstring`)
+
+    let math_str -> f`2 + 2 = {2 + 2}`
+    pass -> pass and test.assert_equal(math_str, `2 + 2 = 4`, `fstring with expression`)
+
+    let escaped -> f`Escaped {{braces}} and val {name}`
+    pass -> pass and test.assert_equal(escaped, `Escaped {braces} and val Bob`, `escaped braces`)
+
+    let only_expr -> f`{100}`
+    pass -> pass and test.assert_equal(only_expr, `100`, `fstring with only expression`)
+
+    let empty -> f``
+    pass -> pass and test.assert_equal(empty, ``, `empty fstring`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `FString.simple`, `fn` -> test_fstring_simple}
+    ]
+    <- test.run_suite(`Formatted String Suite`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -30,4 +30,20 @@ class ExpressionHandler(
 
     def expression(self, allow_instantiation: bool = True) -> ASTNode:
         self.logger.debug("expression")
-        return self.conditional(allow_instantiation=allow_instantiation)
+        return self.pipeline(allow_instantiation=allow_instantiation)
+
+    def pipeline(self, allow_instantiation: bool = True) -> ASTNode:
+        from Lexer.Token import TokenType
+        from Parser.AST import CallExpression
+        node: ASTNode = self.conditional(allow_instantiation=allow_instantiation)
+        while self.token_handler.match_type(TokenType.PIPELINE):
+            op_tok = self.token_handler.previous()
+            right = self.call(allow_instantiation=allow_instantiation)
+            if isinstance(right, CallExpression):
+                right.arguments.insert(0, node)
+                node = right
+            else:
+                line = getattr(right, "line", getattr(op_tok, "line", 0))
+                col = getattr(right, "column", getattr(op_tok, "column", 0))
+                node = CallExpression(line, col, self.scope_manager.get_scope_level("global"), right, [node])
+        return node

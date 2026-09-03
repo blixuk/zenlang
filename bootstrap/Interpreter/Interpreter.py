@@ -122,6 +122,7 @@ class Interpreter(
             "StructureExpression": self._evaluate_structure_expression,
             "MemberExpression": self._evaluate_member_expression,
             "IndexExpression": self._evaluate_index_expression,
+            "SliceExpression": self._evaluate_slice_expression,
             "ParentExpression": self._evaluate_parent_expression,
             "InExpression": self._evaluate_in_expression,
             "IsExpression": self._evaluate_is_expression,

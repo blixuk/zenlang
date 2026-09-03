@@ -7,6 +7,7 @@ from Parser.AST import (
     StructureExpression,
     MemberExpression,
     IndexExpression,
+    SliceExpression,
     ParentExpression,
     InExpression,
     IsExpression,
@@ -348,6 +349,10 @@ class ExpressionHandler:
                 ]
             elif member_name == "get":
                 return lambda k, default=None: object.get(k, default)
+            elif member_name == "merge":
+                return lambda other: {**object, **(other if isinstance(other, dict) else {})}
+            elif member_name == "invert":
+                return lambda: {v: k for k, v in object.items()}
             elif member_name == "remove":
                 def _remove(k):
                     if k in object:
@@ -367,6 +372,14 @@ class ExpressionHandler:
                 return object.add
             elif member_name == "remove":
                 return object.remove
+            elif member_name == "to_list":
+                return lambda: list(object)
+            elif member_name == "union":
+                return lambda other: object.union(other if isinstance(other, set) else set(other))
+            elif member_name == "intersection":
+                return lambda other: object.intersection(other if isinstance(other, set) else set(other))
+            elif member_name == "difference":
+                return lambda other: object.difference(other if isinstance(other, set) else set(other))
 
         # --- 3. Collection Length Properties ---
         if isinstance(object, (list, set, dict, str, tuple, bytearray)) and member_name in ["size", "length", "count", "len"]:
@@ -391,6 +404,67 @@ class ExpressionHandler:
                 return lambda start, end=None: object[start:end] if end is not None else object[start:]
             elif member_name == "count":
                 return lambda: len(object)
+            elif member_name == "reverse" and isinstance(object, list):
+                return lambda: list(reversed(object))
+            elif member_name == "unique" and isinstance(object, list):
+                return lambda: list(dict.fromkeys(object))
+            elif member_name == "flatten" and isinstance(object, list):
+                return lambda: [item for sub in object for item in (sub if isinstance(sub, list) else [sub])]
+            elif member_name == "chunk" and isinstance(object, list):
+                return lambda size: [object[i:i + (size if size > 0 else 1)] for i in range(0, len(object), (size if size > 0 else 1))]
+            elif member_name == "take" and isinstance(object, list):
+                return lambda n: object[:max(0, n)]
+            elif member_name == "drop" and isinstance(object, list):
+                return lambda n: object[max(0, n):]
+            elif member_name == "contains" and isinstance(object, list):
+                return lambda val: val in object
+            elif member_name == "join" and isinstance(object, list):
+                return lambda sep="": str(sep).join(str(x) for x in object)
+            elif member_name == "map" and isinstance(object, list):
+                def _map(fn):
+                    return [self._call_function(fn, [x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(x) for x in object]
+                return _map
+            elif member_name == "filter" and isinstance(object, list):
+                def _filter(fn):
+                    return [x for x in object if (self._call_function(fn, [x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(x))]
+                return _filter
+            elif member_name == "reduce" and isinstance(object, list):
+                def _reduce(initial, fn):
+                    acc = initial
+                    for x in object:
+                        acc = self._call_function(fn, [acc, x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(acc, x)
+                    return acc
+                return _reduce
+            elif member_name == "each" and isinstance(object, list):
+                def _each(fn):
+                    for x in object:
+                        if isinstance(fn, (FunctionObject, BuiltinCapability)):
+                            self._call_function(fn, [x])
+                        else:
+                            fn(x)
+                    return None
+                return _each
+            elif member_name == "find" and isinstance(object, list):
+                def _find(fn):
+                    for x in object:
+                        if (self._call_function(fn, [x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(x)):
+                            return x
+                    return None
+                return _find
+            elif member_name == "any" and isinstance(object, list):
+                def _any(fn):
+                    for x in object:
+                        if (self._call_function(fn, [x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(x)):
+                            return True
+                    return False
+                return _any
+            elif member_name == "all" and isinstance(object, list):
+                def _all(fn):
+                    for x in object:
+                        if not (self._call_function(fn, [x]) if isinstance(fn, (FunctionObject, BuiltinCapability)) else fn(x)):
+                            return False
+                    return True
+                return _all
 
         if isinstance(object, str):
             if member_name == "substring":
@@ -522,18 +596,33 @@ class ExpressionHandler:
              pass
 
         if isinstance(object_val, (list, tuple, bytearray, str)):
-            if index_val < 0 or index_val >= len(object_val):
+            actual_idx = index_val
+            if actual_idx < 0:
+                actual_idx += len(object_val)
+            if actual_idx < 0 or actual_idx >= len(object_val):
                  if getattr(self, "debugging", False):
                      print(f"DEBUG INTERPRETER INDEX OUT OF BOUNDS: object_val type={type(object_val)}, len={len(object_val)}, index_val={index_val}")
                  if isinstance(object_val, str):
                      print(f"  String value preview: {object_val[:200]!r}")
                  raise RuntimeError(f"Index out of bounds: {index_val}")
-            return object_val[index_val]
+            return object_val[actual_idx]
         
         if isinstance(object_val, dict):
              if index_val not in object_val:
                   raise RuntimeError(f"Key error: {index_val}")
              return object_val[index_val]
+
+    def _evaluate_slice_expression(
+        self, node: SliceExpression, environment: Environment
+    ) -> any:
+        object_val = self._evaluate(node.object, environment)
+        start_val = self._evaluate(node.start, environment) if node.start is not None else None
+        end_val = self._evaluate(node.end, environment) if node.end is not None else None
+        step_val = self._evaluate(node.step, environment) if node.step is not None else None
+
+        if isinstance(object_val, (list, tuple, str, bytearray)):
+            return object_val[slice(start_val, end_val, step_val)]
+        raise RuntimeError(f"Cannot slice object of type {type(object_val)}")
 
         if isinstance(object_val, BaseObject) and isinstance(index_val, str):
             try:
@@ -750,6 +839,10 @@ class ExpressionHandler:
             target_type = getattr(node.right, "name", str(node.right))
             return self._eval_cast(left, target_type)
 
+        if op_str == "??":
+            if left is not None: return left
+            return self._evaluate(node.right, environment)
+
         # Short-circuiting for logical AND / OR
         if op_str == "and":
             if not bool(left): return False
@@ -906,15 +999,15 @@ class ExpressionHandler:
         if operation == "!^":
             return ~(left ^ right)
 
-        if operation in ("..", "..=", "..+", "..-", "..."):
+        if operation in ("..", "..+", "..-", "..."):
             def _range_ints(a: int, b: int, op: str):
                 if a <= b:
-                    start = a + 1 if op == "..+" else a
-                    end = b + 1 if op in ("..=", "..+", "...") else b
+                    start = a + 1 if op in ("..", "..+") else a
+                    end = b + 1 if op in ("..+", "...") else b
                     return list(range(start, end))
                 # descending
-                start = a - 1 if op == "..+" else a
-                end = b - 1 if op in ("..=", "..+", "...") else b
+                start = a - 1 if op in ("..", "..+") else a
+                end = b - 1 if op in ("..+", "...") else b
                 return list(range(start, end, -1))
 
             # Integer ranges → List[Integer]

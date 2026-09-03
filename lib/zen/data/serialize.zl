@@ -13,15 +13,15 @@ import zen.io.file as file
 function serialize(obj) {
     let k -> obj.kind
 
-    when k == "String" or k == "Integer" or k == "Decimal" or k == "Boolean" or k == "Nothing" {
+    when k == `String` or k == `Integer` or k == `Decimal` or k == `Boolean` or k == `Nothing` {
         <- obj
-    } or when k == "List" or k == "Tuple" {
+    } or when k == `List` or k == `Tuple` {
         let res -> []
         do for item in obj {
             res.append(serialize(item))
         }
         <- res
-    } or when k == "Map" {
+    } or when k == `Map` {
         // Treat maps with an explicit kind field as typed records
         when obj.has(`kind`) and obj[`kind`] != `Map` {
             let type_name -> obj[`kind`]
@@ -45,7 +45,7 @@ function serialize(obj) {
         let type_name -> k
         let data -> {}
         let members -> obj.members
-        when members.kind == "List" {
+        when members.kind == `List` {
             do for m in members {
                 data[m] -> serialize(obj[m])
             }
@@ -69,13 +69,13 @@ function serialize(obj) {
 function deserialize(data) {
     let k -> data.kind
 
-    when k == "List" {
+    when k == `List` {
         let res -> []
         do for item in data {
             res.append(deserialize(item))
         }
         <- res
-    } or when k == "Map" {
+    } or when k == `Map` {
         when data.has(`__type__`) {
             let type_name -> data[`__type__`]
             let raw -> data[`__data__`]

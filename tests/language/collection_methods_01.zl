@@ -1,0 +1,113 @@
+import zen.test as test
+
+function double_num(x) {
+    <- x * 2
+}
+
+function is_even(x) {
+    <- x % 2 == 0
+}
+
+function add_nums(a, b) {
+    <- a + b
+}
+
+function is_gt_two(x) {
+    <- x > 2
+}
+
+function is_positive(x) {
+    <- x > 0
+}
+
+function test_list_transformation_methods() {
+    let l -> [1, 2, 3, 4, 5]
+
+    let pass -> test.assert_equal(l.reverse(), [5, 4, 3, 2, 1], `List.reverse`)
+    pass -> pass and test.assert_equal([1, 2, 2, 3, 1, 4].unique(), [1, 2, 3, 4], `List.unique`)
+    pass -> pass and test.assert_equal([[1, 2], [3, 4], 5].flatten(), [1, 2, 3, 4, 5], `List.flatten`)
+    pass -> pass and test.assert_equal(l.take(3), [1, 2, 3], `List.take`)
+    pass -> pass and test.assert_equal(l.drop(2), [3, 4, 5], `List.drop`)
+    pass -> pass and test.assert_equal([1, 2, 3].chunk(2), [[1, 2], [3]], `List.chunk`)
+    pass -> pass and test.assert_true(l.contains(3), `List.contains true`)
+    pass -> pass and test.assert_false(l.contains(99), `List.contains false`)
+    pass -> pass and test.assert_equal([1, 2, 3].join(`-`), `1-2-3`, `List.join`)
+
+    <- pass
+}
+
+function test_list_hof_methods() {
+    let l -> [1, 2, 3, 4]
+
+    let pass -> test.assert_equal(l.map(double_num), [2, 4, 6, 8], `List.map`)
+    pass -> pass and test.assert_equal(l.filter(is_even), [2, 4], `List.filter`)
+    pass -> pass and test.assert_equal(l.reduce(0, add_nums), 10, `List.reduce`)
+    pass -> pass and test.assert_equal(l.find(is_gt_two), 3, `List.find`)
+    pass -> pass and test.assert_true(l.any(is_even), `List.any true`)
+    pass -> pass and test.assert_false([1, 3, 5].any(is_even), `List.any false`)
+    pass -> pass and test.assert_true(l.all(is_positive), `List.all true`)
+    pass -> pass and test.assert_false([1, 2, -1].all(is_positive), `List.all false`)
+
+    <- pass
+}
+
+function test_map_methods() {
+    let m -> {`a` -> 1, `b` -> 2}
+
+    let pass -> test.assert_equal(m.keys().length, 2, `Map.keys length`)
+    pass -> pass and test.assert_equal(m.values().length, 2, `Map.values length`)
+    pass -> pass and test.assert_true(m.has(`a`), `Map.has existing key`)
+    pass -> pass and test.assert_false(m.has(`c`), `Map.has missing key`)
+    pass -> pass and test.assert_equal(m.get(`a`, 99), 1, `Map.get existing key`)
+    pass -> pass and test.assert_equal(m.get(`c`, 99), 99, `Map.get default fallback`)
+
+    let merged -> m.merge({`c` -> 3})
+    pass -> pass and test.assert_equal(merged.keys().length, 3, `Map.merge length`)
+    pass -> pass and test.assert_equal(merged[`c`], 3, `Map.merge value`)
+
+    let inverted -> {`zen` -> `lang`}.invert()
+    pass -> pass and test.assert_equal(inverted[`lang`], `zen`, `Map.invert`)
+
+    <- pass
+}
+
+function test_set_methods() {
+    let s1 -> Set([1, 2, 3])
+    let s2 -> Set([3, 4, 5])
+
+    let pass -> test.assert_equal(s1.to_list().length, 3, `Set.to_list length`)
+    pass -> pass and test.assert_true(s1.has(2), `Set.has true`)
+    pass -> pass and test.assert_false(s1.has(99), `Set.has false`)
+
+    let u -> s1.union(s2)
+    pass -> pass and test.assert_equal(u.to_list().length, 5, `Set.union length`)
+
+    let inter -> s1.intersection(s2)
+    pass -> pass and test.assert_equal(inter.to_list().length, 1, `Set.intersection length`)
+    pass -> pass and test.assert_true(inter.has(3), `Set.intersection element`)
+
+    let diff -> s1.difference(s2)
+    pass -> pass and test.assert_equal(diff.to_list().length, 2, `Set.difference length`)
+    pass -> pass and test.assert_true(diff.has(1) and diff.has(2), `Set.difference elements`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `CollectionMethods.ListTransformations`, `fn` -> test_list_transformation_methods},
+        {`name` -> `CollectionMethods.ListHOF`, `fn` -> test_list_hof_methods},
+        {`name` -> `CollectionMethods.Map`, `fn` -> test_map_methods},
+        {`name` -> `CollectionMethods.Set`, `fn` -> test_set_methods}
+    ]
+
+    <- test.run_suite(`Native Collection Member Methods Suite`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -103,6 +103,12 @@ class ExpressionHandler:
                 tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
                 self._emit(Call(target=tmp, callee="ZenValue_cast", args=[left, f'"{target_type}"'], region=current_reg), node)
                 return tmp
+            if op == "??":
+                left = self._visit_expression(node.left, target_region=target_region)
+                right = self._visit_expression(node.right, target_region=target_region)
+                tmp = self._alloc_temp(self.new_label("tmp_coalesce"), node, region=current_reg)
+                self._emit(Call(target=tmp, callee="ZenValue_coalesce", args=[left, right], region=current_reg), node)
+                return tmp
             left = self._visit_expression(node.left, target_region=target_region)
             right = self._visit_expression(node.right, target_region=target_region)
             res_type = getattr(node, "resolved_type", None)
@@ -435,6 +441,16 @@ class ExpressionHandler:
             index = self._visit_expression(node.index, target_region=target_region)
             tmp = self._alloc_temp(self.new_label("tmp_idx"), node, region=current_reg)
             self._emit(Call(target=tmp, callee="Value_get_index", args=[obj, index], region=current_reg), node)
+            return tmp
+        elif isinstance(node, SliceExpression):
+            obj = self._visit_expression(node.object, target_region=target_region)
+            line = getattr(node, "line", 1)
+            col = getattr(node, "column", 1)
+            start = self._visit_expression(node.start, target_region=target_region) if node.start is not None else self._visit_expression(NothingLiteral(line, col), target_region=target_region)
+            end = self._visit_expression(node.end, target_region=target_region) if node.end is not None else self._visit_expression(NothingLiteral(line, col), target_region=target_region)
+            step = self._visit_expression(node.step, target_region=target_region) if node.step is not None else self._visit_expression(NothingLiteral(line, col), target_region=target_region)
+            tmp = self._alloc_temp(self.new_label("tmp_slice"), node, region=current_reg)
+            self._emit(Call(target=tmp, callee="ZenValue_slice", args=[obj, start, end, step], region=current_reg), node)
             return tmp
         elif isinstance(node, (BlockExpression, BlockStatement)):
             sym = None

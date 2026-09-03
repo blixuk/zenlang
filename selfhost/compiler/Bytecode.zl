@@ -64,6 +64,9 @@ function op_halt() { <- 255 }
 function set_index(obj, key, val) {
     when obj is List {
         let kidx -> parse_int_str(key)
+        when kidx < 0 {
+            kidx -> kidx + obj.length
+        }
         when kidx >= 0 and kidx < obj.length {
             obj[kidx] -> val
         }
@@ -71,6 +74,114 @@ function set_index(obj, key, val) {
     }
     obj[key] -> val
     <- val
+}
+
+function vm_slice(obj, s, e, stp) {
+    let step_val -> 1
+    when stp != Nothing {
+        when (stp is Integer) { step_val -> 0 + stp } or { step_val -> parse_int_str(stp) }
+    }
+    when step_val == 0 {
+        when (obj is String) { <- `` }
+        <- []
+    }
+    when (obj is String) {
+        let len -> Str.length(obj)
+        let s_idx -> 0
+        let e_idx -> 0 + len
+        when step_val > 0 {
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> parse_int_str(s) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx < 0 { s_idx -> 0 }
+                when s_idx > len { s_idx -> 0 + len }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> parse_int_str(e) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx < 0 { e_idx -> 0 }
+                when e_idx > len { e_idx -> 0 + len }
+            }
+            let res -> ``
+            let cur -> 0 + s_idx
+            do while cur < e_idx {
+                res -> res + Str.at(obj, cur)
+                cur -> cur + step_val
+            }
+            <- res
+        } or {
+            s_idx -> len - 1
+            e_idx -> -1
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> parse_int_str(s) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx >= len { s_idx -> len - 1 }
+                when s_idx < -1 { s_idx -> -1 }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> parse_int_str(e) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx >= len { e_idx -> len - 1 }
+                when e_idx < -1 { e_idx -> -1 }
+            }
+            let res -> ``
+            let cur -> 0 + s_idx
+            do while cur > e_idx {
+                res -> res + Str.at(obj, cur)
+                cur -> cur + step_val
+            }
+            <- res
+        }
+    }
+    when (obj is List) {
+        let len -> obj.length
+        let s_idx -> 0
+        let e_idx -> 0 + len
+        when step_val > 0 {
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> parse_int_str(s) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx < 0 { s_idx -> 0 }
+                when s_idx > len { s_idx -> 0 + len }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> parse_int_str(e) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx < 0 { e_idx -> 0 }
+                when e_idx > len { e_idx -> 0 + len }
+            }
+            let res -> []
+            let cur -> 0 + s_idx
+            do while cur < e_idx {
+                res.append(obj[cur])
+                cur -> cur + step_val
+            }
+            <- res
+        } or {
+            s_idx -> len - 1
+            e_idx -> -1
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> parse_int_str(s) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx >= len { s_idx -> len - 1 }
+                when s_idx < -1 { s_idx -> -1 }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> parse_int_str(e) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx >= len { e_idx -> len - 1 }
+                when e_idx < -1 { e_idx -> -1 }
+            }
+            let res -> []
+            let cur -> 0 + s_idx
+            do while cur > e_idx {
+                res.append(obj[cur])
+                cur -> cur + step_val
+            }
+            <- res
+        }
+    }
+    <- Nothing
 }
 
 function vm_list_append(l, item) {
@@ -1936,12 +2047,14 @@ function compile_expression(ctx, expr) {
         or when op == `<=` { emit_byte(ctx, 67, line) } // OP_LTE
         or when op == `>` { emit_byte(ctx, 68, line) }  // OP_GT
         or when op == `>=` { emit_byte(ctx, 69, line) } // OP_GTE
-        or when op == `..` or op == `..-` { emit_byte(ctx, 88, line) } // OP_RANGE_EXCL
-        or when op == `..=` or op == `...` { emit_byte(ctx, 89, line) } // OP_RANGE_INCL
+        or when op == `..` { emit_byte(ctx, 94, line) } // OP_RANGE_BETWEEN
+        or when op == `..-` { emit_byte(ctx, 88, line) } // OP_RANGE_EXCL
+        or when op == `...` { emit_byte(ctx, 89, line) } // OP_RANGE_INCL
         or when op == `..+` { emit_byte(ctx, 93, line) } // OP_RANGE_INCL_END
         or when op == `++` { emit_byte(ctx, 90, line) } // OP_CONCAT_APPEND
         or when op == `--` { emit_byte(ctx, 91, line) } // OP_DROP
         or when op == `in` { emit_byte(ctx, 95, line) } // OP_IN
+        or when op == `??` { emit_byte(ctx, 101, line) } // OP_COALESCE
         <- Nothing
     }
 
@@ -2198,6 +2311,18 @@ function compile_expression(ctx, expr) {
         compile_expression(ctx, expr[3])
         compile_expression(ctx, expr[4])
         emit_byte(ctx, 82, line) // OP_GET_INDEX
+        <- Nothing
+    }
+
+    when kind == 48 { // K_SLICE
+        compile_expression(ctx, expr[3])
+        let s -> expr[4]
+        when s != Nothing { compile_expression(ctx, s) } or { emit_byte(ctx, 2, line) }
+        let e -> expr[5]
+        when e != Nothing { compile_expression(ctx, e) } or { emit_byte(ctx, 2, line) }
+        let stp -> expr[6]
+        when stp != Nothing { compile_expression(ctx, stp) } or { emit_byte(ctx, 2, line) }
+        emit_byte(ctx, 102, line) // OP_SLICE
         <- Nothing
     }
 
@@ -2779,6 +2904,13 @@ export function create_vm_prelude() {
     }
     g[`process`] -> process_mod
     g[`__builtin_process`] -> process_mod
+    
+    // Net
+    let net_mod -> {
+        `http_request` -> make_native(`net_http_request`)
+    }
+    g[`net`] -> net_mod
+    g[`__builtin_net`] -> net_mod
     
     // String & Text utils
     let str_mod -> {
@@ -3412,6 +3544,13 @@ export function invoke_callable_g(callee, args, globals) {
                 when args.length > 0 { <- __builtin_time.sleep(args[0]) }
                 <- Nothing
             }
+            when nfn == `net_http_request` {
+                let url -> when (args.length > 0) { args[0] } or { `` }
+                let meth -> when (args.length > 1) { args[1] } or { `GET` }
+                let body -> when (args.length > 2) { args[2] } or { `` }
+                let hdrs -> when (args.length > 3) { args[3] } or { {} }
+                <- __builtin_net.http_request(url, meth, body, hdrs)
+            }
             when nfn == `term_get_size` {
                 let sz -> __builtin_term.get_size()
                 when sz != Nothing and (sz is Map) and sz[`width`] != Nothing { <- sz }
@@ -3860,6 +3999,148 @@ export function invoke_callable_g(callee, args, globals) {
                     do for item in recv { copy.append(item) }
                     <- copy
                 }
+                when m == `reverse` {
+                    let rev_res -> []
+                    let ri -> recv.length - 1
+                    do while ri >= 0 {
+                        rev_res.append(recv[ri])
+                        ri -> ri - 1
+                    }
+                    <- rev_res
+                }
+                when m == `unique` {
+                    let unq_res -> []
+                    do for x in recv {
+                        when not (x in unq_res) { unq_res.append(x) }
+                    }
+                    <- unq_res
+                }
+                when m == `flatten` {
+                    let flat_res -> []
+                    do for x in recv {
+                        when x is List {
+                            do for sub in x { flat_res.append(sub) }
+                        } or {
+                            flat_res.append(x)
+                        }
+                    }
+                    <- flat_res
+                }
+                when m == `chunk` {
+                    let size -> 1
+                    when args.length > 0 { size -> args[0] }
+                    when size <= 0 { size -> 1 }
+                    let chunk_res -> []
+                    let chunk_curr -> []
+                    let ci -> 0
+                    do for x in recv {
+                        when ci % size == 0 and ci > 0 {
+                            chunk_res.append(chunk_curr)
+                            chunk_curr -> []
+                        }
+                        chunk_curr.append(x)
+                        ci -> ci + 1
+                    }
+                    when chunk_curr.length > 0 { chunk_res.append(chunk_curr) }
+                    <- chunk_res
+                }
+                when m == `take` {
+                    let n -> 0
+                    when args.length > 0 { n -> args[0] }
+                    when n <= 0 { <- [] }
+                    let take_res -> []
+                    let ti -> 0
+                    do while ti < n and ti < recv.length {
+                        take_res.append(recv[ti])
+                        ti -> ti + 1
+                    }
+                    <- take_res
+                }
+                when m == `drop` {
+                    let n -> 0
+                    when args.length > 0 { n -> args[0] }
+                    when n <= 0 { <- recv }
+                    let drop_res -> []
+                    let di -> n
+                    do while di < recv.length {
+                        drop_res.append(recv[di])
+                        di -> di + 1
+                    }
+                    <- drop_res
+                }
+                when m == `join` {
+                    let sep -> ``
+                    when args.length > 0 { sep -> Str.to_string(args[0]) }
+                    <- Str.join(recv, sep)
+                }
+                when m == `map` {
+                    when args.length == 0 { <- recv }
+                    let fn -> args[0]
+                    let map_res -> []
+                    do for x in recv {
+                        map_res.append(invoke_callable_g(fn, [x], globals))
+                    }
+                    <- map_res
+                }
+                when m == `filter` {
+                    when args.length == 0 { <- recv }
+                    let fn -> args[0]
+                    let filt_res -> []
+                    do for x in recv {
+                        when invoke_callable_g(fn, [x], globals) {
+                            filt_res.append(x)
+                        }
+                    }
+                    <- filt_res
+                }
+                when m == `reduce` {
+                    when args.length < 2 { <- Nothing }
+                    let acc -> args[0]
+                    let fn -> args[1]
+                    do for x in recv {
+                        acc -> invoke_callable_g(fn, [acc, x], globals)
+                    }
+                    <- acc
+                }
+                when m == `each` {
+                    when args.length > 0 {
+                        let fn -> args[0]
+                        do for x in recv {
+                            invoke_callable_g(fn, [x], globals)
+                        }
+                    }
+                    <- Nothing
+                }
+                when m == `find` {
+                    when args.length == 0 { <- Nothing }
+                    let fn -> args[0]
+                    do for x in recv {
+                        when invoke_callable_g(fn, [x], globals) {
+                            <- x
+                        }
+                    }
+                    <- Nothing
+                }
+                when m == `any` {
+                    when args.length == 0 { <- false }
+                    let fn -> args[0]
+                    do for x in recv {
+                        when invoke_callable_g(fn, [x], globals) {
+                            <- true
+                        }
+                    }
+                    <- false
+                }
+                when m == `all` {
+                    when args.length == 0 { <- true }
+                    let fn -> args[0]
+                    do for x in recv {
+                        when not invoke_callable_g(fn, [x], globals) {
+                            <- false
+                        }
+                    }
+                    <- true
+                }
             }
             when recv is String {
                 when m == `at` or m == `get` or m == `char_at` {
@@ -3944,6 +4225,38 @@ export function invoke_callable_g(callee, args, globals) {
                 }
                 when m == `to_list` {
                     <- __builtin_set.to_list(recv)
+                }
+                when m == `union` {
+                    when args.length == 0 { <- recv }
+                    let res_items -> []
+                    do for x in __builtin_set.to_list(recv) { res_items.append(x) }
+                    let other_items -> __builtin_set.to_list(args[0])
+                    do for item in other_items {
+                        when not (item in res_items) { res_items.append(item) }
+                    }
+                    <- __builtin_set.from_list(res_items)
+                }
+                when m == `intersection` {
+                    when args.length == 0 { <- __builtin_set.from_list([]) }
+                    let inter_items -> []
+                    let l1 -> __builtin_set.to_list(recv)
+                    do for x in l1 {
+                        when x in args[0] {
+                            inter_items.append(x)
+                        }
+                    }
+                    <- __builtin_set.from_list(inter_items)
+                }
+                when m == `difference` {
+                    when args.length == 0 { <- recv }
+                    let diff_items -> []
+                    let l1 -> __builtin_set.to_list(recv)
+                    do for x in l1 {
+                        when not (x in args[0]) {
+                            diff_items.append(x)
+                        }
+                    }
+                    <- __builtin_set.from_list(diff_items)
                 }
             }
             when (recv is Map) and (recv[`kind`] == `Stream` or recv[`__type__`] == `Stream`) {
@@ -4043,7 +4356,22 @@ export function invoke_callable_g(callee, args, globals) {
                     when args.length > 0 and recv.has(args[0]) {
                         recv.remove(args[0])
                     }
-                    <- Nothing
+                    <- recv
+                }
+                when m == `merge` {
+                    let res_map -> {}
+                    do for k in vm_map_keys(recv) { res_map[k] -> recv[k] }
+                    when args.length > 0 {
+                        do for k in vm_map_keys(args[0]) { res_map[k] -> args[0][k] }
+                    }
+                    <- res_map
+                }
+                when m == `invert` {
+                    let inv_map -> {}
+                    do for k in vm_map_keys(recv) {
+                        inv_map[recv[k]] -> k
+                    }
+                    <- inv_map
                 }
             }
             when m == `read` {
@@ -4397,6 +4725,7 @@ export function eval_chunk(chunk, globals) {
             } or when (obj is List) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
                 let kidx -> 0
                 when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx < 0 { kidx -> kidx + obj.length }
                 when kidx >= 0 and kidx < obj.length {
                     stack.append(obj[kidx])
                 } or {
@@ -4405,6 +4734,7 @@ export function eval_chunk(chunk, globals) {
             } or when (obj is String) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
                 let kidx -> 0
                 when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx < 0 { kidx -> kidx + Str.length(obj) }
                 when kidx >= 0 and kidx < Str.length(obj) {
                     stack.append(Str.at(obj, kidx))
                 } or {
@@ -4551,12 +4881,17 @@ export function eval_chunk(chunk, globals) {
                 `is_closure` -> true
             })
         }
-        or when op == 88 { // OP_RANGE_EXCL (a..b or a..-b)
+        or when op == 94 { // OP_RANGE_BETWEEN (a..b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, false, true))
+        }
+        or when op == 88 { // OP_RANGE_EXCL (a..-b)
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(eval_range_vm(a, b, false, false))
         }
-        or when op == 89 { // OP_RANGE_INCL (a..=b or a...b)
+        or when op == 89 { // OP_RANGE_INCL (a...b)
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(eval_range_vm(a, b, true, false))
@@ -4650,6 +4985,22 @@ export function eval_chunk(chunk, globals) {
             when top != false and top != Nothing and top != 0 {
                 ip -> ip + offset
             }
+        }
+        or when op == 101 { // OP_COALESCE (a ?? b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            when a != Nothing {
+                stack.append(a)
+            } or {
+                stack.append(b)
+            }
+        }
+        or when op == 102 { // OP_SLICE
+            let stp -> stack.pop()
+            let e -> stack.pop()
+            let s -> stack.pop()
+            let obj -> stack.pop()
+            stack.append(vm_slice(obj, s, e, stp))
         }
         or when op == 112 { // OP_CALL
             let hi -> code[ip]
@@ -5010,6 +5361,7 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             } or when (obj is List) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
                 let kidx -> 0
                 when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx < 0 { kidx -> kidx + obj.length }
                 when kidx >= 0 and kidx < obj.length {
                     stack.append(obj[kidx])
                 } or {
@@ -5018,6 +5370,7 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             } or when (obj is String) and ((key is Integer) or (key is Decimal) or looks_int_str(key)) {
                 let kidx -> 0
                 when (key is Integer) { kidx -> key } or { kidx -> parse_int_str(key) }
+                when kidx < 0 { kidx -> kidx + Str.length(obj) }
                 when kidx >= 0 and kidx < Str.length(obj) {
                     stack.append(Str.at(obj, kidx))
                 } or {
@@ -5164,12 +5517,17 @@ function eval_chunk_fn(chunk, args, globals, captures) {
                 `is_closure` -> true
             })
         }
-        or when op == 88 { // OP_RANGE_EXCL (a..b or a..-b)
+        or when op == 94 { // OP_RANGE_BETWEEN (a..b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            stack.append(eval_range_vm(a, b, false, true))
+        }
+        or when op == 88 { // OP_RANGE_EXCL (a..-b)
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(eval_range_vm(a, b, false, false))
         }
-        or when op == 89 { // OP_RANGE_INCL (a..=b or a...b)
+        or when op == 89 { // OP_RANGE_INCL (a...b)
             let b -> stack.pop()
             let a -> stack.pop()
             stack.append(eval_range_vm(a, b, true, false))
@@ -5263,6 +5621,22 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             when top != false and top != Nothing and top != 0 {
                 ip -> ip + offset
             }
+        }
+        or when op == 101 { // OP_COALESCE (a ?? b)
+            let b -> stack.pop()
+            let a -> stack.pop()
+            when a != Nothing {
+                stack.append(a)
+            } or {
+                stack.append(b)
+            }
+        }
+        or when op == 102 { // OP_SLICE
+            let stp -> stack.pop()
+            let e -> stack.pop()
+            let s -> stack.pop()
+            let obj -> stack.pop()
+            stack.append(vm_slice(obj, s, e, stp))
         }
         or when op == 112 { // OP_CALL
             let hi -> code[ip]

@@ -1,55 +1,78 @@
 import zen.test as test
 
-function test_int_exclusive() {
+function test_range_between() {
+    // a..b (start, end)
     let r -> 0..5
-    let pass -> test.assert_equal(r.length, 5, `0..5 has five elements`)
-    pass -> pass and test.assert_equal(r[0], 0, `starts at 0`)
-    pass -> pass and test.assert_equal(r[4], 4, `ends at 4 exclusive`)
-    pass -> pass and test.assert_equal(2..2, [], `empty when start == end exclusive`)
+    let pass -> test.assert_equal(r, [1, 2, 3, 4], `0..5 is between (open interval)`)
+    let desc -> 5..0
+    pass -> pass and test.assert_equal(desc, [4, 3, 2, 1], `5..0 descends between`)
     <- pass
 }
 
-function test_int_inclusive() {
-    let r -> 0..=5
-    let pass -> test.assert_equal(r.length, 6, `0..=5 has six elements`)
-    pass -> pass and test.assert_equal(r[0], 0, `inclusive starts at 0`)
-    pass -> pass and test.assert_equal(r[5], 5, `inclusive ends at 5`)
-    pass -> pass and test.assert_equal(3..=3, [3], `single element when start == end inclusive`)
+function test_range_inclusive_end() {
+    // a..+b (start, end]
+    let r -> 0..+5
+    let pass -> test.assert_equal(r, [1, 2, 3, 4, 5], `0..+5 is open start, inclusive end`)
+    let desc -> 5..+0
+    pass -> pass and test.assert_equal(desc, [4, 3, 2, 1, 0], `5..+0 descends inclusive end`)
     <- pass
 }
 
-function test_descending() {
-    let r -> 5..2
-    let pass -> test.assert_equal(r, [5, 4, 3], `5..2 descends exclusive`)
-    pass -> pass and test.assert_equal(5..=2, [5, 4, 3, 2], `5..=2 descends inclusive`)
+function test_range_exclusive_end() {
+    // a..-b [start, end)
+    let r -> 0..-5
+    let pass -> test.assert_equal(r, [0, 1, 2, 3, 4], `0..-5 is closed start, exclusive end`)
+    let desc -> 5..-0
+    pass -> pass and test.assert_equal(desc, [5, 4, 3, 2, 1], `5..-0 descends exclusive end`)
+    <- pass
+}
+
+function test_range_full_inclusive() {
+    // a...b [start, end]
+    let r -> 0...5
+    let pass -> test.assert_equal(r, [0, 1, 2, 3, 4, 5], `0...5 is full inclusive`)
+    let desc -> 5...0
+    pass -> pass and test.assert_equal(desc, [5, 4, 3, 2, 1, 0], `5...0 descends full inclusive`)
     <- pass
 }
 
 function test_char_ranges() {
-    let letters -> `a`..`d`
-    let pass -> test.assert_equal(letters, [`a`, `b`, `c`], `a..d exclusive`)
-    pass -> pass and test.assert_equal(`a`..=`c`, [`a`, `b`, `c`], `a..=c inclusive`)
-    pass -> pass and test.assert_equal(`c`..`a`, [`c`, `b`], `descending chars exclusive`)
+    let between -> `a`..`d`
+    let pass -> test.assert_equal(between, [`b`, `c`], `a..d between`)
+    let incl_end -> `a`..+`d`
+    pass -> pass and test.assert_equal(incl_end, [`b`, `c`, `d`], `a..+d inclusive end`)
+    let excl_end -> `a`..-`d`
+    pass -> pass and test.assert_equal(excl_end, [`a`, `b`, `c`], `a..-d exclusive end`)
+    let full_incl -> `a`...`c`
+    pass -> pass and test.assert_equal(full_incl, [`a`, `b`, `c`], `a...c full inclusive`)
     <- pass
 }
 
 function test_for_loop() {
-    let sum -> 0
-    do for i in 1..=4 {
-        sum -> sum + i
+    let sum1 -> 0
+    do for i in 1...4 {
+        sum1 -> sum1 + i
     }
-    <- test.assert_equal(sum, 10, `for over 1..=4 sums to 10`)
+    let pass -> test.assert_equal(sum1, 10, `for over 1...4 sums to 10`)
+
+    let sum2 -> 0
+    do for j in 0..-5 {
+        sum2 -> sum2 + j
+    }
+    pass -> pass and test.assert_equal(sum2, 10, `for over 0..-5 sums to 10`)
+    <- pass
 }
 
 function run_tests() {
     let tests -> [
-        {`name` -> `Range.int_exclusive`, `fn` -> test_int_exclusive},
-        {`name` -> `Range.int_inclusive`, `fn` -> test_int_inclusive},
-        {`name` -> `Range.descending`, `fn` -> test_descending},
+        {`name` -> `Range.between`, `fn` -> test_range_between},
+        {`name` -> `Range.inclusive_end`, `fn` -> test_range_inclusive_end},
+        {`name` -> `Range.exclusive_end`, `fn` -> test_range_exclusive_end},
+        {`name` -> `Range.full_inclusive`, `fn` -> test_range_full_inclusive},
         {`name` -> `Range.char_ranges`, `fn` -> test_char_ranges},
         {`name` -> `Range.for_loop`, `fn` -> test_for_loop}
     ]
-    <- test.run_suite(`Range Syntax`, tests)
+    <- test.run_suite(`Range Syntax (SPEC 6.4 4-Range Boundary System)`, tests)
 }
 
 function main() {

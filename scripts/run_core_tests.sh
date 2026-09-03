@@ -25,6 +25,11 @@ CORE=(
   tests/language/test_extended_operators.zl
   tests/language/test_in_operator.zl
   tests/language/test_type_introspection.zl
+  tests/language/default_sentinel_01.zl
+  tests/language/collection_methods_01.zl
+  tests/language/flow_operators_01.zl
+  tests/language/fstring_test_01.zl
+  tests/language/sequence_slicing_01.zl
 )
 
 fail=0

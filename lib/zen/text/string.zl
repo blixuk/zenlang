@@ -70,7 +70,7 @@ function ends_with(s, suffix) {
  @return True if it contains sub, False otherwise.
  !/
 function contains(s, sub) {
-    <- __builtin_string.contains(s, sub)
+    <- sub in s
 }
 
 /!
@@ -181,4 +181,103 @@ function pad_right(s, target_len, pad_char) {
     when pad == Nothing or length(pad) == 0 { pad -> ` ` }
     let needed -> target_len - cur_len
     <- str_val + repeat(pad, needed)
+}
+
+function is_whitespace_char(c) {
+    <- c == ` ` or c == `\t` or c == `\n` or c == `\r`
+}
+
+/!
+  Returns a list of single-character strings.
+  @param s The string.
+  @return A list of characters.
+!/
+function chars(s) {
+    let out -> []
+    let n -> length(s)
+    let i -> 0
+    do while i < n {
+        out.append(at(s, i))
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Strips leading whitespace from a string.
+  @param s The string.
+  @return String without leading whitespace.
+!/
+function trim_start(s) {
+    let n -> length(s)
+    let i -> 0
+    do while i < n and is_whitespace_char(at(s, i)) {
+        i -> i + 1
+    }
+    when i == 0 { <- s }
+    when i >= n { <- `` }
+    <- substring(s, i, n)
+}
+
+function trim_left(s) {
+    <- trim_start(s)
+}
+
+/!
+  Strips trailing whitespace from a string.
+  @param s The string.
+  @return String without trailing whitespace.
+!/
+function trim_end(s) {
+    let n -> length(s)
+    let i -> n - 1
+    do while i >= 0 and is_whitespace_char(at(s, i)) {
+        i -> i - 1
+    }
+    when i < 0 { <- `` }
+    when i == n - 1 { <- s }
+    <- substring(s, 0, i + 1)
+}
+
+function trim_right(s) {
+    <- trim_end(s)
+}
+
+/!
+  Checks if a string is empty (length == 0).
+  @param s The string.
+  @return True if empty, False otherwise.
+!/
+function is_empty(s) {
+    <- s == `` or length(s) == 0
+}
+
+/!
+  Checks if a string is blank (only whitespace).
+  @param s The string.
+  @return True if blank, False otherwise.
+!/
+function is_blank(s) {
+    <- length(trim(s)) == 0
+}
+
+/!
+  Returns the index of the last occurrence of a substring.
+  @param s The string.
+  @param sub The substring to find.
+  @return The index or -1 if not found.
+!/
+function last_index_of(s, sub) {
+    let n -> length(s)
+    let sub_len -> length(sub)
+    when sub_len == 0 { <- n }
+    when sub_len > n { <- -1 }
+    let i -> n - sub_len
+    do while i >= 0 {
+        when substring(s, i, i + sub_len) == sub {
+            <- i
+        }
+        i -> i - 1
+    }
+    <- -1
 }

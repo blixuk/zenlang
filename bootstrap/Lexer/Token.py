@@ -138,6 +138,9 @@ class TokenType(Enum):
     RAISE_SYMBOL = "RAISE_SYMBOL"
     ASSERT_SYMBOL = "ASSERT_SYMBOL"
 
+    COALESCE = "COALESCE"
+    PIPELINE = "PIPELINE"
+
     ELLIPSIS = "ELLIPSIS"
 
     EOF = "EOF"
@@ -346,6 +349,8 @@ OPERATORS: dict = {
     "|": TokenType.BITWISE_OR,
     "~": TokenType.BITWISE_NOT,
     "//": TokenType.QUOTIENT,
+    "??": TokenType.COALESCE,
+    "|>": TokenType.PIPELINE,
 }
 
 COMPARATORS: dict = {

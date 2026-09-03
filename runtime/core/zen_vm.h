@@ -53,6 +53,7 @@ typedef enum {
     OP_JUMP_IF_FALSE = 0x61,/* i16 offset */
     OP_JUMP_IF_TRUE = 0x62, /* i16 offset */
     OP_POP_JUMP_IF_FALSE = 0x63, /* i16 offset */
+    OP_SLICE = 102,         /* 0x66 */
     
     OP_CALL = 0x70,         /* u8 argc */
     OP_RETURN = 0x71,

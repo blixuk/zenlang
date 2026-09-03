@@ -163,6 +163,28 @@ function test_mkdir_copy_find() {
     <- pass
 }
 
+function test_modern_file_helpers() {
+    cleanup()
+    let touched_path -> `tests/lib/.tmp_touched.txt`
+    when file.exists(touched_path) { file.remove(touched_path) }
+
+    let pass -> test.assert_true(file.touch(touched_path), `touch should create file`)
+    pass -> pass and test.assert_true(file.is_file(touched_path), `touched file is a regular file`)
+    pass -> pass and test.assert_equal(file.size(touched_path), 0, `empty touched file has size 0`)
+
+    file.write(touched_path, `hello\nworld`)
+    pass -> pass and test.assert_equal(file.size(touched_path), 11, `file.size returns length in bytes`)
+
+    let lns -> file.lines(touched_path)
+    pass -> pass and test.assert_equal(lns.length, 2, `file.lines returns array of lines`)
+    pass -> pass and test.assert_equal(lns[0], `hello`, `file.lines line 0`)
+    pass -> pass and test.assert_equal(lns[1], `world`, `file.lines line 1`)
+
+    file.remove(touched_path)
+    cleanup()
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `File.functions`, `fn` -> test_file_functions},
@@ -170,7 +192,8 @@ function run_tests() {
         {`name` -> `File.list_files`, `fn` -> test_list_files},
         {`name` -> `File.walk_callback`, `fn` -> test_walk_callback},
         {`name` -> `File.list_dir_sorted`, `fn` -> test_list_dir_sorted},
-        {`name` -> `File.mkdir_copy_find`, `fn` -> test_mkdir_copy_find}
+        {`name` -> `File.mkdir_copy_find`, `fn` -> test_mkdir_copy_find},
+        {`name` -> `File.modern_helpers`, `fn` -> test_modern_file_helpers}
     ]
 
     <- test.run_suite(`File Library`, tests)

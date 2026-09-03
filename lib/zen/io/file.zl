@@ -517,3 +517,68 @@ function remove_tree(root) {
     remove(root)
     <- exists(root) == false
 }
+
+/!
+ Reads a file and returns its content as a list of lines.
+ Ergonomic short-name alias for read_lines(path).
+ @param path The path to the file.
+ @return A list of strings representing lines.
+ !/
+function lines(path) {
+    <- read_lines(path)
+}
+
+/!
+ Gets the size of a file in bytes.
+ @param path Path to the file.
+ @return File size in bytes, or 0 if file does not exist.
+ !/
+function size(path) {
+    when exists(path) == false or is_dir(path) { <- 0 }
+    let content -> __builtin_file.read(path)
+    when content == Nothing { <- 0 }
+    <- Str.length(content)
+}
+
+/!
+ Ensures a file exists. If it does not exist, an empty file is created.
+ @param path Path to the file.
+ @return True if file exists.
+ !/
+function touch(path) {
+    when exists(path) == false {
+        __builtin_file.write(path, ``)
+    }
+    <- is_file(path)
+}
+
+/!
+ Recursively copies an entire directory tree.
+ @param src Source directory.
+ @param dst Destination directory.
+ @return True on success.
+ !/
+function copy_tree(src, dst) {
+    when exists(src) == false { <- false }
+    when is_file(src) { <- copy(src, dst) }
+    mkdir_p(dst)
+    let files -> list_files(src)
+    let src_len -> Str.length(src)
+    let fi -> 0
+    do while fi < files.length {
+        let file_path -> files[fi]
+        fi -> fi + 1
+        let rel -> Str.substring(file_path, src_len, Str.length(file_path))
+        when Str.starts_with(rel, `/`) {
+            rel -> Str.substring(rel, 1, Str.length(rel))
+        }
+        let dest_path -> path.join(dst, rel)
+        let dest_dir -> path.dirname(dest_path)
+        when is_dir(dest_dir) == false {
+            mkdir_p(dest_dir)
+        }
+        copy(file_path, dest_path)
+    }
+    <- true
+}
+

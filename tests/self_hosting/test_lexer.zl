@@ -21,13 +21,14 @@ function test_basic_assign() {
 }
 
 function test_ranges() {
-    let src -> `0..5 1..=9 ...`
+    let src -> `0..5 1..+9 2..-8 3...7`
     let tokens -> Lexer.tokenize_source(src)
-    // 0 .. 5 1 ..= 9 ... EOF
-    let pass -> test.assert_equal(tokens.length, 8, `range token count`)
-    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `..`, `exclusive range`)
-    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[4]), `..=`, `inclusive range`)
-    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[6]), `...`, `ellipsis`)
+    // 0 .. 5 1 ..+ 9 2 ..- 8 3 ... 7 EOF
+    let pass -> test.assert_equal(tokens.length, 13, `range token count`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[1]), `..`, `between range`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[4]), `..+`, `inclusive end range`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[7]), `..-`, `exclusive end range`)
+    pass -> pass and test.assert_equal(Tok.tok_lexeme(src, tokens[10]), `...`, `full inclusive range`)
     <- pass
 }
 

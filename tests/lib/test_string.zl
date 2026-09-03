@@ -31,6 +31,22 @@ function test_search() {
     let pass -> test.assert_true(str.starts_with(`zenlang`, `zen`), `'zenlang' starts with 'zen'`)
     pass -> pass and test.assert_true(str.ends_with(`zenlang`, `lang`), `'zenlang' ends with 'lang'`)
     pass -> pass and test.assert_equal(str.index_of(`zenlang`, `lang`), 3, `index of 'lang' in 'zenlang' is 3`)
+    pass -> pass and test.assert_true(str.contains(`zenlang`, `en`), `contains 'en' in 'zenlang'`)
+    <- pass
+}
+
+function test_advanced_helpers() {
+    let pass -> test.assert_equal(str.chars(`zen`), [`z`, `e`, `n`], `chars should split into list of chars`)
+    pass -> pass and test.assert_equal(str.trim_start(`   hello`), `hello`, `trim_start`)
+    pass -> pass and test.assert_equal(str.trim_left(`\t\nhello`), `hello`, `trim_left`)
+    pass -> pass and test.assert_equal(str.trim_end(`world   `), `world`, `trim_end`)
+    pass -> pass and test.assert_equal(str.trim_right(`world\n\r`), `world`, `trim_right`)
+    pass -> pass and test.assert_true(str.is_empty(``), `is_empty true on empty string`)
+    pass -> pass and test.assert_false(str.is_empty(`x`), `is_empty false on non-empty`)
+    pass -> pass and test.assert_true(str.is_blank(`   \t\n`), `is_blank true on whitespace`)
+    pass -> pass and test.assert_false(str.is_blank(`  a  `), `is_blank false on text`)
+    pass -> pass and test.assert_equal(str.last_index_of(`banana`, `a`), 5, `last_index_of 'a' in 'banana' is 5`)
+    pass -> pass and test.assert_equal(str.last_index_of(`banana`, `na`), 4, `last_index_of 'na' in 'banana' is 4`)
     <- pass
 }
 
@@ -41,7 +57,8 @@ function run_tests() {
         {`name` -> `String.split_join`, `fn` -> test_split_join},
         {`name` -> `String.case`, `fn` -> test_case},
         {`name` -> `String.substring`, `fn` -> test_substring},
-        {`name` -> `String.search`, `fn` -> test_search}
+        {`name` -> `String.search`, `fn` -> test_search},
+        {`name` -> `String.advanced_helpers`, `fn` -> test_advanced_helpers}
     ]
 
     <- test.run_suite(`String Library`, tests)

@@ -28,6 +28,7 @@ from Parser.AST import (
     CallExpression,
     MemberExpression,
     IndexExpression,
+    SliceExpression,
     StructureExpression,
     ReturnStatement,
     IntegerLiteral,
@@ -192,6 +193,18 @@ class ExpressionHandler:
         expression.resolved_type = TypeVariant()
         return TypeVariant()
 
+    def check_slice_expression(self, expression: SliceExpression) -> Type:
+        self.logger.debug("check_slice_expression", expression)
+        object_type = self.check_expression(expression.object)
+        if expression.start is not None:
+            self.check_expression(expression.start)
+        if expression.end is not None:
+            self.check_expression(expression.end)
+        if expression.step is not None:
+            self.check_expression(expression.step)
+        expression.resolved_type = object_type
+        return object_type
+
     def check_unary_operation(self, expression: UnaryOperation) -> Type:
         self.logger.debug("check_unary_operation", expression)
         right_type = self.check_expression(expression.right)
@@ -277,7 +290,7 @@ class ExpressionHandler:
         right_type: Type = self.check_expression(expression.right)
 
         # Range operators produce a List (of integers or single-character strings).
-        if operator in ("..", "..="):
+        if operator in ("..", "..+", "..-", "..."):
             expression.resolved_type = TypeList(None, [TypeElement(None, TypeVariant())])
             return expression.resolved_type
 
@@ -285,6 +298,16 @@ class ExpressionHandler:
             expression.type = TypeBoolean()
             expression.resolved_type = TypeBoolean()
             return expression.resolved_type
+
+        if operator == "??":
+            from Checker.Type import TypeNothing
+            if isinstance(left_type, TypeNothing) or left_type == TypeNothing:
+                res = right_type
+            else:
+                res = left_type
+            expression.type = res
+            expression.resolved_type = res
+            return res
 
         # Extended '++' (append/prepend/concat) and '--' (drop start/end/decrement)
         if operator == "++":

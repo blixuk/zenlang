@@ -49,6 +49,114 @@ function set_error(msg) {
     I[`error`] -> msg
 }
 
+function interp_slice(obj, s, e, stp) {
+    let step_val -> 1
+    when stp != Nothing {
+        when (stp is Integer) { step_val -> 0 + stp } or { step_val -> 0 + (stp <: Integer) }
+    }
+    when step_val == 0 {
+        when (obj is String) { <- `` }
+        <- []
+    }
+    when (obj is String) {
+        let len -> Str.length(obj)
+        let s_idx -> 0
+        let e_idx -> 0 + len
+        when step_val > 0 {
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> 0 + (s <: Integer) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx < 0 { s_idx -> 0 }
+                when s_idx > len { s_idx -> 0 + len }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> 0 + (e <: Integer) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx < 0 { e_idx -> 0 }
+                when e_idx > len { e_idx -> 0 + len }
+            }
+            let res -> ``
+            let cur -> 0 + s_idx
+            do while cur < e_idx {
+                res -> res + Str.at(obj, cur)
+                cur -> cur + step_val
+            }
+            <- res
+        } or {
+            s_idx -> len - 1
+            e_idx -> -1
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> 0 + (s <: Integer) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx >= len { s_idx -> len - 1 }
+                when s_idx < -1 { s_idx -> -1 }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> 0 + (e <: Integer) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx >= len { e_idx -> len - 1 }
+                when e_idx < -1 { e_idx -> -1 }
+            }
+            let res -> ``
+            let cur -> 0 + s_idx
+            do while cur > e_idx {
+                res -> res + Str.at(obj, cur)
+                cur -> cur + step_val
+            }
+            <- res
+        }
+    }
+    when (obj is List) {
+        let len -> obj.length
+        let s_idx -> 0
+        let e_idx -> 0 + len
+        when step_val > 0 {
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> 0 + (s <: Integer) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx < 0 { s_idx -> 0 }
+                when s_idx > len { s_idx -> 0 + len }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> 0 + (e <: Integer) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx < 0 { e_idx -> 0 }
+                when e_idx > len { e_idx -> 0 + len }
+            }
+            let res -> []
+            let cur -> 0 + s_idx
+            do while cur < e_idx {
+                res.append(obj[cur])
+                cur -> cur + step_val
+            }
+            <- res
+        } or {
+            s_idx -> len - 1
+            e_idx -> -1
+            when s != Nothing {
+                when (s is Integer) { s_idx -> 0 + s } or { s_idx -> 0 + (s <: Integer) }
+                when s_idx < 0 { s_idx -> s_idx + len }
+                when s_idx >= len { s_idx -> len - 1 }
+                when s_idx < -1 { s_idx -> -1 }
+            }
+            when e != Nothing {
+                when (e is Integer) { e_idx -> 0 + e } or { e_idx -> 0 + (e <: Integer) }
+                when e_idx < 0 { e_idx -> e_idx + len }
+                when e_idx >= len { e_idx -> len - 1 }
+                when e_idx < -1 { e_idx -> -1 }
+            }
+            let res -> []
+            let cur -> 0 + s_idx
+            do while cur > e_idx {
+                res.append(obj[cur])
+                cur -> cur + step_val
+            }
+            <- res
+        }
+    }
+    <- Nothing
+}
+
 function clear_error() {
     I[`error`] -> Nothing
     I[`returning`] -> false
@@ -1868,6 +1976,17 @@ function eval_expr(node, env) {
         <- Nothing
     }
     when is_kind(node, AST.K_BINARY) {
+        let op -> Str.to_string(AST.bin_op(node))
+        when op == `??` {
+            let l -> eval_expr(AST.bin_left(node), env)
+            when get_error() != Nothing {
+                <- Nothing
+            }
+            when l != Nothing {
+                <- l
+            }
+            <- eval_expr(AST.bin_right(node), env)
+        }
         let l -> eval_expr(AST.bin_left(node), env)
         when get_error() != Nothing {
             <- Nothing
@@ -1876,7 +1995,7 @@ function eval_expr(node, env) {
         when get_error() != Nothing {
             <- Nothing
         }
-        <- eval_binary(Str.to_string(AST.bin_op(node)), l, r)
+        <- eval_binary(op, l, r)
     }
     when is_kind(node, AST.K_LOGICAL) {
         let op -> Str.to_string(AST.bin_op(node))
@@ -1936,6 +2055,25 @@ function eval_expr(node, env) {
             <- Nothing
         }
         <- obj[idx]
+    }
+    when is_kind(node, AST.K_SLICE) {
+        let obj -> eval_expr(AST.slice_obj(node), env)
+        when get_error() != Nothing or obj == Nothing {
+            <- Nothing
+        }
+        let s -> Nothing
+        when AST.slice_start(node) != Nothing {
+            s -> eval_expr(AST.slice_start(node), env)
+        }
+        let e -> Nothing
+        when AST.slice_end(node) != Nothing {
+            e -> eval_expr(AST.slice_end(node), env)
+        }
+        let stp -> Nothing
+        when AST.slice_step(node) != Nothing {
+            stp -> eval_expr(AST.slice_step(node), env)
+        }
+        <- interp_slice(obj, s, e, stp)
     }
     when is_kind(node, AST.K_ASSIGN) or is_kind(node, AST.K_REASSIGN) {
         let val -> eval_expr(AST.assign_val(node), env)
@@ -2853,6 +2991,10 @@ function call_fn(fn, args, env) {
 }
 
 function eval_binary(op, l, r) {
+    when op == `??` {
+        when l != Nothing { <- l }
+        <- r
+    }
     when op == `+` {
         <- l + r
     }
@@ -2927,14 +3069,17 @@ function eval_binary(op, l, r) {
         }
         <- false
     }
-    when op == `..` or op == `..-` {
-        <- eval_range(l, r, false, false)
-    }
-    when op == `..=` or op == `...` {
-        <- eval_range(l, r, true, false)
+    when op == `..` {
+        <- eval_range(l, r, false, true)
     }
     when op == `..+` {
         <- eval_range(l, r, true, true)
+    }
+    when op == `..-` {
+        <- eval_range(l, r, false, false)
+    }
+    when op == `...` {
+        <- eval_range(l, r, true, false)
     }
     when op == `in` {
         when r == Nothing {

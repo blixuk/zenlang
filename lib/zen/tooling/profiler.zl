@@ -50,7 +50,7 @@ function make_bar(pct, width) {
     }
 
     let bar -> ``
-    do for i in 0..width {
+    do for i in 0..-width {
         when i < filled_int {
             bar -> bar + `█`
         } or {
@@ -81,7 +81,7 @@ export function format_hotspots_table(summary, max_rows) {
         out.append(`     | (No profile entries recorded)   |          |            |            |        |          |`)
     }
 
-    do for i in 0..limit {
+    do for i in 0..-limit {
         let e -> entries[i]
         let rank_str -> Str.pad_left(Str.to_string(i + 1), 4, ` `)
         let label_str -> Str.pad_right(Str.substring(e[`label`], 0, 30), 30, ` `)
@@ -129,7 +129,7 @@ function render_flame_node(node, prefix, is_last, depth, limit_depth, out_list) 
 
     let children -> node[`children`]
     let num_children -> children.length
-    do for i in 0..num_children {
+    do for i in 0..-num_children {
         let child -> children[i]
         let child_is_last -> (i == (num_children - 1))
         render_flame_node(child, next_prefix, child_is_last, depth + 1, limit_depth, out_list)
@@ -161,7 +161,7 @@ export function generate_html_report(summary, title, out_path) {
     let events -> summary[`events`]
 
     let table_rows -> ``
-    do for i in 0..entries.length {
+    do for i in 0..-entries.length {
         let e -> entries[i]
         let badge -> ``
         when e[`self_pct`] >= 20.0 {

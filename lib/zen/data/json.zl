@@ -4,6 +4,7 @@
  !/
 
 import zen.text.string as Str
+import zen.io.file as file
 
 /!
  Converts a Zenlang object to a JSON string.
@@ -44,7 +45,7 @@ function stringify(value) {
     } or when value is Map {
         let res -> `{`
         let first -> true
-        let k_list -> __builtin_map.keys(value)
+        let k_list -> value.keys()
         do for k in k_list {
             when not first { res -> res + `,` }
             res -> res + stringify(Str.to_string(k)) + `:` + stringify(value[k])
@@ -93,7 +94,7 @@ function _stringify_indent(value, depth, spaces) {
         }
         <- res + `\n` + outer_ind + `]`
     } or when value is Map {
-        let k_list -> __builtin_map.keys(value)
+        let k_list -> value.keys()
         when k_list.length == 0 {
             <- `{}`
         }
@@ -292,3 +293,35 @@ function parse(json_str) {
     let p -> JsonParser(json_str)
     <- p.parse_value()
 }
+
+/!
+ Reads a JSON file from disk and parses it.
+ @param path The path to the JSON file.
+ @return The parsed Zenlang object.
+ !/
+function load(path) {
+    let content -> file.read(path)
+    <- parse(content)
+}
+
+/!
+ Serializes a Zenlang object and writes it to a file.
+ @param path The path to the file.
+ @param value The object to stringify.
+ !/
+function dump(path, value) {
+    let content -> stringify(value)
+    file.write(path, content)
+}
+
+/!
+ Serializes a Zenlang object with pretty indentation and writes it to a file.
+ @param path The path to the file.
+ @param value The object to stringify.
+ @param indent_spaces Number of spaces per indent level (default 2).
+ !/
+function dump_pretty(path, value, indent_spaces) {
+    let content -> stringify_pretty(value, indent_spaces)
+    file.write(path, content)
+}
+

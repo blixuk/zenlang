@@ -393,6 +393,8 @@ class BuiltinHandler:
             "get_args": lambda: self.execution_arguments,
             "exit": lambda code=0: os._exit(code),
             "get_env": lambda key: os.environ.get(key, ""),
+            "set_env": lambda key, value: os.environ.__setitem__(key, str(value)),
+            "unset_env": lambda key: os.environ.pop(key, None),
             "get_env_map": lambda: dict(os.environ),
             "get_cwd": lambda: os.getcwd(),
             "chdir": _chdir,

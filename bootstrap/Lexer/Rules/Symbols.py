@@ -91,17 +91,6 @@ class Symbols:
                     self.line_number,
                     self.column_number,
                 )
-            elif self.peek() == "=":
-                # `..=` inclusive range (legacy compatibility)
-                self.advance()
-                self.add_token(
-                    TokenType.RANGE_INCLUSIVE,
-                    "..=",
-                    start_line,
-                    start_column,
-                    self.line_number,
-                    self.column_number,
-                )
             elif self.peek() == "+":
                 # `..+` inclusive end range
                 self.advance()
@@ -194,6 +183,18 @@ class Symbols:
         start_column: int = self.column_number
 
         self.advance()
+        if self.peek() == "?":
+            self.advance()
+            self.add_token(
+                TokenType.COALESCE,
+                "??",
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+            return
+
         self.add_token(
             TokenType.CHECK_SYMBOL,
             "?",

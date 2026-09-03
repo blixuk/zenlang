@@ -1,5 +1,7 @@
 import zen.data.json as json
 import zen.test as test
+import zen.text.string as Str
+import zen.io.file as file
 
 function test_stringify_scalars_and_lists() {
     let pass -> test.assert_equal(json.stringify(`line\nbreak`), `"line\\nbreak"`, `stringify should escape special characters in strings`)
@@ -21,10 +23,26 @@ function test_parse_and_roundtrip() {
     <- pass
 }
 
+function test_pretty_and_file_io() {
+    let obj -> {`title` -> `Zenlang`, `version` -> 1}
+    let pretty -> json.stringify_pretty(obj, 2)
+    let pass -> test.assert_true(Str.contains(pretty, `\n`), `pretty contains newlines`)
+
+    let tmp_file -> `tests/lib/.tmp_json_test.json`
+    json.dump(tmp_file, obj)
+    let loaded -> json.load(tmp_file)
+    pass -> pass and test.assert_equal(loaded[`title`], `Zenlang`, `load matches dumped title`)
+    pass -> pass and test.assert_equal(loaded[`version`], 1, `load matches dumped version`)
+
+    file.remove(tmp_file)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Json.stringify_scalars_and_lists`, `fn` -> test_stringify_scalars_and_lists},
-        {`name` -> `Json.parse_and_roundtrip`, `fn` -> test_parse_and_roundtrip}
+        {`name` -> `Json.parse_and_roundtrip`, `fn` -> test_parse_and_roundtrip},
+        {`name` -> `Json.pretty_and_file_io`, `fn` -> test_pretty_and_file_io}
     ]
 
     <- test.run_suite(`JSON Library`, tests)

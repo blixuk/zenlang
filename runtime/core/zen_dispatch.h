@@ -17,6 +17,7 @@ ZenValue ZenValue_type(ZenValue obj);
 // Dynamic dispatch helpers
 ZenValue ZenValue_get_length(ZenValue self);
 ZenValue ZenValue_get_at(ZenValue self, ZenValue index);
+ZenValue ZenValue_get(ZenValue self, ZenValue key, ZenValue default_val);
 ZenValue ZenValue_set_at(ZenValue self, ZenValue index, ZenValue value);
 ZenValue ZenValue_append(ZenValue self, ZenValue value);
 ZenValue ZenValue_pop_dispatch(ZenValue self);
@@ -51,6 +52,6 @@ ZenValue ZenValue_instantiate(ZenValue class_obj, ZenValue data);
 ZenValue ZenValue_create_object(ZenValue type_name, ZenValue data);
 
 // List/string slice
-ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end);
+ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end, ZenValue step);
 
 #endif // ZEN_DISPATCH_H

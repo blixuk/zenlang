@@ -1,0 +1,70 @@
+import zen.test as test
+import zen.text.string as Str
+
+function double(x) {
+    <- x * 2
+}
+
+function add(a, b) {
+    <- a + b
+}
+
+function test_rev(l) {
+    <- l.reverse()
+}
+
+function test_coalesce_operator() {
+    let a -> Nothing ?? 42
+    let pass -> test.assert_equal(a, 42, `Nothing ?? 42 should be 42`)
+
+    let b -> 10 ?? 42
+    pass -> pass and test.assert_equal(b, 10, `10 ?? 42 should be 10`)
+
+    let c -> 0 ?? 99
+    pass -> pass and test.assert_equal(c, 0, `0 ?? 99 should be 0 (0 is not Nothing)`)
+
+    let d -> `` ?? `fallback`
+    pass -> pass and test.assert_equal(d, ``, `empty string is not Nothing`)
+
+    let e -> false ?? true
+    pass -> pass and test.assert_equal(e, false, `false is not Nothing`)
+
+    // Chained coalesce
+    let f -> Nothing ?? Nothing ?? `third`
+    pass -> pass and test.assert_equal(f, `third`, `chained coalesce returns first non-nothing`)
+
+    <- pass
+}
+
+function test_pipeline_operator() {
+    let r1 -> 10 |> double
+    let pass -> test.assert_equal(r1, 20, `10 |> double should be 20`)
+
+    let r2 -> 5 |> add(10)
+    pass -> pass and test.assert_equal(r2, 15, `5 |> add(10) should be 15 (5 passed as first arg)`)
+
+    let r3 -> `  zenlang  ` |> Str.trim |> Str.to_upper
+    pass -> pass and test.assert_equal(r3, `ZENLANG`, `multi-step pipeline with member functions`)
+
+    let r4 -> [1, 2, 3] |> test_rev
+    pass -> pass and test.assert_equal(r4[0], 3, `pipeline with list function`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Flow.coalesce`, `fn` -> test_coalesce_operator},
+        {`name` -> `Flow.pipeline`, `fn` -> test_pipeline_operator}
+    ]
+
+    <- test.run_suite(`Flow Operators Suite (?? and |>)`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

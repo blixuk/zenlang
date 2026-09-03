@@ -9,7 +9,7 @@ from Parser.AST import (
 
 class ControlFlowExpressionsMixin:
     def conditional(self, allow_instantiation: bool = True) -> ASTNode:
-        node: ASTNode = self.logical(allow_instantiation=allow_instantiation)
+        node: ASTNode = self.coalesce(allow_instantiation=allow_instantiation)
 
         if self.token_handler.check_type_value(TokenType.KEYWORD, "when"):
             current_when = self.token_handler.peek()

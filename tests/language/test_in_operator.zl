@@ -41,9 +41,9 @@ function test_set_in() {
 }
 
 function test_range_in() {
-    let r -> 1..=10
-    let pass -> test.assert_true(5 in r, `5 should be in 1..=10`)
-    pass -> pass and test.assert_false(15 in r, `15 should not be in 1..=10`)
+    let r -> 1...10
+    let pass -> test.assert_true(5 in r, `5 should be in 1...10`)
+    pass -> pass and test.assert_false(15 in r, `15 should not be in 1...10`)
     <- pass
 }
 

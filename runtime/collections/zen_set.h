@@ -15,6 +15,9 @@ ZenValue ZenSet_add_value(ZenValue set, ZenValue value);
 ZenValue ZenSet_contains_value(ZenValue set, ZenValue value);
 ZenValue ZenSet_remove_value(ZenValue set, ZenValue value);
 int ZenSet_get_count(ZenValue set);
+ZenValue ZenSet_union(ZenValue a, ZenValue b);
+ZenValue ZenSet_intersection(ZenValue a, ZenValue b);
+ZenValue ZenSet_difference(ZenValue a, ZenValue b);
 
 static inline ZenValue ZenSet_remove(ZenValue set, ZenValue value) { return ZenSet_remove_value(set, value); }
 static inline ZenValue ZenSet_add(ZenValue set, ZenValue value) { return ZenSet_add_value(set, value); }

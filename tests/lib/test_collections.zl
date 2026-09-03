@@ -1,19 +1,41 @@
 import zen.test as test
+import zen.collections.list as list_mod
+import zen.collections.collections as coll
 import zen.collections.set as set_mod
 import zen.collections.stack as stack_mod
 import zen.collections.queue as queue_mod
+
+function is_even(x) {
+    <- (x % 2) == 0
+}
+
+function test_list_functional() {
+    let nums -> [1, 2, 3, 4, 5]
+    let pass -> test.assert_equal(list_mod.reverse(nums), [5, 4, 3, 2, 1], `list.reverse`)
+    pass -> pass and test.assert_equal(list_mod.unique([1, 2, 2, 3, 1, 4]), [1, 2, 3, 4], `list.unique`)
+    pass -> pass and test.assert_equal(list_mod.flatten([[1, 2], [3], [4, 5]]), [1, 2, 3, 4, 5], `list.flatten`)
+    pass -> pass and test.assert_equal(list_mod.chunk([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]], `list.chunk`)
+    pass -> pass and test.assert_equal(list_mod.take([1, 2, 3, 4], 2), [1, 2], `list.take`)
+    pass -> pass and test.assert_equal(list_mod.drop([1, 2, 3, 4], 2), [3, 4], `list.drop`)
+    pass -> pass and test.assert_true(list_mod.contains([10, 20, 30], 20), `list.contains true`)
+    pass -> pass and test.assert_false(list_mod.contains([10, 20, 30], 99), `list.contains false`)
+    pass -> pass and test.assert_true(list_mod.any([1, 3, 4], is_even), `list.any`)
+    pass -> pass and test.assert_false(list_mod.all([1, 3, 4], is_even), `list.all false`)
+    pass -> pass and test.assert_true(list_mod.all([2, 4, 6], is_even), `list.all true`)
+    <- pass
+}
 
 function test_map() {
     let d -> {`a` -> 1, `b` -> 2}
     let pass -> test.assert_true(d.has(`a`), `map should have key 'a'`)
     pass -> pass and test.assert_false(d.has(`c`), `map should not have key 'c'`)
     
-    let keys -> d.keys()
-    pass -> pass and test.assert_equal(keys.length, 2, `keys length should be 2`)
-    
-    let values -> d.values()
-    pass -> pass and test.assert_equal(values.length, 2, `values length should be 2`)
-    
+    let merged -> coll.Map.merge({`a` -> 1}, {`b` -> 2, `a` -> 10})
+    pass -> pass and test.assert_equal(merged[`a`], 10, `map.merge override`)
+    pass -> pass and test.assert_equal(merged[`b`], 2, `map.merge new key`)
+
+    let inverted -> coll.Map.invert({`key` -> `val`})
+    pass -> pass and test.assert_equal(inverted[`val`], `key`, `map.invert`)
     <- pass
 }
 
@@ -22,6 +44,19 @@ function test_set() {
     let pass -> test.assert_equal(s.size(), 3, `set size should be 3`)
     pass -> pass and test.assert_true(s.has(2), `set should have 2`)
     pass -> pass and test.assert_false(s.has(4), `set should not have 4`)
+
+    let s1 -> coll.Set.from_list([1, 2, 3])
+    let s2 -> coll.Set.from_list([3, 4, 5])
+    let u -> coll.Set.union(s1, s2)
+    pass -> pass and test.assert_true(coll.Set.has(u, 1) and coll.Set.has(u, 5), `set.union has elements`)
+
+    let inter -> coll.Set.intersection(s1, s2)
+    pass -> pass and test.assert_true(coll.Set.has(inter, 3), `set.intersection has 3`)
+    pass -> pass and test.assert_false(coll.Set.has(inter, 1), `set.intersection excludes 1`)
+
+    let diff -> coll.Set.difference(s1, s2)
+    pass -> pass and test.assert_true(coll.Set.has(diff, 1) and coll.Set.has(diff, 2), `set.difference has s1 only`)
+    pass -> pass and test.assert_false(coll.Set.has(diff, 3), `set.difference excludes common`)
     <- pass
 }
 
@@ -47,6 +82,7 @@ function test_queue() {
 
 function run_tests() {
     <- test.run_suite(`Collections Library`, [
+        {`name` -> `Coll.ListFunctional`, `fn` -> test_list_functional},
         {`name` -> `Coll.Map`, `fn` -> test_map},
         {`name` -> `Coll.Set`, `fn` -> test_set},
         {`name` -> `Coll.Stack`, `fn` -> test_stack},

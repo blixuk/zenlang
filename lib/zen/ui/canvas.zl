@@ -16,11 +16,11 @@ function create(w, h) {
     let buffer -> []
     let fg_buffer -> []
     let bg_buffer -> []
-    do for y in 0..h {
+    do for y in 0..-h {
         let row -> []
         let fg_row -> []
         let bg_row -> []
-        do for x in 0..w {
+        do for x in 0..-w {
             row.append(` `)
             fg_row.append(`white`)
             bg_row.append(`black`)
@@ -85,8 +85,8 @@ function clear(c, char, fg, bg) {
     }
     let w -> c[`width`]
     let h -> c[`height`]
-    do for y in 0..h {
-        do for x in 0..w {
+    do for y in 0..-h {
+        do for x in 0..-w {
             c[`buffer`][y][x] -> fill_char
             c[`fg_buffer`][y][x] -> fill_fg
             c[`bg_buffer`][y][x] -> fill_bg
@@ -101,11 +101,11 @@ function draw_rect(c, x0, y0, width, height, char, fg, bg) {
     when width <= 0 or height <= 0 { <- Nothing }
     let x2 -> x0 + width - 1
     let y2 -> y0 + height - 1
-    do for x in x0..(x2 + 1) {
+    do for x in x0...x2 {
         set_cell(c, x, y0, char, fg, bg)
         set_cell(c, x, y2, char, fg, bg)
     }
-    do for y in y0..(y2 + 1) {
+    do for y in y0...y2 {
         set_cell(c, x0, y, char, fg, bg)
         set_cell(c, x2, y, char, fg, bg)
     }
@@ -131,8 +131,8 @@ function fill_rect(c, x0, y0, width, height, char, fg, bg) {
     when width <= 0 or height <= 0 { <- Nothing }
     let y1 -> y0 + height
     let x1 -> x0 + width
-    do for y in y0..y1 {
-        do for x in x0..x1 {
+    do for y in y0..-y1 {
+        do for x in x0..-x1 {
             set_cell(c, x, y, char, fg, bg)
         }
     }

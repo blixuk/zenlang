@@ -541,3 +541,11 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
     
     return val;
 }
+
+ZenValue ZenValue_coalesce(ZenValue a, ZenValue b) {
+    if (a.type != ZEN_NOTHING) {
+        return a;
+    }
+    return b;
+}
+

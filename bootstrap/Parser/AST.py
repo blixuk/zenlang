@@ -415,6 +415,17 @@ class IndexExpression(ASTNode):
 
 
 @dataclass
+class SliceExpression(ASTNode):
+    line: int
+    column: int
+    object: Any
+    start: Optional[Any] = None
+    end: Optional[Any] = None
+    step: Optional[Any] = None
+    node_type: Optional[str] = "SliceExpression"
+
+
+@dataclass
 class FunctionExpression(ASTNode):
     line: int
     column: int

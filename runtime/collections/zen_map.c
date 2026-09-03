@@ -238,3 +238,37 @@ ZenValue ZenMap_remove_key(ZenValue map, ZenValue key) {
     }
     return map;
 }
+
+ZenValue ZenMap_merge(ZenValue a, ZenValue b) {
+    ZenMap* out = ZenMap_new();
+    if (a.type == ZEN_MAP && a.as.map) {
+        for (int i = 0; i < a.as.map->count; i++) {
+            ZenMap_set_value_at_key(ZenValue_from_map(out), a.as.map->entries[i].key, a.as.map->entries[i].value);
+        }
+    }
+    if (b.type == ZEN_MAP && b.as.map) {
+        for (int i = 0; i < b.as.map->count; i++) {
+            ZenMap_set_value_at_key(ZenValue_from_map(out), b.as.map->entries[i].key, b.as.map->entries[i].value);
+        }
+    }
+    return ZenValue_from_map(out);
+}
+
+ZenValue ZenMap_invert(ZenValue map) {
+    ZenMap* out = ZenMap_new();
+    if (map.type == ZEN_MAP && map.as.map) {
+        for (int i = 0; i < map.as.map->count; i++) {
+            ZenMap_set_value_at_key(ZenValue_from_map(out), map.as.map->entries[i].value, map.as.map->entries[i].key);
+        }
+    }
+    return ZenValue_from_map(out);
+}
+
+ZenValue ZenMap_get(ZenValue map, ZenValue key, ZenValue default_val) {
+    if (map.type != ZEN_MAP || !map.as.map) return default_val;
+    if (ZenMap_has_key(map, key).as.boolean) {
+        return ZenMap_get_value_at_key(map, key);
+    }
+    return default_val;
+}
+

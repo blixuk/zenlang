@@ -20,7 +20,7 @@ import zen.text.string as Str
 /!
   Run a shell command string via `/bin/sh -c`.
 !/
-function shell(command) {
+export function shell(command) {
     <- __builtin_process.shell(command)
 }
 
@@ -28,7 +28,7 @@ function shell(command) {
   Run shell command in `cwd` without changing the parent process directory.
   bash: `(cd dir && cmd)`
 !/
-function shell_in(cwd, command) {
+export function shell_in(cwd, command) {
     <- __builtin_process.shell_in(cwd, command)
 }
 
@@ -37,49 +37,49 @@ function shell_in(cwd, command) {
   @param env Map of string → string.
   @param command Shell command.
 !/
-function shell_env(env, command) {
+export function shell_env(env, command) {
     <- __builtin_process.shell_env(env, command)
 }
 
 /!
   Child-only chdir + env overlay.
 !/
-function shell_in_env(cwd, env, command) {
+export function shell_in_env(cwd, env, command) {
     <- __builtin_process.shell_in_env(cwd, env, command)
 }
 
 /!
   Run a shell command; return map: stdout, stderr, code.
 !/
-function result(command) {
+export function result(command) {
     <- __builtin_process.shell_result(command)
 }
 
 /!
   Like result(), but child chdir(cwd) first.
 !/
-function result_in(cwd, command) {
+export function result_in(cwd, command) {
     <- __builtin_process.shell_result_in(cwd, command)
 }
 
 /!
   result() with env overlay.
 !/
-function result_env(env, command) {
+export function result_env(env, command) {
     <- __builtin_process.shell_result_env(env, command)
 }
 
 /!
   result() with cwd + env.
 !/
-function result_in_env(cwd, env, command) {
+export function result_in_env(cwd, env, command) {
     <- __builtin_process.shell_result_in_env(cwd, env, command)
 }
 
 /!
   True when the shell command exits 0.
 !/
-function ok(command) {
+export function ok(command) {
     let r -> result(command)
     <- r.code == 0
 }
@@ -87,7 +87,7 @@ function ok(command) {
 /!
   True when shell command in `cwd` exits 0.
 !/
-function ok_in(cwd, command) {
+export function ok_in(cwd, command) {
     let r -> result_in(cwd, command)
     <- r.code == 0
 }
@@ -95,7 +95,7 @@ function ok_in(cwd, command) {
 /!
   True when shell command with env overlay exits 0.
 !/
-function ok_env(env, command) {
+export function ok_env(env, command) {
     let r -> result_env(env, command)
     <- r.code == 0
 }
@@ -103,7 +103,7 @@ function ok_env(env, command) {
 /!
   Run shell command; raise if non-zero. Returns stdout on success.
 !/
-function require(command) {
+export function require(command) {
     let r -> result(command)
     when r.code != 0 {
         let msg -> `command failed (` + Str.to_string(r.code) + `): ` + command
@@ -118,7 +118,7 @@ function require(command) {
 /!
   require() with child-only chdir.
 !/
-function require_in(cwd, command) {
+export function require_in(cwd, command) {
     let r -> result_in(cwd, command)
     when r.code != 0 {
         let msg -> `command failed (` + Str.to_string(r.code) + `) in ` + cwd + `: ` + command
@@ -134,7 +134,7 @@ function require_in(cwd, command) {
   Shell command; return stdout split into lines (trimmed).
   Loads the full output then splits (fine for small outputs).
 !/
-function lines(command) {
+export function lines(command) {
     let out -> Str.trim(shell(command))
     when out == `` { <- [] }
     <- Str.split(out, `\n`)
@@ -145,42 +145,50 @@ function lines(command) {
   Does not keep the full output in memory. Returns the line count.
   @param command Shell command string.
   @param fn Callback function(line).
-  @example
-  process.each_line(`printf 'a\nb\n'`, function(line) { io.write(line + `\n`) })
 !/
-function each_line(command, fn) {
+export function each_line(command, fn) {
     <- __builtin_process.shell_each_line(command, fn)
 }
 
 /!
   each_line with child-only chdir.
 !/
-function each_line_in(cwd, command, fn) {
+export function each_line_in(cwd, command, fn) {
     <- __builtin_process.shell_each_line_in(cwd, command, fn)
 }
 
 /!
   each_line with env overlay.
 !/
-function each_line_env(env, command, fn) {
+export function each_line_env(env, command, fn) {
     <- __builtin_process.shell_each_line_env(env, command, fn)
 }
 
 /!
   Alias for shell pipelines written as a single string (bash `|`).
 !/
-function pipeline(command) {
+export function pipeline(command) {
     <- shell(command)
 }
 
-function get_id() {
+/!
+  Returns the current process identifier (PID).
+!/
+export function get_id() {
     <- __builtin_process.get_id()
+}
+
+/!
+  Ergonomic alias for get_id().
+!/
+export function pid() {
+    <- get_id()
 }
 
 /!
   Represents a system process (argv form).
 !/
-class Process {
+export class Process {
     let _instance
     let _cmd
     let _args
@@ -227,7 +235,7 @@ class Process {
   @param s Raw argument.
   @return Shell-safe single-quoted string.
 !/
-function shell_quote(s) {
+export function shell_quote(s) {
     let text -> Str.to_string(s)
     // bash: 'foo'"'"'bar' embeds a single quote inside single quotes
     let escaped -> Str.replace(text, `'`, `'"'"'`)
@@ -237,7 +245,7 @@ function shell_quote(s) {
 /!
   Format argv as a shell stage: cmd arg1 arg2 ...
 !/
-function format_stage(command, arguments) {
+export function format_stage(command, arguments) {
     let s -> shell_quote(command)
     do for a in arguments {
         s -> s + ` ` + shell_quote(a)
@@ -248,7 +256,7 @@ function format_stage(command, arguments) {
 /!
   Build one pipeline stage as [cmd, arg1, ...] for real pipe(2) execution.
 !/
-function make_stage(command, arguments) {
+export function make_stage(command, arguments) {
     let stage -> [command]
     do for a in arguments {
         stage.append(a)
@@ -258,11 +266,11 @@ function make_stage(command, arguments) {
 
 /!
   Fluent multi-stage pipeline.
-  - Stores argv stages and runs them with real OS pipes (no shell) by Default.
+  - Stores argv stages and runs them with real OS pipes (no shell) by default.
   - `script()` still shows the equivalent shell form for debugging.
   - Use process.shell(\`a | b\`) when you need shell metacharacters in a stage.
 !/
-class Pipeline {
+export class Pipeline {
     let _stages
     let _script
     let _cwd
@@ -346,7 +354,7 @@ class Pipeline {
   @example
   process.cmd(`printf`, [`a\nb\n`]).pipe(`wc`, [`-l`]).run()
 !/
-function cmd(command, arguments) {
+export function cmd(command, arguments) {
     <- Pipeline(command, arguments)
 }
 
@@ -354,7 +362,7 @@ function cmd(command, arguments) {
   Run an executable with an argument list (no shell). Safer for untrusted input.
   Returns combined stdout (stderr merged by the host). Prefer `run_result` for exit code.
 !/
-function run(command, arguments) {
+export function run(command, arguments) {
     <- __builtin_process.run(command, arguments)
 }
 
@@ -363,14 +371,14 @@ function run(command, arguments) {
   Implemented via a carefully quoted `/bin/sh -c` stage so dual-path hosts share
   the same result shape as `result()`.
 !/
-function run_result(command, arguments) {
+export function run_result(command, arguments) {
     <- result(format_stage(command, arguments))
 }
 
 /!
   True when argv form exits 0.
 !/
-function run_ok(command, arguments) {
+export function run_ok(command, arguments) {
     let r -> run_result(command, arguments)
     <- r.code == 0
 }
@@ -378,7 +386,7 @@ function run_ok(command, arguments) {
 /!
   Run argv; raise if non-zero. Returns stdout on success.
 !/
-function run_require(command, arguments) {
+export function run_require(command, arguments) {
     let r -> run_result(command, arguments)
     when r.code != 0 {
         let msg -> `command failed (` + Str.to_string(r.code) + `): ` + format_stage(command, arguments)
@@ -393,7 +401,7 @@ function run_require(command, arguments) {
 /!
   Resolve an executable on PATH (`command -v`). Returns path string or ``.
 !/
-function which(name) {
+export function which(name) {
     let r -> result(`command -v ` + shell_quote(name) + ` 2>/dev/null`)
     when r.code != 0 { <- `` }
     <- Str.trim(r.stdout)
@@ -402,7 +410,35 @@ function which(name) {
 /!
   True when `name` resolves on PATH.
 !/
-function available(name) {
+export function available(name) {
     <- which(name) != ``
 }
 
+/!
+  Executes a command and returns its trimmed stdout string on success, or raises on non-zero.
+!/
+export function exec(command) {
+    <- Str.trim(require(command))
+}
+
+/!
+  Runs a command and returns stdout directly (ignoring non-zero exit code).
+!/
+export function output(command) {
+    let r -> result(command)
+    <- r.stdout
+}
+
+/!
+  Runs an argv command and captures `{stdout, stderr, code}`.
+!/
+export function capture(command, arguments) {
+    <- run_result(command, arguments)
+}
+
+/!
+  Pauses the current process execution for the given duration in seconds.
+!/
+export function sleep(seconds) {
+    __builtin_time.sleep(seconds)
+}

@@ -140,14 +140,17 @@ class StatementHandler:
         if isinstance(object_val, (list, bytearray)):
             if not isinstance(index_val, int):
                 raise RuntimeError(f"Index must be an integer for {type(object_val).__name__}, got {type(index_val).__name__}")
-            if index_val < 0 or index_val >= len(object_val):
+            actual_idx = index_val
+            if actual_idx < 0:
+                actual_idx += len(object_val)
+            if actual_idx < 0 or actual_idx >= len(object_val):
                  raise RuntimeError(f"Index out of bounds: {index_val}")
             
             if isinstance(object_val, bytearray):
                 if not isinstance(value, int) or value < 0 or value > 255:
                      raise RuntimeError(f"Byte value must be an integer between 0 and 255, got {value}")
 
-            object_val[index_val] = value
+            object_val[actual_idx] = value
             return value
         
         if isinstance(object_val, dict):

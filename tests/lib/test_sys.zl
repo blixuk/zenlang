@@ -1,4 +1,5 @@
 import zen.sys.sys as sys
+import zen.sys.env as env_mod
 import zen.test as test
 
 function test_process_environment() {
@@ -12,6 +13,22 @@ function test_process_environment() {
     <- pass
 }
 
+function test_env_module() {
+    let pass -> test.assert_true(env_mod.has(`PATH`), `env.has PATH`)
+    pass -> pass and test.assert_true(env_mod.get(`PATH`, ``).length > 0, `env.get PATH`)
+    pass -> pass and test.assert_equal(env_mod.get(`NONEXISTENT_VAR_123`, `fallback`), `fallback`, `env.get default`)
+
+    env_mod.set(`ZEN_TEST_VAR`, `42`)
+    pass -> pass and test.assert_equal(env_mod.get_int(`ZEN_TEST_VAR`, 0), 42, `env.get_int`)
+
+    env_mod.set(`ZEN_TEST_BOOL`, `true`)
+    pass -> pass and test.assert_equal(env_mod.get_bool(`ZEN_TEST_BOOL`, false), true, `env.get_bool`)
+
+    let all_env -> env_mod.all()
+    pass -> pass and test.assert_true(all_env.has(`PATH`), `env.all contains PATH`)
+    <- pass
+}
+
 function test_platform_version_exec() {
     let pass -> test.assert_true(sys.platform().length > 0, `platform should be non-empty`)
     pass -> pass and test.assert_true(sys.version().length > 0, `version should be non-empty`)
@@ -21,6 +38,7 @@ function test_platform_version_exec() {
 function run_tests() {
     let tests -> [
         {`name` -> `Sys.process_environment`, `fn` -> test_process_environment},
+        {`name` -> `Sys.env_module`, `fn` -> test_env_module},
         {`name` -> `Sys.platform_version_exec`, `fn` -> test_platform_version_exec}
     ]
 

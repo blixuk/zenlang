@@ -43,6 +43,15 @@ class IndexExpression(Expression):
 
 
 @dataclass
+class SliceExpression(Expression):
+    object: Any
+    start: Optional[Any] = None
+    end: Optional[Any] = None
+    step: Optional[Any] = None
+    node_type: Optional[str] = "SliceExpression"
+
+
+@dataclass
 class FunctionExpression(Expression):
     scope_level: int
     name: str

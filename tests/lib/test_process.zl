@@ -197,6 +197,25 @@ function test_shell_env() {
     <- pass
 }
 
+function test_process_ergonomic_helpers() {
+    let pid_val -> process.pid()
+    let pass -> test.assert_true(pid_val > 0, `pid() returns valid PID`)
+
+    let exec_out -> process.exec(`echo 'zen_exec_test'`)
+    pass -> pass and test.assert_equal(exec_out, `zen_exec_test`, `exec returns trimmed stdout`)
+
+    let out_val -> str.trim(process.output(`echo 'zen_output_test'`))
+    pass -> pass and test.assert_equal(out_val, `zen_output_test`, `output returns stdout`)
+
+    let cap -> process.capture(`echo`, [`captured`])
+    pass -> pass and test.assert_equal(cap.code, 0, `capture exit code`)
+    pass -> pass and test.assert_equal(str.trim(cap.stdout), `captured`, `capture stdout`)
+
+    process.sleep(0.01)
+    pass -> pass and test.assert_true(true, `sleep finished`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Process.run_and_pid`, `fn` -> test_run_and_pid},
@@ -208,7 +227,8 @@ function run_tests() {
         {`name` -> `Process.shell_in_dir`, `fn` -> test_shell_in_dir},
         {`name` -> `Process.shell_env`, `fn` -> test_shell_env},
         {`name` -> `Process.real_pipe_pipeline`, `fn` -> test_real_pipe_pipeline},
-        {`name` -> `Process.each_line`, `fn` -> test_each_line}
+        {`name` -> `Process.each_line`, `fn` -> test_each_line},
+        {`name` -> `Process.ergonomic_helpers`, `fn` -> test_process_ergonomic_helpers}
     ]
 
     <- test.run_suite(`Process Library`, tests)

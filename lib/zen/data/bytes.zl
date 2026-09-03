@@ -49,7 +49,7 @@ class Bytes {
      !/
     function to_list() {
         let res -> []
-        do for i in 0..self.length() {
+        do for i in 0..-self.length() {
             res.append(self.get(i))
         }
         <- res

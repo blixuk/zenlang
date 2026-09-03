@@ -31,5 +31,8 @@ ZenValue ZenMap_get_values(ZenValue map);
 ZenValue ZenMap_get_items(ZenValue map);
 ZenValue ZenMap_has_key(ZenValue map, ZenValue key);
 ZenValue ZenMap_remove_key(ZenValue map, ZenValue key);
+ZenValue ZenMap_merge(ZenValue a, ZenValue b);
+ZenValue ZenMap_invert(ZenValue map);
+ZenValue ZenMap_get(ZenValue map, ZenValue key, ZenValue default_val);
 
 #endif // ZEN_MAP_H

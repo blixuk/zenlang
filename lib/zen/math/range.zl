@@ -1,27 +1,168 @@
 /!
-  Range utility module.
-  Prefer the operators `start..end` (exclusive) and `start..=end` (inclusive)
-  when writing new code; these helpers remain for call-style APIs.
+  Mathematical Range module for Zenlang.
+  Implements the SPEC 6.4 4-Range Boundary System with step increments and dual naming:
+    1. Range Between (start, end): `..`
+    2. Range Inclusive End (start, end]: `..+`
+    3. Range Exclusive End [start, end): `..-`
+    4. Range Full Inclusive [start, end]: `...`
 !/
 
 /!
-  Creates a list of integers from start (inclusive) to end (exclusive).
-  Same as `start..end`.
-  @param start The start value.
-  @param end The end value.
-  @return A list of integers.
+  Generates a stepped sequence with arbitrary positive or negative step.
+  @param start Starting value.
+  @param end Target boundary.
+  @param step Increment/decrement amount.
+  @param inclusive Whether target boundary is included if reached.
+  @param open_start Whether start boundary is excluded.
+  @return List of values.
 !/
-function range(start, end) {
-    <- start..end
+function make_stepped_range(start, end, step, inclusive, open_start) {
+    when step == 0 {
+        <- []
+    }
+    let res -> []
+    let cur -> start
+    when step > 0 {
+        when open_start { cur -> cur + step }
+        let limit -> end
+        when inclusive {
+            do while cur <= limit {
+                res.append(cur)
+                cur -> cur + step
+            }
+        } or {
+            do while cur < limit {
+                res.append(cur)
+                cur -> cur + step
+            }
+        }
+    } or {
+        when open_start { cur -> cur + step }
+        let limit -> end
+        when inclusive {
+            do while cur >= limit {
+                res.append(cur)
+                cur -> cur + step
+            }
+        } or {
+            do while cur > limit {
+                res.append(cur)
+                cur -> cur + step
+            }
+        }
+    }
+    <- res
 }
 
 /!
-  Creates a list of integers from start to end inclusive.
-  Same as `start..=end`.
-  @param start The start value.
-  @param end The end value.
-  @return A list of integers.
+  Range Between: (start, end)
+  Open interval excluding both endpoints.
+  @param start Start boundary.
+  @param end End boundary.
 !/
-function range_inclusive(start, end) {
-    <- start..=end
+export function range_between(start, end) {
+    <- start..end
+}
+
+export function range_open(start, end) {
+    <- start..end
+}
+
+export function range_step_between(start, end, step) {
+    <- make_stepped_range(start, end, step, false, true)
+}
+
+/!
+  Range Inclusive End: (start, end]
+  Left-open, right-closed interval excluding start, including end.
+  @param start Start boundary.
+  @param end End boundary.
+!/
+export function range_inclusive_end(start, end) {
+    <- start..+end
+}
+
+export function range_step_inclusive_end(start, end, step) {
+    <- make_stepped_range(start, end, step, true, true)
+}
+
+/!
+  Range Exclusive End: [start, end)
+  Left-closed, right-open interval including start, excluding end.
+  Standard 0-indexed collection indexing interval.
+  @param start Start boundary.
+  @param end End boundary.
+!/
+export function range_exclusive_end(start, end) {
+    <- start..-end
+}
+
+export function range_step_exclusive_end(start, end, step) {
+    <- make_stepped_range(start, end, step, false, false)
+}
+
+/!
+  Range Full Inclusive: [start, end]
+  Closed interval including both endpoints.
+  @param start Start boundary.
+  @param end End boundary.
+!/
+export function range_full_inclusive(start, end) {
+    <- start...end
+}
+
+export function range_step_full_inclusive(start, end, step) {
+    <- make_stepped_range(start, end, step, true, false)
+}
+
+/!
+  Creates a range from start (inclusive) to end (exclusive) [start, end).
+  Primary function for collection loops and indexing sequences.
+  @param start Starting value.
+  @param end Ending boundary.
+!/
+export function range(start, end) {
+    <- start..-end
+}
+
+/!
+  Creates a stepped range from start to end with an explicit step.
+  @param start Starting value.
+  @param end Ending boundary.
+  @param step Increment/decrement amount.
+!/
+export function range_step(start, end, step) {
+    <- make_stepped_range(start, end, step, false, false)
+}
+
+/!
+  Creates a fully inclusive range [start, end].
+  Primary full-name function.
+  @param start Starting value.
+  @param end Ending boundary (included).
+!/
+export function range_inclusive(start, end) {
+    <- start...end
+}
+
+/!
+  Creates a fully inclusive range [start, end].
+  Ergonomic short-name alias for `range_inclusive`.
+!/
+export function range_inc(start, end) {
+    <- start...end
+}
+
+/!
+  Creates a stepped fully-inclusive range [start, end] with an explicit step.
+  @param start Starting value.
+  @param end Ending boundary (included).
+  @param step Increment/decrement amount.
+!/
+export function range_step_inclusive(start, end, step) {
+    <- make_stepped_range(start, end, step, true, false)
+}
+
+export function range_step_inc(start, end, step) {
+    <- make_stepped_range(start, end, step, true, false)
 }

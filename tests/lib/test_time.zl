@@ -28,10 +28,51 @@ function test_timer() {
     <- pass
 }
 
+function compute_something() {
+    let sum -> 0
+    let i -> 0
+    do while i < 1000 {
+        sum -> sum + i
+        i -> i + 1
+    }
+    <- sum
+}
+
+function test_duration_and_formatting() {
+    let d1 -> time.seconds(10)
+    let d2 -> time.milliseconds(500)
+    let d3 -> time.duration_add(d1, d2)
+    let pass -> test.assert_equal(d3.seconds, 10.5, `duration_add`)
+    pass -> pass and test.assert_equal(time.duration_to_ms(d2), 500.0, `duration_to_ms`)
+
+    let d_sub -> time.duration_sub(d1, time.seconds(3))
+    pass -> pass and test.assert_equal(d_sub.seconds, 7.0, `duration_sub`)
+
+    let d_mul -> time.duration_mul(time.seconds(5), 3)
+    pass -> pass and test.assert_equal(d_mul.seconds, 15.0, `duration_mul`)
+
+    // Test known epoch: 1700000000 = 2023-11-14T22:13:20Z
+    let iso -> time.format_iso(1700000000)
+    pass -> pass and test.assert_equal(iso, `2023-11-14T22:13:20Z`, `format_iso`)
+
+    let dt -> time.format_date(1700000000)
+    pass -> pass and test.assert_equal(dt, `2023-11-14`, `format_date`)
+
+    let tm -> time.format_time(1700000000)
+    pass -> pass and test.assert_equal(tm, `22:13:20`, `format_time`)
+
+    let m_res -> time.measure(compute_something)
+    pass -> pass and test.assert_equal(m_res[`result`], 499500, `measure result`)
+    pass -> pass and test.assert_true(m_res[`seconds`] >= 0, `measure duration non-negative`)
+
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Time.clock_functions`, `fn` -> test_clock_functions},
-        {`name` -> `Time.timer`, `fn` -> test_timer}
+        {`name` -> `Time.timer`, `fn` -> test_timer},
+        {`name` -> `Time.duration_and_formatting`, `fn` -> test_duration_and_formatting}
     ]
 
     <- test.run_suite(`Time Library`, tests)

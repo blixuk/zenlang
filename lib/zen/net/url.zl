@@ -16,7 +16,7 @@ function _is_unreserved(c) {
     @param s The string to encode.
     @return Percent-encoded string.
 !/
-function encode_component(s) {
+export function encode_component(s) {
     when s == Nothing { <- `` }
     let text -> Str.to_string(s)
     let bytes -> __builtin.string_to_bytes(text)
@@ -44,7 +44,7 @@ function encode_component(s) {
     @param s The percent-encoded string.
     @return Decoded string.
 !/
-function decode_component(s) {
+export function decode_component(s) {
     when s == Nothing { <- `` }
     let text -> Str.to_string(s)
     let len -> Str.length(text)
@@ -81,7 +81,7 @@ function decode_component(s) {
     @param params Map of parameters.
     @return URL-encoded query string without leading '?'.
 !/
-function encode_query(params) {
+export function encode_query(params) {
     when params == Nothing { <- `` }
     let keys -> params.keys()
     let parts -> []
@@ -107,7 +107,7 @@ function encode_query(params) {
     @param query_str URL query string (with or without leading '?').
     @return Map of decoded key-value pairs.
 !/
-function decode_query(query_str) {
+export function decode_query(query_str) {
     when query_str == Nothing or query_str == `` { <- {} }
     let clean -> query_str
     when Str.starts_with(clean, `?`) {
@@ -142,7 +142,7 @@ function decode_query(query_str) {
     @param url_str Full URL string.
     @return Map with fields: scheme, host, port, path, query, query_map, fragment.
 !/
-function parse(url_str) {
+export function parse(url_str) {
     let res -> {
         `scheme` -> ``,
         `host` -> ``,
@@ -222,7 +222,7 @@ function parse(url_str) {
     @param u Map with scheme, host, port, path, query / query_map, fragment.
     @return Constructed URL string.
 !/
-function build(u) {
+export function build(u) {
     when u == Nothing { <- `` }
     let out -> ``
 
@@ -265,3 +265,115 @@ function build(u) {
 
     <- out
 }
+
+/!
+    Joins a path to a base URL or path string, normalizing slashes.
+    @param base_url Base URL or path string.
+    @param rel_path Relative path to append.
+    @return Joined URL path string.
+!/
+export function join_path(base_url, rel_path) {
+    when base_url == Nothing or base_url == `` { <- rel_path ?? `` }
+    when rel_path == Nothing or rel_path == `` { <- base_url }
+    let b -> base_url
+    let r -> rel_path
+    when Str.ends_with(b, `/`) {
+        b -> Str.substring(b, 0, Str.length(b) - 1)
+    }
+    when Str.starts_with(r, `/`) {
+        r -> Str.substring(r, 1, Str.length(r))
+    }
+    <- b + `/` + r
+}
+
+/!
+    Resolves a relative path against a base URL.
+    If rel_path starts with http:// or https://, returns rel_path directly.
+!/
+export function resolve(base_url, rel_path) {
+    when rel_path == Nothing or rel_path == `` { <- base_url ?? `` }
+    when Str.starts_with(rel_path, `http://`) or Str.starts_with(rel_path, `https://`) {
+        <- rel_path
+    }
+    let parsed -> parse(base_url)
+    when Str.starts_with(rel_path, `/`) {
+        parsed[`path`] -> rel_path
+    } or {
+        let base_dir -> parsed[`path`]
+        let last_slash -> Str.last_index_of(base_dir, `/`)
+        when last_slash != -1 {
+            base_dir -> Str.substring(base_dir, 0, last_slash + 1)
+        } or {
+            base_dir -> `/`
+        }
+        parsed[`path`] -> join_path(base_dir, rel_path)
+    }
+    <- build(parsed)
+}
+
+/!
+    Retrieves a query parameter from a URL string or parsed URL map.
+    @param url_or_map URL string or parsed map.
+    @param key Query parameter name.
+    @param default_val Fallback value if parameter is absent.
+    @return Parameter value string or default_val.
+!/
+export function get_query_param(url_or_map, key, default_val) {
+    when url_or_map == Nothing or key == Nothing { <- default_val }
+    let qmap -> {}
+    when url_or_map is Map {
+        when url_or_map.has(`query_map`) {
+            qmap -> url_or_map[`query_map`]
+        } or {
+            qmap -> url_or_map
+        }
+    } or {
+        let parsed -> parse(url_or_map)
+        qmap -> parsed[`query_map`]
+    }
+    when qmap.has(key) {
+        <- qmap[key]
+    }
+    <- default_val
+}
+
+/!
+    Sets or overrides a query parameter on a URL string or parsed URL map.
+    @return Updated URL string.
+!/
+export function set_query_param(url_or_map, key, val) {
+    when url_or_map == Nothing or key == Nothing { <- `` }
+    let parsed -> when (url_or_map is Map) { url_or_map } or { parse(url_or_map) }
+    let qmap -> {}
+    do for k in parsed[`query_map`].keys() {
+        qmap[k] -> parsed[`query_map`][k]
+    }
+    qmap[key] -> Str.to_string(val)
+    parsed[`query_map`] -> qmap
+    parsed[`query`] -> encode_query(qmap)
+    <- build(parsed)
+}
+
+/!
+    Removes a query parameter from a URL string or parsed URL map.
+    @return Updated URL string.
+!/
+export function remove_query_param(url_or_map, key) {
+    when url_or_map == Nothing or key == Nothing { <- `` }
+    let parsed -> when (url_or_map is Map) { url_or_map } or { parse(url_or_map) }
+    let qmap -> {}
+    do for k in parsed[`query_map`].keys() {
+        when k != key {
+            qmap[k] -> parsed[`query_map`][k]
+        }
+    }
+    parsed[`query_map`] -> qmap
+    parsed[`query`] -> encode_query(qmap)
+    <- build(parsed)
+}
+
+// Standard aliases
+export function url_encode(s) { <- encode_component(s) }
+export function url_decode(s) { <- decode_component(s) }
+export function parse_url(s) { <- parse(s) }
+export function build_url(u) { <- build(u) }

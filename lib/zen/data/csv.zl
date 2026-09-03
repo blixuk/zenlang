@@ -4,6 +4,7 @@
  !/
 
 import zen.text.string as Str
+import zen.io.file as file
 
 class CsvParser {
     let _str: String
@@ -159,7 +160,7 @@ function stringify(rows, delimiter) {
             
             // Need quotes if field contains delimiter, quote, \n, or \r
             let need_quotes -> False
-            when Str.index_of(field, delim) != -1 or Str.index_of(field, `"`) != -1 or Str.index_of(field, `\n`) != -1 or Str.index_of(field, `\r`) != -1 {
+            when (delim in field) or (`"` in field) or (`\n` in field) or (`\r` in field) {
                 need_quotes -> True
             }
             
@@ -182,3 +183,78 @@ function stringify(rows, delimiter) {
     
     <- result
 }
+
+/!
+ Serializes a list of maps into a CSV string using the specified headers.
+ @param records List of maps.
+ @param headers List of column header strings.
+ @param delimiter Delimiter string (defaults to `,`).
+ @return Serialized CSV string.
+ !/
+function stringify_with_headers(records, headers, delimiter) {
+    let rows -> [headers]
+    let ri -> 0
+    do while ri < records.length {
+        let rec -> records[ri]
+        ri -> ri + 1
+        let row -> []
+        let hi -> 0
+        do while hi < headers.length {
+            let h -> headers[hi]
+            hi -> hi + 1
+            let val -> ``
+            when rec.has(h) {
+                val -> rec[h]
+            }
+            row.append(val)
+        }
+        rows.append(row)
+    }
+    <- stringify(rows, delimiter)
+}
+
+/!
+ Reads a CSV file from disk and parses it into rows.
+ @param path Path to the CSV file.
+ @param delimiter Delimiter string (defaults to `,`).
+ @return List of rows.
+ !/
+function load(path, delimiter) {
+    let content -> file.read(path)
+    <- parse(content, delimiter)
+}
+
+/!
+ Reads a CSV file from disk and parses it with headers into a list of maps.
+ @param path Path to the CSV file.
+ @param delimiter Delimiter string (defaults to `,`).
+ @return List of maps.
+ !/
+function load_with_headers(path, delimiter) {
+    let content -> file.read(path)
+    <- parse_with_headers(content, delimiter)
+}
+
+/!
+ Serializes rows and writes to a CSV file.
+ @param path Path to the file.
+ @param rows List of rows.
+ @param delimiter Delimiter string (defaults to `,`).
+ !/
+function dump(path, rows, delimiter) {
+    let content -> stringify(rows, delimiter)
+    file.write(path, content)
+}
+
+/!
+ Serializes map records with headers and writes to a CSV file.
+ @param path Path to the file.
+ @param records List of map records.
+ @param headers List of column header strings.
+ @param delimiter Delimiter string (defaults to `,`).
+ !/
+function dump_with_headers(path, records, headers, delimiter) {
+    let content -> stringify_with_headers(records, headers, delimiter)
+    file.write(path, content)
+}
+

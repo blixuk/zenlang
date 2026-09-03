@@ -59,6 +59,7 @@ struct ZenValue {
 ZenValue ZenValue_make_string(const char* s);
 ZenValue ZenValue_make_nothing(void);
 ZenValue ZenValue_make_default(void);
+ZenValue ZenValue_default_for_type(const char* type_name);
 ZenValue ZenValue_from_list(struct ZenList* l);
 ZenValue ZenValue_from_map(struct ZenMap* m);
 ZenValue ZenValue_from_object(void* o);

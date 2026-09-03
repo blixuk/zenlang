@@ -25,6 +25,10 @@ class Operators:
             operator += self.advance()
             operator_type = TokenType.BITWISE_AND
 
+        elif operator == "|" and self.peek() == ">":
+            operator += self.advance()
+            operator_type = TokenType.PIPELINE
+
         elif operator == "|" and self.peek() == "|":
             operator += self.advance()
             operator_type = TokenType.BITWISE_OR

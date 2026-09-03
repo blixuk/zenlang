@@ -33,8 +33,8 @@ function main() {
     writeln(`sum 0..4 = ` + Str.to_string(sum))
 
     // Ranges build lists
-    let xs -> 1..=3
-    writeln(`range 1..=3 length = ` + Str.to_string(xs.length))
+    let xs -> 1...3
+    writeln(`range 1...3 length = ` + Str.to_string(xs.length))
 
     let ok -> True
     when ok and sum == 10 {

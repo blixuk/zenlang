@@ -1493,7 +1493,7 @@ function parse_expression(i) {
 }
 
 function parse_assignment(i) {
-    let left -> parse_or(i)
+    let left -> parse_pipeline(i)
     when left[`err`] != Nothing {
         <- left
     }
@@ -1517,6 +1517,57 @@ function parse_assignment(i) {
             <- parser_ok(AST.index_assign(AST.idx_obj(ln), AST.idx_expr(ln), right[`node`], AST.ast_line(ln), AST.ast_col(ln)), right[`i`])
         }
         <- fail(j, `Invalid assignment target.`)
+    }
+    <- left
+}
+
+function parse_pipeline(i) {
+    let left -> parse_coalesce(i)
+    <- parse_pipeline_tail(left)
+}
+
+function parse_pipeline_tail(left) {
+    when left[`err`] != Nothing { <- left }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.PIPELINE) or is_val(t, `|>`) {
+        let right -> parse_call(j + 1)
+        when right[`err`] != Nothing { <- right }
+        let rn -> right[`node`]
+        let rk -> AST.ast_kind(rn)
+        let desugared -> Nothing
+        when rk == AST.K_CALL {
+            let callee -> AST.call_callee(rn)
+            let old_args -> AST.call_args(rn)
+            let new_args -> [left[`node`]]
+            let ai -> 0
+            do while ai < old_args.length {
+                new_args.append(old_args[ai])
+                ai -> ai + 1
+            }
+            desugared -> AST.call(callee, new_args, line_of(t), col_of(t))
+        } or {
+            desugared -> AST.call(rn, [left[`node`]], line_of(t), col_of(t))
+        }
+        <- parse_pipeline_tail(parser_ok(desugared, right[`i`]))
+    }
+    <- left
+}
+
+function parse_coalesce(i) {
+    let left -> parse_or(i)
+    <- parse_coalesce_tail(left)
+}
+
+function parse_coalesce_tail(left) {
+    when left[`err`] != Nothing { <- left }
+    let j -> left[`i`]
+    let t -> tok_at(j)
+    when is_kind(t, TokenType.COALESCE) or is_val(t, `??`) {
+        let right -> parse_or(j + 1)
+        when right[`err`] != Nothing { <- right }
+        let node -> AST.binary(left[`node`], `??`, right[`node`], line_of(t), col_of(t))
+        <- parse_coalesce_tail(parser_ok(node, right[`i`]))
     }
     <- left
 }
@@ -1732,7 +1783,7 @@ function parse_range(i) {
     }
     let j -> left[`i`]
     let t -> tok_at(j)
-    when is_kind(t, TokenType.RANGE) or is_kind(t, TokenType.RANGE_INCLUSIVE) or
+    when is_kind(t, TokenType.RANGE) or
          is_kind(t, TokenType.RANGE_INCL_END) or is_kind(t, TokenType.RANGE_EXCL_END) or
          is_kind(t, TokenType.RANGE_FULL_INCL) {
         let op -> val_of(t)
@@ -1869,9 +1920,60 @@ function parse_call_tail(left) {
         <- parse_call_tail(parser_ok(node, j + 2))
     }
     when is_kind(t, TokenType.LEFT_BRACKET) {
+        let next_t -> tok_at(j + 1)
+        when is_kind(next_t, TokenType.TYPE_SET) or is_val(next_t, `:`) {
+            let k -> j + 2
+            let end_node -> Nothing
+            when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) and not is_kind(tok_at(k), TokenType.TYPE_SET) and not is_val(tok_at(k), `:`) {
+                let er -> parse_expression(k)
+                when er[`err`] != Nothing { <- er }
+                end_node -> er[`node`]
+                k -> er[`i`]
+            }
+            let step_node -> Nothing
+            when is_kind(tok_at(k), TokenType.TYPE_SET) or is_val(tok_at(k), `:`) {
+                k -> k + 1
+                when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) {
+                    let sr -> parse_expression(k)
+                    when sr[`err`] != Nothing { <- sr }
+                    step_node -> sr[`node`]
+                    k -> sr[`i`]
+                }
+            }
+            when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) {
+                <- fail(k, `Expected ']'.`)
+            }
+            let node -> AST.make_slice(left[`node`], Nothing, end_node, step_node, line_of(t), col_of(t))
+            <- parse_call_tail(parser_ok(node, k + 1))
+        }
         let ir -> parse_expression(j + 1)
         when ir[`err`] != Nothing {
             <- ir
+        }
+        when is_kind(tok_at(ir[`i`]), TokenType.TYPE_SET) or is_val(tok_at(ir[`i`]), `:`) {
+            let k -> ir[`i`] + 1
+            let end_node -> Nothing
+            when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) and not is_kind(tok_at(k), TokenType.TYPE_SET) and not is_val(tok_at(k), `:`) {
+                let er -> parse_expression(k)
+                when er[`err`] != Nothing { <- er }
+                end_node -> er[`node`]
+                k -> er[`i`]
+            }
+            let step_node -> Nothing
+            when is_kind(tok_at(k), TokenType.TYPE_SET) or is_val(tok_at(k), `:`) {
+                k -> k + 1
+                when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) {
+                    let sr -> parse_expression(k)
+                    when sr[`err`] != Nothing { <- sr }
+                    step_node -> sr[`node`]
+                    k -> sr[`i`]
+                }
+            }
+            when not is_kind(tok_at(k), TokenType.RIGHT_BRACKET) {
+                <- fail(k, `Expected ']'.`)
+            }
+            let node -> AST.make_slice(left[`node`], ir[`node`], end_node, step_node, line_of(t), col_of(t))
+            <- parse_call_tail(parser_ok(node, k + 1))
         }
         when not is_kind(tok_at(ir[`i`]), TokenType.RIGHT_BRACKET) {
             <- fail(ir[`i`], `Expected ']'.`)
@@ -1920,7 +2022,14 @@ function parse_primary(i) {
         <- parse_when(i + 1)
     }
     // literals
-    when is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or is_kind(t, TokenType.STRING) or
+    when is_kind(t, TokenType.STRING) {
+        let s_val -> val_of(t)
+        when Str.starts_with(s_val, `f\``) or Str.starts_with(s_val, `F\``) or Str.starts_with(s_val, `f"`) or Str.starts_with(s_val, `F"`) {
+            <- parse_fstring(s_val, line_of(t), col_of(t), i + 1)
+        }
+        <- parser_ok(AST.lit_tok(s_val, kind_of(t), line_of(t), col_of(t)), i + 1)
+    }
+    when is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or
          is_kind(t, TokenType.RUNE) or is_kind(t, TokenType.BOOLEAN) or is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.DEFAULT) {
         <- parser_ok(AST.lit_tok(val_of(t), kind_of(t), line_of(t), col_of(t)), i + 1)
     }
@@ -2117,4 +2226,88 @@ function parse_map_entries(i, acc) {
         <- parse_map_entries(j + 1, acc)
     }
     <- parser_ok_list(acc, j)
+}
+
+function parse_sub_expr_tokens(sub_toks, expr_src) {
+    let old_tokens -> G[G_TOKENS]
+    let old_len -> G[G_LEN]
+    let old_src -> G[G_SRC]
+    G[G_TOKENS] -> sub_toks
+    G[G_LEN] -> sub_toks.length
+    G[G_SRC] -> expr_src
+    let res -> parse_expression(0)
+    G[G_TOKENS] -> old_tokens
+    G[G_LEN] -> old_len
+    G[G_SRC] -> old_src
+    <- res
+}
+
+function parse_fstring(s_val, line, col, next_i) {
+    let raw -> ``
+    when Str.length(s_val) >= 2 {
+        raw -> Str.substring(s_val, 2, Str.length(s_val) - 1)
+    }
+    let parts -> []
+    let buf -> ``
+    let idx -> 0
+    let n -> Str.length(raw)
+    do while idx < n {
+        let ch -> Str.at(raw, idx)
+        let ch_next -> ``
+        when idx + 1 < n {
+            ch_next -> Str.at(raw, idx + 1)
+        }
+        when ch == `{` and ch_next == `{` {
+            buf -> buf + `{`
+            idx -> idx + 2
+        } or when ch == `}` and ch_next == `}` {
+            buf -> buf + `}`
+            idx -> idx + 2
+        } or when ch == `{` {
+            when Str.length(buf) > 0 {
+                parts.append(AST.lit_tok(buf, TokenType.STRING, line, col))
+                buf -> ``
+            }
+            idx -> idx + 1
+            let start_expr -> idx + 0
+            let depth -> 1
+            do while idx < n and depth > 0 {
+                let c -> Str.at(raw, idx)
+                when c == `{` {
+                    depth -> depth + 1
+                } or when c == `}` {
+                    depth -> depth - 1
+                }
+                idx -> idx + 1
+            }
+            let expr_str -> Str.substring(raw, start_expr, idx - 1)
+            expr_str -> Str.trim(expr_str)
+            when Str.length(expr_str) > 0 {
+                let sub_toks -> Lexer.tokenize(expr_str)
+                let sub_res -> parse_sub_expr_tokens(sub_toks, expr_str)
+                when sub_res[`err`] != Nothing {
+                    <- fail(next_i - 1, `Invalid expression in f-string: ` + expr_str)
+                }
+                parts.append(sub_res[`node`])
+            }
+        } or {
+            buf -> buf + ch
+            idx -> idx + 1
+        }
+    }
+    when Str.length(buf) > 0 or parts.length == 0 {
+        parts.append(AST.lit_tok(buf, TokenType.STRING, line, col))
+    }
+
+    let res -> parts[0]
+    let first_kind -> AST.ast_kind(res)
+    when first_kind != AST.K_LITERAL or not is_kind(AST.lit_tok_kind(res), TokenType.STRING) {
+        res -> AST.binary(AST.lit_tok(``, TokenType.STRING, line, col), `+`, res, line, col)
+    }
+    let pi -> 1
+    do while pi < parts.length {
+        res -> AST.binary(res, `+`, parts[pi], line, col)
+        pi -> pi + 1
+    }
+    <- parser_ok(res, next_i)
 }

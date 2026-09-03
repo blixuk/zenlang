@@ -360,7 +360,14 @@ export function tokenize_source(src) {
             or when ch == `]` { tok_push(TokenType.RIGHT_BRACKET, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
             or when ch == `,` { tok_push(TokenType.COMMA, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
             or when ch == `;` { tok_push(TokenType.SEMICOLON, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
-            or when ch == `?` { tok_push(TokenType.CHECK_SYMBOL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
+            or when ch == `?` {
+                when _peek() == `?` {
+                    _advance()
+                    tok_push(TokenType.COALESCE, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.CHECK_SYMBOL, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
             or when ch == `~` { tok_push(TokenType.BITWISE_NOT, start_p, 1, sl, sc, LEX[LEX_LINE], LEX[LEX_COL]) }
 
             // 2. Dot / range / ellipsis
@@ -370,9 +377,6 @@ export function tokenize_source(src) {
                     when _peek() == `.` {
                         _advance()
                         tok_push(TokenType.RANGE_FULL_INCL, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
-                    } or when _peek() == `=` {
-                        _advance()
-                        tok_push(TokenType.RANGE_INCLUSIVE, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                     } or when _peek() == `+` {
                         _advance()
                         tok_push(TokenType.RANGE_INCL_END, start_p, 3, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
@@ -583,9 +587,12 @@ export function tokenize_source(src) {
                 }
             }
 
-            // 15. Pipe / |= / ||
+            // 15. Pipe / |= / || / |>
             or when ch == `|` {
-                when _peek() == `|` {
+                when _peek() == `>` {
+                    _advance()
+                    tok_push(TokenType.PIPELINE, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when _peek() == `|` {
                     _advance()
                     tok_push(TokenType.BITWISE_OR, start_p, 2, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or when _peek() == `=` {
@@ -596,9 +603,36 @@ export function tokenize_source(src) {
                 }
             }
 
-            // 16. Strings
+            // 16. Formatted strings (f`...` or f"...")
+            or when (ch == `f` or ch == `F`) and (_peek() == `\`` or _peek() == `"`) {
+                let quote -> _advance()
+                let closed -> false
+                let is_err -> false
+                do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {
+                    let c -> _advance()
+                    when c == quote {
+                        closed -> true
+                    } or when c == `\\` {
+                        when LEX[LEX_POS] >= LEX[LEX_LEN] {
+                            is_err -> true
+                            closed -> true
+                        } or {
+                            _advance()
+                        }
+                    }
+                }
+                let len_p -> LEX[LEX_POS] - start_p
+                when closed and not is_err {
+                    tok_push(TokenType.STRING, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or {
+                    tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                }
+            }
+
+            // 17. Standard Strings
             or when ch == `\`` or ch == `"` {
-                when ch == `\`` and _peek() == `\`` and _peek_at(1) == `\`` {
+                let quote -> ch
+                when quote == `\`` and _peek() == `\`` and _peek_at(1) == `\`` {
                     _advance() // 2nd `
                     _advance() // 3rd `
                     let closed -> false
@@ -619,7 +653,6 @@ export function tokenize_source(src) {
                         tok_push(TokenType.ERROR_UNTERMINATED_STRING_EOF, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                     }
                 } or {
-                    let quote -> ch
                     let closed -> false
                     let is_err -> false
                     do while LEX[LEX_POS] < LEX[LEX_LEN] and closed == false {

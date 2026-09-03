@@ -1,0 +1,85 @@
+import zen.net.url as url
+import zen.test as test
+
+function test_encode_decode() {
+    let raw -> `hello world & foo=bar/baz?#`
+    let enc -> url.encode_component(raw)
+    let dec -> url.decode_component(enc)
+    let pass -> test.assert_equal(dec, raw, `encode and decode roundtrip`)
+    pass -> pass and test.assert_equal(url.url_encode(`abc`), `abc`, `url_encode unreserved`)
+    pass -> pass and test.assert_equal(url.url_decode(`hello%20world`), `hello world`, `url_decode percent 20`)
+    <- pass
+}
+
+function test_query_encode_decode() {
+    let params -> { `q` -> `zenlang test`, `page` -> `1`, `sort` -> `desc` }
+    let q_str -> url.encode_query(params)
+    let pass -> test.assert_true(q_str != ``, `encode_query non-empty`)
+    let dec_map -> url.decode_query(q_str)
+    pass -> pass and test.assert_equal(dec_map[`q`], `zenlang test`, `decode_query key q`)
+    pass -> pass and test.assert_equal(dec_map[`page`], `1`, `decode_query key page`)
+    pass -> pass and test.assert_equal(dec_map[`sort`], `desc`, `decode_query key sort`)
+
+    // decode_query with leading ?
+    let dec_q2 -> url.decode_query(`?foo=bar&baz=qux`)
+    pass -> pass and test.assert_equal(dec_q2[`foo`], `bar`, `leading question mark stripped`)
+    pass -> pass and test.assert_equal(dec_q2[`baz`], `qux`, `second param parsed`)
+    <- pass
+}
+
+function test_parse_and_build() {
+    let full_url -> `https://api.example.com:8080/v1/users?role=admin&active=true#section2`
+    let parsed -> url.parse(full_url)
+    let pass -> test.assert_equal(parsed[`scheme`], `https`, `parsed scheme`)
+    pass -> pass and test.assert_equal(parsed[`host`], `api.example.com`, `parsed host`)
+    pass -> pass and test.assert_equal(parsed[`port`], 8080, `parsed port`)
+    pass -> pass and test.assert_equal(parsed[`path`], `/v1/users`, `parsed path`)
+    pass -> pass and test.assert_equal(parsed[`fragment`], `section2`, `parsed fragment`)
+    pass -> pass and test.assert_equal(parsed[`query_map`][`role`], `admin`, `parsed query_map role`)
+    pass -> pass and test.assert_equal(parsed[`query_map`][`active`], `true`, `parsed query_map active`)
+
+    let rebuilt -> url.build(parsed)
+    let p2 -> url.parse(rebuilt)
+    pass -> pass and test.assert_equal(p2[`host`], `api.example.com`, `rebuilt host matches`)
+    pass -> pass and test.assert_equal(p2[`port`], 8080, `rebuilt port matches`)
+    pass -> pass and test.assert_equal(p2[`path`], `/v1/users`, `rebuilt path matches`)
+    <- pass
+}
+
+function test_path_and_query_helpers() {
+    let joined1 -> url.join_path(`https://example.com/api/`, `/v1/items`)
+    let pass -> test.assert_equal(joined1, `https://example.com/api/v1/items`, `join_path normalized`)
+
+    let joined2 -> url.join_path(`https://example.com/api`, `v1/items`)
+    pass -> pass and test.assert_equal(joined2, `https://example.com/api/v1/items`, `join_path missing slashes`)
+
+    let res1 -> url.resolve(`https://example.com/dir/page.html`, `/root.html`)
+    pass -> pass and test.assert_equal(res1, `https://example.com/root.html`, `resolve root relative`)
+
+    let test_url -> `https://example.com/search?q=zen&sort=asc`
+    let q_val -> url.get_query_param(test_url, `q`, `default_val`)
+    pass -> pass and test.assert_equal(q_val, `zen`, `get_query_param existing`)
+    let missing -> url.get_query_param(test_url, `missing`, `fallback`)
+    pass -> pass and test.assert_equal(missing, `fallback`, `get_query_param fallback`)
+
+    let updated -> url.set_query_param(test_url, `q`, `updated_val`)
+    pass -> pass and test.assert_equal(url.get_query_param(updated, `q`, ``), `updated_val`, `set_query_param value`)
+
+    let removed -> url.remove_query_param(test_url, `sort`)
+    pass -> pass and test.assert_equal(url.get_query_param(removed, `sort`, `gone`), `gone`, `remove_query_param`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        { `name` -> `Url.encode_decode`, `fn` -> test_encode_decode },
+        { `name` -> `Url.query_encode_decode`, `fn` -> test_query_encode_decode },
+        { `name` -> `Url.parse_and_build`, `fn` -> test_parse_and_build },
+        { `name` -> `Url.path_and_query_helpers`, `fn` -> test_path_and_query_helpers }
+    ]
+    <- test.run_suite(`URL Module Test Suite`, tests)
+}
+
+function main() {
+    when run_tests() { <- 0 } or { <- 1 }
+}

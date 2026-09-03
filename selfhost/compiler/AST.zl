@@ -55,6 +55,7 @@ export let K_INDEX_ASSIGN -> 44
 export let K_TYPE_ANN -> 45
 export let K_STMT_CHUNK -> 46
 export let K_CAST -> 47
+export let K_SLICE -> 48
 export let K_REASSIGN -> 9
 export let K_REASSIGNMENT -> 9
 
@@ -114,6 +115,10 @@ export function get(obj, name, line, column) {
 
 export function make_index(obj, index_expr, line, column) {
     <- [K_INDEX, line, column, obj, index_expr]
+}
+
+export function make_slice(obj, start_expr, end_expr, step_expr, line, column) {
+    <- [K_SLICE, line, column, obj, start_expr, end_expr, step_expr]
 }
 
 export function index_assign(obj, index_expr, value, line, column) {
@@ -335,6 +340,11 @@ export function set_val(n) { <- n[5] }
 
 export function idx_obj(n) { <- n[3] }
 export function idx_expr(n) { <- n[4] }
+
+export function slice_obj(n) { <- n[3] }
+export function slice_start(n) { <- n[4] }
+export function slice_end(n) { <- n[5] }
+export function slice_step(n) { <- n[6] }
 
 export function idx_assign_obj(n) { <- n[3] }
 export function idx_assign_expr(n) { <- n[4] }

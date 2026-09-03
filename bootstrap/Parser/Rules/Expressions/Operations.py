@@ -2,6 +2,16 @@ from Lexer.Token import Token, TokenType
 from Parser.AST import ASTNode, BinaryOperation, IsExpression, UnaryOperation, AwaitExpression
 
 class OperationsParserMixin:
+    def coalesce(self, allow_instantiation: bool = True) -> ASTNode:
+        node: ASTNode = self.logical(allow_instantiation=allow_instantiation)
+
+        while self.token_handler.match_type(TokenType.COALESCE):
+            operator = self.token_handler.previous()
+            right = self.logical(allow_instantiation=allow_instantiation)
+            node = BinaryOperation(getattr(operator, "line"), getattr(operator, "column"), "??", node, right)
+
+        return node
+
     def logical(self, allow_instantiation: bool = True) -> ASTNode:
         node: ASTNode = self.logical_xor(allow_instantiation=allow_instantiation)
 
@@ -144,14 +154,13 @@ class OperationsParserMixin:
     def range_op(self, allow_instantiation: bool = True) -> ASTNode:
         node: ASTNode = self.term(allow_instantiation=allow_instantiation)
 
-        # `a..b`   exclusive end (or range between)
-        # `a..=b`  inclusive end (legacy)
-        # `a..+b`  inclusive end
-        # `a..-b`  exclusive end
-        # `a...b`  full inclusive
+        # 4-Range Boundary System (SPEC 6.4):
+        # `a..b`   range between (start, end)
+        # `a..+b`  range inclusive end (start, end]
+        # `a..-b`  range exclusive end [start, end)
+        # `a...b`  range full inclusive [start, end]
         if self.token_handler.match_types([
             TokenType.RANGE,
-            TokenType.RANGE_INCLUSIVE,
             TokenType.RANGE_INCLUSIVE_END,
             TokenType.RANGE_EXCLUSIVE_END,
             TokenType.RANGE_FULL_INCLUSIVE,

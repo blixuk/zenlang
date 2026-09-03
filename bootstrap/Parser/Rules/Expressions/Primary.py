@@ -7,6 +7,7 @@ from Parser.AST import (
     CallExpression,
     InExpression,
     IndexExpression,
+    SliceExpression,
     ListLiteral,
     VectorLiteral,
     MapLiteral,
@@ -278,11 +279,15 @@ class PrimaryExpressionsMixin:
             return primary_decimal
 
         if self.token_handler.match_type(TokenType.STRING):
+            prefix = getattr(token, "prefix", None)
+            val = getattr(token, "value", "")
+            if prefix in ("f", "F") and "{" in val:
+                return self._parse_fstring(token)
             primary_string: StringLiteral = StringLiteral(
                 getattr(token, "line"),
                 getattr(token, "column"),
                 getattr(token, "value"),
-                prefix=getattr(token, "prefix", None),
+                prefix=prefix,
             )
             self.logger.debug("primary string", primary_string)
             return primary_string
@@ -439,7 +444,37 @@ class PrimaryExpressionsMixin:
                 continue
 
             if self.token_handler.match_type(TokenType.LEFT_BRACKET):
+                if self.token_handler.match_type(TokenType.TYPE_SET):
+                    start = None
+                    end = None
+                    if not self.token_handler.check_type(TokenType.RIGHT_BRACKET) and not self.token_handler.check_type(TokenType.TYPE_SET):
+                        end = self.expression()
+                    step = None
+                    if self.token_handler.match_type(TokenType.TYPE_SET):
+                        if not self.token_handler.check_type(TokenType.RIGHT_BRACKET):
+                            step = self.expression()
+                    self.token_handler.expect_type(
+                        TokenType.RIGHT_BRACKET, "Expected `]` after slice expression"
+                    )
+                    node = SliceExpression(getattr(node, "line"), getattr(node, "column"), node, start, end, step)
+                    continue
+
                 index: ASTNode = self.expression()
+                if self.token_handler.match_type(TokenType.TYPE_SET):
+                    start = index
+                    end = None
+                    if not self.token_handler.check_type(TokenType.RIGHT_BRACKET) and not self.token_handler.check_type(TokenType.TYPE_SET):
+                        end = self.expression()
+                    step = None
+                    if self.token_handler.match_type(TokenType.TYPE_SET):
+                        if not self.token_handler.check_type(TokenType.RIGHT_BRACKET):
+                            step = self.expression()
+                    self.token_handler.expect_type(
+                        TokenType.RIGHT_BRACKET, "Expected `]` after slice expression"
+                    )
+                    node = SliceExpression(getattr(node, "line"), getattr(node, "column"), node, start, end, step)
+                    continue
+
                 self.token_handler.expect_type(
                     TokenType.RIGHT_BRACKET, "Expected `]` after index expression"
                 )
@@ -516,3 +551,60 @@ class PrimaryExpressionsMixin:
 
         self.logger.debug("call", node)
         return node
+
+    def _parse_fstring(self, token: Token) -> ASTNode:
+        from Parser.AST import StringLiteral, BinaryOperation
+        from Lexer.Lexer import Lexer
+        from Parser.TokenHandler import TokenHandler
+        from Parser.ExpressionHandler import ExpressionHandler
+
+        raw: str = getattr(token, "value", "")
+        line: int = getattr(token, "line", 1)
+        col: int = getattr(token, "column", 1)
+
+        parts: list[ASTNode] = []
+        buf: str = ""
+        i: int = 0
+        n: int = len(raw)
+
+        while i < n:
+            if raw[i:i+2] == "{{":
+                buf += "{"
+                i += 2
+            elif raw[i:i+2] == "}}":
+                buf += "}"
+                i += 2
+            elif raw[i] == "{":
+                if buf:
+                    parts.append(StringLiteral(line, col, buf))
+                    buf = ""
+                i += 1
+                start = i
+                brace_depth = 1
+                while i < n and brace_depth > 0:
+                    if raw[i] == "{":
+                        brace_depth += 1
+                    elif raw[i] == "}":
+                        brace_depth -= 1
+                    i += 1
+                expr_str = raw[start:i-1].strip()
+                if expr_str:
+                    sub_lexer = Lexer(expr_str)
+                    tokens = sub_lexer.tokenize()
+                    sub_th = TokenHandler(tokens, self.logger)
+                    sub_eh = ExpressionHandler(sub_th, self.scope_manager, self.logger, self.statement_handler)
+                    expr_ast = sub_eh.expression()
+                    parts.append(expr_ast)
+            else:
+                buf += raw[i]
+                i += 1
+
+        if buf or not parts:
+            parts.append(StringLiteral(line, col, buf))
+
+        res: ASTNode = parts[0]
+        if not isinstance(res, StringLiteral):
+            res = BinaryOperation(line, col, "+", StringLiteral(line, col, ""), res)
+        for part in parts[1:]:
+            res = BinaryOperation(line, col, "+", res, part)
+        return res

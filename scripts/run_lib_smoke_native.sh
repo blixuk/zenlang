@@ -30,6 +30,7 @@ SMOKE=(
   tests/lib/test_term.zl
   tests/lib/test_process.zl
   tests/lib/test_http.zl
+  tests/lib/test_url.zl
   tests/lib/test_random.zl
   tests/lib/test_geometry.zl
   tests/lib/test_text.zl

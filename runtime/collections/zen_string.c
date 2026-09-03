@@ -27,6 +27,7 @@ ZenValue ZenString_get_character_at_index(ZenValue string, ZenValue index) {
     int idx = (int)index.as.integer;
     const char* s = string.as.string;
     int len = (int)strlen(s);
+    if (idx < 0) idx += len;
     if (idx < 0 || idx >= len) return ZenValue_make_nothing();
     char buf[2] = {s[idx], 0};
     return ZenValue_make_string(buf);

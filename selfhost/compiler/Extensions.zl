@@ -252,8 +252,11 @@ export function disasm_file(target_path) {
     when not fs_is_file(target_path) {
         <- {`code` -> 1, `message` -> `error: file not found: ` + target_path}
     }
-    let chunk -> Bytecode.read_bytecode_file(target_path)
-    when chunk == Nothing {
+    let chunk -> Nothing
+    when Str.ends_with(target_path, `.zbc`) {
+        chunk -> Bytecode.read_bytecode_file(target_path)
+    }
+    when chunk == Nothing or (chunk.has(`ok`) and chunk[`ok`] == false) {
         // If passed a .zl file, compile to memory chunk and disassemble
         when Str.ends_with(target_path, `.zl`) {
             let src -> fs_read(target_path)
@@ -265,7 +268,7 @@ export function disasm_file(target_path) {
             when live_chunk == Nothing {
                 <- {`code` -> 1, `message` -> `error: failed to compile bytecode for ` + target_path}
             }
-            <- {`code` -> 0, `message` -> disasm_chunk(live_chunk)}
+            <- {`code` -> 0, `message` -> disasm_chunk(live_chunk[`chunk`])}
         }
         <- {`code` -> 1, `message` -> `error: invalid .zbc bytecode file: ` + target_path}
     }

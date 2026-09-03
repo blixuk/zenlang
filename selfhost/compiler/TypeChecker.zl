@@ -1207,7 +1207,7 @@ function infer_binary(op, lt, rt) {
     when op == `==` or op == `=` or op == `!=` or op == `<` or op == `>` or op == `<=` or op == `>=` or op == `in` {
         <- Ty.t_boolean()
     }
-    when op == `..` or op == `..=` {
+    when op == `..` or op == `..+` or op == `..-` or op == `...` {
         <- Ty.t_variant()
     }
     when op == `and` or op == `or` {

@@ -75,16 +75,16 @@ Standard library maintainers. This is the batteries layer — power without bloa
 - test/: unit test framework, mock (spies, stubs, call tracking)
 - log/: structured logging
 - memory/: arena / memory primitives
-- time/: clocks, Duration, Timer, cron (5-field schedule parsing & matching)
-- io/: io (console I/O, write/write_line/writeln, read/read_line/readln, flush, info/warn/error/debug), file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `remove_tree`), path
-- sys/: sys, process (`which`/`run_result`/pipelines/shell_env), term (`is_tty`/style/mouse/`spinner_frame`), cli (`--opt=val`, `_rest`, `parse_args`), env
-- net/: http (dual-path GET/POST via urllib / curl), socket, url (parse/build/query/encode/decode), mime (lookup/extension), ip (v4/v6 parsing, CIDR, private detection), server (router, request dispatch, text/json response builders)
+- time/: clocks, Duration (arithmetic, constructors, formatting), Timer, cron, timestamp formatting (to_utc, format_iso, format_date, format_time), measure
+- io/: io (console I/O, write/write_line/writeln, read/read_line/readln, flush, info/warn/error/debug), file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `copy_tree`, `remove_tree`, `lines`, `size`, `touch`), path
+- sys/: sys, process (`which`, `run`, `run_result`, `run_ok`, `run_require`, `exec`, `output`, `capture`, `pid`, `sleep`, pipelines, `shell_env`), term (`is_tty`/style/mouse/`spinner_frame`), cli (`--opt=val`, `_rest`, `parse_args`), env
+- net/: http (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `post_json`, `put_json`, `patch_json`, `get_json`, `json_body`, `status_text`, `is_success`, `is_redirect`, `is_client_error`, `is_server_error`, `bearer_auth`, `basic_auth`, case-insensitive `header`), socket, url (`parse`, `build`, `encode_component`, `decode_component`, `encode_query`, `decode_query`, `join_path`, `resolve`, `get_query_param`, `set_query_param`, `remove_query_param`), mime (lookup/extension), ip (v4/v6 parsing, CIDR, private detection), server (router, request dispatch, text/json response builders)
 - text/: string (pad_left/pad_right), text, lorem (classical Latin words, sentences, paragraphs, titles, seedable generation), regex, markdown, columns, zenmark, wrap (wrap/fill/indent/dedent/shorten), template ({{ var }}, #if, #each), diff (diff_lines, unified_diff), html (escape/unescape, builders, parse_attributes, find_tags), fuzzy (Levenshtein, search, rank), inflect (camel, snake, kebab, Pascal, title, slugify, pluralize)
 - math/: math, random, range, stats (sum, mean, median, variance, stdev, percentiles, summary)
 - collections/: list, set, stack, queue, collections (map/set helpers; Map.items), priority_queue (min/max heap queue), lru (fixed-capacity cache), ring_buffer (circular sliding buffer)
 - reflect/: type_name, is_*, fields/call/apply, keys/values/items
 - plugins/: create, add, has, list, dispatch, merge
-- data/: json, csv, xml, yaml, toml, bytes, serialize, sexp, logfmt, database, dotenv (parse/stringify), ini (parse/stringify/get), schema (declarative validation, type/range/enum checks), tar (USTAR format archive creator & parser)
+- data/: json (parse, stringify, stringify_pretty, load, dump, dump_pretty), csv (parse, parse_with_headers, stringify, stringify_with_headers, load, load_with_headers, dump, dump_with_headers), xml, yaml, toml, bytes, serialize, sexp, logfmt, database, dotenv (parse/stringify), ini (parse/stringify/get), schema (declarative validation, type/range/enum checks), tar (USTAR format archive creator & parser)
 - geometry/: point, vectors, shapes, geometry package entry
 - ui/: app shell (Bubble Tea–style), canvas, map layout (dual-path); term; prompt (confirm, text, password, select, multiselect), tree (ASCII/Unicode hierarchy formatting), chart (sparkline, bar charts), color bridge
 - color/: Color (RGB, RGBA, Hex, HSL, named 8/16 ANSI palette, TrueColor SGR escapes, 256-color, blend, luminance, contrast_ratio)

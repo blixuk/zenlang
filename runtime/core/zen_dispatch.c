@@ -148,6 +148,21 @@ ZenValue ZenValue_get_at(ZenValue self, ZenValue index) {
     return ZenValue_make_nothing();
 }
 
+ZenValue ZenValue_get(ZenValue self, ZenValue key, ZenValue default_val) {
+    if (self.type == ZEN_MAP) return ZenMap_get(self, key, default_val);
+    if (self.type == ZEN_LIST) {
+        if (key.type == ZEN_INTEGER && self.as.list) {
+            long long idx = key.as.integer;
+            if (idx < 0) idx += self.as.list->count;
+            if (idx >= 0 && idx < self.as.list->count) {
+                return self.as.list->items[idx];
+            }
+        }
+        return default_val;
+    }
+    return default_val;
+}
+
 ZenValue ZenValue_set_at(ZenValue self, ZenValue index, ZenValue value) {
     if (self.type == ZEN_LIST) return ZenList_set_value_at_index(self, index, value);
     if (self.type == ZEN_MAP) return ZenMap_set_value_at_key(self, index, value);
@@ -209,24 +224,132 @@ ZenValue ZenValue_get_items(ZenValue self) {
 }
 
 ZenValue ZenValue_get_substring(ZenValue self, ZenValue start, ZenValue end) {
-    if (self.type == ZEN_STRING) return ZenString_get_substring(self, start, end);
-    if (self.type == ZEN_LIST) return ZenValue_slice(self, start, end);
-    return ZenValue_make_nothing();
+    return ZenValue_slice(self, start, end, ZenValue_make_nothing());
 }
 
-ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end) {
-    if (self.type == ZEN_STRING) return ZenString_get_substring(self, start, end);
-    if (self.type != ZEN_LIST || !self.as.list) return ZenList_make_from_arguments(0);
-    long long s = (start.type == ZEN_INTEGER) ? start.as.integer : 0;
-    long long e = (end.type == ZEN_INTEGER) ? end.as.integer : self.as.list->count;
-    if (s < 0) s = 0;
-    if (e > self.as.list->count) e = self.as.list->count;
-    if (s > e) s = e;
-    ZenValue out = ZenList_make_from_arguments(0);
-    for (long long i = s; i < e; i++) {
-        ZenList_append_value(out, self.as.list->items[i]);
+ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end, ZenValue step) {
+    if (self.type == ZEN_STRING) {
+        const char* s = ZenString_get_pointer(self);
+        if (!s) return ZenValue_make_string("");
+        long long len = (long long)strlen(s);
+        long long stp = (step.type == ZEN_INTEGER) ? step.as.integer : 1;
+        if (stp == 0) return ZenValue_make_string("");
+
+        long long s_idx, e_idx;
+        if (stp > 0) {
+            if (start.type == ZEN_INTEGER) {
+                s_idx = start.as.integer;
+                if (s_idx < 0) s_idx += len;
+                if (s_idx < 0) s_idx = 0;
+                if (s_idx > len) s_idx = len;
+            } else {
+                s_idx = 0;
+            }
+            if (end.type == ZEN_INTEGER) {
+                e_idx = end.as.integer;
+                if (e_idx < 0) e_idx += len;
+                if (e_idx < 0) e_idx = 0;
+                if (e_idx > len) e_idx = len;
+            } else {
+                e_idx = len;
+            }
+        } else {
+            if (start.type == ZEN_INTEGER) {
+                s_idx = start.as.integer;
+                if (s_idx < 0) s_idx += len;
+                if (s_idx >= len) s_idx = len - 1;
+                if (s_idx < -1) s_idx = -1;
+            } else {
+                s_idx = len - 1;
+            }
+            if (end.type == ZEN_INTEGER) {
+                e_idx = end.as.integer;
+                if (e_idx < 0) e_idx += len;
+                if (e_idx >= len) e_idx = len - 1;
+                if (e_idx < -1) e_idx = -1;
+            } else {
+                e_idx = -1;
+            }
+        }
+
+        long long count = 0;
+        if (stp > 0 && s_idx < e_idx) {
+            count = (e_idx - s_idx + stp - 1) / stp;
+        } else if (stp < 0 && s_idx > e_idx) {
+            count = (s_idx - e_idx + (-stp) - 1) / (-stp);
+        }
+        if (count <= 0) return ZenValue_make_string("");
+
+        char* buf = malloc(count + 1);
+        long long out_i = 0;
+        if (stp > 0) {
+            for (long long i = s_idx; i < e_idx; i += stp) {
+                buf[out_i++] = s[i];
+            }
+        } else {
+            for (long long i = s_idx; i > e_idx; i += stp) {
+                buf[out_i++] = s[i];
+            }
+        }
+        buf[out_i] = '\0';
+        ZenValue z = ZenValue_make_string(buf);
+        free(buf);
+        return z;
     }
-    return out;
+
+    if (self.type == ZEN_LIST && self.as.list) {
+        ZenList* l = self.as.list;
+        long long len = l->count;
+        long long stp = (step.type == ZEN_INTEGER) ? step.as.integer : 1;
+        ZenValue out = ZenList_make_from_arguments(0);
+        if (stp == 0) return out;
+
+        long long s_idx, e_idx;
+        if (stp > 0) {
+            if (start.type == ZEN_INTEGER) {
+                s_idx = start.as.integer;
+                if (s_idx < 0) s_idx += len;
+                if (s_idx < 0) s_idx = 0;
+                if (s_idx > len) s_idx = len;
+            } else {
+                s_idx = 0;
+            }
+            if (end.type == ZEN_INTEGER) {
+                e_idx = end.as.integer;
+                if (e_idx < 0) e_idx += len;
+                if (e_idx < 0) e_idx = 0;
+                if (e_idx > len) e_idx = len;
+            } else {
+                e_idx = len;
+            }
+            for (long long i = s_idx; i < e_idx; i += stp) {
+                ZenList_append_value(out, l->items[i]);
+            }
+        } else {
+            if (start.type == ZEN_INTEGER) {
+                s_idx = start.as.integer;
+                if (s_idx < 0) s_idx += len;
+                if (s_idx >= len) s_idx = len - 1;
+                if (s_idx < -1) s_idx = -1;
+            } else {
+                s_idx = len - 1;
+            }
+            if (end.type == ZEN_INTEGER) {
+                e_idx = end.as.integer;
+                if (e_idx < 0) e_idx += len;
+                if (e_idx >= len) e_idx = len - 1;
+                if (e_idx < -1) e_idx = -1;
+            } else {
+                e_idx = -1;
+            }
+            for (long long i = s_idx; i > e_idx; i += stp) {
+                ZenList_append_value(out, l->items[i]);
+            }
+        }
+        return out;
+    }
+
+    return ZenValue_make_nothing();
 }
 
 ZenValue ZenValue_instantiate(ZenValue class_obj, ZenValue data) {

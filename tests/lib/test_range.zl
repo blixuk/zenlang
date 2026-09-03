@@ -2,20 +2,46 @@ import zen.math.range as R
 import zen.test as test
 
 function test_range_sequence() {
-    // Prefer operator form; library helpers delegate to it.
-    let values -> 2..6
+    let values -> 2..-6
     let via_lib -> R.range(2, 6)
-    let pass -> test.assert_equal(values.length, 4, `range should create the expected number of values`)
-    pass -> pass and test.assert_equal(values[0], 2, `range should include the start value`)
-    pass -> pass and test.assert_equal(values[3], 5, `range should exclude the end value`)
-    pass -> pass and test.assert_equal(via_lib, values, `R.range matches 2..6`)
-    pass -> pass and test.assert_equal(R.range_inclusive(2, 4), 2..=4, `inclusive helper matches ..=`)
+    let pass -> test.assert_equal(values.length, 4, `range should create 4 values`)
+    pass -> pass and test.assert_equal(values[0], 2, `range should include start value`)
+    pass -> pass and test.assert_equal(values[3], 5, `range should exclude end value`)
+    pass -> pass and test.assert_equal(via_lib, values, `R.range matches 2..-6`)
+    pass -> pass and test.assert_equal(R.range_inclusive(2, 4), 2...4, `R.range_inclusive matches 2...4`)
+    pass -> pass and test.assert_equal(R.range_inc(2, 4), 2...4, `R.range_inc matches 2...4`)
+    <- pass
+}
+
+function test_boundary_system() {
+    let pass -> test.assert_equal(R.range_between(0, 5), 0..5, `range_between matches 0..5`)
+    pass -> pass and test.assert_equal(R.range_between(0, 5), [1, 2, 3, 4], `range_between is (0, 5)`)
+    pass -> pass and test.assert_equal(R.range_inclusive_end(0, 5), 0..+5, `range_inclusive_end matches 0..+5`)
+    pass -> pass and test.assert_equal(R.range_inclusive_end(0, 5), [1, 2, 3, 4, 5], `range_inclusive_end is (0, 5]`)
+    pass -> pass and test.assert_equal(R.range_exclusive_end(0, 5), 0..-5, `range_exclusive_end matches 0..-5`)
+    pass -> pass and test.assert_equal(R.range_exclusive_end(0, 5), [0, 1, 2, 3, 4], `range_exclusive_end is [0, 5)`)
+    pass -> pass and test.assert_equal(R.range_full_inclusive(0, 5), 0...5, `range_full_inclusive matches 0...5`)
+    pass -> pass and test.assert_equal(R.range_full_inclusive(0, 5), [0, 1, 2, 3, 4, 5], `range_full_inclusive is [0, 5]`)
+    <- pass
+}
+
+function test_stepped_ranges() {
+    let asc -> R.range_step(0, 10, 2)
+    let pass -> test.assert_equal(asc, [0, 2, 4, 6, 8], `stepped range ascending`)
+    let desc -> R.range_step(10, 0, -2)
+    pass -> pass and test.assert_equal(desc, [10, 8, 6, 4, 2], `stepped range descending`)
+    let asc_inc -> R.range_step_inclusive(0, 10, 2)
+    pass -> pass and test.assert_equal(asc_inc, [0, 2, 4, 6, 8, 10], `stepped range inclusive ascending`)
+    let desc_inc -> R.range_step_inclusive(10, 0, -2)
+    pass -> pass and test.assert_equal(desc_inc, [10, 8, 6, 4, 2, 0], `stepped range inclusive descending`)
     <- pass
 }
 
 function run_tests() {
     let tests -> [
-        {`name` -> `Range.sequence`, `fn` -> test_range_sequence}
+        {`name` -> `Range.sequence`, `fn` -> test_range_sequence},
+        {`name` -> `Range.boundary_system`, `fn` -> test_boundary_system},
+        {`name` -> `Range.stepped_ranges`, `fn` -> test_stepped_ranges}
     ]
 
     <- test.run_suite(`Range Library`, tests)

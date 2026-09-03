@@ -32,6 +32,20 @@ ZenValue ZenList_prepend(ZenValue list, ZenValue item);
 ZenValue ZenList_drop_end(ZenValue list, long long n);
 ZenValue ZenList_drop_start(ZenValue list, long long n);
 
+ZenValue ZenList_reverse(ZenValue list);
+ZenValue ZenList_unique(ZenValue list);
+ZenValue ZenList_flatten(ZenValue list);
+ZenValue ZenList_chunk(ZenValue list, ZenValue size);
+ZenValue ZenList_take(ZenValue list, ZenValue n);
+ZenValue ZenList_drop(ZenValue list, ZenValue n);
+ZenValue ZenList_map(ZenValue list, ZenValue fn);
+ZenValue ZenList_filter(ZenValue list, ZenValue fn);
+ZenValue ZenList_reduce(ZenValue list, ZenValue initial, ZenValue fn);
+ZenValue ZenList_each(ZenValue list, ZenValue fn);
+ZenValue ZenList_find(ZenValue list, ZenValue fn);
+ZenValue ZenList_any(ZenValue list, ZenValue fn);
+ZenValue ZenList_all(ZenValue list, ZenValue fn);
+
 static inline ZenValue ZenList_remove_at(ZenValue list, ZenValue index) { return ZenList_remove_at_index(list, index); }
 
 #endif // ZEN_LIST_H
