@@ -297,6 +297,11 @@ class MangleHandler:
                 if raw_prop in mapping:
                     return mapping[raw_prop]
                 return f"ZenReflect_{raw_prop}"
+
+            if obj_name in ("__builtin_vm", "vm", "VM"):
+                if raw_prop in ("run_file", "run_bytecode", "run"):
+                    return "ZenValue_run_bytecode_file"
+                return f"ZenVM_{raw_prop}"
             
             if obj_name == "__builtin_set":
                 if raw_prop == "has": return "ZenSet_contains_value"

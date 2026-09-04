@@ -4313,6 +4313,11 @@ function emit_builtin_call(oname, m, alist) {
         }
         <- `ZenNet_` + m + `(` + alist + `)`
     }
+    when oname == `__builtin_vm` or oname == `vm` or oname == `VM` {
+        when m == `run_file` or m == `run_bytecode` or m == `run` {
+            <- `ZenValue_run_bytecode_file(` + alist + `)`
+        }
+    }
     <- ``
 }
 

@@ -577,6 +577,9 @@ export function eval_repl_input(raw_input, state) {
   Reads an interactive line with history, editing, and completions.
 !/
 export function read_input_line(prompt_text, state) {
+    when state != Nothing and state.has(`rl`) and state[`rl`] != Nothing {
+        <- state[`rl`].read_line(prompt_text)
+    }
     let line -> io.read(prompt_text)
     <- line
 }
@@ -586,6 +589,21 @@ export function read_input_line(prompt_text, state) {
 !/
 export function start_repl() {
     let state -> create_repl_state()
+
+    // Initialize native Readline engine with REPL completions
+    let rl -> term.create_readline(state[`history`], function(buf, cursor) {
+        let i -> cursor
+        do while i > 0 {
+            let ch -> Str.substring(buf, i - 1, i)
+            when ch == ` ` or ch == `\t` or ch == `(` or ch == `)` or ch == `[` or ch == `]` or ch == `{` or ch == `}` or ch == `,` or ch == `:` {
+                break
+            }
+            i -> i - 1
+        }
+        let prefix -> Str.substring(buf, i, cursor)
+        <- complete_token(prefix, state)
+    })
+    state[`rl`] -> rl
     
     // Print banner
     io.writeln(color.bold(color.paint(`Zenlang Interactive REPL`, color.hex(`#38bdf8`), Nothing)) + color.dim(` (Type :help for commands, :quit to exit)`))

@@ -10,6 +10,12 @@ use zen.text.string as Str
 // ==========================================
 
 function _strip_comments(text) {
+    when text == Nothing or Str.length(text) == 0 {
+        <- ``
+    }
+    when not Str.contains(text, `/`) {
+        <- text
+    }
     let out -> ``
     let i -> 0
     let len -> Str.length(text)
@@ -207,6 +213,9 @@ function _parse_value(text, pos) {
                 <- { `val` -> list_res, `pos` -> pos }
             }
             let item_res -> _parse_value(text, pos)
+            when item_res == Nothing or item_res.pos <= pos {
+                break
+            }
             list_res.append(item_res.val)
             pos -> item_res.pos
             pos -> _skip_ws(text, pos)
@@ -236,6 +245,9 @@ function _parse_value(text, pos) {
             }
             
             let item_res -> _parse_value(text, pos)
+            when item_res == Nothing or item_res.pos <= pos {
+                break
+            }
             pos -> item_res.pos
             pos -> _skip_ws(text, pos)
             
@@ -284,6 +296,10 @@ function _parse_value(text, pos) {
             break
         }
         pos -> pos + 1
+    }
+    when start_pos == pos {
+        pos -> pos + 1
+        <- { `val` -> Nothing, `pos` -> pos }
     }
     let token_str -> Str.substring(text, start_pos, pos)
     
@@ -471,9 +487,11 @@ function stringify(value, indent_level) {
     let inner_pad -> pad + `    `
     
     when value == Nothing { <- `Nothing` }
-    when value == Default { <- `Default` }
-    when value == True { <- `True` }
-    when value == False { <- `False` }
+    when type(value) == `Default` { <- `Default` }
+    when value is Boolean {
+        when value == True { <- `True` }
+        <- `False`
+    }
     
     when value is String {
         // Use backticks for clean output

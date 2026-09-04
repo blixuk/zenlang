@@ -426,3 +426,10 @@ ZenValue ZenValue_to_number(ZenValue self) {
     if (end == s) return ZenValue_make_nothing();
     return ZenValue_make_decimal(d);
 }
+
+ZenValue ZenValue_run_bytecode_file(ZenValue path) {
+    if (path.type != ZEN_STRING || !path.as.string) {
+        return ZenValue_make_nothing();
+    }
+    return ZenVM_run_bytecode_file(NULL, path.as.string);
+}

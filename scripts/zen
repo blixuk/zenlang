@@ -95,11 +95,10 @@ EOF
 
 cmd_install() {
   # Default install: standalone pure native selfhost compiler with Three-Layer execution
-  cmd_install_bootstrap
   cmd_install_selfhost
   cp -f "$BIN_DIR/zen-selfhost" "$BIN_DIR/zen"
   chmod +x "$BIN_DIR/zen"
-  echo "Installed standalone native $BIN_DIR/zen (selfhost primary, zero bootstrap fallback)"
+  echo "Installed standalone native $BIN_DIR/zen (pure selfhost, zero bootstrap fallback)"
   echo "  $BIN_DIR/zen help"
   echo "  $BIN_DIR/zen <file.zl>      (run via Bytecode VM)"
   echo "  $BIN_DIR/zen <file.zbc>     (run packaged bytecode)"
@@ -144,17 +143,6 @@ cmd_install_selfhost() {
   echo "  ./scripts/zen selfhost-smoke"
 }
 
-cmd_install_rollback() {
-  # Emergency: daily bin/zen is the Python bootstrap. Selfhost sources stay in-tree.
-  cmd_install_bootstrap
-  cp -f "$BIN_DIR/zen-bootstrap" "$BIN_DIR/zen"
-  chmod +x "$BIN_DIR/zen"
-  echo "Rollback: $BIN_DIR/zen → bootstrap/Zen.py (full language host)"
-  echo "  $BIN_DIR/zen-bootstrap  → same"
-  echo "Restore Host-1.0 hybrid: ./scripts/zen install"
-  echo "Temporary override without reinstall: ZEN_FORCE_BOOTSTRAP=1"
-}
-
 cmd_install_handoff() {
   # Production hybrid: selfhost compiler surface + bootstrap language host.
   cmd_install_bootstrap
@@ -173,14 +161,13 @@ cmd_install_handoff() {
 }
 
 cmd_run() {
-  # shellcheck disable=SC2086
-  exec $BOOTSTRAP "$@"
+  exec "$ROOT/bin/zen" "$@"
 }
 
 cmd_clean() {
   rm -rf "$BUILD_DIR"/* "$ROOT/output"/* 2>/dev/null || true
   rm -f "$BIN_DIR/zen" "$BIN_DIR/zen-bootstrap" "$BIN_DIR/zen-selfhost"
-  echo "Cleaned build/, output/, bin/zen, bin/zen-bootstrap, bin/zen-selfhost"
+  echo "Cleaned build/, output/, bin/zen, bin/zen-selfhost"
 }
 
 cmd="${1:-help}"
@@ -190,7 +177,6 @@ case "$cmd" in
   help|-h|--help) usage ;;
   install) cmd_install ;;
   install-bootstrap) cmd_install_bootstrap ;;
-  install-rollback) cmd_install_rollback ;;
   install-driver) cmd_install_driver ;;
   install-selfhost) cmd_install_selfhost ;;
   install-selfhost-fast) ZEN_OPT=0 cmd_install_selfhost ;;
@@ -254,8 +240,8 @@ case "$cmd" in
     ;;
   doc-pdf|pdf)
     echo "Compiling Zenlang Specification and Book PDFs via native Zen Mark..."
-    python3 "$ROOT/bootstrap/Zen.py" "$ROOT/tools/build_spec.zl"
-    python3 "$ROOT/bootstrap/Zen.py" "$ROOT/tools/build_book.zl"
+    "$ROOT/bin/zen" "$ROOT/tools/build_spec.zl"
+    "$ROOT/bin/zen" "$ROOT/tools/build_book.zl"
     ;;
   test-core) bash "$ROOT/scripts/run_core_tests.sh" ;;
   test-parity) bash "$ROOT/scripts/run_core_parity.sh" ;;

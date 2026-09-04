@@ -54,4 +54,7 @@ ZenValue ZenValue_create_object(ZenValue type_name, ZenValue data);
 // List/string slice
 ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end, ZenValue step);
 
+// Bytecode VM execution bridge
+ZenValue ZenValue_run_bytecode_file(ZenValue path);
+
 #endif // ZEN_DISPATCH_H

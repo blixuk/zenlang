@@ -13,6 +13,7 @@ import compiler.Module.Resolver as Resolver
 import compiler.Token as Tok
 from compiler.Token import TokenType
 import compiler.AST as AST
+import compiler.Bytecode as Bytecode
 import zen.io.io as io
 import zen.io.path as Path
 import zen.text.string as Str
@@ -973,6 +974,8 @@ function env_prelude() {
     global -> env_define(global, `stdout`, make_builtin_mod(`stdout`), false)
     global -> env_define(global, `stderr`, make_builtin_mod(`stderr`), false)
     global -> env_define(global, `stdin`, make_builtin_mod(`stdin`), false)
+    global -> env_define(global, `__builtin_vm`, make_builtin_mod(`vm`), false)
+    global -> env_define(global, `vm`, make_builtin_mod(`vm`), false)
     global -> env_define(global, `write`, make_builtin(`stdout`, `write`), false)
     global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
     global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
@@ -2733,6 +2736,9 @@ function eval_builtin(name, args) {
     }
     when name == `math.pow` or name == `pow` {
         <- __builtin_math.pow(a0, a1)
+    }
+    when name == `vm.run_file` or name == `__builtin_vm.run_file` or name == `vm.run` or name == `__builtin_vm.run` {
+        <- Bytecode.eval_bytecode_file(a0, Bytecode.create_vm_prelude())
     }
     when name == `string.to_string` {
         <- Str.to_string(a0)

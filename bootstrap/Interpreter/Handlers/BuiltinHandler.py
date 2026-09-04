@@ -827,6 +827,31 @@ class BuiltinHandler:
         })
         self.global_environment.define("__builtin_reflect", reflect_obj, mutable=False, type="ReflectCapability")
 
+        # Register 'vm' capability
+        def _vm_run_file(path):
+            if not path or not os.path.exists(path):
+                return None
+            if os.path.exists("./bin/zen"):
+                import subprocess
+                proc = subprocess.run(["./bin/zen", path], capture_output=True, text=True)
+                out = proc.stdout.strip()
+                if out:
+                    try:
+                        return int(out)
+                    except ValueError:
+                        return out
+                return 0
+            return None
+
+        vm_obj = BuiltinCapability("vm", {
+            "run_file": _vm_run_file,
+            "run_bytecode": _vm_run_file,
+            "run": _vm_run_file,
+        })
+        self.global_environment.define("__builtin_vm", vm_obj, mutable=False, type="VMCapability")
+        self.global_environment.define("vm", vm_obj, mutable=False, type="VMCapability")
+        self.global_environment.define("VM", vm_obj, mutable=False, type="VMCapability")
+
         # Register 'term' capability
         def _term_color(fg=None, bg=None):
             colors = {

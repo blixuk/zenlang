@@ -49,11 +49,21 @@ typedef enum {
     OP_SET_PROP = 0x55,     /* u16 name_const_idx */
     OP_CAST = 0x56,         /* u16 type_name_const_idx */
     
+    OP_RANGE_EXCL = 88,     /* 0x58: a ..- b */
+    OP_RANGE_INCL = 89,     /* 0x59: a ... b */
+    OP_CONCAT_APPEND = 90,  /* 0x5A: a ++ b */
+    OP_DROP = 91,           /* 0x5B: a -- b */
+    OP_CHECK_UNWRAP = 92,   /* 0x5C */
+    OP_RANGE_INCL_END = 93, /* 0x5D: a ..+ b */
+    OP_RANGE_BETWEEN = 94,  /* 0x5E: a .. b */
+    OP_IN = 95,             /* 0x5F: a in b */
+    
     OP_JUMP = 0x60,         /* i16 offset */
     OP_JUMP_IF_FALSE = 0x61,/* i16 offset */
     OP_JUMP_IF_TRUE = 0x62, /* i16 offset */
     OP_POP_JUMP_IF_FALSE = 0x63, /* i16 offset */
-    OP_SLICE = 102,         /* 0x66 */
+    OP_COALESCE = 101,      /* 0x65: a ?? b */
+    OP_SLICE = 102,         /* 0x66: a[s:e:step] */
     
     OP_CALL = 0x70,         /* u8 argc */
     OP_RETURN = 0x71,

@@ -22,7 +22,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
   | memory | `zen.memory` — auto default; opt-in arenas (`create_arena`/`push`/`pop`/`free`, `region_run`, `using_arena`) |
   | time | `zen.time` |
   | io | `zen.io.io`, `zen.io.file`, `zen.io.path` |
-  | sys | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.cli`, `zen.sys.env` |
+  | sys | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.readline`, `zen.sys.cli`, `zen.sys.env` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.regex`, … |
   | math | `zen.math.math`, `zen.math.random`, `zen.math.range` |
   | collections | `zen.collections.list`, `.set`, `.stack`, `.queue`, `.collections` |
@@ -77,7 +77,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
 - memory/: arena / memory primitives
 - time/: clocks, Duration (arithmetic, constructors, formatting), Timer, cron, timestamp formatting (to_utc, format_iso, format_date, format_time), measure
 - io/: io (console I/O, write/write_line/writeln, read/read_line/readln, flush, info/warn/error/debug), file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `copy_tree`, `remove_tree`, `lines`, `size`, `touch`), path
-- sys/: sys, process (`which`, `run`, `run_result`, `run_ok`, `run_require`, `exec`, `output`, `capture`, `pid`, `sleep`, pipelines, `shell_env`), term (`is_tty`/style/mouse/`spinner_frame`), cli (`--opt=val`, `_rest`, `parse_args`), env
+- sys/: sys, process (`which`, `run`, `run_result`, `run_ok`, `run_require`, `exec`, `output`, `capture`, `pid`, `sleep`, pipelines, `shell_env`), term (`is_tty`/style/mouse/`spinner_frame`/`readline`), readline (zero-dependency in-line editor, history, and autocompletion), cli (`--opt=val`, `_rest`, `parse_args`), env
 - net/: http (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `post_json`, `put_json`, `patch_json`, `get_json`, `json_body`, `status_text`, `is_success`, `is_redirect`, `is_client_error`, `is_server_error`, `bearer_auth`, `basic_auth`, case-insensitive `header`), socket, url (`parse`, `build`, `encode_component`, `decode_component`, `encode_query`, `decode_query`, `join_path`, `resolve`, `get_query_param`, `set_query_param`, `remove_query_param`), mime (lookup/extension), ip (v4/v6 parsing, CIDR, private detection), server (router, request dispatch, text/json response builders)
 - text/: string (pad_left/pad_right), text, lorem (classical Latin words, sentences, paragraphs, titles, seedable generation), regex, markdown, columns, zenmark, wrap (wrap/fill/indent/dedent/shorten), template ({{ var }}, #if, #each), diff (diff_lines, unified_diff), html (escape/unescape, builders, parse_attributes, find_tags), fuzzy (Levenshtein, search, rank), inflect (camel, snake, kebab, Pascal, title, slugify, pluralize)
 - math/: math, random, range, stats (sum, mean, median, variance, stdev, percentiles, summary)

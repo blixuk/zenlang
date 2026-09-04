@@ -52,6 +52,17 @@ function op_set_index_op() { <- 83 }
 function op_get_prop() { <- 84 }
 function op_set_prop_op() { <- 85 }
 
+function op_range_excl() { <- 88 }
+function op_range_incl() { <- 89 }
+function op_concat_append() { <- 90 }
+function op_drop() { <- 91 }
+function op_check_unwrap() { <- 92 }
+function op_range_incl_end() { <- 93 }
+function op_range_between() { <- 94 }
+function op_in() { <- 95 }
+function op_coalesce() { <- 101 }
+function op_slice() { <- 102 }
+
 function op_jump() { <- 96 }
 function op_jump_if_false() { <- 97 }
 function op_jump_if_true() { <- 98 }
@@ -1938,18 +1949,18 @@ function compile_expression(ctx, expr) {
         let tok_kind -> ``
         when expr.length > 4 and expr[4] != Nothing { tok_kind -> expr[4] }
         let tok_kind_str -> Str.to_string(tok_kind)
-        when tok_kind == 19 or tok_kind_str == `19` or tok_kind_str == `NOTHING` or val == Nothing {
+        when tok_kind == 19 or tok_kind_str == `19` or Str.contains(tok_kind_str, `NOTHING`) or val == Nothing {
             emit_byte(ctx, 2, line) // OP_NOTHING
-        } or when tok_kind == 20 or tok_kind_str == `20` or tok_kind_str == `DEFAULT` {
+        } or when tok_kind == 20 or tok_kind_str == `20` or Str.contains(tok_kind_str, `DEFAULT`) {
             emit_byte(ctx, 3, line) // OP_DEFAULT
             emit_u16(ctx, 1, line)  // ZEN_DEFAULT
-        } or when tok_kind == 26 or tok_kind_str == `26` or tok_kind_str == `BOOLEAN` or (val is Boolean) {
+        } or when tok_kind == 26 or tok_kind_str == `26` or Str.contains(tok_kind_str, `BOOLEAN`) or (val is Boolean) {
             when val == true or val == `true` or val == `True` {
                 emit_byte(ctx, 4, line) // OP_TRUE
             } or {
                 emit_byte(ctx, 5, line) // OP_FALSE
             }
-        } or when tok_kind == 22 or tok_kind_str == `22` or tok_kind_str == `INTEGER` or tok_kind_str == `Int` or (val is Integer) {
+        } or when tok_kind == 22 or tok_kind_str == `22` or Str.contains(tok_kind_str, `INTEGER`) or tok_kind_str == `Int` or (val is Integer) {
             when val is Integer {
                 emit_constant(ctx, val, line)
             } or when looks_int_str(val) {
@@ -1957,7 +1968,7 @@ function compile_expression(ctx, expr) {
             } or {
                 emit_constant(ctx, val, line)
             }
-        } or when tok_kind == 23 or tok_kind_str == `23` or tok_kind_str == `DECIMAL` or tok_kind_str == `Float` or (val is Decimal) {
+        } or when tok_kind == 23 or tok_kind_str == `23` or Str.contains(tok_kind_str, `DECIMAL`) or tok_kind_str == `Float` or (val is Decimal) {
             when val is Decimal {
                 emit_constant(ctx, val, line)
             } or {
@@ -2911,6 +2922,14 @@ export function create_vm_prelude() {
     }
     g[`net`] -> net_mod
     g[`__builtin_net`] -> net_mod
+
+    // VM
+    let vm_mod -> {
+        `run_file` -> make_native(`vm_run_file`),
+        `run` -> make_native(`vm_run_file`)
+    }
+    g[`vm`] -> vm_mod
+    g[`__builtin_vm`] -> vm_mod
     
     // String & Text utils
     let str_mod -> {
@@ -3550,6 +3569,13 @@ export function invoke_callable_g(callee, args, globals) {
                 let body -> when (args.length > 2) { args[2] } or { `` }
                 let hdrs -> when (args.length > 3) { args[3] } or { {} }
                 <- __builtin_net.http_request(url, meth, body, hdrs)
+            }
+            when nfn == `vm_run_file` {
+                when args.length > 0 {
+                    let path -> Str.to_string(args[0])
+                    <- eval_bytecode_file(path, globals)
+                }
+                <- Nothing
             }
             when nfn == `term_get_size` {
                 let sz -> __builtin_term.get_size()

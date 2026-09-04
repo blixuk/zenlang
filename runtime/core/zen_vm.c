@@ -1,6 +1,7 @@
 #include "zen_vm.h"
 #include "zen_ops.h"
 #include "zen_dispatch.h"
+#include "zen_sys.h"
 #include "zen_closure.h"
 #include "../collections/zen_list.h"
 #include "../collections/zen_map.h"
@@ -34,7 +35,14 @@ ZenChunk* ZenChunk_new(const char* name) {
 void ZenChunk_free(ZenChunk* chunk) {
     if (!chunk) return;
     if (chunk->code) free(chunk->code);
-    if (chunk->constants) free(chunk->constants);
+    if (chunk->constants) {
+        for (int i = 0; i < chunk->const_count; i++) {
+            if (chunk->constants[i].type == ZEN_FUNCTION && chunk->constants[i].as.object) {
+                ZenChunk_free((ZenChunk*)chunk->constants[i].as.object);
+            }
+        }
+        free(chunk->constants);
+    }
     if (chunk->lines) free(chunk->lines);
     if (chunk->name) free(chunk->name);
     free(chunk);
@@ -174,6 +182,15 @@ int ZenChunk_disassemble_instruction(ZenChunk* chunk, int offset) {
         case OP_GET_PROP: return const_instruction("OP_GET_PROP", chunk, offset);
         case OP_SET_PROP: return const_instruction("OP_SET_PROP", chunk, offset);
         case OP_CAST: return const_instruction("OP_CAST", chunk, offset);
+        case OP_RANGE_EXCL: return simple_instruction("OP_RANGE_EXCL", offset);
+        case OP_RANGE_INCL: return simple_instruction("OP_RANGE_INCL", offset);
+        case OP_CONCAT_APPEND: return simple_instruction("OP_CONCAT_APPEND", offset);
+        case OP_DROP: return simple_instruction("OP_DROP", offset);
+        case OP_CHECK_UNWRAP: return simple_instruction("OP_CHECK_UNWRAP", offset);
+        case OP_RANGE_INCL_END: return simple_instruction("OP_RANGE_INCL_END", offset);
+        case OP_RANGE_BETWEEN: return simple_instruction("OP_RANGE_BETWEEN", offset);
+        case OP_IN: return simple_instruction("OP_IN", offset);
+        case OP_COALESCE: return simple_instruction("OP_COALESCE", offset);
         case OP_SLICE: return simple_instruction("OP_SLICE", offset);
         case OP_JUMP: return i16_instruction("OP_JUMP", chunk, offset);
         case OP_JUMP_IF_FALSE: return i16_instruction("OP_JUMP_IF_FALSE", chunk, offset);
@@ -319,6 +336,15 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
         [OP_GET_PROP] = &&do_OP_GET_PROP,
         [OP_SET_PROP] = &&do_OP_SET_PROP,
         [OP_CAST] = &&do_OP_CAST,
+        [OP_RANGE_EXCL] = &&do_OP_RANGE_EXCL,
+        [OP_RANGE_INCL] = &&do_OP_RANGE_INCL,
+        [OP_CONCAT_APPEND] = &&do_OP_CONCAT_APPEND,
+        [OP_DROP] = &&do_OP_DROP,
+        [OP_CHECK_UNWRAP] = &&do_OP_CHECK_UNWRAP,
+        [OP_RANGE_INCL_END] = &&do_OP_RANGE_INCL_END,
+        [OP_RANGE_BETWEEN] = &&do_OP_RANGE_BETWEEN,
+        [OP_IN] = &&do_OP_IN,
+        [OP_COALESCE] = &&do_OP_COALESCE,
         [OP_SLICE] = &&do_OP_SLICE,
         [OP_JUMP] = &&do_OP_JUMP,
         [OP_JUMP_IF_FALSE] = &&do_OP_JUMP_IF_FALSE,
@@ -678,6 +704,72 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 NEXT();
             }
             
+            TARGET(OP_RANGE_EXCL) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_range_exclusive_end(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_RANGE_INCL) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_range_full_inclusive(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_CONCAT_APPEND) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_op_append(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_DROP) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_op_remove(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_CHECK_UNWRAP) {
+                ZenValue top = pop(vm);
+                if (top.type == ZEN_ERROR) {
+                    push(vm, ZEN_NOTHING_VAL);
+                } else {
+                    push(vm, top);
+                }
+                NEXT();
+            }
+            
+            TARGET(OP_RANGE_INCL_END) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_range_open_start_inclusive(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_RANGE_BETWEEN) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_range_between(a, b));
+                NEXT();
+            }
+            
+            TARGET(OP_IN) {
+                ZenValue container = pop(vm);
+                ZenValue elem = pop(vm);
+                push(vm, ZenValue_in(elem, container));
+                NEXT();
+            }
+            
+            TARGET(OP_COALESCE) {
+                ZenValue b = pop(vm);
+                ZenValue a = pop(vm);
+                push(vm, ZenValue_coalesce(a, b));
+                NEXT();
+            }
+            
             TARGET(OP_SLICE) {
                 ZenValue step = pop(vm);
                 ZenValue end = pop(vm);
@@ -1018,11 +1110,160 @@ int ZenChunk_save_file(ZenChunk* chunk, const char* path, uint64_t src_hash) {
     return 1;
 }
 
+static char* zen_unescape_str(const char* s) {
+    if (!s) return strdup("");
+    size_t len = strlen(s);
+    char* out = (char*)malloc(len + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (s[i] == '\\' && i + 1 < len) {
+            i++;
+            if (s[i] == 'n') out[j++] = '\n';
+            else if (s[i] == 't') out[j++] = '\t';
+            else if (s[i] == 'r') out[j++] = '\r';
+            else if (s[i] == '\\') out[j++] = '\\';
+            else out[j++] = s[i];
+        } else {
+            out[j++] = s[i];
+        }
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static ZenChunk* zen_chunk_from_text(char* text, uint64_t* out_src_hash) {
+    if (!text) return NULL;
+    char* saveptr = NULL;
+    char* line = strtok_r(text, "\r\n", &saveptr);
+    if (!line || strncmp(line, "ZENB:", 5) != 0) return NULL;
+
+    // Line 0: ZENB:1:<src_hash>:<num_locals>:<name>
+    char* p = line + 5;
+    char* colon1 = strchr(p, ':'); // after version
+    if (!colon1) return NULL;
+    char* colon2 = strchr(colon1 + 1, ':'); // after src_hash
+    if (!colon2) return NULL;
+    char* colon3 = strchr(colon2 + 1, ':'); // after num_locals
+    if (!colon3) return NULL;
+
+    uint64_t src_hash = (uint64_t)strtoull(colon1 + 1, NULL, 10);
+    if (out_src_hash) *out_src_hash = src_hash;
+    int num_locals = atoi(colon2 + 1);
+    char* cname = colon3 + 1;
+
+    ZenChunk* chunk = ZenChunk_new(cname);
+    chunk->num_locals = (uint16_t)num_locals;
+
+    // Next line: CONSTANTS:<count>
+    line = strtok_r(NULL, "\r\n", &saveptr);
+    if (!line || strncmp(line, "CONSTANTS:", 10) != 0) {
+        ZenChunk_free(chunk);
+        return NULL;
+    }
+    int const_count = atoi(line + 10);
+
+    for (int i = 0; i < const_count; i++) {
+        line = strtok_r(NULL, "\r\n", &saveptr);
+        if (!line) {
+            ZenChunk_free(chunk);
+            return NULL;
+        }
+        if (line[0] == 'N') {
+            ZenChunk_add_constant(chunk, ZEN_NOTHING_VAL);
+        } else if (line[0] == 'D') {
+            ZenChunk_add_constant(chunk, ZEN_DEFAULT_VAL);
+        } else if (line[0] == 'B') {
+            int b = atoi(line + 2);
+            ZenChunk_add_constant(chunk, ZenValue_make_boolean(b != 0));
+        } else if (line[0] == 'I') {
+            int64_t iv = (int64_t)atoll(line + 2);
+            ZenChunk_add_constant(chunk, ZenValue_make_integer(iv));
+        } else if (line[0] == 'S') {
+            char* unesc = zen_unescape_str(line + 2);
+            ZenChunk_add_constant(chunk, ZenValue_make_string(unesc));
+            free(unesc);
+        } else if (line[0] == 'F') {
+            char* sub_raw = zen_unescape_str(line + 2);
+            ZenChunk* sub_chunk = zen_chunk_from_text(sub_raw, NULL);
+            free(sub_raw);
+            ZenValue f_val;
+            f_val.type = ZEN_FUNCTION;
+            f_val.as.object = sub_chunk;
+            ZenChunk_add_constant(chunk, f_val);
+        } else {
+            ZenChunk_add_constant(chunk, ZEN_NOTHING_VAL);
+        }
+    }
+
+    // Next line: CODE:<len>
+    line = strtok_r(NULL, "\r\n", &saveptr);
+    if (!line || strncmp(line, "CODE:", 5) != 0) {
+        ZenChunk_free(chunk);
+        return NULL;
+    }
+    int code_len = atoi(line + 5);
+
+    if (code_len > 0) {
+        line = strtok_r(NULL, "\r\n", &saveptr);
+        if (!line) {
+            ZenChunk_free(chunk);
+            return NULL;
+        }
+        char* byte_saveptr = NULL;
+        char* byte_tok = strtok_r(line, ",", &byte_saveptr);
+        while (byte_tok) {
+            uint8_t b = (uint8_t)atoi(byte_tok);
+            ZenChunk_emit_byte(chunk, b, 0);
+            byte_tok = strtok_r(NULL, ",", &byte_saveptr);
+        }
+    }
+
+    // Next line: LINES:<len>
+    line = strtok_r(NULL, "\r\n", &saveptr);
+    if (line && strncmp(line, "LINES:", 6) == 0) {
+        int lines_len = atoi(line + 6);
+        if (lines_len > 0) {
+            line = strtok_r(NULL, "\r\n", &saveptr);
+            if (line) {
+                char* line_saveptr = NULL;
+                char* line_tok = strtok_r(line, ",", &line_saveptr);
+                int lidx = 0;
+                while (line_tok && lidx < chunk->count) {
+                    chunk->lines[lidx++] = atoi(line_tok);
+                    line_tok = strtok_r(NULL, ",", &line_saveptr);
+                }
+            }
+        }
+    }
+
+    return chunk;
+}
+
 ZenChunk* ZenChunk_load_file(const char* path, uint64_t* out_src_hash) {
     if (!path) return NULL;
     FILE* fp = fopen(path, "rb");
     if (!fp) return NULL;
 
+    char header_prefix[6] = {0};
+    if (fread(header_prefix, 1, 5, fp) == 5 && memcmp(header_prefix, "ZENB:", 5) == 0) {
+        fseek(fp, 0, SEEK_END);
+        long sz = ftell(fp);
+        fseek(fp, 0, SEEK_SET);
+        char* buf = (char*)malloc(sz + 1);
+        if (!buf) {
+            fclose(fp);
+            return NULL;
+        }
+        size_t nread = fread(buf, 1, sz, fp);
+        buf[nread] = '\0';
+        fclose(fp);
+        ZenChunk* chunk = zen_chunk_from_text(buf, out_src_hash);
+        free(buf);
+        return chunk;
+    }
+
+    // Binary format
+    fseek(fp, 0, SEEK_SET);
     uint32_t magic = 0;
     uint16_t version = 0;
     if (fread(&magic, sizeof(uint32_t), 1, fp) != 1 || magic != ZEN_BYTECODE_MAGIC) {

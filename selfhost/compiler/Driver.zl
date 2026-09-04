@@ -44,9 +44,14 @@ function fs_list_dir(path) {
 }
 
 function parse_file_cached(path) {
+    let p -> GraphBuilder.parse_cached(path)
+    when p != Nothing {
+        <- p
+    }
     let src -> fs_read(path)
     <- Parser.parse_source(src)
 }
+
 
 /!
  Compile source text through the selfhost pipeline.
@@ -1933,8 +1938,7 @@ export function run_args_local(args, i0, n, cmd) {
     }
 
     when Str.ends_with(cmd, `.zbc`) or Bytecode.is_bytecode_file(cmd) {
-        let globals -> Bytecode.create_vm_prelude()
-        let v -> Bytecode.eval_bytecode_file(cmd, globals)
+        let v -> __builtin_vm.run_file(cmd)
         when v == Nothing or v == 0 {
             <- {`code` -> 0, `message` -> ``}
         }
@@ -1970,8 +1974,7 @@ function vm_cli(src_path) {
         <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
     }
     when Str.ends_with(src_path, `.zbc`) or Bytecode.is_bytecode_file(src_path) {
-        let globals -> Bytecode.create_vm_prelude()
-        let v -> Bytecode.eval_bytecode_file(src_path, globals)
+        let v -> __builtin_vm.run_file(src_path)
         when v == Nothing or v == 0 {
             <- {`code` -> 0, `message` -> ``}
         }

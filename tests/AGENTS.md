@@ -42,6 +42,7 @@ Core ladder (must stay green for “language works”):
 - Sentinels & type casting (`Nothing`, `Default`, `<:`, `Type(val)`): `tests/language/test_nothing_default_01.zl`
 - Directional guard returns & concise functions: `tests/core/test_guard_concise_syntax.zl` (core + parity)
 - Diagnostic source frames, Zen Data & Zen Mark Callouts: `tests/core/test_diagnostics.zl` (core + parity)
+- Three-Layer Self-Hosting Architecture (ZenValue ABI, Compiler IR, Bytecode VM bridge): `tests/self_hosting/test_three_layer.zl` (dual-path)
 - Individual: `python3 bootstrap/Zen.py path/to/test.zl` or `./bin/zen` after `./scripts/zen install`
 
 Broader:

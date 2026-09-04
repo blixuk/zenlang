@@ -528,7 +528,7 @@ class MIRHandler:
                      pass
             elif obj_name in self.global_enums and prop_name and prop_name[0].isupper():
                 callee_str = f"ZenVariant_{obj_name}_{prop_name}"
-            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net"):
+            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net", "__builtin_vm", "vm", "VM"):
                 if prop_name in ("create_arena", "__builtin_create_arena"):
                     callee_str = "ZenMemory_create_arena"
                     if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
@@ -700,6 +700,13 @@ class MIRHandler:
                      callee_str = mapping.get(prop_name, f"ZenReflect_{prop_name}")
                      # Drop capability receiver — free C functions.
                      if call_args and call_args[0] in ("__builtin_reflect",):
+                         call_args = call_args[1:]
+                elif obj_name in ("__builtin_vm", "vm", "VM"):
+                     if prop_name in ("run_file", "run_bytecode", "run"):
+                         callee_str = "ZenValue_run_bytecode_file"
+                     else:
+                         callee_str = f"ZenVM_{prop_name}"
+                     if call_args and call_args[0] in ("__builtin_vm", "vm", "VM"):
                          call_args = call_args[1:]
                 else:
                     callee_str = f"Zen{obj_name}_{prop_name}"

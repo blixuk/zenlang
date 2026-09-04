@@ -220,6 +220,9 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("__builtin_error", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_reflect", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_net", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_vm", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("vm", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("VM", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
 
         # Internal compiler structures
         self.scope.define(Symbol("__builtin_memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))

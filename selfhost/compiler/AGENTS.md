@@ -100,8 +100,10 @@ Part of `selfhost/` parity effort.
   - IndexAssign; escape_piece / real NL-TAB
 - Output targets top-level `runtime/` for link.
 - **User-program backend:** AST→ZenValue C. No MIR/SMIR mid-end (PARITY).
-- **Compiler IR:** Token and AST representations are native positional structs `[kind, ...]` with zero string dictionary overhead ([THREE_LAYER.md](../THREE_LAYER.md) Phase 1 Steps 1 & 2 complete).
-- **Bytecode Compiler & Evaluator:** `Bytecode.zl` — Three-Layer Phase 3 bytecode emitter (`compile_program`, `eval_chunk`, `eval_chunk_fn`). Compiles positional AST structs to bytecode chunks targeting the C runtime VM (`zen_vm.c`) or in-memory evaluator; tested in `tests/self_hosting/test_vm.zl` under dual execution (interpreter & native `-g`).
+- **Three-Layer Architecture & Parity:** Implemented with 100% parity across interpreter, native `-g`, and standalone `bin/zen`:
+  - **Layer 1 (ZenValue ABI & C VM):** Shared ABI across interpreted and native modes, opcode parity in C VM (`zen_vm.c`, `zen_vm.h`) matching `Bytecode.zl` (`OP_RANGE_*`, `OP_CONCAT_APPEND`, `OP_DROP`, `OP_CHECK_UNWRAP`, `OP_IN`, `OP_COALESCE`, `OP_SLICE`).
+  - **Layer 2 (Compiler IR):** Positional AST list structs (`[kind, line, col, ...payload]`) with $O(1)$ in-memory caching in `GraphBuilder.parse_cached` and `Driver.parse_file_cached`.
+  - **Layer 3 (Script VM Execution Bridge):** Running `.zbc` chunks natively in C VM via `__builtin_vm.run_file` / `vm_cli` and `ZenValue_run_bytecode_file`. Tests: `tests/self_hosting/test_three_layer.zl` (dual-path).
 - Memory: default automatic via runtime; opt-in `with`/arena → Codegen push/pop; checker scopes with-alias (ownership rules later).
 - Production install: standalone pure native compiler `bin/zen` (`./scripts/zen install`). Soak: `./scripts/zen ci-soak`. Emergency rollback: `./scripts/zen install-rollback`.
 

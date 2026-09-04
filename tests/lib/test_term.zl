@@ -71,6 +71,18 @@ function test_is_tty_and_style() {
     <- pass
 }
 
+function test_readline_history() {
+    let rl -> term.create_readline([], Nothing)
+    let pass -> test.assert_true(rl != Nothing, `create_readline returns instance`)
+    rl.add_history(`let x -> 10`)
+    rl.add_history(`let y -> 20`)
+    rl.add_history(`let y -> 20`)
+    pass -> pass and test.assert_equal(rl.history.length, 2, `history length is 2`)
+    pass -> pass and test.assert_equal(rl.history[0], `let x -> 10`, `first history item`)
+    pass -> pass and test.assert_equal(rl.history[1], `let y -> 20`, `second history item`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Term.get_size`, `fn` -> test_get_size},
@@ -79,7 +91,8 @@ function run_tests() {
         {`name` -> `Term.raw_enter_exit`, `fn` -> test_raw_enter_exit},
         {`name` -> `Term.poll_key_none`, `fn` -> test_poll_key_none},
         {`name` -> `Term.key_map_kind_field`, `fn` -> test_key_map_kind_field},
-        {`name` -> `Term.is_tty_style`, `fn` -> test_is_tty_and_style}
+        {`name` -> `Term.is_tty_style`, `fn` -> test_is_tty_and_style},
+        {`name` -> `Term.readline_history`, `fn` -> test_readline_history}
     ]
 
     <- test.run_suite(`Term Library`, tests)

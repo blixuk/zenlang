@@ -213,3 +213,23 @@ function spinner_frame(i) {
     when idx < 0 { idx -> 0 }
     <- frames[idx]
 }
+
+import zen.sys.readline as rl
+
+/!
+  Interactive line reader with in-line editing, history, and autocompletion.
+  @param prompt Prompt string to display (e.g. `zen> `).
+  @param history Optional list of history strings.
+  @return The entered line string, or Nothing on EOF (Ctrl-D).
+!/
+function readline(prompt, history) {
+    <- rl.readline(prompt, history)
+}
+
+/!
+  Creates a stateful Readline session instance with custom completer hook.
+!/
+function create_readline(history, completer_fn) {
+    <- rl.create_readline(history, completer_fn)
+}
+

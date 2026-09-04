@@ -1,0 +1,265 @@
+/!
+  Native Interactive Terminal Line Reader (Readline).
+  Provides zero-dependency in-line editing, history, and autocompletion for Zenlang terminal applications.
+!/
+
+import zen.sys.term as term
+import zen.text.string as Str
+import zen.io.io as io
+
+export class Readline {
+    let history
+    let max_history
+    let completer_fn
+
+    function init(history, completer_fn) {
+        self.history -> when (history != Nothing) { history } or { [] }
+        self.max_history -> 1000
+        self.completer_fn -> completer_fn
+    }
+
+    function add_history(line) {
+        when line == Nothing or Str.trim(line) == `` {
+            <- Nothing
+        }
+        let n -> self.history.length
+        when n > 0 and self.history[n - 1] == line {
+            <- Nothing
+        }
+        self.history.append(line)
+        when self.history.length > self.max_history {
+            self.history.drop(0)
+        }
+    }
+
+    function read_line(prompt) {
+        when not term.is_tty() {
+            <- io.read(prompt)
+        }
+
+        io.write(prompt)
+        io.flush()
+
+        term.raw_enter()
+
+        let buf -> ``
+        let cursor -> 0
+        let hist_len -> self.history.length
+        let hist_idx -> hist_len
+        let saved_buf -> ``
+
+        let running -> true
+        let result -> Nothing
+
+        do while running {
+            let key -> term.read_key()
+            when key == Nothing {
+                continue
+            }
+
+            let kind -> key[`kind`]
+            let name -> key[`name`]
+            let ch -> key[`ch`]
+
+            when kind == `special` {
+                when name == `enter` {
+                    io.write(`\n`)
+                    io.flush()
+                    result -> buf
+                    running -> false
+                } or when name == `ctrl_c` {
+                    io.write(`^C\n`)
+                    io.flush()
+                    result -> ``
+                    running -> false
+                } or when name == `ctrl_d` {
+                    when Str.length(buf) == 0 {
+                        io.write(`\n`)
+                        io.flush()
+                        result -> Nothing
+                        running -> false
+                    } or {
+                        when cursor < Str.length(buf) {
+                            buf -> Str.substring(buf, 0, cursor) + Str.substring(buf, cursor + 1, Str.length(buf))
+                            self._redraw_from_cursor(prompt, buf, cursor)
+                        }
+                    }
+                } or when name == `ctrl_l` {
+                    term.clear()
+                    io.write(prompt + buf)
+                    let shift_back -> Str.length(buf) - cursor
+                    when shift_back > 0 {
+                        io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
+                    }
+                    io.flush()
+                } or when name == `ctrl_a` or name == `home` {
+                    when cursor > 0 {
+                        io.write(`\x1b[` + Str.to_string(cursor) + `D`)
+                        io.flush()
+                        cursor -> 0
+                    }
+                } or when name == `ctrl_e` or name == `end` {
+                    let total -> Str.length(buf)
+                    when cursor < total {
+                        let shift -> total - cursor
+                        io.write(`\x1b[` + Str.to_string(shift) + `C`)
+                        io.flush()
+                        cursor -> total
+                    }
+                } or when name == `ctrl_k` {
+                    when cursor < Str.length(buf) {
+                        buf -> Str.substring(buf, 0, cursor)
+                        term.clear_eol()
+                        io.flush()
+                    }
+                } or when name == `left` {
+                    when cursor > 0 {
+                        cursor -> cursor - 1
+                        io.write(`\x1b[D`)
+                        io.flush()
+                    }
+                } or when name == `right` {
+                    when cursor < Str.length(buf) {
+                        cursor -> cursor + 1
+                        io.write(`\x1b[C`)
+                        io.flush()
+                    }
+                } or when name == `up` {
+                    when hist_idx > 0 {
+                        when hist_idx == hist_len {
+                            saved_buf -> buf
+                        }
+                        hist_idx -> hist_idx - 1
+                        buf -> self.history[hist_idx]
+                        cursor -> Str.length(buf)
+                        self._render_full_line(prompt, buf)
+                    }
+                } or when name == `down` {
+                    when hist_idx < hist_len {
+                        hist_idx -> hist_idx + 1
+                        when hist_idx == hist_len {
+                            buf -> saved_buf
+                        } or {
+                            buf -> self.history[hist_idx]
+                        }
+                        cursor -> Str.length(buf)
+                        self._render_full_line(prompt, buf)
+                    }
+                } or when name == `backspace` {
+                    when cursor > 0 {
+                        let left -> Str.substring(buf, 0, cursor - 1)
+                        let right -> Str.substring(buf, cursor, Str.length(buf))
+                        buf -> left + right
+                        cursor -> cursor - 1
+                        io.write(`\x1b[D`)
+                        self._redraw_from_cursor(prompt, buf, cursor)
+                    }
+                } or when name == `delete` {
+                    when cursor < Str.length(buf) {
+                        let left -> Str.substring(buf, 0, cursor)
+                        let right -> Str.substring(buf, cursor + 1, Str.length(buf))
+                        buf -> left + right
+                        self._redraw_from_cursor(prompt, buf, cursor)
+                    }
+                } or when name == `tab` {
+                    let cf -> self.completer_fn
+                    when cf != Nothing {
+                        let matches -> cf(buf, cursor)
+                        when matches != Nothing and matches.length > 0 {
+                            when matches.length == 1 {
+                                let match_str -> matches[0]
+                                let word_start -> self._find_word_start(buf, cursor)
+                                let word -> Str.substring(buf, word_start, cursor)
+                                when Str.starts_with(match_str, word) {
+                                    let suffix -> Str.substring(match_str, Str.length(word), Str.length(match_str))
+                                    buf -> Str.substring(buf, 0, cursor) + suffix + Str.substring(buf, cursor, Str.length(buf))
+                                    cursor -> cursor + Str.length(suffix)
+                                    self._render_full_line(prompt, buf)
+                                    let shift_back -> Str.length(buf) - cursor
+                                    when shift_back > 0 {
+                                        io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
+                                        io.flush()
+                                    }
+                                }
+                            } or {
+                                io.write(`\n`)
+                                do for m in matches {
+                                    io.write(m + `  `)
+                                }
+                                io.write(`\n`)
+                                io.write(prompt + buf)
+                                let shift_back -> Str.length(buf) - cursor
+                                when shift_back > 0 {
+                                    io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
+                                }
+                                io.flush()
+                            }
+                        }
+                    }
+                }
+            } or when kind == `char` {
+                when ch != Nothing and Str.length(ch) > 0 {
+                    when cursor == Str.length(buf) {
+                        buf -> buf + ch
+                        cursor -> cursor + Str.length(ch)
+                        io.write(ch)
+                        io.flush()
+                    } or {
+                        let left -> Str.substring(buf, 0, cursor)
+                        let right -> Str.substring(buf, cursor, Str.length(buf))
+                        buf -> left + ch + right
+                        cursor -> cursor + Str.length(ch)
+                        io.write(ch)
+                        self._redraw_from_cursor(prompt, buf, cursor)
+                    }
+                }
+            }
+        }
+
+        term.raw_exit()
+
+        when result != Nothing and Str.trim(result) != `` {
+            self.add_history(result)
+        }
+
+        <- result
+    }
+
+    function _render_full_line(prompt, buf) {
+        io.write(`\r` + prompt + buf)
+        term.clear_eol()
+        io.flush()
+    }
+
+    function _redraw_from_cursor(prompt, buf, cursor) {
+        let remainder -> Str.substring(buf, cursor, Str.length(buf))
+        io.write(remainder)
+        term.clear_eol()
+        let shift_back -> Str.length(remainder)
+        when shift_back > 0 {
+            io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
+        }
+        io.flush()
+    }
+
+    function _find_word_start(buf, cursor) {
+        let i -> cursor
+        do while i > 0 {
+            let ch -> Str.substring(buf, i - 1, i)
+            when ch == ` ` or ch == `\t` or ch == `(` or ch == `)` or ch == `[` or ch == `]` or ch == `{` or ch == `}` or ch == `,` or ch == `:` {
+                break
+            }
+            i -> i - 1
+        }
+        <- i
+    }
+}
+
+export function create_readline(history, completer_fn) {
+    <- Readline(history, completer_fn)
+}
+
+export function readline(prompt, history) {
+    let rl -> Readline(history, Nothing)
+    <- rl.read_line(prompt)
+}

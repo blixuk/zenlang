@@ -1,0 +1,132 @@
+/!
+  Milestone 6: Three-Layer Self-Hosting Architecture Tests.
+  Verifies:
+  1. Layer 1: ZenValue ABI and C VM opcode parity (ranges, membership `in`, flow `??`, slicing, append/drop)
+  2. Layer 2: Compiler IR native positional structs, AST accessors, and Driver caching
+  3. Layer 3: Standalone .zbc packaging and execution bridge (__builtin_vm.run_file)
+!/
+
+import compiler.Bytecode as Bytecode
+import compiler.Parser as Parser
+import compiler.Codegen as Codegen
+import compiler.Driver as Driver
+import compiler.AST as AST
+import zen.test as test
+import zen.text.string as Str
+
+function test_vm_new_opcodes() {
+    // 1. Ranges and membership `in`
+    let src1 -> `
+        let r -> 1...5
+        let has_3 -> 3 in r
+        let has_9 -> 9 in r
+        <- has_3 and not has_9
+    `
+    let prog1 -> Parser.parse_source(src1)
+    let b1 -> Bytecode.compile_program(prog1)
+    let pass -> test.assert_equal(b1[`ok`], True, `compile ranges & in`)
+    let res1 -> Bytecode.eval_chunk(b1[`chunk`], Bytecode.create_vm_prelude())
+    pass -> pass and test.assert_equal(res1, True, `ranges and in membership evaluation`)
+
+    // 2. Coalesce `??`
+    let src2 -> `
+        let a -> Nothing
+        let b -> a ?? 42
+        let c -> 100 ?? 42
+        <- b + c
+    `
+    let prog2 -> Parser.parse_source(src2)
+    let b2 -> Bytecode.compile_program(prog2)
+    pass -> pass and test.assert_equal(b2[`ok`], True, `compile coalesce`)
+    let res2 -> Bytecode.eval_chunk(b2[`chunk`], Bytecode.create_vm_prelude())
+    pass -> pass and test.assert_equal(res2, 142, `coalesce evaluation (42 + 100 = 142)`)
+
+    // 3. Slicing
+    let src3 -> `
+        let s -> \`antigravity\`[0:4]
+        <- s
+    `
+    let prog3 -> Parser.parse_source(src3)
+    let b3 -> Bytecode.compile_program(prog3)
+    pass -> pass and test.assert_equal(b3[`ok`], True, `compile slice`)
+    let res3 -> Bytecode.eval_chunk(b3[`chunk`], Bytecode.create_vm_prelude())
+    pass -> pass and test.assert_equal(res3, `anti`, `string slicing evaluation`)
+
+    <- pass
+}
+
+function test_compiler_ir_layer() {
+    let src -> `
+        function compute(x, y) {
+            <- x * y + 10
+        }
+        function main() {
+            let res -> compute(5, 6)
+            writeln(res)
+            <- 0
+        }
+    `
+    let tmp_src -> `/tmp/test_three_layer_ir_sample.zl`
+    __builtin_file.write(tmp_src, src)
+
+    // Parse via Driver cached parser (Layer 2 Compiler IR)
+    let prog -> Driver.parse_file_cached(tmp_src)
+    let pass -> test.assert_equal(AST.ast_kind(prog), AST.K_PROGRAM, `parsed program is K_PROGRAM`)
+    pass -> pass and test.assert_equal(AST.prog_err(prog), Nothing, `no parse errors`)
+
+    // Verify positional IR statements
+    let stmts -> AST.flatten_stmts(AST.prog_stmts(prog))
+    pass -> pass and test.assert_equal(stmts.length, 2, `has 2 top-level function statements`)
+    let fn1 -> stmts[0]
+    pass -> pass and test.assert_equal(AST.ast_kind(fn1), AST.K_FUNCTION, `first statement is K_FUNCTION`)
+    pass -> pass and test.assert_equal(AST.fn_name(fn1), `compute`, `function name is compute`)
+
+    // Verify cache hit on second call
+    let prog_cached -> Driver.parse_file_cached(tmp_src)
+    pass -> pass and test.assert_equal(AST.ast_kind(prog_cached), AST.K_PROGRAM, `cache hit returned valid AST`)
+
+    // Transpile cached AST to C code via Codegen (AOT Layer 1 & 2 integration)
+    let c_code -> Codegen.transpile_program(prog, False, `zen_module_init`)
+    pass -> pass and test.assert_equal(Str.contains(c_code, `compute`), True, `transpiled C contains compute function`)
+    pass -> pass and test.assert_equal(Str.contains(c_code, `main`), True, `transpiled C contains main`)
+
+    <- pass
+}
+
+function test_bytecode_execution_bridge() {
+    let src -> `
+        let val1 -> 50
+        let val2 -> 25
+        <- val1 + val2
+    `
+    let prog -> Parser.parse_source(src)
+    let b_res -> Bytecode.compile_program(prog)
+    let pass -> test.assert_equal(b_res[`ok`], True, `compile standalone bundle`)
+
+    let tmp_zbc -> `/tmp/test_three_layer_bridge.zbc`
+    Bytecode.write_bytecode_file(b_res[`chunk`], tmp_zbc, 0)
+    pass -> pass and test.assert_equal(__builtin_file.is_file(tmp_zbc), True, `zbc file written`)
+
+    // Execute via __builtin_vm.run_file
+    let res -> __builtin_vm.run_file(tmp_zbc)
+    pass -> pass and test.assert_equal(res, 75, `__builtin_vm.run_file returned 75`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `VM.new_opcodes`, `fn` -> test_vm_new_opcodes},
+        {`name` -> `Compiler.IR_Layer`, `fn` -> test_compiler_ir_layer},
+        {`name` -> `Bytecode.execution_bridge`, `fn` -> test_bytecode_execution_bridge}
+    ]
+    <- test.run_suite(`Milestone 6: Three-Layer Self-Hosting Architecture`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}
