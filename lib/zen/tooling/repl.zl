@@ -18,6 +18,7 @@ import zen.io.io as io
 import zen.io.file as file
 import zen.io.path as Path
 import zen.sys.sys as sys
+import zen.sys.readline as readline
 import zen.text.string as Str
 import zen.color as color
 import zen.time.time as time
@@ -138,6 +139,13 @@ export function is_balanced(src) {
         <- false
     }
     <- true
+}
+
+/!
+  Calculates current unclosed delimiter depth of multiline input buffer.
+!/
+export function get_unclosed_depth(src) {
+    <- readline.get_unclosed_depth(src)
 }
 
 // ==========================================
@@ -615,6 +623,10 @@ export function start_repl() {
         let reading -> true
 
         do while reading {
+            let base_d -> get_unclosed_depth(input_accum)
+            when state.has(`rl`) and state[`rl`] != Nothing {
+                state[`rl`].set_base_depth(base_d)
+            }
             let line -> read_input_line(prompt, state)
             when line == Nothing {
                 // EOF / Ctrl+D

@@ -52,6 +52,7 @@ TEST_FILES=(
   tests/lib/test_pdf.zl
   tests/lib/test_http.zl
   tests/lib/test_url.zl
+  tests/lib/test_rainbow_brackets.zl
 )
 
 echo "===================================="

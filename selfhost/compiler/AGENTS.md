@@ -109,7 +109,7 @@ Part of `selfhost/` parity effort.
   - **Graceful Empty File Diagnostics:** When compiling empty or blank files, refuses to emit empty `out.c` or binaries, outputting an instructional minimum program template.
   - **Optional Incremental Multi-Unit Compilation (`--incremental` / `-i`):** In `compile_file_multi` and `builder.zl`, tracks unit modification signatures in `.cache.zd`, skipping transpilation and GCC compilation for unchanged modules.
   - **Static & Shared Linking:** `zen build` supports `--static` (fully self-contained static binary) and `--shared` (dynamic `.so` library).
-  - **Extensible Tooling Plugin Subsystem:** `Plugin.make_tooling_plugin()` dynamically dispatches `new`, `init`, `pkg`, `repl`, `fmt`, `doc`, `explain`, `dash`, `watch`, `bench`, `clean`, `publish`, `bump`, `env`, `profile`, `graph` via `Plugin.find_tool_path` and `vm_cli`.
+  - **Extensible Tooling Plugin Subsystem:** `Plugin.make_tooling_plugin()` dynamically dispatches `new`, `init`, `pkg`, `repl`, `fmt`, `doc`, `explain`, `dash`, `watch`, `bench`, `clean`, `publish`, `bump`, `env`, `profile`, `graph`, `playground` via `Plugin.find_tool_path` and `vm_cli`.
   - **Global Path Resolution:** `Resolver.zl` automatically locates `<root>/lib`, `<root>/deps`, `<root>/selfhost`, and `ZEN_PATH` entries when executed from arbitrary working directories.
 - **Three-Layer Architecture & Parity:** Implemented with 100% parity across interpreter, native `-g`, and standalone `bin/zen`:
   - **Layer 1 (ZenValue ABI & C VM):** Shared ABI across interpreted and native modes, opcode parity in C VM (`zen_vm.c`, `zen_vm.h`) matching `Bytecode.zl` (`OP_RANGE_*`, `OP_CONCAT_APPEND`, `OP_DROP`, `OP_CHECK_UNWRAP`, `OP_IN`, `OP_COALESCE`, `OP_SLICE`).

@@ -233,3 +233,10 @@ function create_readline(history, completer_fn) {
     <- rl.create_readline(history, completer_fn)
 }
 
+/!
+  Creates a stateful Readline session instance with custom completer and highlighter hooks.
+!/
+function create_readline_styled(history, completer_fn, highlighter_fn) {
+    <- rl.create_readline_styled(history, completer_fn, highlighter_fn)
+}
+

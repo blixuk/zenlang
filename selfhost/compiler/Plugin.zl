@@ -124,6 +124,14 @@ function dispatch_tool_fmt(args) {
     <- run_tool(tool_path)
 }
 
+export function dispatch_tool_playground(args) {
+    let tool_path -> find_tool_path(`playground`)
+    when tool_path == Nothing {
+        <- {`code` -> 1, `message` -> `error: tools/playground.zl not found`}
+    }
+    <- run_tool(tool_path)
+}
+
 export function make_tooling_plugin() {
     let cmds -> {
         `init` -> dispatch_tool_pm,
@@ -143,7 +151,8 @@ export function make_tooling_plugin() {
         `clean` -> dispatch_tool_pm,
         `env` -> dispatch_tool_pm,
         `profile` -> dispatch_tool_pm,
-        `graph` -> dispatch_tool_pm
+        `graph` -> dispatch_tool_pm,
+        `playground` -> dispatch_tool_playground
     }
     <- {
         `name` -> `Tooling`,

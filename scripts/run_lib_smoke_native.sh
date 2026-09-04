@@ -73,6 +73,7 @@ SMOKE=(
   tests/lib/test_test_bench_extra.zl
   tests/lib/test_concurrency.zl
   tests/lib/test_profile.zl
+  tests/lib/test_rainbow_brackets.zl
 )
 
 fail=0

@@ -31,8 +31,9 @@ Core ladder (must stay green for “language works”):
 - `./scripts/zen test-core` → `scripts/run_core_tests.sh` (interpret: `tests/01`–`06`, hello, smoke, suite/run_all, error + pattern samples)
 - `./scripts/zen test-parity` → `scripts/run_core_parity.sh` (interpret vs `-g`)
 - `./scripts/zen test-lib` → `tests/lib/run_all.sh` (stdlib, interpreter only)
-- `./scripts/zen test-lib-native` → `scripts/run_lib_smoke_native.sh` (native `-g` for all `tests/lib/test_*.zl`, currently 41 modules including logfmt/sexp/serialize/canvas/zenmark)
+- `./scripts/zen test-lib-native` → `scripts/run_lib_smoke_native.sh` (native `-g` for all `tests/lib/test_*.zl`, currently 42 modules including logfmt/sexp/serialize/canvas/zenmark/rainbow_brackets)
 - Term raw/keys: `tests/lib/test_term.zl`; editor demo `examples/zedit.zl`
+- Rainbow delimiters & delimiter matching: `tests/lib/test_rainbow_brackets.zl` (core + native `-g` + standalone `bin/zen`)
 - Range operators: `tests/language/range_syntax_01.zl` (core + parity)
 - Closures (by-value capture): `tests/language/closure_01.zl` (core + parity)
 - Extended operators (`++` / `--`): `tests/language/test_extended_operators.zl` (core + parity)

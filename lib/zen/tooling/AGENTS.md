@@ -12,7 +12,7 @@ Standard library and language tooling maintainers.
 - **Manifest Format**: `zen.pkg.zd` files use native Zen Data format (tagged `Package { ... }` structs with visual `->` flow maps), with backward compatibility for legacy `.zbuild` JSON.
 - **Lockfile Contract**: `zen.lock.zd` holds deterministic Git commit hashes and pinned dependency paths in Zen Data format.
 - **Documentation & Scaffolding**: Scaffolding generates `README.zm` (Zen Mark format readable in terminal via `zen view README.zm`). Doc generation produces `docs/API.zm` and interactive dark-mode HTML (`docs/html/index.html`). `docgen.zl` also provides built-in terminal manual pages and symbol lookups (`zen doc <symbol|keyword>`, `zen explain <topic>`, and `zen doc --topics`).
-- **Interactive Stateful REPL (`zen repl`)**: Provides persistent session state (`env`), automatic `_` and `_N` variables, Zen Data state snapshotting (`:save` / `:load` with `.zd`), multi-line block entry, tab autocompletion, live syntax highlighting, and execution timing (`:time`).
+- **Interactive Stateful REPL (`zen repl`)**: Provides persistent session state (`env`), automatic `_` and `_N` variables, Zen Data state snapshotting (`:save` / `:load` with `.zd`), multi-line block entry with dynamic unclosed delimiter depth tracking (`base_depth`), tab autocompletion, live syntax highlighting with rainbow delimiters and active delimiter matching standout, and execution timing (`:time`).
 - **Dependency Topology**: Dependencies are installed in a flat structure under `deps/` (`deps/<pkg_name>/`), preventing deep directory nesting and C symbol collisions in AOT native binaries.
 - **App Templates**: Scaffolding templates for `cli` (with `cli.Parser`, flags, help, banner), `tui` (with canvas & layout), `lib` (exported classes and math routines), and `service` (HTTP request router and JSON endpoints).
 - **Builder Integration**: Transpiles to intermediate C code using the Zenlang compiler pipeline, links against `libruntime.a` / C runtime objects with GCC or Clang, and supports `--release`, `--debug`, `--dump`, `--incremental` (multi-unit change caching via `.cache.zd`), `--static` (fully static native binary), and `--shared` (dynamic library `.so`).
@@ -33,7 +33,7 @@ Standard library and language tooling maintainers.
 
 # Child DOX Index
 
-- repl.zl: Interactive stateful REPL shell with `_`/`_N` tracking, `:save`/`:load` snapshots (.zd), tab completion, and multi-line blocks
+- repl.zl: Interactive stateful REPL shell with `_`/`_N` tracking, `:save`/`:load` snapshots (.zd), tab completion, rainbow delimiter highlighting, matching bracket standout, and multi-line blocks
 - manifest.zl: Comment stripper, `zen.pkg.zd` parser/serializer, `zen.lock.zd` lockfile manager (with `.zbuild` fallback)
 - templates.zl: Project scaffolding templates (`cli`, `tui`, `lib`, `service`), starter test suites, `.gitignore`, and `README.zm`
 - project.zl: Project root discovery (`find_root`, `load_project`), `init_project`, and `new_project`

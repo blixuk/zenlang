@@ -50,7 +50,18 @@ function ansi_green() { <- "\033[32m" }
 function ansi_bright_yellow() { <- "\033[1;33m" }
 function ansi_bright_black() { <- "\033[90m" }
 function ansi_white() { <- "\033[37m" }
+function ansi_bright_blue() { <- "\033[1;34m" }
+function ansi_violet() { <- "\033[35m" }
 function ansi_bright_red() { <- "\033[1;31m" }
+
+function ansi_rainbow_color(depth) {
+    let d -> depth % 5
+    when d == 0 { <- ansi_bright_cyan() }
+    when d == 1 { <- ansi_bright_yellow() }
+    when d == 2 { <- ansi_bright_magenta() }
+    when d == 3 { <- ansi_bright_green() }
+    <- ansi_violet()
+}
 function ansi_top_bar() { <- "\033[30;46m" }
 function ansi_status_bar() { <- "\033[30;47m" }
 function ansi_alert_bar() { <- "\033[30;43m" }
@@ -514,6 +525,7 @@ class Playground {
     let opt_doc_drawer
     let opt_highlight
     let opt_line_numbers
+    let opt_rainbow_brackets
     
     // Autocomplete State
     let ac_active
@@ -540,6 +552,7 @@ class Playground {
         self.opt_doc_drawer -> True
         self.opt_highlight -> True
         self.opt_line_numbers -> True
+        self.opt_rainbow_brackets -> True
         
         self.ac_active -> False
         self.ac_items -> []
@@ -867,13 +880,12 @@ class Playground {
         let body -> Str.join(self.lines, "\n")
         file.write(".playground_tmp.zl", body)
         
-        let cmd -> ""
-        when self.backend_mode == 0 {
-            cmd -> "python3 bootstrap/Zen.py .playground_tmp.zl 2>&1"
-        } or when self.backend_mode == 1 {
-            cmd -> "python3 bootstrap/Zen.py -g .playground_tmp.zl 2>&1"
+        let cmd -> when (self.backend_mode == 0) {
+            `python3 bootstrap/Zen.py .playground_tmp.zl 2>&1`
+        } or when (self.backend_mode == 1) {
+            `python3 bootstrap/Zen.py -g .playground_tmp.zl 2>&1`
         } or {
-            cmd -> "./bin/zen .playground_tmp.zl 2>&1"
+            `./bin/zen .playground_tmp.zl 2>&1`
         }
         
         let res -> process.result(cmd)
@@ -960,34 +972,145 @@ class Playground {
             self.opt_highlight -> not self.opt_highlight
         } or when self.settings_idx == 3 {
             self.opt_line_numbers -> not self.opt_line_numbers
+        } or when self.settings_idx == 4 {
+            self.opt_rainbow_brackets -> not self.opt_rainbow_brackets
         }
     }
 
-    // --- Fast In-Memory Line Highlighter ---
+    // --- Delimiter Depth & Bracket Matching Engine ---
 
-    function format_word_ansi(word) {
-        when word == Nothing or s_len(word) == 0 { <- "" }
-        when Str.starts_with(word, "//") {
-            <- ansi_bright_black() + word + ansi_reset()
-        } or when Str.starts_with(word, "\"") or Str.starts_with(word, "`") {
-            <- ansi_green() + word + ansi_reset()
-        } or when word == "->" or word == "<-" {
-            <- ansi_bright_green() + word + ansi_reset()
-        } or when is_keyword(word) {
-            <- ansi_bright_magenta() + word + ansi_reset()
-        } or when is_stdlib_module(word) {
-            <- ansi_bright_cyan() + word + ansi_reset()
-        } or when is_digit(Str.at(word, 0)) {
-            <- ansi_bright_yellow() + word + ansi_reset()
+    function get_line_start_depth(target_row) {
+        let r -> 0
+        let depth -> 0
+        do while r < target_row and r < self.lines.length {
+            let l -> self.lines[r]
+            let n -> s_len(l)
+            let i -> 0
+            let in_s -> false
+            let str_c -> "`"
+            do while i < n {
+                let ch -> Str.substring(l, i, i + 1)
+                when in_s {
+                    when ch == str_c { in_s -> false }
+                    i -> i + 1
+                    continue
+                }
+                when ch == "/" and i + 1 < n and Str.substring(l, i + 1, i + 2) == "/" {
+                    break
+                }
+                when ch == "`" or ch == "\"" {
+                    in_s -> true
+                    str_c -> ch
+                    i -> i + 1
+                    continue
+                }
+                when ch == "(" or ch == "[" or ch == "{" {
+                    depth -> depth + 1
+                } or when ch == ")" or ch == "]" or ch == "}" {
+                    when depth > 0 { depth -> depth - 1 }
+                }
+                i -> i + 1
+            }
+            r -> r + 1
         }
-        <- ansi_white() + word + ansi_reset()
+        <- depth
     }
 
-    function highlight_line_to_ansi(line, col_start, width) {
+    function get_active_bracket_match() {
+        when self.row >= self.lines.length { <- Nothing }
+        let cur_l -> self.lines[self.row]
+        let line_len -> s_len(cur_l)
+        when line_len == 0 { <- Nothing }
+        
+        let target_col -> -1
+        when self.col < line_len {
+            let ch -> Str.substring(cur_l, self.col, self.col + 1)
+            when ch == "(" or ch == ")" or ch == "[" or ch == "]" or ch == "{" or ch == "}" {
+                target_col -> self.col
+            }
+        }
+        when target_col == -1 and self.col > 0 and self.col - 1 < line_len {
+            let prev_ch -> Str.substring(cur_l, self.col - 1, self.col)
+            when prev_ch == "(" or prev_ch == ")" or prev_ch == "[" or prev_ch == "]" or prev_ch == "{" or prev_ch == "}" {
+                target_col -> self.col - 1
+            }
+        }
+        when target_col == -1 { <- Nothing }
+        
+        let c -> Str.substring(cur_l, target_col, target_col + 1)
+        let is_open -> (c == "(" or c == "[" or c == "{")
+        let partner_char -> when (c == "(") { ")" } or when (c == ")") { "(" } or when (c == "[") { "]" } or when (c == "]") { "[" } or when (c == "{") { "}" } or { "{" }
+        
+        when is_open {
+            let depth -> 1
+            let r -> self.row
+            do while r < self.lines.length {
+                let l -> self.lines[r]
+                let n -> s_len(l)
+                let c_idx -> when (r == self.row) { target_col + 1 } or { 0 }
+                let in_s -> false
+                let s_ch -> "`"
+                let k -> 0
+                do while k < n {
+                    let ch -> Str.substring(l, k, k + 1)
+                    when in_s {
+                        when ch == s_ch { in_s -> false }
+                    } or {
+                        when ch == "`" or ch == "\"" {
+                            in_s -> true
+                            s_ch -> ch
+                        } or when ch == "/" and k + 1 < n and Str.substring(l, k + 1, k + 2) == "/" {
+                            break
+                        } or when k >= c_idx {
+                            when ch == c {
+                                depth -> depth + 1
+                            } or when ch == partner_char {
+                                depth -> depth - 1
+                                when depth == 0 {
+                                    <- [self.row, target_col, r, k]
+                                }
+                            }
+                        }
+                    }
+                    k -> k + 1
+                }
+                r -> r + 1
+            }
+        } or {
+            let depth -> 1
+            let r -> self.row
+            do while r >= 0 {
+                let l -> self.lines[r]
+                let n -> s_len(l)
+                let c_idx -> when (r == self.row) { target_col - 1 } or { n - 1 }
+                let k -> c_idx
+                do while k >= 0 {
+                    let ch -> Str.substring(l, k, k + 1)
+                    when ch == c {
+                        depth -> depth + 1
+                    } or when ch == partner_char {
+                        depth -> depth - 1
+                        when depth == 0 {
+                            <- [self.row, target_col, r, k]
+                        }
+                    }
+                    k -> k - 1
+                }
+                r -> r - 1
+            }
+        }
+        
+        <- Nothing
+    }
+
+    // --- Fast In-Memory Line Highlighter with Rainbow Delimiters ---
+
+    function highlight_line_to_ansi(line, col_start, width, file_row) {
         when line == Nothing or s_len(line) == 0 {
             <- s_spaces(width)
         }
 
+        let line_len -> s_len(line)
         let vis -> s_slice(line, col_start, col_start + width)
         when not self.opt_highlight {
             let pad -> width - s_len(vis)
@@ -995,17 +1118,124 @@ class Playground {
             <- vis
         }
 
-        let words -> Str.split(vis, " ")
-        let out -> ""
-        let wi -> 0
-        do while wi < words.length {
-            let w -> words[wi]
-            when wi > 0 { out -> out + " " }
-            out -> out + self.format_word_ansi(w)
-            wi -> wi + 1
+        let match_info -> self.get_active_bracket_match()
+        let t_row -> -1
+        let t_col -> -1
+        let m_row -> -1
+        let m_col -> -1
+        when match_info != Nothing {
+            t_row -> match_info[0]
+            t_col -> match_info[1]
+            m_row -> match_info[2]
+            m_col -> match_info[3]
         }
 
-        let pad -> width - s_len(vis)
+        let start_depth -> self.get_line_start_depth(file_row)
+        
+        // Advance depth up to col_start
+        let depth -> start_depth
+        let k -> 0
+        do while k < col_start and k < line_len {
+            let ch -> Str.substring(line, k, k + 1)
+            when ch == "(" or ch == "[" or ch == "{" {
+                depth -> depth + 1
+            } or when ch == ")" or ch == "]" or ch == "}" {
+                when depth > 0 { depth -> depth - 1 }
+            }
+            k -> k + 1
+        }
+
+        let vis_len -> s_len(vis)
+        let out -> ""
+        let i -> 0
+        let in_str -> false
+        let str_char -> "`"
+        
+        do while i < vis_len {
+            let abs_col -> col_start + i
+            let c -> Str.substring(vis, i, i + 1)
+            
+            when in_str {
+                out -> out + c
+                when c == str_char {
+                    out -> out + ansi_reset()
+                    in_str -> false
+                }
+                i -> i + 1
+                continue
+            }
+            
+            // Comments: //
+            when c == "/" and i + 1 < vis_len and Str.substring(vis, i + 1, i + 2) == "/" {
+                out -> out + ansi_bright_black() + Str.substring(vis, i, vis_len) + ansi_reset()
+                break
+            }
+            
+            // Strings
+            when c == "`" or c == "\"" {
+                in_str -> true
+                str_char -> c
+                out -> out + ansi_green() + c
+                i -> i + 1
+                continue
+            }
+            
+            // Directional arrows
+            when (c == "-" and i + 1 < vis_len and Str.substring(vis, i + 1, i + 2) == ">") or (c == "<" and i + 1 < vis_len and Str.substring(vis, i + 1, i + 2) == "-") {
+                out -> out + ansi_bright_green() + Str.substring(vis, i, i + 2) + ansi_reset()
+                i -> i + 2
+                continue
+            }
+            
+            // Delimiters
+            when c == "(" or c == "[" or c == "{" or c == ")" or c == "]" or c == "}" {
+                let is_open -> (c == "(" or c == "[" or c == "{")
+                let d -> depth
+                when not is_open and depth > 0 {
+                    depth -> depth - 1
+                    d -> depth
+                }
+                when is_open {
+                    depth -> depth + 1
+                }
+                
+                let is_matched -> (file_row == t_row and abs_col == t_col) or (file_row == m_row and abs_col == m_col)
+                when is_matched {
+                    out -> out + ansi_modal_selected() + c + ansi_reset()
+                } or when self.opt_rainbow_brackets {
+                    let col_tag -> ansi_rainbow_color(d)
+                    out -> out + col_tag + c + ansi_reset()
+                } or {
+                    out -> out + ansi_white() + c + ansi_reset()
+                }
+                i -> i + 1
+                continue
+            }
+            
+            // Words / Identifiers / Numbers
+            when is_ident_start(c) or is_digit(c) {
+                let w_start -> i
+                do while i < vis_len and is_ident_part(Str.substring(vis, i, i + 1)) {
+                    i -> i + 1
+                }
+                let w -> Str.substring(vis, w_start, i)
+                when is_keyword(w) {
+                    out -> out + ansi_bright_magenta() + w + ansi_reset()
+                } or when is_stdlib_module(w) {
+                    out -> out + ansi_bright_cyan() + w + ansi_reset()
+                } or when is_digit(Str.at(w, 0)) {
+                    out -> out + ansi_bright_yellow() + w + ansi_reset()
+                } or {
+                    out -> out + ansi_white() + w + ansi_reset()
+                }
+                continue
+            }
+            
+            out -> out + c
+            i -> i + 1
+        }
+        
+        let pad -> width - vis_len
         when pad > 0 {
             out -> out + s_spaces(pad)
         }
@@ -1112,7 +1342,7 @@ class Playground {
                         }
                     }
                     let line -> self.lines[file_row]
-                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w)
+                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w, file_row)
                 }
                 
                 // Middle Border
@@ -1167,7 +1397,7 @@ class Playground {
                         }
                     }
                     let line -> self.lines[file_row]
-                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w)
+                    row_str -> row_str + self.highlight_line_to_ansi(line, self.col_off, ed_inner_w, file_row)
                 }
                 term.write(row_str)
                 y -> 0 + y + 1
@@ -1219,9 +1449,10 @@ class Playground {
             term.move(1, drawer_y)
             term.write(ansi_doc_header() + Str.pad_right(doc_title, w, " ") + ansi_reset())
             
-            let doc_body_str -> "  Navigate cursor over keywords (function, when, ->) or stdlib calls (chart.sparkline)."
-            when doc_info != Nothing {
-                doc_body_str -> "  ▶ " + doc_info["sig"] + " — " + doc_info["desc"]
+            let doc_body_str -> when (doc_info != Nothing) {
+                `  ▶ ` + Str.to_string(doc_info[`sig`]) + ` — ` + Str.to_string(doc_info[`desc`])
+            } or {
+                `  Navigate cursor over keywords (function, when, ->) or stdlib calls (chart.sparkline).`
             }
             term.move(1, 0 + drawer_y + 1)
             term.write(ansi_doc_body() + Str.pad_right(doc_body_str, w, " ") + ansi_reset())
@@ -1257,7 +1488,7 @@ class Playground {
         // 5. Settings / Options Modal Overlay (if active)
         when self.in_settings_picker {
             let modal_w -> 52
-            let modal_h -> 8
+            let modal_h -> 9
             let modal_x -> (w - modal_w) / 2
             let modal_y -> (h - modal_h) / 2
             when modal_x < 1 { modal_x -> 1 }
@@ -1270,7 +1501,8 @@ class Playground {
                 { "name" -> "Auto-Complete Engine", "val" -> self.opt_autocomplete },
                 { "name" -> "Live Doc Drawer", "val" -> self.opt_doc_drawer },
                 { "name" -> "Syntax Highlighting", "val" -> self.opt_highlight },
-                { "name" -> "Line Numbers Gutter", "val" -> self.opt_line_numbers }
+                { "name" -> "Line Numbers Gutter", "val" -> self.opt_line_numbers },
+                { "name" -> "Rainbow Delimiters", "val" -> self.opt_rainbow_brackets }
             ]
             
             let oi -> 0
@@ -1381,7 +1613,7 @@ class Playground {
                     <- False
                 }
                 when name == "down" {
-                    when self.settings_idx < 3 {
+                    when self.settings_idx < 4 {
                         self.settings_idx -> self.settings_idx + 1
                     }
                     <- False
@@ -1615,11 +1847,11 @@ function main() {
 
     let done -> False
     check {
-        do {
+        do while not done {
             pg.draw()
             let k -> term.read_key()
             done -> pg.handle_key(k)
-        } until done
+        }
     } or {
         pg.status -> "Error — exiting"
     }

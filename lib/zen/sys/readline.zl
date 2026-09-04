@@ -7,15 +7,266 @@ import zen.sys.term as term
 import zen.text.string as Str
 import zen.io.io as io
 
+export function compute_rainbow_brackets(buf, cursor, base_depth) {
+    let n -> Str.length(buf)
+    when n == 0 {
+        <- {
+            `char_depths` -> {},
+            `target_idx` -> -1,
+            `partner_idx` -> -1,
+            `unmatched` -> {}
+        }
+    }
+
+    // 1. Identify active delimiter under or immediately adjacent to cursor
+    let target_idx -> -1
+    when cursor < n {
+        let ch -> Str.substring(buf, cursor, cursor + 1)
+        when ch == `(` or ch == `)` or ch == `[` or ch == `]` or ch == `{` or ch == `}` {
+            target_idx -> cursor
+        }
+    }
+    when target_idx == -1 and cursor > 0 {
+        let prev_ch -> Str.substring(buf, cursor - 1, cursor)
+        when prev_ch == `(` or prev_ch == `)` or prev_ch == `[` or prev_ch == `]` or prev_ch == `{` or prev_ch == `}` {
+            target_idx -> cursor - 1
+        }
+    }
+
+    let stack -> []
+    let match_pairs -> {}
+    let char_depths -> {}
+    let unmatched -> {}
+
+    let in_str -> false
+    let in_comment -> false
+    let i -> 0
+    let cur_depth -> base_depth
+
+    do while i < n {
+        let c -> Str.substring(buf, i, i + 1)
+        when in_comment {
+            i -> i + 1
+            continue
+        }
+        when in_str {
+            when c == `\`` {
+                in_str -> false
+            }
+            i -> i + 1
+            continue
+        }
+        when c == `/` and i + 1 < n and Str.substring(buf, i + 1, i + 2) == `/` {
+            in_comment -> true
+            i -> i + 1
+            continue
+        }
+        when c == `\`` {
+            in_str -> true
+            i -> i + 1
+            continue
+        }
+
+        when c == `(` or c == `[` or c == `{` {
+            char_depths[i] -> cur_depth
+            stack.append([c, i, cur_depth])
+            cur_depth -> cur_depth + 1
+        } or when c == `)` or c == `]` or c == `}` {
+            let expected -> when (c == `)`) { `(` } or when (c == `]`) { `[` } or { `{` }
+            when stack.length > 0 {
+                let top -> stack[stack.length - 1]
+                when top[0] == expected {
+                    stack.remove_at(stack.length - 1)
+                    let open_idx -> top[1]
+                    let open_depth -> top[2]
+                    char_depths[i] -> open_depth
+                    match_pairs[open_idx] -> i
+                    match_pairs[i] -> open_idx
+                    cur_depth -> open_depth
+                } or {
+                    unmatched[i] -> true
+                }
+            } or {
+                when cur_depth > 0 {
+                    cur_depth -> cur_depth - 1
+                    char_depths[i] -> cur_depth
+                } or {
+                    unmatched[i] -> true
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    let partner_idx -> -1
+    when target_idx != -1 and match_pairs.has(target_idx) {
+        partner_idx -> match_pairs[target_idx]
+    }
+
+    <- {
+        `char_depths` -> char_depths,
+        `target_idx` -> target_idx,
+        `partner_idx` -> partner_idx,
+        `unmatched` -> unmatched
+    }
+}
+
+export function render_rainbow_line(buf, cursor, base_depth) {
+    let n -> Str.length(buf)
+    when n == 0 { <- `` }
+
+    let info -> compute_rainbow_brackets(buf, cursor, base_depth)
+    let char_depths -> info[`char_depths`]
+    let target_idx -> info[`target_idx`]
+    let partner_idx -> info[`partner_idx`]
+    let unmatched -> info[`unmatched`]
+
+    let rainbow_colors -> [
+        `\x1b[1;36m`, // Depth 0: Bright Cyan
+        `\x1b[1;33m`, // Depth 1: Bright Yellow
+        `\x1b[1;35m`, // Depth 2: Bright Magenta
+        `\x1b[1;32m`, // Depth 3: Bright Green
+        `\x1b[35m`    // Depth 4: Violet / Purple
+    ]
+    let reset_code -> `\x1b[0m`
+    let match_style -> `\x1b[1;30;47m`   // Bold black on bright white
+    let unmatch_style -> `\x1b[1;37;41m` // Bold white on bright red
+    let str_style -> `\x1b[32m`          // Green
+    let comment_style -> `\x1b[90m`      // Bright Black / Dim
+    let arrow_style -> `\x1b[1;36m`      // Bright Cyan
+
+    let out -> ``
+    let i -> 0
+    let in_str -> false
+    let in_comment -> false
+
+    do while i < n {
+        let c -> Str.substring(buf, i, i + 1)
+        when in_comment {
+            out -> out + c
+            i -> i + 1
+            continue
+        }
+        when in_str {
+            out -> out + c
+            when c == `\`` {
+                out -> out + reset_code
+                in_str -> false
+            }
+            i -> i + 1
+            continue
+        }
+        when c == `/` and i + 1 < n and Str.substring(buf, i + 1, i + 2) == `/` {
+            in_comment -> true
+            out -> out + comment_style + Str.substring(buf, i, n) + reset_code
+            break
+        }
+        when c == `\`` {
+            in_str -> true
+            out -> out + str_style + c
+            i -> i + 1
+            continue
+        }
+
+        // Directional arrows: -> and <-
+        when (c == `-` and i + 1 < n and Str.substring(buf, i + 1, i + 2) == `>`) or (c == `<` and i + 1 < n and Str.substring(buf, i + 1, i + 2) == `-`) {
+            let arrow -> Str.substring(buf, i, i + 2)
+            out -> out + arrow_style + arrow + reset_code
+            i -> i + 2
+            continue
+        }
+
+        // Delimiters
+        when (target_idx != -1 and partner_idx != -1) and (i == target_idx or i == partner_idx) {
+            out -> out + match_style + c + reset_code
+        } or when unmatched.has(i) {
+            out -> out + unmatch_style + c + reset_code
+        } or when char_depths.has(i) {
+            let d -> char_depths[i]
+            let col -> rainbow_colors[d % rainbow_colors.length]
+            out -> out + col + c + reset_code
+        } or {
+            out -> out + c
+        }
+        i -> i + 1
+    }
+
+    <- out
+}
+
+/!
+  Calculates current unclosed delimiter depth of multiline input buffer.
+!/
+export function get_unclosed_depth(src) {
+    when src == Nothing or src == `` { <- 0 }
+    let len -> Str.length(src)
+    let i -> 0
+    let depth -> 0
+    let in_str -> false
+
+    do while i < len {
+        let c -> Str.substring(src, i, i + 1)
+        when in_str {
+            when c == `\\` and i + 1 < len {
+                i -> i + 2
+            } or when c == `\`` {
+                in_str -> false
+                i -> i + 1
+            } or {
+                i -> i + 1
+            }
+        } or {
+            when c == `\`` {
+                in_str -> true
+                i -> i + 1
+            } or when c == `/` and i + 1 < len and Str.substring(src, i + 1, i + 2) == `/` {
+                i -> i + 2
+                do while i < len and Str.substring(src, i, i + 1) != `\n` {
+                    i -> i + 1
+                }
+            } or when c == `{` or c == `(` or c == `[` {
+                depth -> depth + 1
+                i -> i + 1
+            } or when c == `}` or c == `)` or c == `]` {
+                when depth > 0 {
+                    depth -> depth - 1
+                }
+                i -> i + 1
+            } or {
+                i -> i + 1
+            }
+        }
+    }
+    <- depth
+}
+
 export class Readline {
     let history
     let max_history
     let completer_fn
+    let highlighter_fn
+    let enable_rainbow
+    let base_depth
 
-    function init(history, completer_fn) {
+    function init(history, completer_fn, highlighter_fn) {
         self.history -> when (history != Nothing) { history } or { [] }
         self.max_history -> 1000
         self.completer_fn -> completer_fn
+        self.highlighter_fn -> highlighter_fn
+        self.enable_rainbow -> true
+        self.base_depth -> 0
+    }
+
+    function set_base_depth(d) {
+        self.base_depth -> d
+    }
+
+    function set_enable_rainbow(flag) {
+        self.enable_rainbow -> flag
+    }
+
+    function set_highlighter(fn_hl) {
+        self.highlighter_fn -> fn_hl
     }
 
     function add_history(line) {
@@ -32,13 +283,28 @@ export class Readline {
         }
     }
 
+    function _render_styled_line(prompt, buf, cursor) {
+        let styled -> when (self.highlighter_fn != Nothing) {
+            let hf -> self.highlighter_fn
+            hf(buf, cursor, self.base_depth)
+        } or when self.enable_rainbow {
+            render_rainbow_line(buf, cursor, self.base_depth)
+        } or {
+            buf
+        }
+        io.write(`\r` + prompt + styled)
+        term.clear_eol()
+        let shift_back -> Str.length(buf) - cursor
+        when shift_back > 0 {
+            io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
+        }
+        io.flush()
+    }
+
     function read_line(prompt) {
         when not term.is_tty() {
             <- io.read(prompt)
         }
-
-        io.write(prompt)
-        io.flush()
 
         term.raw_enter()
 
@@ -50,6 +316,8 @@ export class Readline {
 
         let running -> true
         let result -> Nothing
+
+        self._render_styled_line(prompt, buf, cursor)
 
         do while running {
             let key -> term.read_key()
@@ -81,48 +349,37 @@ export class Readline {
                     } or {
                         when cursor < Str.length(buf) {
                             buf -> Str.substring(buf, 0, cursor) + Str.substring(buf, cursor + 1, Str.length(buf))
-                            self._redraw_from_cursor(prompt, buf, cursor)
+                            self._render_styled_line(prompt, buf, cursor)
                         }
                     }
                 } or when name == `ctrl_l` {
                     term.clear()
-                    io.write(prompt + buf)
-                    let shift_back -> Str.length(buf) - cursor
-                    when shift_back > 0 {
-                        io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
-                    }
-                    io.flush()
+                    self._render_styled_line(prompt, buf, cursor)
                 } or when name == `ctrl_a` or name == `home` {
                     when cursor > 0 {
-                        io.write(`\x1b[` + Str.to_string(cursor) + `D`)
-                        io.flush()
                         cursor -> 0
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `ctrl_e` or name == `end` {
                     let total -> Str.length(buf)
                     when cursor < total {
-                        let shift -> total - cursor
-                        io.write(`\x1b[` + Str.to_string(shift) + `C`)
-                        io.flush()
                         cursor -> total
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `ctrl_k` {
                     when cursor < Str.length(buf) {
                         buf -> Str.substring(buf, 0, cursor)
-                        term.clear_eol()
-                        io.flush()
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `left` {
                     when cursor > 0 {
                         cursor -> cursor - 1
-                        io.write(`\x1b[D`)
-                        io.flush()
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `right` {
                     when cursor < Str.length(buf) {
                         cursor -> cursor + 1
-                        io.write(`\x1b[C`)
-                        io.flush()
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `up` {
                     when hist_idx > 0 {
@@ -132,7 +389,7 @@ export class Readline {
                         hist_idx -> hist_idx - 1
                         buf -> self.history[hist_idx]
                         cursor -> Str.length(buf)
-                        self._render_full_line(prompt, buf)
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `down` {
                     when hist_idx < hist_len {
@@ -143,7 +400,7 @@ export class Readline {
                             buf -> self.history[hist_idx]
                         }
                         cursor -> Str.length(buf)
-                        self._render_full_line(prompt, buf)
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `backspace` {
                     when cursor > 0 {
@@ -151,15 +408,14 @@ export class Readline {
                         let right -> Str.substring(buf, cursor, Str.length(buf))
                         buf -> left + right
                         cursor -> cursor - 1
-                        io.write(`\x1b[D`)
-                        self._redraw_from_cursor(prompt, buf, cursor)
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `delete` {
                     when cursor < Str.length(buf) {
                         let left -> Str.substring(buf, 0, cursor)
                         let right -> Str.substring(buf, cursor + 1, Str.length(buf))
                         buf -> left + right
-                        self._redraw_from_cursor(prompt, buf, cursor)
+                        self._render_styled_line(prompt, buf, cursor)
                     }
                 } or when name == `tab` {
                     let cf -> self.completer_fn
@@ -174,12 +430,7 @@ export class Readline {
                                     let suffix -> Str.substring(match_str, Str.length(word), Str.length(match_str))
                                     buf -> Str.substring(buf, 0, cursor) + suffix + Str.substring(buf, cursor, Str.length(buf))
                                     cursor -> cursor + Str.length(suffix)
-                                    self._render_full_line(prompt, buf)
-                                    let shift_back -> Str.length(buf) - cursor
-                                    when shift_back > 0 {
-                                        io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
-                                        io.flush()
-                                    }
+                                    self._render_styled_line(prompt, buf, cursor)
                                 }
                             } or {
                                 io.write(`\n`)
@@ -187,31 +438,18 @@ export class Readline {
                                     io.write(m + `  `)
                                 }
                                 io.write(`\n`)
-                                io.write(prompt + buf)
-                                let shift_back -> Str.length(buf) - cursor
-                                when shift_back > 0 {
-                                    io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
-                                }
-                                io.flush()
+                                self._render_styled_line(prompt, buf, cursor)
                             }
                         }
                     }
                 }
             } or when kind == `char` {
                 when ch != Nothing and Str.length(ch) > 0 {
-                    when cursor == Str.length(buf) {
-                        buf -> buf + ch
-                        cursor -> cursor + Str.length(ch)
-                        io.write(ch)
-                        io.flush()
-                    } or {
-                        let left -> Str.substring(buf, 0, cursor)
-                        let right -> Str.substring(buf, cursor, Str.length(buf))
-                        buf -> left + ch + right
-                        cursor -> cursor + Str.length(ch)
-                        io.write(ch)
-                        self._redraw_from_cursor(prompt, buf, cursor)
-                    }
+                    let left -> Str.substring(buf, 0, cursor)
+                    let right -> Str.substring(buf, cursor, Str.length(buf))
+                    buf -> left + ch + right
+                    cursor -> cursor + Str.length(ch)
+                    self._render_styled_line(prompt, buf, cursor)
                 }
             }
         }
@@ -223,23 +461,6 @@ export class Readline {
         }
 
         <- result
-    }
-
-    function _render_full_line(prompt, buf) {
-        io.write(`\r` + prompt + buf)
-        term.clear_eol()
-        io.flush()
-    }
-
-    function _redraw_from_cursor(prompt, buf, cursor) {
-        let remainder -> Str.substring(buf, cursor, Str.length(buf))
-        io.write(remainder)
-        term.clear_eol()
-        let shift_back -> Str.length(remainder)
-        when shift_back > 0 {
-            io.write(`\x1b[` + Str.to_string(shift_back) + `D`)
-        }
-        io.flush()
     }
 
     function _find_word_start(buf, cursor) {
@@ -256,10 +477,14 @@ export class Readline {
 }
 
 export function create_readline(history, completer_fn) {
-    <- Readline(history, completer_fn)
+    <- Readline(history, completer_fn, Nothing)
+}
+
+export function create_readline_styled(history, completer_fn, highlighter_fn) {
+    <- Readline(history, completer_fn, highlighter_fn)
 }
 
 export function readline(prompt, history) {
-    let reader: Readline -> Readline(history, Nothing)
+    let reader -> Readline(history, Nothing, Nothing)
     <- reader.read_line(prompt)
 }

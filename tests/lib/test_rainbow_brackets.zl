@@ -1,0 +1,91 @@
+import zen.test as test
+import zen.sys.readline as rl
+import zen.text.string as Str
+
+function test_nested_depths() {
+    let line -> `(([]{}))`
+    let info -> rl.compute_rainbow_brackets(line, 0, 0)
+    let depths -> info[`char_depths`]
+    
+    let pass -> test.assert_equal(depths[0], 0, `depth of first (` )
+    pass -> pass and test.assert_equal(depths[1], 1, `depth of second (`)
+    pass -> pass and test.assert_equal(depths[2], 2, `depth of [`)
+    pass -> pass and test.assert_equal(depths[3], 2, `depth of ]`)
+    pass -> pass and test.assert_equal(depths[4], 2, `depth of {`)
+    pass -> pass and test.assert_equal(depths[5], 2, `depth of }`)
+    pass -> pass and test.assert_equal(depths[6], 1, `depth of )`)
+    pass -> pass and test.assert_equal(depths[7], 0, `depth of outer )`)
+    <- pass
+}
+
+function test_cursor_matching_pair() {
+    let line -> `let x -> (10 + [20, 30])`
+    // Cursor at position 9 (on the opening '(')
+    let info1 -> rl.compute_rainbow_brackets(line, 9, 0)
+    let pass -> test.assert_equal(info1[`target_idx`], 9, `target_idx should be 9`)
+    pass -> pass and test.assert_equal(info1[`partner_idx`], 23, `partner_idx should be 23`)
+    
+    // Cursor at position 24 (immediately after the closing ')')
+    let info2 -> rl.compute_rainbow_brackets(line, 24, 0)
+    pass -> pass and test.assert_equal(info2[`target_idx`], 23, `target_idx should be 23`)
+    pass -> pass and test.assert_equal(info2[`partner_idx`], 9, `partner_idx should be 9`)
+    <- pass
+}
+
+function test_unmatched_delimiter() {
+    let line -> `let y -> [1, 2))`
+    let info -> rl.compute_rainbow_brackets(line, 0, 0)
+    let un -> info[`unmatched`]
+    let pass -> test.assert_true(un.has(15), `second closing paren should be unmatched`)
+    <- pass
+}
+
+function test_string_and_comment_exclusion() {
+    let line -> `let z -> \`(inside string)\` // (inside comment)`
+    let info -> rl.compute_rainbow_brackets(line, 0, 0)
+    let depths -> info[`char_depths`]
+    let pass -> test.assert_equal(depths.keys().length, 0, `delimiters in strings/comments should be ignored`)
+    <- pass
+}
+
+function test_rainbow_render_ansi() {
+    let line -> `let a -> (10 + [20])`
+    let rendered -> rl.render_rainbow_line(line, 9, 0)
+    // Should contain standout match code \x1b[1;30;47m for the matched pair
+    let pass -> test.assert_true(Str.contains(rendered, `\x1b[1;30;47m`), `should contain standout match code`)
+    // Should contain rainbow color codes for inner delimiter [
+    pass -> pass and test.assert_true(Str.contains(rendered, `\x1b[1;33m`), `should contain yellow for depth 1`)
+    <- pass
+}
+
+function test_unclosed_depth() {
+    let open_code -> `function test() {`
+    let d1 -> rl.get_unclosed_depth(open_code)
+    let pass -> test.assert_equal(d1, 1, `unclosed depth should be 1`)
+    
+    let closed_code -> `function test() { return 42 }`
+    let d2 -> rl.get_unclosed_depth(closed_code)
+    pass -> pass and test.assert_equal(d2, 0, `closed depth should be 0`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Rainbow.nested_depths`, `fn` -> test_nested_depths},
+        {`name` -> `Rainbow.cursor_matching_pair`, `fn` -> test_cursor_matching_pair},
+        {`name` -> `Rainbow.unmatched_delimiter`, `fn` -> test_unmatched_delimiter},
+        {`name` -> `Rainbow.string_and_comment_exclusion`, `fn` -> test_string_and_comment_exclusion},
+        {`name` -> `Rainbow.rainbow_render_ansi`, `fn` -> test_rainbow_render_ansi},
+        {`name` -> `Rainbow.unclosed_depth`, `fn` -> test_unclosed_depth}
+    ]
+
+    <- test.run_suite(`Rainbow Delimiters & Matching Bracket Suite`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

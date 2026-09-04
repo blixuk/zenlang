@@ -124,6 +124,11 @@ export function check_program(prog) {
     global -> Ty.sc_define(global, `False`, Ty.t_boolean(), `VARIABLE`, false)
     global -> Ty.sc_define(global, `Nothing`, Ty.t_nothing(), `VARIABLE`, false)
     global -> Ty.sc_define(global, `Default`, Ty.t_default(), `VARIABLE`, false)
+    global -> Ty.sc_define(global, `__builtin_file`, Ty.t_variant(), `MODULE`, false)
+    global -> Ty.sc_define(global, `__builtin_term`, Ty.t_variant(), `MODULE`, false)
+    global -> Ty.sc_define(global, `__builtin_math`, Ty.t_variant(), `MODULE`, false)
+    global -> Ty.sc_define(global, `__builtin_reflect`, Ty.t_variant(), `MODULE`, false)
+    global -> Ty.sc_define(global, `__builtin_memory`, Ty.t_variant(), `MODULE`, false)
 
     checker_reset(global)
 
