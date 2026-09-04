@@ -37,7 +37,9 @@ function snake_init() {
         `score` -> 0,
         `alive` -> true,
         `seed` -> 42,
-        `tick_n` -> 0
+        `tick_n` -> 0,
+        `canvas` -> Nothing,
+        `title` -> ` Snake score=0`
     }
 }
 
@@ -67,7 +69,13 @@ function place_food(model) {
             i -> i + 1
         }
         when hit == false {
-            model[`food`] -> cell(fx, fy)
+            let food -> model[`food`]
+            when food != Nothing {
+                food[`x`] -> fx
+                food[`y`] -> fy
+            } or {
+                model[`food`] -> cell(fx, fy)
+            }
             <- model
         }
         tries -> tries + 1
@@ -97,32 +105,40 @@ function step_snake(model) {
     when nx < 0 or ny < 0 or nx >= gw or ny >= gh {
         model[`alive`] -> false
         model[`dirty`] -> true
+        model[`title`] -> ` Snake score=` + Str.to_string(model[`score`]) + ` DEAD r=restart`
         <- model
     }
     when occupies(body, nx, ny) {
         model[`alive`] -> false
         model[`dirty`] -> true
+        model[`title`] -> ` Snake score=` + Str.to_string(model[`score`]) + ` DEAD r=restart`
         <- model
     }
-    let nh -> cell(nx, ny)
     let food -> model[`food`]
     let grew -> false
     when nx == food[`x`] and ny == food[`y`] {
         grew -> true
         model[`score`] -> model[`score`] + 1
+        model[`title`] -> ` Snake score=` + Str.to_string(model[`score`])
     }
-    let nb -> [nh]
-    let lim -> body.length
     when grew == false {
-        lim -> body.length - 1
-    }
-    let i -> 0
-    do while i < lim {
-        nb.append(body[i])
-        i -> i + 1
-    }
-    model[`body`] -> nb
-    when grew {
+        let i -> body.length - 1
+        do while i > 0 {
+            body[i][`x`] -> body[i - 1][`x`]
+            body[i][`y`] -> body[i - 1][`y`]
+            i -> i - 1
+        }
+        body[0][`x`] -> nx
+        body[0][`y`] -> ny
+    } or {
+        let nh -> cell(nx, ny)
+        let nb -> [nh]
+        let i -> 0
+        do while i < body.length {
+            nb.append(body[i])
+            i -> i + 1
+        }
+        model[`body`] -> nb
         model -> place_food(model)
     }
     model[`dirty`] -> true
@@ -167,6 +183,7 @@ function update(model, msg) {
             m2[`height`] -> model[`height`]
             m2[`gw`] -> model[`gw`]
             m2[`gh`] -> model[`gh`]
+            m2[`canvas`] -> model[`canvas`]
             m2[`dirty`] -> true
             <- m2
         }
@@ -211,19 +228,24 @@ function view(model) {
     when gw < 4 { gw -> 4 }
     when gh < 4 { gh -> 4 }
 
-    let c -> canvas.create(tw, th)
+    let c -> canvas.ensure(model[`canvas`], tw, th)
+    model[`canvas`] -> c
+
     // header
     canvas.fill_rect(c, 0, 0, tw, 1, ` `, `black`, `cyan`)
-    let title -> ` Snake score=` + Str.to_string(model[`score`])
-    when model[`alive`] == false {
-        title -> title + ` DEAD r=restart`
+    let title -> model[`title`]
+    when title == Nothing {
+        title -> ` Snake score=` + Str.to_string(model[`score`])
+        when model[`alive`] == false {
+            title -> title + ` DEAD r=restart`
+        }
+        model[`title`] -> title
     }
     canvas.draw_text(c, 0, 0, title, `black`, `cyan`)
     // footer
     canvas.fill_rect(c, 0, th - 1, tw, 1, ` `, `black`, `white`)
     canvas.draw_text(c, 0, th - 1, ` wasd/arrows  q quit `, `black`, `white`)
-    // field background
-    canvas.fill_rect(c, ox, oy, gw, gh, ` `, `white`, `black`)
+    // field border
     canvas.draw_rect(c, ox - 1, oy - 1, gw + 2, gh + 2, `#`, `white`, `black`)
 
     let f -> model[`food`]

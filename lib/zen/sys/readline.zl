@@ -28,7 +28,7 @@ export class Readline {
         }
         self.history.append(line)
         when self.history.length > self.max_history {
-            self.history.drop(0)
+            self.history.remove_at(0)
         }
     }
 
@@ -260,6 +260,6 @@ export function create_readline(history, completer_fn) {
 }
 
 export function readline(prompt, history) {
-    let rl -> Readline(history, Nothing)
-    <- rl.read_line(prompt)
+    let reader: Readline -> Readline(history, Nothing)
+    <- reader.read_line(prompt)
 }

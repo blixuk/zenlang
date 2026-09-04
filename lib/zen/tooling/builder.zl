@@ -83,40 +83,77 @@ export function build_project(proj, opts) {
 
     // Determine compiler flags
     let opt_level -> `-O2`
+    let is_static -> false
+    let is_shared -> false
+    let is_incremental -> false
     when opts != Nothing {
         when opts.has(`release`) and opts[`release`] == true {
             opt_level -> `-O3`
         } or when opts.has(`debug`) and opts[`debug`] == true {
             opt_level -> `-g -O0`
         }
+        when opts.has(`static`) and opts[`static`] == true {
+            is_static -> true
+        }
+        when opts.has(`shared`) and opts[`shared`] == true {
+            is_shared -> true
+        }
+        when opts.has(`incremental`) and opts[`incremental`] == true {
+            is_incremental -> true
+        }
     }
     let c_flags -> manifest_map[`c_flags`]
     when c_flags == Nothing { c_flags -> `` }
 
     // Step 1: Transpile entry file to C
-    // Prefer native zen-selfhost compile or bootstrap Zen.py
-    let compile_cmd -> `python3 bootstrap/Zen.py -g ` + process.shell_quote(entry_path) + ` --no-run 2>/dev/null`
+    // Prefer native zen-selfhost / zen compile
     let selfhost_bin -> path.join(path.join(rt_dir, `../bin`), `zen-selfhost`)
+    when not file.exists(selfhost_bin) {
+        selfhost_bin -> path.join(path.join(rt_dir, `../bin`), `zen`)
+    }
+    when not file.exists(selfhost_bin) {
+        selfhost_bin -> `bin/zen`
+    }
     let transpile_ok -> false
     let transpile_err -> ``
 
     let repo_root -> path.join(rt_dir, `..`)
     let zen_path_val -> root + `:` + path.join(root, `deps`) + `:` + path.join(repo_root, `lib`) + `:` + repo_root
 
-    let py_cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` python3 ` + process.shell_quote(path.join(rt_dir, `../bootstrap/Zen.py`)) + ` -g ` + process.shell_quote(entry_path)
-    let r -> process.result_in(root, py_cmd)
-    let gen_c -> path.join(root, `output/build/out.c`)
-    when file.exists(gen_c) {
-        file.copy(gen_c, out_c)
-        transpile_ok -> true
-    } or {
-        let alt_c -> path.join(path.join(rt_dir, `../output/build`), `out.c`)
-        when file.exists(alt_c) {
-            file.copy(alt_c, out_c)
+    when file.exists(selfhost_bin) {
+        let compile_extra -> ``
+        when is_incremental == true {
+            compile_extra -> ` --incremental`
+        }
+        let native_cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` ` + process.shell_quote(selfhost_bin) + ` compile ` + process.shell_quote(entry_path) + ` ` + process.shell_quote(out_c) + compile_extra
+        let nr -> process.result_in(root, native_cmd)
+        when nr.code == 0 and file.exists(out_c) {
             transpile_ok -> true
         } or {
-            transpile_err -> r.stderr
-            when transpile_err == `` { transpile_err -> r.stdout }
+            transpile_err -> nr.stderr
+            when transpile_err == `` { transpile_err -> nr.stdout }
+        }
+    }
+
+    when not transpile_ok {
+        // Fallback to bootstrap if selfhost binary is missing
+        let py_cmd -> `ZEN_PATH=` + process.shell_quote(zen_path_val) + ` python3 ` + process.shell_quote(path.join(rt_dir, `../bootstrap/Zen.py`)) + ` -g ` + process.shell_quote(entry_path)
+        let r -> process.result_in(root, py_cmd)
+        let gen_c -> path.join(root, `output/build/out.c`)
+        when file.exists(gen_c) {
+            file.copy(gen_c, out_c)
+            transpile_ok -> true
+        } or {
+            let alt_c -> path.join(path.join(rt_dir, `../output/build`), `out.c`)
+            when file.exists(alt_c) {
+                file.copy(alt_c, out_c)
+                transpile_ok -> true
+            } or {
+                when transpile_err == `` {
+                    transpile_err -> r.stderr
+                    when transpile_err == `` { transpile_err -> r.stdout }
+                }
+            }
         }
     }
 
@@ -140,10 +177,17 @@ export function build_project(proj, opts) {
                     ` -I ` + process.shell_quote(path.join(rt_dir, `io`)) +
                     ` -I ` + process.shell_quote(path.join(rt_dir, `memory`))
 
+    let link_flags -> `-lm -lpthread -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+    when is_static == true {
+        link_flags -> link_flags + ` -static`
+    }
+    when is_shared == true {
+        link_flags -> link_flags + ` -shared -fPIC`
+    }
+
     let gcc_cmd -> cc + ` ` + process.shell_quote(out_c) + ` ` + process.shell_quote(rt_c) +
                    ` -o ` + process.shell_quote(target_path) + ` ` + opt_level + ` ` + c_flags +
-                   ` ` + includes + ` -lm -lpthread ` +
-                   `-Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+                   ` ` + includes + ` ` + link_flags
 
     let link_res -> process.result_in(root, gcc_cmd)
     when link_res.code != 0 or not file.exists(target_path) {

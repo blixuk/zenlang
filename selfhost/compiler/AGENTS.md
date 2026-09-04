@@ -59,7 +59,7 @@ Part of `selfhost/` parity effort.
   - `lsp` is not linked into zen-selfhost; hybrid `./bin/zen lsp` runs `tools/zenlsp.zl`
   - Interpreter: map env (`outer`); int literal coerce; return via module flags; `when x is [a,b]` / map / `Enum.Var(x)` binds; real `io.*`/`output.*` builtins dispatch; `eval_while` handles `K_DO_WHILE` (`AST.do_while_body`/`AST.do_while_cond`); `eval_expr` supports `K_BLOCK` and `K_WHEN` expressions.
   - Driver CLI: `interpret`/`eval`/`vm`/`test`/`--test` are tokens in `is_cli_token` (must not skip as argv0); native `zen-selfhost test` discovers/executes `test_*` functions; `vm` executes via bytecode compiler and stack VM engine without C compilation.
-  - Bytecode VM & Parity: `Bytecode.zl` handles 4-boundary ranges (`..`, `..-`, `..=`, `...`, `..+`), exponentiation `**` (OP 61 `OP_POW`), underscore separators in number literals (`1_000_000`, `0xDEAD_BEEF`, `0b1010_0101`, `0o755`), type constructor calls (`Integer(val)` via `K_VARIABLE` and `K_LITERAL`), `Map.get`/`Map.at` with default value fallback, and String-to-Decimal casting.
+  - Bytecode VM & Parity: `Bytecode.zl` handles 4-boundary ranges (`..`, `..-`, `..=`, `...`, `..+`), exponentiation `**` (OP 61 `OP_POW`), underscore separators in number literals (`1_000_000`, `0xDEAD_BEEF`, `0b1010_0101`, `0o755`), type constructor calls (`Integer(val)` via `K_VARIABLE` and `K_LITERAL`), `Map.get`/`Map.at` with default value fallback, String-to-Decimal casting, and zero-allocation `OP_CALL` argument extraction (direct forward reading from evaluation stack without intermediate lists or reversal loops).
   - **A1 import graph:** `interpret_file` uses GraphBuilder compilation order; `import path as Alias` binds a map of exported free fns + module lets + classes/enums (skip `main`)
   - **A2:** `do for` / lists / maps / IndexAssign / `.length`; list append + index write-back for `-g`
   - **A3:** `__builtin_string` (and file/io stubs) so `import zen.text.string as Str` works; STRING literals are not coerced to ints
@@ -100,12 +100,23 @@ Part of `selfhost/` parity effort.
   - IndexAssign; escape_piece / real NL-TAB
 - Output targets top-level `runtime/` for link.
 - **User-program backend:** AST→ZenValue C. No MIR/SMIR mid-end (PARITY).
+- **Version 1 Beta (`v0.9.0-beta`) Unified Toolchain:** Standalone native `bin/zen` operates as a self-contained single binary developer platform (akin to Cargo, Go, Zig):
+  - **Manifest-Driven Workflows:** In project directories containing `zen.pkg.zd` (or `.zbuild`), `zen build`, `zen run`, `zen test`, and `zen clean` automatically bind to the project manifest with zero config.
+  - **Interactive REPL:** Bare invocation (`zen`) on an interactive TTY directly launches the native terminal line-editor REPL (`zen repl`).
+  - **Zero-Config Package Management (`zen pkg`):** Automatically discovers modules in `deps/<pkg>/lib/`, `deps/<pkg>/src/`, `deps/<pkg>/<pkg>.zl`, and `deps/<pkg>/main.zl`. Full lockfile management with `zen.lock.zd`.
+  - **Code Formatter (`zen fmt`):** Built-in style guide enforcer with stdout, `-w` (in-place write), and `--check` modes.
+  - **Terminal Man Pages & Symbol Lookups (`zen doc <query>` / `zen explain <query>`):** Built-in interactive manual pages for language keywords, operators, types, sentinels, I/O streams, and stdlib modules (`zen doc --topics`).
+  - **Graceful Empty File Diagnostics:** When compiling empty or blank files, refuses to emit empty `out.c` or binaries, outputting an instructional minimum program template.
+  - **Optional Incremental Multi-Unit Compilation (`--incremental` / `-i`):** In `compile_file_multi` and `builder.zl`, tracks unit modification signatures in `.cache.zd`, skipping transpilation and GCC compilation for unchanged modules.
+  - **Static & Shared Linking:** `zen build` supports `--static` (fully self-contained static binary) and `--shared` (dynamic `.so` library).
+  - **Extensible Tooling Plugin Subsystem:** `Plugin.make_tooling_plugin()` dynamically dispatches `new`, `init`, `pkg`, `repl`, `fmt`, `doc`, `explain`, `dash`, `watch`, `bench`, `clean`, `publish`, `bump`, `env`, `profile`, `graph` via `Plugin.find_tool_path` and `vm_cli`.
+  - **Global Path Resolution:** `Resolver.zl` automatically locates `<root>/lib`, `<root>/deps`, `<root>/selfhost`, and `ZEN_PATH` entries when executed from arbitrary working directories.
 - **Three-Layer Architecture & Parity:** Implemented with 100% parity across interpreter, native `-g`, and standalone `bin/zen`:
   - **Layer 1 (ZenValue ABI & C VM):** Shared ABI across interpreted and native modes, opcode parity in C VM (`zen_vm.c`, `zen_vm.h`) matching `Bytecode.zl` (`OP_RANGE_*`, `OP_CONCAT_APPEND`, `OP_DROP`, `OP_CHECK_UNWRAP`, `OP_IN`, `OP_COALESCE`, `OP_SLICE`).
   - **Layer 2 (Compiler IR):** Positional AST list structs (`[kind, line, col, ...payload]`) with $O(1)$ in-memory caching in `GraphBuilder.parse_cached` and `Driver.parse_file_cached`.
   - **Layer 3 (Script VM Execution Bridge):** Running `.zbc` chunks natively in C VM via `__builtin_vm.run_file` / `vm_cli` and `ZenValue_run_bytecode_file`. Tests: `tests/self_hosting/test_three_layer.zl` (dual-path).
 - Memory: default automatic via runtime; opt-in `with`/arena → Codegen push/pop; checker scopes with-alias (ownership rules later).
-- Production install: standalone pure native compiler `bin/zen` (`./scripts/zen install`). Soak: `./scripts/zen ci-soak`. Emergency rollback: `./scripts/zen install-rollback`.
+- Production install: standalone pure native compiler `bin/zen` (`./scripts/zen install`). Fast local smoke: `./scripts/zen ci`. Soak: `./scripts/zen ci-soak`. Emergency rollback: `./scripts/zen install-rollback`.
 
 # Work Guidance
 

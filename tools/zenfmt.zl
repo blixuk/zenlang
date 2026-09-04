@@ -155,6 +155,13 @@ function main(args) {
     let files -> []
 
     let i -> 0
+    // Skip binary path and 'fmt' subcommand if present
+    when args.length > 0 and (Str.ends_with(args[0], `zen`) or Str.ends_with(args[0], `zenfmt.zl`) or Str.ends_with(args[0], `zenfmt`)) {
+        i -> 1
+    }
+    when i < args.length and args[i] == `fmt` {
+        i -> i + 1
+    }
     do while i < args.length {
         let arg -> args[i]
         when arg == `-w` or arg == `--write` {

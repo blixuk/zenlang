@@ -29,11 +29,11 @@ export function find_root(start_dir) {
         when file.exists(pkg_path) or file.exists(legacy_path) {
             <- cur
         }
-        let parent -> path.dir_name(cur)
-        when parent == cur or parent == `` or parent == `.` {
+        let parent_dir -> path.dir_name(cur)
+        when parent_dir == cur or parent_dir == `` or parent_dir == `.` {
             break
         }
-        cur -> parent
+        cur -> parent_dir
     }
     <- Nothing
 }

@@ -32,7 +32,8 @@ function print_usage() {
     io.writeln(`Project Commands:`)
     io.writeln(`  init [dir] [--template <type>]     Initialize project in current/specified directory`)
     io.writeln(`  new <name> [--template <type>]     Create a new project directory with scaffolding`)
-    io.writeln(`  build [--release|--debug|--dump]   Compile project into build/<target>`)
+    io.writeln(`  build [options]                    Compile project into build/<target>`)
+    io.writeln(`        [--release|--debug|--dump|--incremental|--static|--shared]`)
     io.writeln(`  run [args...] [--watch]            Build and run application executable`)
     io.writeln(`  watch [command]                    Watch source files and auto-rebuild on change`)
     io.writeln(`  dash (dashboard)                   Launch interactive multi-pane development dashboard`)
@@ -60,7 +61,7 @@ function print_usage() {
     io.writeln(`  zen new my_app --template cli`)
     io.writeln(`  zen dash`)
     io.writeln(`  zen pkg graph --html`)
-    io.writeln(`  zen build --release`)
+    io.writeln(`  zen build --release --incremental`)
     io.writeln(`  zen test`)
     io.writeln(`  zen doc`)
 }
@@ -85,19 +86,34 @@ function print_env() {
     io.writeln(`==============================================`)
 }
 
-function main() {
-    let raw_args -> sys.get_args()
-    let args -> []
+function main(cmd_args) {
+    let raw_args -> cmd_args
+    when raw_args == Nothing or raw_args.length == 0 {
+        raw_args -> sys.get_args()
+    }
+    when raw_args == Nothing {
+        raw_args -> []
+    }
+
+    let clean_args -> []
     let ai -> 0
     do while ai < raw_args.length {
         let a -> raw_args[ai]
-        when ai == 1 and Str.ends_with(a, `.zl`) {
-            // skip script path when invoked as `zen <script.zl> <cmd>`
+        when Str.ends_with(a, `/zen`) or a == `zen` or Str.ends_with(a, `zen-selfhost`) or Str.ends_with(a, `.zl`) or Str.ends_with(a, `Zen.py`) or a == `python3` {
+            // skip runner / script path
         } or {
-            args.append(a)
+            clean_args.append(a)
         }
         ai -> ai + 1
     }
+
+    let args -> [`zenpm`]
+    ai -> 0
+    do while ai < clean_args.length {
+        args.append(clean_args[ai])
+        ai -> ai + 1
+    }
+
     when args.length <= 1 {
         print_usage()
         <- 0
@@ -180,7 +196,7 @@ function main() {
             io.error(`[ERROR] ` + proj[`error`])
             <- 1
         }
-        let opts -> { `release` -> false, `debug` -> false, `dump` -> false, `typecheck` -> false }
+        let opts -> { `release` -> false, `debug` -> false, `dump` -> false, `typecheck` -> false, `incremental` -> false, `static` -> false, `shared` -> false }
         let i -> 2
         do while i < n {
             let a -> args[i]
@@ -188,6 +204,9 @@ function main() {
             when a == `--debug` or a == `-g` { opts[`debug`] -> true }
             when a == `--dump` { opts[`dump`] -> true }
             when a == `--typecheck` or a == `-t` { opts[`typecheck`] -> true }
+            when a == `--incremental` or a == `-i` { opts[`incremental`] -> true }
+            when a == `--static` { opts[`static`] -> true }
+            when a == `--shared` { opts[`shared`] -> true }
             i -> i + 1
         }
         let b -> builder.build_project(proj, opts)
@@ -299,20 +318,57 @@ function main() {
         <- 0
     }
 
-    when cmd == `doc` {
-        when proj[`ok`] != true {
-            io.error(`[ERROR] ` + proj[`error`])
-            <- 1
-        }
+    when cmd == `doc` or cmd == `explain` {
+        let query -> Nothing
         let out_dir -> Nothing
         let fmt -> `html`
+        let want_gen -> false
         let i -> 2
         do while i < n {
             let a -> args[i]
-            when a == `--markdown` or a == `-md` { fmt -> `markdown` }
-            when a == `--html` { fmt -> `html` }
-            when not Str.starts_with(a, `-`) { out_dir -> a }
+            when a == `--markdown` or a == `-md` {
+                fmt -> `markdown`
+                want_gen -> true
+            }
+            when a == `--html` {
+                fmt -> `html`
+                want_gen -> true
+            }
+            when a == `--topics` or a == `topics` or a == `-t` {
+                query -> `--topics`
+            } or when a == `->` or a == `<-` or not Str.starts_with(a, `-`) {
+                when query == Nothing {
+                    query -> a
+                } or {
+                    out_dir -> a
+                }
+            }
             i -> i + 1
+        }
+
+        // If query is explicitly explain, or doc with a topic query (and not --html/--markdown):
+        when cmd == `explain` or (query != Nothing and want_gen == false and not file.is_dir(query)) {
+            docgen.cli_man_page(query)
+            <- 0
+        }
+
+        when query == `--topics` {
+            docgen.list_topics()
+            <- 0
+        }
+
+        // Otherwise, generate project documentation
+        when proj[`ok`] != true {
+            when query != Nothing {
+                docgen.cli_man_page(query)
+                <- 0
+            }
+            io.error(`[ERROR] ` + proj[`error`])
+            io.writeln(`Tip: Use 'zen doc <symbol>' or 'zen doc --topics' to query language documentation.`)
+            <- 1
+        }
+        when query != Nothing and out_dir == Nothing and file.is_dir(query) {
+            out_dir -> query
         }
         let res -> docgen.generate_docs(proj, fmt, out_dir)
         <- 0

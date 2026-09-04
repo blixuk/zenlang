@@ -10,8 +10,8 @@ Stdlib / TUI maintainers under `lib/zen/ui/`.
 
 - **Dual-path surface is maps + free functions**, not class inheritance.
 - `app.zl` — Bubble Tea–style shell: `run(init, update, view, opts)`, `step` / `run_msgs`, msg helpers.
-- `canvas.zl` — character grid; `render` → `__builtin_term.paint_canvas` (C hot path under `-g`; color-on-change + one flush).
-- App loop: drain queued keys with `poll(0)` after first wait; `dirty` skips paint when clean.
+- `canvas.zl` — character grid; `render` → `__builtin_term.paint_canvas` (C hot path under `-g`; color-on-change + one flush); `ensure(c, w, h)` for in-place buffer reuse across frames; fast clipped row updates in `clear`, `fill_rect`, `draw_rect`, and `draw_text` to prevent per-cell function call, map lookup, and Range allocation bloat.
+- App loop: drain queued keys with `poll(0)` after first wait; pre-allocated `tick` message maps to avoid per-frame allocations; `dirty` skips paint when clean.
 - Prefer `-g` for interactive games; interpret is slower for full-screen paint.
 - `layout.zl` — map nodes: `box` / `vbox` / `hbox` / `add` / `set_expand` / `set_size` / `layout`.
 - `widget.zl` — map widgets: `label`, `panel`, `progress`, `list_view`, `status` + `draw(canvas, bounds, w)`.

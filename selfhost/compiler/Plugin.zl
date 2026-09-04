@@ -10,6 +10,8 @@ import compiler.Bytecode as Bytecode
 import compiler.Parser as Parser
 import zen.io.io as io
 import zen.text.string as Str
+import zen.io.path as Path
+import zen.sys.sys as Sys
 
 // Global Plugin Registry State
 set PLUGINS -> {
@@ -19,11 +21,152 @@ set PLUGINS -> {
     `active` -> true
 }
 
+set RUNNER_FN -> Nothing
+
+export function set_tool_runner(fn_runner) {
+    RUNNER_FN -> fn_runner
+}
+
+export function run_tool(script_path) {
+    when RUNNER_FN != Nothing {
+        let runner -> RUNNER_FN
+        <- runner(script_path)
+    }
+    <- run_plugin_script(script_path, [])
+}
+
+export function find_tool_path(tool_name) {
+    let script_name -> tool_name
+    when not Str.ends_with(script_name, `.zl`) {
+        script_name -> script_name + `.zl`
+    }
+    
+    // 1. Direct path check
+    when __builtin_file.is_file(tool_name) {
+        <- tool_name
+    }
+    when __builtin_file.is_file(script_name) {
+        <- script_name
+    }
+
+    // 2. Check ./tools/<script_name> in current working directory
+    let local_tool -> Path.join(`tools`, script_name)
+    when __builtin_file.is_file(local_tool) {
+        <- local_tool
+    }
+
+    // 3. Check executable relative path: <exe_dir>/../tools/<script_name>
+    let proc_args -> Sys.get_args()
+    when proc_args != Nothing and proc_args.length > 0 {
+        let exe -> Str.to_string(proc_args[0])
+        let bin_dir -> Path.dirname(exe)
+        let root_dir -> Path.dirname(bin_dir)
+        let tool_rel -> Path.join(Path.join(root_dir, `tools`), script_name)
+        when __builtin_file.is_file(tool_rel) {
+            <- tool_rel
+        }
+    }
+
+    // 4. Check ZEN_PATH
+    let zen_path -> Sys.get_env(`ZEN_PATH`)
+    when zen_path != Nothing and zen_path != `` {
+        let parts -> Str.split(zen_path, `:`)
+        let pi -> 0
+        do while pi < parts.length {
+            let p -> Str.trim(parts[pi])
+            when p != `` {
+                let candidate -> Path.join(Path.join(p, `tools`), script_name)
+                when __builtin_file.is_file(candidate) {
+                    <- candidate
+                }
+                let cand2 -> Path.join(p, script_name)
+                when __builtin_file.is_file(cand2) {
+                    <- cand2
+                }
+            }
+            pi -> pi + 1
+        }
+    }
+
+    // 5. Check home directory ~/.zen/tools/<script_name>
+    let home -> Sys.get_env(`HOME`)
+    when home != Nothing and home != `` {
+        let home_tool -> Path.join(Path.join(Path.join(home, `.zen`), `tools`), script_name)
+        when __builtin_file.is_file(home_tool) {
+            <- home_tool
+        }
+    }
+
+    <- Nothing
+}
+
+function dispatch_tool_pm(args) {
+    let tool_path -> find_tool_path(`zenpm`)
+    when tool_path == Nothing {
+        <- {`code` -> 1, `message` -> `error: tools/zenpm.zl not found`}
+    }
+    <- run_tool(tool_path)
+}
+
+function dispatch_tool_repl(args) {
+    let tool_path -> find_tool_path(`zenrepl`)
+    when tool_path == Nothing {
+        <- {`code` -> 1, `message` -> `error: tools/zenrepl.zl not found`}
+    }
+    <- run_tool(tool_path)
+}
+
+function dispatch_tool_fmt(args) {
+    let tool_path -> find_tool_path(`zenfmt`)
+    when tool_path == Nothing {
+        <- {`code` -> 1, `message` -> `error: tools/zenfmt.zl not found`}
+    }
+    <- run_tool(tool_path)
+}
+
+export function make_tooling_plugin() {
+    let cmds -> {
+        `init` -> dispatch_tool_pm,
+        `new` -> dispatch_tool_pm,
+        `pkg` -> dispatch_tool_pm,
+        `repl` -> dispatch_tool_repl,
+        `fmt` -> dispatch_tool_fmt,
+        `doc` -> dispatch_tool_pm,
+        `explain` -> dispatch_tool_pm,
+        `dash` -> dispatch_tool_pm,
+        `dashboard` -> dispatch_tool_pm,
+        `watch` -> dispatch_tool_pm,
+        `bench` -> dispatch_tool_pm,
+        `benchmark` -> dispatch_tool_pm,
+        `publish` -> dispatch_tool_pm,
+        `bump` -> dispatch_tool_pm,
+        `clean` -> dispatch_tool_pm,
+        `env` -> dispatch_tool_pm,
+        `profile` -> dispatch_tool_pm,
+        `graph` -> dispatch_tool_pm
+    }
+    <- {
+        `name` -> `Tooling`,
+        `version` -> `1.0.0`,
+        `description` -> `Zenlang unified project management and developer toolchain`,
+        `commands` -> cmds
+    }
+}
+
+function ensure_default_plugins() {
+    when PLUGINS[`list`].length == 0 {
+        register_plugin(make_tooling_plugin())
+        register_plugin(make_todo_tracker_plugin())
+        register_plugin(make_linter_plugin())
+    }
+}
+
 export function reset_plugins() {
     PLUGINS[`list`] -> []
     PLUGINS[`commands`] -> {}
     PLUGINS[`issues`] -> []
     PLUGINS[`active`] -> true
+    register_plugin(make_tooling_plugin())
     register_plugin(make_todo_tracker_plugin())
     register_plugin(make_linter_plugin())
     <- True
@@ -60,10 +203,12 @@ export function register_plugin(p) {
 }
 
 export function get_registered_plugins() {
+    ensure_default_plugins()
     <- PLUGINS[`list`]
 }
 
 export function has_command(cmd) {
+    ensure_default_plugins()
     when cmd == `todo` {
         <- True
     }
@@ -71,6 +216,7 @@ export function has_command(cmd) {
 }
 
 export function dispatch_command(cmd, args) {
+    ensure_default_plugins()
     when cmd == `todo` {
         <- todo_cli_cmd(args)
     }

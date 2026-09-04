@@ -1185,6 +1185,22 @@ function compile_file(source_path, output_path, do_check) {
         }
     }
 
+    let pstmts -> AST.prog_stmts(prog)
+    when pstmts == Nothing or pstmts.length == 0 {
+        let pe -> []
+        pe.append(`source file '` + source_path + `' contains no statements or declarations.\n` +
+                  `A minimum compilable Zenlang program requires at least one statement or an entry function:\n\n` +
+                  `  function main() {\n` +
+                  `      writeln(\`Hello, Zen!\`)\n` +
+                  `  }`)
+        <- {
+            `ok` -> false,
+            `c_code` -> ``,
+            `errors` -> pe,
+            `program` -> prog
+        }
+    }
+
     let errors -> []
     when do_check == true {
         let t_check -> Time.monotonic()
@@ -1333,7 +1349,7 @@ function join_proto_blocks(blocks, i, n, acc) {
  Returns { ok, c_files, init_names, errors, files, out_dir }.
  Single-unit merge remains compile_file Default.
  !/
-function compile_file_multi(source_path, out_dir, do_check) {
+function compile_file_multi(source_path, out_dir, do_check, incremental) {
     when not fs_is_file(source_path) {
         let pe -> []
         pe.append(`file not found: ` + source_path)
@@ -1348,19 +1364,35 @@ function compile_file_multi(source_path, out_dir, do_check) {
     let base -> Path.dirname(source_path)
     let order -> ensure_compile_order(source_path, base)
 
+    let merged -> merge_program_files(order, source_path)
+    when AST.prog_err(merged) != Nothing {
+        let pe -> []
+        pe.append(Str.to_string(AST.prog_err(merged)))
+        <- {
+            `ok` -> false,
+            `c_files` -> [],
+            `errors` -> pe,
+            `out_dir` -> out_dir
+        }
+    }
+    let pstmts -> AST.prog_stmts(merged)
+    when pstmts == Nothing or pstmts.length == 0 {
+        let pe -> []
+        pe.append(`source file '` + source_path + `' contains no statements or declarations.\n` +
+                  `A minimum compilable Zenlang program requires at least one statement or an entry function:\n\n` +
+                  `  function main() {\n` +
+                  `      writeln(\`Hello, Zen!\`)\n` +
+                  `  }`)
+        <- {
+            `ok` -> false,
+            `c_files` -> [],
+            `errors` -> pe,
+            `out_dir` -> out_dir
+        }
+    }
+
     // Optional typecheck still uses merged program (one graph).
     when do_check == true {
-        let merged -> merge_program_files(order, source_path)
-        when AST.prog_err(merged) != Nothing {
-            let pe -> []
-            pe.append(Str.to_string(AST.prog_err(merged)))
-            <- {
-                `ok` -> false,
-                `c_files` -> [],
-                `errors` -> pe,
-                `out_dir` -> out_dir
-            }
-        }
         let cr -> Checker.check_program(merged)
         when cr[`ok`] != true {
             let errs -> cr[`errors`]
@@ -1412,6 +1444,24 @@ function compile_file_multi(source_path, out_dir, do_check) {
 
     let c_files -> []
     let init_names -> []
+    let cache_file -> Path.join(dir, `.cache.zd`)
+    let cache_map -> {}
+    when incremental == true and fs_is_file(cache_file) {
+        let c_lines -> Str.split(fs_read(cache_file), `\n`)
+        let li -> 0
+        do while li < c_lines.length {
+            let l -> Str.trim(c_lines[li])
+            let sep -> Str.index_of(l, `=`)
+            when sep > 0 {
+                let ck -> Str.substring(l, 0, sep)
+                let cv -> Str.substring(l, sep + 1, Str.length(l))
+                cache_map[ck] -> cv
+            }
+            li -> li + 1
+        }
+    }
+
+    let new_cache_lines -> []
     let wi -> 0
     do while wi < un {
         let u -> ulist[wi]
@@ -1420,19 +1470,37 @@ function compile_file_multi(source_path, out_dir, do_check) {
         init_names.append(iname)
         // No host main in module TUs — host file owns main.
         let cpath -> Path.join(dir, stem + `.c`)
-        let code -> Codegen.transpile_unit_ex_to_file(u[`program`], false, iname, shared, cpath)
-        when code != `ok` {
-            let pe -> []
-            pe.append(`codegen multi: bad unit ` + Str.to_string(u[`path`]))
-            <- {
-                `ok` -> false,
-                `c_files` -> c_files,
-                `errors` -> pe,
-                `out_dir` -> dir
+        let upath -> u[`path`]
+        let u_content -> fs_read(upath)
+        let u_sig -> Str.to_string(Str.length(u_content))
+        new_cache_lines.append(upath + `=` + u_sig)
+
+        let skip_codegen -> false
+        when incremental == true and fs_is_file(cpath) {
+            when cache_map.has(upath) and cache_map[upath] == u_sig {
+                skip_codegen -> true
+            }
+        }
+
+        when not skip_codegen {
+            let code -> Codegen.transpile_unit_ex_to_file(u[`program`], false, iname, shared, cpath)
+            when code != `ok` {
+                let pe -> []
+                pe.append(`codegen multi: bad unit ` + Str.to_string(upath))
+                <- {
+                    `ok` -> false,
+                    `c_files` -> c_files,
+                    `errors` -> pe,
+                    `out_dir` -> dir
+                }
             }
         }
         c_files.append(cpath)
         wi -> wi + 1
+    }
+
+    when incremental == true {
+        fs_write(cache_file, Str.join(new_cache_lines, `\n`))
     }
 
     let host -> Codegen.emit_multi_host_main(init_names)
@@ -1590,15 +1658,16 @@ function cli_cmd_index(args, n) {
 function compile_cli(src_path, args, opt_start, n) {
     let arena -> __builtin_memory.create_arena(32 * 1024 * 1024)
     __builtin_memory.push_arena(arena)
-    let opts -> parse_compile_opts(args, opt_start, n, `out.c`, false, false)
+    let opts -> parse_compile_opts(args, opt_start, n, `out.c`, false, false, false)
     let out_path -> opts[`out`]
     let do_check -> opts[`check`]
     let multi -> opts[`multi`]
+    let incremental -> opts[`incremental`]
     let ok_flag -> false
     let extra -> ``
     let err_msg -> ``
     when multi == true {
-        let multi_res -> compile_cli_multi(src_path, out_path, do_check)
+        let multi_res -> compile_cli_multi(src_path, out_path, do_check, incremental)
         let m_code -> multi_res[`code`]
         let m_msg -> Str.to_string(multi_res[`message`])
         __builtin_memory.pop_arena()
@@ -1633,7 +1702,7 @@ function compile_cli(src_path, args, opt_start, n) {
     }
 }
 
-function compile_cli_multi(src_path, out_path, do_check) {
+function compile_cli_multi(src_path, out_path, do_check, incremental) {
     let dir -> out_path
     // If user passed out.c, use sibling dir out_multi (or strip .c).
     when dir == Nothing or dir == `` or dir == `out.c` {
@@ -1646,15 +1715,19 @@ function compile_cli_multi(src_path, out_path, do_check) {
             dir -> Str.substring(dir, 0, bl - 2)
         }
     }
-    let r -> compile_file_multi(src_path, dir, do_check)
+    let r -> compile_file_multi(src_path, dir, do_check, incremental)
     when r[`ok`] == true {
         let nfiles -> 0
         when r[`c_files`] != Nothing {
             nfiles -> r[`c_files`].length
         }
+        let inc_note -> ``
+        when incremental == true {
+            inc_note -> ` [incremental cache]`
+        }
         <- {
             `code` -> 0,
-            `message` -> `multi-unit wrote ` + Str.to_string(nfiles) + ` files under ` + dir
+            `message` -> `multi-unit wrote ` + Str.to_string(nfiles) + ` files under ` + dir + inc_note
         }
     }
     <- {
@@ -1673,14 +1746,22 @@ function compile_cli_multi(src_path, out_path, do_check) {
  Returns exit map: { code: Integer, message: String }
  !/
 function run_args(args) {
+    Plugin.set_tool_runner(vm_cli)
     let n -> 0
     when args != Nothing {
         n -> args.length
     }
     let i0 -> cli_cmd_index(args, n)
     when i0 >= n {
+        // Bare zen invocation: if running in an interactive terminal, launch REPL
+        when __builtin_term.is_tty() == true {
+            let repl_tool -> Plugin.find_tool_path(`zenrepl`)
+            when repl_tool != Nothing {
+                <- vm_cli(repl_tool)
+            }
+        }
         <- {
-            `code` -> 1,
+            `code` -> 0,
             `message` -> usage_text()
         }
     }
@@ -1824,16 +1905,44 @@ export function run_args_local(args, i0, n, cmd) {
     }
 
     when cmd == `build` {
+        let is_proj_build -> false
         when i0 + 1 >= n {
-            <- {`code` -> 1, `message` -> `build: missing file\n\nSee 'zen build --help' for options.`}
+            is_proj_build -> true
+        } or when Str.starts_with(Str.to_string(args[i0 + 1]), `-`) {
+            is_proj_build -> true
+        }
+        when is_proj_build {
+            when fs_is_file(`zen.pkg.zd`) or fs_is_file(`.zbuild`) {
+                let pm_tool -> Plugin.find_tool_path(`zenpm`)
+                when pm_tool != Nothing {
+                    <- vm_cli(pm_tool)
+                }
+            }
+            when i0 + 1 >= n {
+                <- {`code` -> 1, `message` -> `build: no project manifest (zen.pkg.zd) found and no input file specified.\n\nRun 'zen new <name>' to create a project, or 'zen build <file.zl>' to compile a file.`}
+            }
         }
         let src_path -> Str.to_string(args[i0 + 1])
         <- build_cli(src_path, args, i0 + 2, n)
     }
 
     when cmd == `run` or cmd == `-g` or cmd == `--generate` {
+        let is_proj_run -> false
         when i0 + 1 >= n {
-            <- {`code` -> 1, `message` -> `run: missing file`}
+            is_proj_run -> true
+        } or when Str.starts_with(Str.to_string(args[i0 + 1]), `-`) {
+            is_proj_run -> true
+        }
+        when is_proj_run {
+            when fs_is_file(`zen.pkg.zd`) or fs_is_file(`.zbuild`) {
+                let pm_tool -> Plugin.find_tool_path(`zenpm`)
+                when pm_tool != Nothing {
+                    <- vm_cli(pm_tool)
+                }
+            }
+            when i0 + 1 >= n {
+                <- {`code` -> 1, `message` -> `run: no project manifest (zen.pkg.zd) found and no input file specified.\n\nRun 'zen run <file.zl>' or 'zen init' to initialize a project.`}
+            }
         }
         let src_path -> Str.to_string(args[i0 + 1])
         <- run_cli(src_path, args, i0 + 2, n)
@@ -1856,8 +1965,24 @@ export function run_args_local(args, i0, n, cmd) {
     }
 
     when cmd == `test` or cmd == `--test` {
+        let is_proj_test -> false
         when i0 + 1 >= n {
-            <- {`code` -> 1, `message` -> `test: missing file`}
+            is_proj_test -> true
+        } or when Str.starts_with(Str.to_string(args[i0 + 1]), `-`) {
+            is_proj_test -> true
+        } or when not fs_is_file(Str.to_string(args[i0 + 1])) and not Str.ends_with(Str.to_string(args[i0 + 1]), `.zl`) {
+            is_proj_test -> true
+        }
+        when is_proj_test {
+            when fs_is_file(`zen.pkg.zd`) or fs_is_dir(`tests`) {
+                let pm_tool -> Plugin.find_tool_path(`zenpm`)
+                when pm_tool != Nothing {
+                    <- vm_cli(pm_tool)
+                }
+            }
+            when i0 + 1 >= n {
+                <- {`code` -> 1, `message` -> `test: no tests/ directory or zen.pkg.zd found and no test file specified.\n\nUsage: zen test [file.zl]`}
+            }
         }
         let src_path -> Str.to_string(args[i0 + 1])
         <- test_cli(src_path)
@@ -1969,7 +2094,7 @@ export function run_args_local(args, i0, n, cmd) {
     }
 }
 
-function vm_cli(src_path) {
+export function vm_cli(src_path) {
     when not fs_is_file(src_path) {
         <- {`code` -> 1, `message` -> `vm: not found ` + src_path}
     }
@@ -1984,6 +2109,9 @@ function vm_cli(src_path) {
         let s -> Str.to_string(v)
         when s == `0` {
             <- {`code` -> 0, `message` -> ``}
+        }
+        when type(v) == `Integer` or type(v) == `Int` {
+            <- {`code` -> v, `message` -> ``}
         }
         <- {`code` -> 0, `message` -> s}
     }
@@ -2018,6 +2146,9 @@ function vm_cli(src_path) {
     let s -> Str.to_string(v)
     when s == `0` {
         <- {`code` -> 0, `message` -> ``}
+    }
+    when type(v) == `Integer` or type(v) == `Int` {
+        <- {`code` -> v, `message` -> ``}
     }
     <- {`code` -> 0, `message` -> s}
 }
@@ -2349,34 +2480,38 @@ function parse_run_opts(args, k, n, workdir, do_check, prog_args) {
 /!
  Parse compile CLI options from args[k..n) into { out, check, multi }.
  !/
-function parse_compile_opts(args, k, n, out_path, do_check, multi) {
+function parse_compile_opts(args, k, n, out_path, do_check, multi, incremental) {
     when k >= n {
         <- {
             `out` -> out_path,
             `check` -> do_check,
-            `multi` -> multi
+            `multi` -> multi,
+            `incremental` -> incremental
         }
     }
     let a -> Str.to_string(args[k])
     when a == `--typecheck` or a == `-t` {
-        <- parse_compile_opts(args, k + 1, n, out_path, true, multi)
+        <- parse_compile_opts(args, k + 1, n, out_path, true, multi, incremental)
     }
     when a == `--multi` or a == `-m` {
-        <- parse_compile_opts(args, k + 1, n, out_path, do_check, true)
+        <- parse_compile_opts(args, k + 1, n, out_path, do_check, true, incremental)
+    }
+    when a == `--incremental` or a == `-i` {
+        <- parse_compile_opts(args, k + 1, n, out_path, do_check, true, true)
     }
     when a == `-o` or a == `--output` or a == `--out` {
         when k + 1 < n {
-            <- parse_compile_opts(args, k + 2, n, Str.to_string(args[k + 1]), do_check, multi)
+            <- parse_compile_opts(args, k + 2, n, Str.to_string(args[k + 1]), do_check, multi, incremental)
         }
     }
     when Str.starts_with(a, `--output=`) {
         let val -> Str.substring(a, 9, Str.length(a))
-        <- parse_compile_opts(args, k + 1, n, val, do_check, multi)
+        <- parse_compile_opts(args, k + 1, n, val, do_check, multi, incremental)
     }
     when not Str.starts_with(a, `-`) {
-        <- parse_compile_opts(args, k + 1, n, a, do_check, multi)
+        <- parse_compile_opts(args, k + 1, n, a, do_check, multi, incremental)
     }
-    <- parse_compile_opts(args, k + 1, n, out_path, do_check, multi)
+    <- parse_compile_opts(args, k + 1, n, out_path, do_check, multi, incremental)
 }
 
 function command_help(cmd) {
@@ -2387,10 +2522,14 @@ function command_help(cmd) {
         h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output binary executable path\n`
         h -> h + `  ` + Extensions.style_cyan(`-O, --opt <0..3|s>`) + `    Optimization level (default: 2)\n`
         h -> h + `  ` + Extensions.style_cyan(`-m, --multi`) + `           Compile modules into separate C translation units\n`
+        h -> h + `  ` + Extensions.style_cyan(`-i, --incremental`) + `     Only compile modified modules with cache\n`
+        h -> h + `  ` + Extensions.style_cyan(`--static`) + `              Link fully static native binary\n`
+        h -> h + `  ` + Extensions.style_cyan(`--shared`) + `              Compile shared library (.so)\n`
         h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Run type checker before code generation\n`
         h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n\n`
         h -> h + Extensions.style_bold(`EXAMPLES:\n`)
         h -> h + `  zen build src/main.zl -o bin/app\n`
+        h -> h + `  zen build src/main.zl --incremental\n`
         h -> h + `  zen build server.zl -O 3 --typecheck\n`
         <- h
     }
@@ -2420,10 +2559,11 @@ function command_help(cmd) {
         let h -> Extensions.style_bold(`zen compile`) + ` — Transpile Zen source code to C\n\n`
         h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen compile <file.zl> [OPTIONS] [out.c]\n\n`
         h -> h + Extensions.style_bold(`OPTIONS:\n`)
-        h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output C source file path\n`
-        h -> h + `  ` + Extensions.style_cyan(`-m, --multi`) + `           Emit separate C files per module\n`
-        h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Enforce strict type checking\n`
-        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n`
+        h -> h + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `    Output C file or directory\n`
+        h -> h + `  ` + Extensions.style_cyan(`-m, --multi`) + `           Emit separate C translation units\n`
+        h -> h + `  ` + Extensions.style_cyan(`-i, --incremental`) + `     Skip regenerating unchanged .c unit files\n`
+        h -> h + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `       Run type checker before code generation\n`
+        h -> h + `  ` + Extensions.style_cyan(`-h, --help`) + `            Display this help message\n\n`
         <- h
     }
     when cmd == `check` {
@@ -2465,6 +2605,69 @@ function command_help(cmd) {
         h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen test <file.zl>\n`
         <- h
     }
+    when cmd == `new` {
+        let h -> Extensions.style_bold(`zen new`) + ` — Create a new Zenlang project scaffold\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen new <name> [--template <cli|tui|lib|service>]\n\n`
+        h -> h + Extensions.style_bold(`TEMPLATES:\n`)
+        h -> h + `  ` + Extensions.style_cyan(`cli`) + `       Command-line interface application (default)\n`
+        h -> h + `  ` + Extensions.style_cyan(`tui`) + `       Terminal UI application with canvas & mouse\n`
+        h -> h + `  ` + Extensions.style_cyan(`lib`) + `       Reusable Zenlang package/library\n`
+        h -> h + `  ` + Extensions.style_cyan(`service`) + `   Networked HTTP/TCP backend service\n`
+        <- h
+    }
+    when cmd == `init` {
+        let h -> Extensions.style_bold(`zen init`) + ` — Initialize a project manifest (zen.pkg.zd) in existing directory\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen init [directory] [--template <type>]\n`
+        <- h
+    }
+    when cmd == `pkg` {
+        let h -> Extensions.style_bold(`zen pkg`) + ` — Manage project dependencies and lockfile\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`)
+        h -> h + `  zen pkg list                       ` + Extensions.style_dim(`# list declared & resolved dependencies`) + `\n`
+        h -> h + `  zen pkg install                    ` + Extensions.style_dim(`# resolve and fetch dependencies into deps/`) + `\n`
+        h -> h + `  zen pkg add <name> <git_or_path>   ` + Extensions.style_dim(`# add dependency to zen.pkg.zd`) + `\n`
+        h -> h + `  zen pkg remove <name>              ` + Extensions.style_dim(`# remove dependency from zen.pkg.zd`) + `\n`
+        h -> h + `  zen pkg graph [--html]             ` + Extensions.style_dim(`# visualize dependency tree`) + `\n`
+        <- h
+    }
+    when cmd == `repl` {
+        let h -> Extensions.style_bold(`zen repl`) + ` — Start interactive Zenlang Read-Eval-Print-Loop\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen repl\n`
+        <- h
+    }
+    when cmd == `fmt` {
+        let h -> Extensions.style_bold(`zen fmt`) + ` — Format Zenlang source files to canonical style\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`)
+        h -> h + `  zen fmt <file.zl...>               ` + Extensions.style_dim(`# format and print to stdout`) + `\n`
+        h -> h + `  zen fmt -w <file.zl...>            ` + Extensions.style_dim(`# format files in-place`) + `\n`
+        h -> h + `  zen fmt --check <file.zl...>       ` + Extensions.style_dim(`# check formatting without writing`) + `\n`
+        <- h
+    }
+    when cmd == `clean` {
+        let h -> Extensions.style_bold(`zen clean`) + ` — Remove project build artifacts and intermediate files\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen clean\n`
+        <- h
+    }
+    when cmd == `doc` or cmd == `explain` {
+        let h -> Extensions.style_bold(`zen doc`) + ` — Built-in terminal man pages & symbol documentation\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`)
+        h -> h + `  zen doc <symbol|keyword>            Query manual page for keyword, operator, or type\n`
+        h -> h + `  zen doc --topics                    List all available language documentation topics\n`
+        h -> h + `  zen doc [--html|--markdown] [dir]   Generate project API documentation\n`
+        h -> h + `  zen explain <symbol|topic>          Alias for zen doc <query>\n\n`
+        h -> h + Extensions.style_bold(`EXAMPLES:\n`)
+        h -> h + `  zen doc when\n`
+        h -> h + `  zen doc ->\n`
+        h -> h + `  zen doc List\n`
+        h -> h + `  zen explain ??\n`
+        h -> h + `  zen doc --topics\n`
+        <- h
+    }
+    when cmd == `dash` or cmd == `dashboard` {
+        let h -> Extensions.style_bold(`zen dash`) + ` — Launch interactive terminal developer dashboard\n\n`
+        h -> h + Extensions.style_bold(`USAGE:\n`) + `  zen dash\n`
+        <- h
+    }
     when cmd == `daemon` {
         let h -> Extensions.style_bold(`zen daemon`) + ` — Manage background resident compiler service\n\n`
         h -> h + Extensions.style_bold(`USAGE:\n`)
@@ -2478,39 +2681,55 @@ function command_help(cmd) {
 }
 
 function usage_text() {
-    let u -> Extensions.style_bold(`Zenlang Standalone Self-Hosted Compiler (v0.7.0)`) + `\n`
-    u -> u + Extensions.style_dim(`Fast, visual data-flow language with three-layer execution (AOT C + Bytecode VM)\n\n`)
+    let u -> Extensions.style_bold(`Zenlang Standalone Self-Hosted Compiler (v0.9.0-beta)`) + `\n`
+    u -> u + Extensions.style_dim(`Modern visual data-flow language with three-layer execution (AOT C + Bytecode VM)\n\n`)
     
     u -> u + Extensions.style_bold(`USAGE:\n`)
-    u -> u + `  ` + Extensions.style_cyan(`zen`) + ` [COMMAND] [OPTIONS] [FILE]\n`
+    u -> u + `  ` + Extensions.style_cyan(`zen`) + `                                    ` + Extensions.style_dim(`# Start interactive REPL`) + `\n`
+    u -> u + `  ` + Extensions.style_cyan(`zen`) + ` [COMMAND] [OPTIONS] [ARGS...]\n`
     u -> u + `  ` + Extensions.style_cyan(`zen`) + ` ` + Extensions.style_green(`<file.zl>`) + ` [ARGS...]            ` + Extensions.style_dim(`# Run script via Bytecode VM`) + `\n`
     u -> u + `  ` + Extensions.style_cyan(`zen`) + ` ` + Extensions.style_green(`<file.zbc>`) + ` [ARGS...]           ` + Extensions.style_dim(`# Run packaged bytecode directly`) + `\n\n`
     
-    u -> u + Extensions.style_bold(`PRIMARY COMMANDS:\n`)
-    u -> u + `  ` + Extensions.style_cyan(`run`) + `       <file>                 Execute script or packaged bytecode\n`
-    u -> u + `  ` + Extensions.style_cyan(`build`) + `     <file> [-o exe]        Compile & link to native binary executable\n`
-    u -> u + `  ` + Extensions.style_cyan(`bundle`) + `    <file> [-o out.zbc]    Package script into standalone .zbc binary\n`
-    u -> u + `  ` + Extensions.style_cyan(`check`) + `     <file>                 Typecheck and validate source\n`
-    u -> u + `  ` + Extensions.style_cyan(`test`) + `      <file>                 Discover and run test suites natively\n\n`
+    u -> u + Extensions.style_bold(`PROJECT WORKFLOWS:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`new`) + `       <name> [--template <t>] Create new project scaffold (cli, tui, lib, service)\n`
+    u -> u + `  ` + Extensions.style_cyan(`init`) + `      [dir] [--template <t>]  Initialize zen.pkg.zd in current/specified directory\n`
+    u -> u + `  ` + Extensions.style_cyan(`build`) + `     [file] [--release|-g]   Compile project or file into native executable\n`
+    u -> u + `  ` + Extensions.style_cyan(`run`) + `       [file] [args] [--watch] Run project entrypoint or script\n`
+    u -> u + `  ` + Extensions.style_cyan(`test`) + `      [file|filter]           Run test suites in tests/ or single test file\n`
+    u -> u + `  ` + Extensions.style_cyan(`clean`) + `                             Remove build artifacts and intermediate files\n`
+    u -> u + `  ` + Extensions.style_cyan(`pkg`) + `       <add|rm|ls|install>     Manage project dependencies and lockfile\n\n`
 
-    u -> u + Extensions.style_bold(`COMPILER & TOOLS:\n`)
-    u -> u + `  ` + Extensions.style_cyan(`compile`) + `   <file> [out.c]         Transpile Zen source to C source\n`
-    u -> u + `  ` + Extensions.style_cyan(`deps`) + `      <file>                 Compute module dependency order and graph\n`
-    u -> u + `  ` + Extensions.style_cyan(`disasm`) + `    <file.zbc|file.zl>     Disassemble bytecode opcodes & constants\n`
-    u -> u + `  ` + Extensions.style_cyan(`ast`) + `       <file.zl>              Print formatted Abstract Syntax Tree\n`
-    u -> u + `  ` + Extensions.style_cyan(`info`) + `                             Display compiler diagnostics & environment\n`
-    u -> u + `  ` + Extensions.style_cyan(`daemon`) + `    <start|stop|status>    Manage resident compiler service\n`
-    u -> u + `  ` + Extensions.style_cyan(`completion`) + ` [bash]                Generate shell tab-completion script\n\n`
+    u -> u + Extensions.style_bold(`DEVELOPER TOOLING:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`repl`) + `                              Start interactive Zenlang REPL\n`
+    u -> u + `  ` + Extensions.style_cyan(`fmt`) + `       <files...> [-w|--check] Format source files to canonical style\n`
+    u -> u + `  ` + Extensions.style_cyan(`doc`) + `       [symbol|options]        Query symbol man page or generate project docs\n`
+    u -> u + `  ` + Extensions.style_cyan(`explain`) + `   <topic|symbol>          Explain keyword, operator, type, or concept\n`
+    u -> u + `  ` + Extensions.style_cyan(`dash`) + `                              Launch interactive terminal developer dashboard\n`
+    u -> u + `  ` + Extensions.style_cyan(`watch`) + `     [command]               Watch source files and auto-rebuild on change\n`
+    u -> u + `  ` + Extensions.style_cyan(`bench`) + `     [filter]                Run benchmark suites in benches/\n`
+    u -> u + `  ` + Extensions.style_cyan(`bundle`) + `    <file> [-o out.zbc]     Package script into standalone .zbc binary\n`
+    u -> u + `  ` + Extensions.style_cyan(`check`) + `     <file>                  Typecheck and validate source without compiling\n\n`
 
-    u -> u + Extensions.style_bold(`EXTENSIONS & PLUGINS:\n`)
-    u -> u + `  ` + Extensions.style_cyan(`plugin`) + `    <list|run <script>>    Manage plugins or run extension script\n`
-    u -> u + `  ` + Extensions.style_cyan(`todo`) + `                             Scan codebase for TODO/FIXME annotations\n`
-    u -> u + `  ` + Extensions.style_cyan(`lint`) + `                             Run Zenlang style and convention linter\n\n`
+    u -> u + Extensions.style_bold(`COMPILER & LOW-LEVEL:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`compile`) + `   <file> [out.c]          Transpile Zen source to native C source\n`
+    u -> u + `  ` + Extensions.style_cyan(`deps`) + `      <file>                  Compute module dependency order and graph\n`
+    u -> u + `  ` + Extensions.style_cyan(`disasm`) + `    <file.zbc|file.zl>      Disassemble bytecode opcodes & constants\n`
+    u -> u + `  ` + Extensions.style_cyan(`ast`) + `       <file.zl>               Print formatted Abstract Syntax Tree\n`
+    u -> u + `  ` + Extensions.style_cyan(`info`) + `                              Display compiler diagnostics & environment\n`
+    u -> u + `  ` + Extensions.style_cyan(`daemon`) + `    <start|stop|status>     Manage resident compiler service\n`
+    u -> u + `  ` + Extensions.style_cyan(`completion`) + ` [bash]                 Generate shell tab-completion script\n\n`
+
+    u -> u + Extensions.style_bold(`EXTENSIONS & QUALITY:\n`)
+    u -> u + `  ` + Extensions.style_cyan(`plugin`) + `    <list|run <script>>     Manage plugins or run extension script\n`
+    u -> u + `  ` + Extensions.style_cyan(`todo`) + `                              Scan codebase for TODO/FIXME annotations\n`
+    u -> u + `  ` + Extensions.style_cyan(`lint`) + `                              Run Zenlang style and convention linter\n\n`
 
     u -> u + Extensions.style_bold(`GLOBAL FLAGS:\n`)
     u -> u + `  ` + Extensions.style_cyan(`-o, --output <path>`) + `             Specify output binary, bytecode, or C file\n`
     u -> u + `  ` + Extensions.style_cyan(`-O, --opt <0..3|s>`) + `              Set optimization level (default: 2)\n`
     u -> u + `  ` + Extensions.style_cyan(`-m, --multi`) + `                    Emit separate C translation units\n`
+    u -> u + `  ` + Extensions.style_cyan(`-i, --incremental`) + `              Only compile modified modules with cache\n`
+    u -> u + `  ` + Extensions.style_cyan(`--static`) + `                       Link fully static native binary\n`
     u -> u + `  ` + Extensions.style_cyan(`-t, --typecheck`) + `                Enforce strict type checking\n`
     u -> u + `  ` + Extensions.style_cyan(`-q, --quiet`) + `                    Suppress banner and non-error diagnostics\n`
     u -> u + `  ` + Extensions.style_cyan(`-v, --version`) + `                  Show compiler version\n`

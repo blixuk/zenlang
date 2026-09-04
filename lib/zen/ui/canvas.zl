@@ -68,8 +68,20 @@ function get_cell(c, x, y) {
 }
 
 /!
+  Reuse existing canvas `c` if width and height match (clearing in-place),
+  or allocate a fresh canvas when null or dimensions change.
+!/
+function ensure(c, w, h) {
+    when c != Nothing and c[`width`] == w and c[`height`] == h {
+        clear(c, ` `, `white`, `black`)
+        <- c
+    }
+    <- create(w, h)
+}
+
+/!
  Clear canvas map to a character (Default space).
- !/
+!/
 function clear(c, char, fg, bg) {
     let fill_char -> ` `
     when char != Nothing {
@@ -85,56 +97,151 @@ function clear(c, char, fg, bg) {
     }
     let w -> c[`width`]
     let h -> c[`height`]
-    do for y in 0..-h {
-        do for x in 0..-w {
-            c[`buffer`][y][x] -> fill_char
-            c[`fg_buffer`][y][x] -> fill_fg
-            c[`bg_buffer`][y][x] -> fill_bg
+    let buf -> c[`buffer`]
+    let fgb -> c[`fg_buffer`]
+    let bgb -> c[`bg_buffer`]
+    let y -> 0
+    do while y < h {
+        let row -> buf[y]
+        let fgrow -> fgb[y]
+        let bgrow -> bgb[y]
+        let x -> 0
+        do while x < w {
+            row[x] -> fill_char
+            fgrow[x] -> fill_fg
+            bgrow[x] -> fill_bg
+            x -> x + 1
         }
+        y -> y + 1
     }
 }
 
 /!
  Draw axis-aligned rectangle outline from (x0,y0) with size width×height.
- !/
+ Fast direct row buffer updates with boundary clipping.
+!/
 function draw_rect(c, x0, y0, width, height, char, fg, bg) {
     when width <= 0 or height <= 0 { <- Nothing }
+    let w -> c[`width`]
+    let h -> c[`height`]
     let x2 -> x0 + width - 1
     let y2 -> y0 + height - 1
-    do for x in x0...x2 {
-        set_cell(c, x, y0, char, fg, bg)
-        set_cell(c, x, y2, char, fg, bg)
+    let buf -> c[`buffer`]
+    let fgb -> c[`fg_buffer`]
+    let bgb -> c[`bg_buffer`]
+
+    // Top edge
+    when y0 >= 0 and y0 < h {
+        let row -> buf[y0]
+        let fgrow -> fgb[y0]
+        let bgrow -> bgb[y0]
+        let x -> x0
+        when x < 0 { x -> 0 }
+        let end_x -> x2
+        when end_x >= w { end_x -> w - 1 }
+        do while x <= end_x {
+            row[x] -> char
+            when fg != Nothing { fgrow[x] -> fg }
+            when bg != Nothing { bgrow[x] -> bg }
+            x -> x + 1
+        }
     }
-    do for y in y0...y2 {
-        set_cell(c, x0, y, char, fg, bg)
-        set_cell(c, x2, y, char, fg, bg)
+
+    // Bottom edge
+    when y2 != y0 and y2 >= 0 and y2 < h {
+        let row -> buf[y2]
+        let fgrow -> fgb[y2]
+        let bgrow -> bgb[y2]
+        let x -> x0
+        when x < 0 { x -> 0 }
+        let end_x -> x2
+        when end_x >= w { end_x -> w - 1 }
+        do while x <= end_x {
+            row[x] -> char
+            when fg != Nothing { fgrow[x] -> fg }
+            when bg != Nothing { bgrow[x] -> bg }
+            x -> x + 1
+        }
+    }
+
+    // Left and right vertical edges
+    let y -> y0 + 1
+    when y < 0 { y -> 0 }
+    let end_y -> y2 - 1
+    when end_y >= h { end_y -> h - 1 }
+    do while y <= end_y {
+        let row -> buf[y]
+        let fgrow -> fgb[y]
+        let bgrow -> bgb[y]
+        when x0 >= 0 and x0 < w {
+            row[x0] -> char
+            when fg != Nothing { fgrow[x0] -> fg }
+            when bg != Nothing { bgrow[x0] -> bg }
+        }
+        when x2 != x0 and x2 >= 0 and x2 < w {
+            row[x2] -> char
+            when fg != Nothing { fgrow[x2] -> fg }
+            when bg != Nothing { bgrow[x2] -> bg }
+        }
+        y -> y + 1
     }
 }
 
 /!
- Draw text starting at (x, y). Clips at canvas edge.
- !/
+ Draw text starting at (x, y). Clips at canvas edge with direct row buffer updates.
+!/
 function draw_text(c, x, y, text, fg, bg) {
     let s -> Str.to_string(text)
     let n -> Str.length(s)
+    let w -> c[`width`]
+    let h -> c[`height`]
+    when y < 0 or y >= h { <- Nothing }
+    let row -> c[`buffer`][y]
+    let fgrow -> c[`fg_buffer`][y]
+    let bgrow -> c[`bg_buffer`][y]
     let i -> 0
     do while i < n {
-        set_cell(c, x + i, y, Str.at(s, i), fg, bg)
+        let px -> x + i
+        when px >= 0 and px < w {
+            row[px] -> Str.at(s, i)
+            when fg != Nothing { fgrow[px] -> fg }
+            when bg != Nothing { bgrow[px] -> bg }
+        }
         i -> i + 1
     }
 }
 
 /!
- Fill a rectangle with a character.
- !/
+ Fill a rectangle with a character (fast row updates with bounds clipping).
+!/
 function fill_rect(c, x0, y0, width, height, char, fg, bg) {
     when width <= 0 or height <= 0 { <- Nothing }
-    let y1 -> y0 + height
+    let w -> c[`width`]
+    let h -> c[`height`]
     let x1 -> x0 + width
-    do for y in y0..-y1 {
-        do for x in x0..-x1 {
-            set_cell(c, x, y, char, fg, bg)
+    let y1 -> y0 + height
+    when x0 < 0 { x0 -> 0 }
+    when y0 < 0 { y0 -> 0 }
+    when x1 > w { x1 -> w }
+    when y1 > h { y1 -> h }
+    when x0 >= x1 or y0 >= y1 { <- Nothing }
+
+    let buf -> c[`buffer`]
+    let fgb -> c[`fg_buffer`]
+    let bgb -> c[`bg_buffer`]
+    let y -> y0
+    do while y < y1 {
+        let row -> buf[y]
+        let fgrow -> fgb[y]
+        let bgrow -> bgb[y]
+        let x -> x0
+        do while x < x1 {
+            row[x] -> char
+            when fg != Nothing { fgrow[x] -> fg }
+            when bg != Nothing { bgrow[x] -> bg }
+            x -> x + 1
         }
+        y -> y + 1
     }
 }
 

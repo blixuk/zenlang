@@ -31,6 +31,7 @@ Owned by the self-hosting effort.
 | 5 | Transpiler / C | **Done + classes/enums/lambdas/with** — multi-unit; inheritance; enum; closures; region push/pop |
 | 6 | Driver | **Done (MVP) + multi-file + multi-unit** — merge default; `--multi` one C TU/module + host; `build`/`run`/`bundle`/`plugin` |
 | 7 | Native + E2E | **Done + Standalone Native Host** — self-compilation loop green; pure native `bin/zen`; `.zbc` packaging & caching; compiler plugins |
+| 8 | Version 1 Beta | **Done (`v0.9.0-beta`)** — unified single-binary toolchain; manifest builds/runs (`zen.pkg.zd`); package manager (`zen pkg`); interactive REPL; formatter (`zen fmt`); zero-config `deps/` resolution |
 
 # Work Guidance
 
@@ -48,7 +49,7 @@ Owned by the self-hosting effort.
 - Do not port bootstrap MIR/SMIR into selfhost unless PARITY reopens that track; grow Codegen + runtime instead.
 - **Endgame:** fully Zen host — **#1–#5 MVP done**; **Phases A, L, B, C, D, E1–E3 done (Host-1.0)**; **Standalone Pure Native Host (E4)** achieved. Golden: `./scripts/zen test-golden`. Soak: `./scripts/zen ci-soak`. Self-rebuild of `zen.zl` stays `ZEN_SELFHOST_REBUILD=1`. Edit-loop: `ZEN_OPT=0 ./scripts/zen install-selfhost-fast`. Smoke reuses `bin/zen-selfhost` unless `ZEN_SMOKE_REBUILD=1`. Bootstrap `-g` links cached runtime `.o` + `-I runtime/`.
 - **Modern CLI UX & Extensions:** Modernized CLI with ANSI colors, contextual help (`zen <cmd> --help`), fuzzy typo suggestions ("Did you mean 'build'?"), bash tab-completion generator (`zen completion bash`), AST hierarchy visualizer (`zen ast`), and bytecode disassembler (`zen disasm`). Architectural split between baked-in native extensions (`compiler/Extensions.zl`) and dynamic script plugins (`compiler/Plugin.zl`).
-- Production today: `./scripts/zen install` installs standalone native `bin/zen`; CLI: `build` / `bundle` / `run` / `compile` / `check` / `deps` / `disasm` / `ast` / `info` / `completion` / `test` / `plugin` / `todo` / `lint` / `daemon`. `lsp` is `tools/zenlsp.zl` (hybrid `./bin/zen lsp`).
+- **Production today:** `./scripts/zen install` installs standalone native `bin/zen`; unified single-binary toolchain with project workflows (`new`, `init`, `build`, `run`, `test`, `clean`, `pkg`), developer tooling (`repl`, `fmt`, `doc`, `dash`, `watch`, `bench`, `bundle`, `check`), and compiler services (`compile`, `deps`, `disasm`, `ast`, `info`, `daemon`, `completion`, `plugin`). Zero reliance on bash script shims or Python bootstrap during standard usage.
 - Edit-loop native rebuild: `ZEN_OPT=0 ./scripts/zen install-selfhost-fast` (or `ZEN_CC=tcc`). Release install stays `-O2`.
 - Parser: **exact** token `is_kind` (`TokenType.NAME` only); never ends_with/contains (NOT vs NOTHING).
 - Parser ops: match operator **kinds**, not `is_val(\`-\`)` (STRING `"-"` false-matched unary minus).

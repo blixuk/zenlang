@@ -5034,17 +5034,19 @@ export function eval_chunk(chunk, globals) {
             ip -> ip + 2
             let argc -> (hi * 256) + lo
             
-            let args -> []
-            let ai -> 0
-            do while ai < argc {
-                args.append(stack.pop())
-                ai -> ai + 1
-            }
             let rargs -> []
-            let ri -> args.length - 1
-            do while ri >= 0 {
-                rargs.append(args[ri])
-                ri -> ri - 1
+            when argc > 0 {
+                let base_idx -> stack.length - argc
+                let ai -> 0
+                do while ai < argc {
+                    rargs.append(stack[base_idx + ai])
+                    ai -> ai + 1
+                }
+                let pop_i -> 0
+                do while pop_i < argc {
+                    stack.pop()
+                    pop_i -> pop_i + 1
+                }
             }
             let callee -> stack.pop()
             

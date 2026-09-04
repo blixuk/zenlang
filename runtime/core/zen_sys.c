@@ -651,7 +651,12 @@ ZenValue ZenTerm_is_tty(void) {
     return ZenValue_make_boolean(isatty(STDIN_FILENO) ? true : false);
 }
 
+static ZenValue zen_term_none_key_singleton = {0};
+
 static ZenValue zen_term_key_map(const char* kind, const char* name, const char* ch, int ctrl, int code) {
+    if (kind && strcmp(kind, "none") == 0 && zen_term_none_key_singleton.type == ZEN_MAP) {
+        return zen_term_none_key_singleton;
+    }
     struct ZenMap* m = ZenMap_new();
     ZenValue mv = ZenValue_from_map(m);
     ZenMap_set_value_at_key(mv, ZenValue_make_string("kind"), ZenValue_make_string(kind ? kind : ""));
@@ -659,6 +664,9 @@ static ZenValue zen_term_key_map(const char* kind, const char* name, const char*
     ZenMap_set_value_at_key(mv, ZenValue_make_string("ch"), ZenValue_make_string(ch ? ch : ""));
     ZenMap_set_value_at_key(mv, ZenValue_make_string("ctrl"), ZenValue_make_boolean(ctrl ? true : false));
     ZenMap_set_value_at_key(mv, ZenValue_make_string("code"), ZenValue_make_integer(code));
+    if (kind && strcmp(kind, "none") == 0) {
+        zen_term_none_key_singleton = mv;
+    }
     return mv;
 }
 

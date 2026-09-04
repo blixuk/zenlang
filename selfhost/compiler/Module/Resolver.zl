@@ -8,6 +8,7 @@
 
 import zen.text.string as Str
 import zen.io.path as Path
+import zen.sys.sys as Sys
 
 let R -> {
     `paths` -> [],
@@ -89,6 +90,36 @@ export function configure_search(r0, r1, r2, r3) {
     paths.append(`lib`)
     paths.append(`selfhost`)
     paths.append(`tests/self_hosting`)
+    paths.append(`deps`)
+
+    // ZEN_PATH environment lookup
+    let zen_env -> Sys.get_env(`ZEN_PATH`)
+    when zen_env != Nothing and zen_env != `` {
+        let env_parts -> Str.split(zen_env, `:`)
+        let ei -> 0
+        do while ei < env_parts.length {
+            let ep -> Str.trim(env_parts[ei])
+            when ep != `` {
+                paths.append(ep)
+                paths.append(Path.join(ep, `lib`))
+                paths.append(Path.join(ep, `deps`))
+            }
+            ei -> ei + 1
+        }
+    }
+
+    // Executable-relative installation paths (<root>/lib, <root>/deps, etc.)
+    let proc_args -> Sys.get_args()
+    when proc_args != Nothing and proc_args.length > 0 {
+        let exe -> Str.to_string(proc_args[0])
+        let bin_dir -> Path.dirname(exe)
+        let root_dir -> Path.dirname(bin_dir)
+        paths.append(Path.join(root_dir, `lib`))
+        paths.append(Path.join(root_dir, `selfhost`))
+        paths.append(Path.join(root_dir, `deps`))
+        paths.append(root_dir)
+    }
+
     R[`paths`] -> paths
     R[`ready`] -> true
     <- `ok`
@@ -128,6 +159,19 @@ export function try_base(base_path, relative_path) {
     when fs_is_file(c3) {
         <- c3
     }
+    // Package directory layouts: deps/<pkg>/lib/<pkg>.zl or deps/<pkg>/src/<pkg>.zl
+    let c_lib -> Path.join(Path.join(Path.join(base_path, relative_path), `lib`), last + `.zl`)
+    when fs_is_file(c_lib) {
+        <- c_lib
+    }
+    let c_src -> Path.join(Path.join(Path.join(base_path, relative_path), `src`), last + `.zl`)
+    when fs_is_file(c_src) {
+        <- c_src
+    }
+    let c_main -> Path.join(Path.join(base_path, relative_path), `main.zl`)
+    when fs_is_file(c_main) {
+        <- c_main
+    }
     <- ``
 }
 
@@ -140,11 +184,19 @@ export function resolve(import_path, base_dir) {
         when hit != `` {
             <- hit
         }
+        let hit_deps -> try_base(Path.join(base_dir, `deps`), relative_path)
+        when hit_deps != `` {
+            <- hit_deps
+        }
         let parent_dir -> Path.dirname(base_dir)
         when parent_dir != base_dir {
             let hit2 -> try_base(parent_dir, relative_path)
             when hit2 != `` {
                 <- hit2
+            }
+            let hit2_deps -> try_base(Path.join(parent_dir, `deps`), relative_path)
+            when hit2_deps != `` {
+                <- hit2_deps
             }
         }
     }

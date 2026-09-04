@@ -21,7 +21,7 @@ Runtime / native execution maintainers.
 - **Opt-in path:** user push → `ZenRuntime_allocate` prefers user arena (class instances under `-g`). Grow-on-full; free_arena reclaims + clears both stacks of that pointer. Escape rule: no use after free.
 - **Introspection:** `ZenMemory_using_arena` / `arena_depth` report **user** stack only.
 - Layout: `core/`, `collections/`, `concurrency/`, `io/`, `memory/`, `bootstrap_runtime.*`, plus `main_wrapper.c` for host entry where needed.
-- Public surface via `bootstrap_runtime.h` / `zen_*.h` and `ZenTerm_*` / `ZenProcess_*` / `ZenTime_*` / `ZenMemory_*` / `ZenRegex_*` sys APIs in `core/`.
+- Public surface via `bootstrap_runtime.h` / `zen_*.h` and `ZenTerm_*` / `ZenProcess_*` / `ZenTime_*` / `ZenMemory_*` / `ZenRegex_*` sys APIs in `core/`. `ZenTerm_poll_key` caches a `zen_term_none_key_singleton` map on poll timeout to achieve zero-allocation key polling in game and event loops.
 - File IO (`io/zen_io.c`): `ZenIO_list_dir` returns empty list on failure; `ZenIO_file_exists` uses `stat`; `ZenIO_mkdir` / `ZenIO_mkdir_p` for directories.
 - Net (`core/zen_net.c`): `ZenNet_http_request` via curl (`-g`); interpret uses urllib. Returns `{status, body, headers}`.
 - Ambient Streams & CLI Globals (`core/zen_sys.c`, `io/zen_io.c`): `z_stdout`, `z_stderr`, `z_stdin` are ambient stream map instances exposing `write`, `writeln`, `flush`, `read`, `readln`, `lines`. `z_args` holds CLI arguments list (`module.args` attached). `z_env` holds process environment map. `ZenIO_write_stderr`, `ZenIO_write_line_stderr`, `ZenIO_flush_stderr`, `ZenIO_read`, `ZenIO_stdin_lines`, and `ZenSystem_get_env_map`.

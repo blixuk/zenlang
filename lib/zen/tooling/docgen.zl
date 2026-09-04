@@ -238,3 +238,488 @@ export function generate_docs(proj, out_format, out_dir) {
         `modules` -> doc_items.length
     }
 }
+
+/!
+  Built-in terminal man page and symbol manual topics database.
+!/
+export function get_man_topics() {
+    let t -> {}
+    
+    // Keywords & Control Flow
+    t[`when`] -> {
+        `name` -> `when`,
+        `category` -> `Keyword / Control Flow`,
+        `syntax` -> `when <cond> {\n    ...\n} or when <cond2> {\n    ...\n} or {\n    ...\n}`,
+        `summary` -> `Zenlang primary conditional branching construct with clean, fallthrough-free branches.`,
+        `example` -> `let score -> 85\nwhen score >= 90 {\n    writeln(\`Grade: A\`)\n} or when score >= 80 {\n    writeln(\`Grade: B\`)\n} or {\n    writeln(\`Grade: C\`)\n}`,
+        `see_also` -> `let, set, function`
+    }
+    t[`let`] -> {
+        `name` -> `let`,
+        `category` -> `Keyword / Declaration`,
+        `syntax` -> `let <identifier> -> <expression>`,
+        `summary` -> `Declares a variable or constant in current lexical scope using flow assignment.`,
+        `example` -> `let count -> 0\nlet message -> \`Welcome to Zenlang\`\nlet items -> [1, 2, 3]`,
+        `see_also` -> `set, ->`
+    }
+    t[`set`] -> {
+        `name` -> `set`,
+        `category` -> `Keyword / Mutation`,
+        `syntax` -> `set <target> -> <expression>`,
+        `summary` -> `Explicit reassignment or mutation of an existing variable or collection element.`,
+        `example` -> `let score -> 10\nset score -> score + 5\nlet user -> { \`name\` -> \`Sam\` }\nset user[\`name\`] -> \`Alex\``,
+        `see_also` -> `let, ->`
+    }
+    t[`function`] -> {
+        `name` -> `function`,
+        `category` -> `Keyword / Functions`,
+        `syntax` -> `function <name>(<params...>) {\n    ...\n    <- <return_val>\n}`,
+        `summary` -> `Defines a function. Functions return values with <- or return.`,
+        `example` -> `function greet(name) {\n    writeln(\`Hello, \` + name + \`!\`)\n    <- true\n}`,
+        `see_also` -> `class, <-, export`
+    }
+    t[`fn`] -> t[`function`]
+    t[`class`] -> {
+        `name` -> `class`,
+        `category` -> `Keyword / Object-Oriented`,
+        `syntax` -> `class <Name> {\n    let <field>\n    function init(<params>) { self.<field> -> ... }\n    function <method>() { ... }\n}`,
+        `summary` -> `Declares a class with fields and methods. 'init' acts as the instance constructor.`,
+        `example` -> `class Point {\n    let x\n    let y\n    function init(x, y) {\n        self.x -> x\n        self.y -> y\n    }\n}`,
+        `see_also` -> `function, let`
+    }
+    t[`do`] -> {
+        `name` -> `do`,
+        `category` -> `Keyword / Loops`,
+        `syntax` -> `do while <cond> { ... }\ndo for <item> in <collection> { ... }`,
+        `summary` -> `Loop prefix keyword for both while and for iteration constructs.`,
+        `example` -> `let i -> 0\ndo while i < 5 {\n    writeln(i)\n    set i -> i + 1\n}\ndo for x in [10, 20, 30] {\n    writeln(x)\n}`,
+        `see_also` -> `while, for, break, continue`
+    }
+    t[`while`] -> t[`do`]
+    t[`for`] -> {
+        `name` -> `for`,
+        `category` -> `Keyword / Loops`,
+        `syntax` -> `do for <var> in <iterable> {\n    ...\n}`,
+        `summary` -> `Iterates over lists, ranges, maps, sets, or strings.`,
+        `example` -> `do for n in 1...5 {\n    writeln(n)\n}\ndo for word in [\`apple\`, \`banana\`] {\n    writeln(word)\n}`,
+        `see_also` -> `do, in, range`
+    }
+    t[`import`] -> {
+        `name` -> `import`,
+        `category` -> `Keyword / Modules`,
+        `syntax` -> `import <module.path> as <alias>`,
+        `summary` -> `Imports standard library or external dependency modules with an explicit alias.`,
+        `example` -> `import zen.io.io as io\nimport zen.math.math as math\nimport zen.text.string as Str`,
+        `see_also` -> `export`
+    }
+    t[`export`] -> {
+        `name` -> `export`,
+        `category` -> `Keyword / Modules`,
+        `syntax` -> `export function <name>(...) { ... }\nexport let <name> -> ...`,
+        `summary` -> `Exports a function, class, or constant from a module for external use.`,
+        `example` -> `export function add(a, b) {\n    <- a + b\n}`,
+        `see_also` -> `import`
+    }
+    t[`return`] -> {
+        `name` -> `return`,
+        `category` -> `Keyword / Control Flow`,
+        `syntax` -> `return <val>\n<- <val>`,
+        `summary` -> `Exits function and passes return value back to caller. <- is the preferred visual arrow return.`,
+        `example` -> `function multiply(a, b) {\n    <- a * b\n}`,
+        `see_also` -> `<-, function`
+    }
+    t[`break`] -> {
+        `name` -> `break`,
+        `category` -> `Keyword / Control Flow`,
+        `syntax` -> `break`,
+        `summary` -> `Terminates execution of innermost loop immediately.`,
+        `example` -> `do for x in 1...10 {\n    when x == 5 { break }\n    writeln(x)\n}`,
+        `see_also` -> `continue, do`
+    }
+    t[`continue`] -> {
+        `name` -> `continue`,
+        `category` -> `Keyword / Control Flow`,
+        `syntax` -> `continue`,
+        `summary` -> `Skips rest of current loop iteration and proceeds with next.`,
+        `example` -> `do for x in 1...5 {\n    when x == 3 { continue }\n    writeln(x)\n}`,
+        `see_also` -> `break, do`
+    }
+    t[`type`] -> {
+        `name` -> `type`,
+        `category` -> `Universal Prelude / Introspection`,
+        `syntax` -> `type(<value>)`,
+        `summary` -> `Returns runtime type name string of any value ('Integer', 'String', 'List', etc.).`,
+        `example` -> `writeln(type(42))         // Integer\nwriteln(type(\`text\`))     // String\nwriteln(type([1, 2]))     // List\nwriteln(type(Nothing))    // Nothing`,
+        `see_also` -> `<:, Integer, String`
+    }
+
+    // Operators
+    t[`->`] -> {
+        `name` -> `->`,
+        `category` -> `Operator / Flow Assignment`,
+        `syntax` -> `let <var> -> <val>\nset <var> -> <val>\n<map>[<key>] -> <val>`,
+        `summary` -> `Visual data flow assignment operator. Points evaluation into variable or property.`,
+        `example` -> `let answer -> 42\nset answer -> answer * 2\nlet user -> {}\nuser[\`name\`] -> \`Zenlang\``,
+        `see_also` -> `let, set, <-`
+    }
+    t[`<-`] -> {
+        `name` -> `<-`,
+        `category` -> `Operator / Return Expression`,
+        `syntax` -> `<- <expression>`,
+        `summary` -> `Returns a value from a function, visually pointing output back to caller.`,
+        `example` -> `function square(x) {\n    <- x * x\n}`,
+        `see_also` -> `function, ->`
+    }
+    t[`::`] -> {
+        `name` -> `::`,
+        `category` -> `Operator / Namespace Access`,
+        `syntax` -> `<Namespace>::<Member>`,
+        `summary` -> `Resolves member or variant in a qualified namespace.`,
+        `example` -> `let opt -> Option::Some(42)`,
+        `see_also` -> `import`
+    }
+    t[`??`] -> {
+        `name` -> `??`,
+        `category` -> `Operator / Null Coalescence`,
+        `syntax` -> `<expr> ?? <fallback>`,
+        `summary` -> `Evaluates left-hand operand; if it equals Nothing, evaluates and returns right-hand fallback.`,
+        `example` -> `let user_name -> Nothing\nwriteln(user_name ?? \`Guest\`) // Prints: Guest`,
+        `see_also` -> `Nothing, Default, |>`
+    }
+    t[`|>`] -> {
+        `name` -> `|>`,
+        `category` -> `Operator / Pipeline Flow`,
+        `syntax` -> `<expr> |> <function>(<extra_args...>)`,
+        `summary` -> `Passes left-hand expression as first argument to right-hand function call.`,
+        `example` -> `function double(x) { <- x * 2 }\nfunction inc(x) { <- x + 1 }\nlet res -> 5 |> double() |> inc() // 11`,
+        `see_also` -> `->, ??`
+    }
+    t[`<:`] -> {
+        `name` -> `<:`,
+        `category` -> `Operator / Type Casting`,
+        `syntax` -> `<val> <: <Type>\n<Type>(<val>)`,
+        `summary` -> `Casts value to target type. Dual syntax: visual operator (<:) or constructor syntax.`,
+        `example` -> `let n -> \`42\` <: Integer\nlet s -> 100 <: String\nlet b -> Integer(\`123\`)`,
+        `see_also` -> `type, Integer, String`
+    }
+    t[`in`] -> {
+        `name` -> `in`,
+        `category` -> `Operator / Containment Membership`,
+        `syntax` -> `<needle> in <haystack>`,
+        `summary` -> `Evaluates containment across collections, maps (key check), strings (substring), or ranges.`,
+        `example` -> `when 2 in [1, 2, 3] { writeln(\`Found in list\`) }\nwhen \`k\` in { \`k\` -> 1 } { writeln(\`Key exists\`) }\nwhen \`en\` in \`zen\` { writeln(\`Substring match\`) }`,
+        `see_also` -> `List, Map, Set, Range`
+    }
+    t[`..`] -> {
+        `name` -> `..`,
+        `category` -> `Operator / Open Range (a, b)`,
+        `syntax` -> `<a> .. <b>`,
+        `summary` -> `Constructs an interval range exclusive on both ends: (a, b).`,
+        `example` -> `do for x in 0..5 {\n    // yields 1, 2, 3, 4\n}`,
+        `see_also` -> `..+, ..-, ...`
+    }
+    t[`..+`] -> {
+        `name` -> `..+`,
+        `category` -> `Operator / Right-Inclusive Range (a, b]`,
+        `syntax` -> `<a> ..+ <b>`,
+        `summary` -> `Constructs an interval range exclusive on start, inclusive on end: (a, b].`,
+        `example` -> `do for x in 0..+5 {\n    // yields 1, 2, 3, 4, 5\n}`,
+        `see_also` -> `.., ..-, ...`
+    }
+    t[`..-`] -> {
+        `name` -> `..-`,
+        `category` -> `Operator / Right-Exclusive Range [a, b)`,
+        `syntax` -> `<a> ..- <b>`,
+        `summary` -> `Constructs an interval range inclusive on start, exclusive on end: [a, b).`,
+        `example` -> `do for x in 0..-5 {\n    // yields 0, 1, 2, 3, 4\n}`,
+        `see_also` -> `.., ..+, ...`
+    }
+    t[`...`] -> {
+        `name` -> `...`,
+        `category` -> `Operator / Fully-Closed Range [a, b]`,
+        `syntax` -> `<a> ... <b>`,
+        `summary` -> `Constructs an interval range inclusive on both ends: [a, b].`,
+        `example` -> `do for x in 1...5 {\n    // yields 1, 2, 3, 4, 5\n}`,
+        `see_also` -> `.., ..+, ..-`
+    }
+
+    // Sentinels & Core Types
+    t[`Nothing`] -> {
+        `name` -> `Nothing`,
+        `category` -> `Sentinel / Absent Value`,
+        `syntax` -> `Nothing`,
+        `summary` -> `Represents absence of a value. Assignable and comparable (x == Nothing).`,
+        `example` -> `let val -> Nothing\nwhen val == Nothing {\n    writeln(\`No value present\`)\n}`,
+        `see_also` -> `Default, ??`
+    }
+    t[`nothing`] -> t[`Nothing`]
+    t[`Default`] -> {
+        `name` -> `Default`,
+        `category` -> `Sentinel / Type Zero State`,
+        `syntax` -> `Default`,
+        `summary` -> `Represents canonical zero state of a type (0, 0.0, false, \"\", []). Assignable and comparable.`,
+        `example` -> `let count -> Default // 0\nlet items -> Default // []\nwhen count == Default {\n    writeln(\`Count is at zero-state\`)\n}`,
+        `see_also` -> `Nothing, Integer`
+    }
+    t[`default`] -> t[`Default`]
+    t[`List`] -> {
+        `name` -> `List`,
+        `category` -> `Core Type / Dynamic Sequence`,
+        `syntax` -> `[elem1, elem2, ...]`,
+        `summary` -> `Growable dynamic array with rich member methods: append, length, reverse, unique, chunk, map, filter, reduce.`,
+        `example` -> `let nums -> [1, 2, 3]\nnums.append(4)\nlet doubled -> nums.map(function(x) { <- x * 2 })\nwriteln(nums.length) // 4`,
+        `see_also` -> `Map, Set, in`
+    }
+    t[`Map`] -> {
+        `name` -> `Map`,
+        `category` -> `Core Type / Hash Dictionary`,
+        `syntax` -> `{ \`key\` -> value, ... }`,
+        `summary` -> `Key-value associative hash map. Member methods: keys, values, items, has, get, merge.`,
+        `example` -> `let person -> { \`name\` -> \`Ada\`, \`age\` -> 36 }\nwriteln(person.has(\`name\`)) // true\nwriteln(person.keys())      // ['name', 'age']`,
+        `see_also` -> `List, Set, in`
+    }
+    t[`Set`] -> {
+        `name` -> `Set`,
+        `category` -> `Core Type / Unique Collection`,
+        `syntax` -> `Set([1, 2, 3])`,
+        `summary` -> `Unique value set. Member methods: add, remove, has, union, intersection, difference, to_list.`,
+        `example` -> `let s -> [1, 2, 2, 3] <: Set\ns.add(4)\nwriteln(s.has(2)) // true`,
+        `see_also` -> `List, Map, in`
+    }
+    t[`String`] -> {
+        `name` -> `String`,
+        `category` -> `Core Type / Text Sequence`,
+        `syntax` -> `\`text\` or f\`format {var}\``,
+        `summary` -> `UTF-8 string literals strictly use backticks. Formatted strings use f\`...\` with {expr} interpolation.`,
+        `example` -> `let name -> \`Zen\`\nlet greeting -> f\`Hello, {name}!\`\nwriteln(greeting)`,
+        `see_also` -> `type, <:`
+    }
+    t[`Str`] -> t[`String`]
+    t[`Integer`] -> {
+        `name` -> `Integer`,
+        `category` -> `Core Type / 64-bit Signed Integer`,
+        `syntax` -> `123, -456, 0x1F, 0b1010`,
+        `summary` -> `64-bit signed integer numeric type.`,
+        `example` -> `let a -> 42\nlet b -> 0xFF\nlet sum -> a + b`,
+        `see_also` -> `Decimal, <:`
+    }
+    t[`Int`] -> t[`Integer`]
+    t[`Decimal`] -> {
+        `name` -> `Decimal`,
+        `category` -> `Core Type / 64-bit IEEE Float`,
+        `syntax` -> `3.14159, -0.05, 1e-4`,
+        `summary` -> `64-bit floating point numeric type.`,
+        `example` -> `let pi -> 3.14159265\nlet radius -> 2.5\nlet area -> pi * radius * radius`,
+        `see_also` -> `Integer, zen.math`
+    }
+    t[`Float`] -> t[`Decimal`]
+    t[`Boolean`] -> {
+        `name` -> `Boolean`,
+        `category` -> `Core Type / Boolean Logic`,
+        `syntax` -> `true, false`,
+        `summary` -> `Boolean logic truth values.`,
+        `example` -> `let ready -> true\nlet active -> false`,
+        `see_also` -> `when, Default`
+    }
+    t[`Bool`] -> t[`Boolean`]
+
+    // Console & I/O
+    t[`writeln`] -> {
+        `name` -> `writeln`,
+        `category` -> `Universal Prelude / Console Output`,
+        `syntax` -> `writeln(<value...>)`,
+        `summary` -> `Writes arguments followed by a newline to standard output without requiring imports.`,
+        `example` -> `writeln(\`Hello, World!\`)\nwriteln(\`Total: \`, 42)`,
+        `see_also` -> `write, readln, stdout`
+    }
+    t[`write`] -> {
+        `name` -> `write`,
+        `category` -> `Universal Prelude / Console Output`,
+        `syntax` -> `write(<value...>)`,
+        `summary` -> `Writes arguments without appending a newline to standard output.`,
+        `example` -> `write(\`Loading: \`)\nwrite(\`100%\n\`)`,
+        `see_also` -> `writeln, stdout`
+    }
+    t[`readln`] -> {
+        `name` -> `readln`,
+        `category` -> `Universal Prelude / Console Input`,
+        `syntax` -> `readln([prompt])`,
+        `summary` -> `Reads a line of text from standard input, optionally displaying a prompt.`,
+        `example` -> `let name -> readln(\`Enter your name: \`)\nwriteln(f\`Welcome, {name}!\`)`,
+        `see_also` -> `stdin, writeln`
+    }
+    t[`stdout`] -> {
+        `name` -> `stdout`,
+        `category` -> `Ambient Stream / Console Output`,
+        `syntax` -> `stdout.write(...), stdout.writeln(...), stdout.flush()`,
+        `summary` -> `Ambient standard output stream instance with member methods.`,
+        `example` -> `stdout.writeln(\`Direct stream write\`)\nstdout.flush()`,
+        `see_also` -> `stderr, stdin, writeln`
+    }
+    t[`stderr`] -> {
+        `name` -> `stderr`,
+        `category` -> `Ambient Stream / Error Output`,
+        `syntax` -> `stderr.write(...), stderr.writeln(...), stderr.flush()`,
+        `summary` -> `Ambient standard error stream instance for diagnostics and errors.`,
+        `example` -> `stderr.writeln(\`Error: operation failed\`)`,
+        `see_also` -> `stdout, stdin`
+    }
+    t[`stdin`] -> {
+        `name` -> `stdin`,
+        `category` -> `Ambient Stream / Console Input`,
+        `syntax` -> `stdin.readln(), stdin.read(), stdin.lines()`,
+        `summary` -> `Ambient standard input stream instance for interactive or piped input.`,
+        `example` -> `let line -> stdin.readln()\ndo for l in stdin.lines() { ... }`,
+        `see_also` -> `readln, stdout`
+    }
+
+    // Standard Modules
+    t[`zen.math`] -> {
+        `name` -> `zen.math`,
+        `category` -> `Standard Library Module`,
+        `syntax` -> `import zen.math.math as math`,
+        `summary` -> `Comprehensive mathematical functions with descriptive names and short aliases (sqrt, lerp, cil, flr, sinh).`,
+        `example` -> `import zen.math.math as math\nlet hyp -> math.sqrt(3*3 + 4*4) // 5.0\nlet mid -> math.lerp(0.0, 10.0, 0.5) // 5.0`,
+        `see_also` -> `zen.math.range, Integer, Decimal`
+    }
+    t[`zen.io`] -> {
+        `name` -> `zen.io`,
+        `category` -> `Standard Library Module`,
+        `syntax` -> `import zen.io.file as file\nimport zen.io.path as path`,
+        `summary` -> `Filesystem, file reading/writing, path resolution, directories, and streams.`,
+        `example` -> `import zen.io.file as file\nlet text -> file.read(\`data.txt\`)\nfile.write(\`out.txt\`, text)`,
+        `see_also` -> `stdout, stdin`
+    }
+    t[`zen.collections`] -> {
+        `name` -> `zen.collections`,
+        `category` -> `Standard Library Module`,
+        `syntax` -> `import zen.collections.list as ListModule`,
+        `summary` -> `Advanced collection transformations, chunking, flattening, and specialized collections.`,
+        `example` -> `let list -> [1, [2, 3], 4]\nlet flat -> list.flatten() // [1, 2, 3, 4]`,
+        `see_also` -> `List, Map, Set`
+    }
+    t[`zen.time`] -> {
+        `name` -> `zen.time`,
+        `category` -> `Standard Library Module`,
+        `syntax` -> `import zen.time.time as time`,
+        `summary` -> `Time measurement, monotonic timers, formatting, and thread sleeping.`,
+        `example` -> `import zen.time.time as time\nlet t0 -> time.monotonic()\ntime.sleep(0.1)\nlet elapsed -> time.monotonic() - t0`,
+        `see_also` -> `zen.sys`
+    }
+    t[`zen.sys`] -> {
+        `name` -> `zen.sys`,
+        `category` -> `Standard Library Module`,
+        `syntax` -> `import zen.sys.sys as sys\nimport zen.sys.process as process`,
+        `summary` -> `Operating system interface: CLI arguments, environment variables, platform, and process spawning.`,
+        `example` -> `import zen.sys.sys as sys\nlet args -> sys.get_args()\nlet env -> sys.get_env(\`HOME\`)`,
+        `see_also` -> `zen.io`
+    }
+
+    <- t
+}
+
+/!
+  Looks up documentation for a symbol or keyword.
+!/
+export function lookup_symbol_doc(query) {
+    when query == Nothing or query == `` {
+        <- Nothing
+    }
+    let q -> Str.trim(query)
+    // Strip backticks if passed: `when` -> when
+    when Str.starts_with(q, `\``) and Str.ends_with(q, `\``) and Str.length(q) >= 2 {
+        q -> Str.substring(q, 1, Str.length(q) - 1)
+    }
+    let topics -> get_man_topics()
+    when topics.has(q) {
+        <- topics[q]
+    }
+    let q_lower -> Str.to_lower(q)
+    when topics.has(q_lower) {
+        <- topics[q_lower]
+    }
+    <- Nothing
+}
+
+/!
+  Lists all available documentation topics.
+!/
+export function list_topics() {
+    io.writeln(`================================================================================`)
+    io.writeln(`  Zenlang Command-Line Documentation Topics Index`)
+    io.writeln(`================================================================================`)
+    io.writeln(``)
+    io.writeln(`Keywords & Control Flow:`)
+    io.writeln(`  when, let, set, function (fn), class, do, while, for, import, export,`)
+    io.writeln(`  break, continue, return, type`)
+    io.writeln(``)
+    io.writeln(`Operators & Flow:`)
+    io.writeln(`  -> (flow assign), <- (return), :: (namespace), ?? (coalesce), |> (pipeline),`)
+    io.writeln(`  .. (open), ..+ (right-incl), ..- (left-incl), ... (closed), <: (cast), in (containment)`)
+    io.writeln(``)
+    io.writeln(`Sentinels & Core Types:`)
+    io.writeln(`  Nothing, Default, Integer (Int), Decimal (Float), String (Str),`)
+    io.writeln(`  Boolean (Bool), List, Map, Set`)
+    io.writeln(``)
+    io.writeln(`Console & Streams:`)
+    io.writeln(`  writeln, write, readln, stdout, stderr, stdin`)
+    io.writeln(``)
+    io.writeln(`Standard Library Modules:`)
+    io.writeln(`  zen.math, zen.io, zen.collections, zen.time, zen.sys, zen.net, zen.data`)
+    io.writeln(``)
+    io.writeln(`Usage:`)
+    io.writeln(`  zen doc <topic>      e.g.  zen doc when`)
+    io.writeln(`  zen explain <topic>  e.g.  zen explain ->`)
+    io.writeln(`================================================================================`)
+    <- True
+}
+
+/!
+  Renders interactive manual page in the terminal.
+!/
+export function cli_man_page(query) {
+    when query == Nothing or query == `` or query == `--topics` or query == `topics` or query == `-t` {
+        list_topics()
+        <- True
+    }
+    let doc -> lookup_symbol_doc(query)
+    when doc == Nothing {
+        io.writeln(`No documentation found for '` + query + `'.`)
+        io.writeln(``)
+        io.writeln(`Run 'zen doc --topics' to view all available language topics and symbols.`)
+        <- False
+    }
+
+    io.writeln(`================================================================================`)
+    io.writeln(`  ZENLANG MANUAL: ` + doc[`name`] + ` (` + doc[`category`] + `)`)
+    io.writeln(`================================================================================`)
+    io.writeln(``)
+    io.writeln(`SYNTAX:`)
+    let syn_lines -> Str.split(doc[`syntax`], `\n`)
+    do for sl in syn_lines {
+        io.writeln(`  ` + sl)
+    }
+    io.writeln(``)
+    io.writeln(`DESCRIPTION:`)
+    let desc_lines -> Str.split(doc[`summary`], `\n`)
+    do for dl in desc_lines {
+        io.writeln(`  ` + dl)
+    }
+    io.writeln(``)
+    when doc.has(`example`) and doc[`example`] != `` {
+        io.writeln(`EXAMPLE:`)
+        let ex_lines -> Str.split(doc[`example`], `\n`)
+        do for el in ex_lines {
+            io.writeln(`  ` + el)
+        }
+        io.writeln(``)
+    }
+    when doc.has(`see_also`) and doc[`see_also`] != `` {
+        io.writeln(`SEE ALSO:`)
+        io.writeln(`  ` + doc[`see_also`])
+        io.writeln(``)
+    }
+    io.writeln(`================================================================================`)
+    <- True
+}
+

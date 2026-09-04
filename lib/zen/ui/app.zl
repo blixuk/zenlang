@@ -285,6 +285,7 @@ function run(init_fn, update_fn, view_fn, opts) {
         }
     }
 
+    let tick_m -> msg_tick(0)
     let frame -> 0
     do while model_wants_quit(model) == false {
         when max_frames > 0 and frame >= max_frames {
@@ -330,7 +331,8 @@ function run(init_fn, update_fn, view_fn, opts) {
 
         // Tick (game step) after input so direction applies this frame
         when do_tick {
-            model -> step(model, msg_tick(frame), update_fn)
+            tick_m[`n`] -> frame
+            model -> step(model, tick_m, update_fn)
         }
 
         when model_wants_quit(model) {

@@ -9,6 +9,7 @@ import zen.io.io as io
 import zen.sys.sys as Sys
 
 function main() {
+    Plugin.register_plugin(Plugin.make_tooling_plugin())
     Plugin.register_plugin(Plugin.make_todo_tracker_plugin())
     Plugin.register_plugin(Plugin.make_linter_plugin())
     let args -> Sys.get_args()
