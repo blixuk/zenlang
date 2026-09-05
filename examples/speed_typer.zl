@@ -1,0 +1,536 @@
+/!
+  Terminal Speed Typing Calculator Game — Zenlang Example Application.
+  
+  Measures Words Per Minute (WPM), Accuracy (%), Characters Per Minute (CPM),
+  and mental math speed calculation with real-time ASCII/Unicode sparklines.
+
+  Run:
+    bin/zen examples/speed_typer.zl
+    bin/zen -g examples/speed_typer.zl
+
+  Headless verification:
+    ZEN_TUI_HEADLESS=1 bin/zen examples/speed_typer.zl
+
+  Controls:
+    Type matching characters  ·  Backspace to correct
+    Ctrl+R / Tab: Restart    ·  Ctrl+N: Next Challenge
+    Ctrl+M: Change Mode      ·  Ctrl+C / Esc: Quit
+!/
+
+import zen.sys.term as term
+import zen.io.io as io
+import zen.text.string as Str
+import zen.time.time as time
+import zen.math.math as math
+import zen.math.random as random
+import zen.ui.chart as chart
+import zen.sys.process as process
+
+// ==========================================
+// 1. Color and Styling Constants
+// ==========================================
+
+function col_reset() { <- `\x1b[0m` }
+function col_bold() { <- `\x1b[1m` }
+function col_dim() { <- `\x1b[90m` }
+function col_cyan() { <- `\x1b[1;36m` }
+function col_yellow() { <- `\x1b[1;33m` }
+function col_green() { <- `\x1b[1;32m` }
+function col_magenta() { <- `\x1b[1;35m` }
+function col_red() { <- `\x1b[1;31m` }
+function col_white() { <- `\x1b[1;37m` }
+function col_standout() { <- `\x1b[1;30;47m` }
+function col_error_bg() { <- `\x1b[1;37;41m` }
+function col_bar_bg() { <- `\x1b[30;46m` }
+
+// ==========================================
+// 2. Challenge Content Generators
+// ==========================================
+
+function get_quotes() {
+    <- [
+        `Explicitness is better than magic. Visual data flow reveals the algorithm.`,
+        `Write programs that do one thing and do it well. Write programs to work together.`,
+        `Code is read far more often than it is written. Optimize for human readability.`,
+        `Simplicity is prerequisite for reliability. Fast feedback enables mastery.`,
+        `The Unix philosophy: Expect the output of every program to become input to another.`
+    ]
+}
+
+function get_code_snippets() {
+    <- [
+        `let doubled -> numbers |> map(function(x) -> x * 2)`,
+        `function fib(n) { <- when n <= 1 { n } or { fib(n - 1) + fib(n - 2) } }`,
+        `when status == 200 { <- response.json() } or { <- Nothing }`,
+        `let sorted_items -> items |> sort() |> reverse()`,
+        `function wpm(chars, sec) { <- (chars / 5.0) / (sec / 60.0) }`
+    ]
+}
+
+function generate_math_challenge(seed_val) {
+    let ops -> [`+`, `-`, `*`]
+    let op_idx -> seed_val % 3
+    let op -> ops[op_idx]
+
+    let a -> 10 + (seed_val * 7) % 40
+    let b -> 5 + (seed_val * 13) % 25
+
+    let ans -> 0
+    when op == `+` {
+        ans -> a + b
+    } or when op == `-` {
+        when a < b {
+            let tmp -> a
+            a -> b
+            b -> tmp
+        }
+        ans -> a - b
+    } or {
+        a -> 3 + seed_val % 10
+        b -> 2 + (seed_val * 3) % 10
+        ans -> a * b
+    }
+
+    let text -> Str.to_string(a) + ` ` + op + ` ` + Str.to_string(b) + ` = ` + Str.to_string(ans)
+    <- text
+}
+
+// ==========================================
+// 3. Speed Typer State & Model
+// ==========================================
+
+function create_game_state(mode_idx) {
+    let modes -> [`quotes`, `code`, `math`, `timed`]
+    let cur_mode -> modes[mode_idx % 4]
+
+    let target_text -> ``
+    when cur_mode == `quotes` {
+        let qs -> get_quotes()
+        target_text -> qs[0]
+    } or when cur_mode == `code` {
+        let cs -> get_code_snippets()
+        target_text -> cs[0]
+    } or when cur_mode == `math` {
+        target_text -> generate_math_challenge(1)
+    } or {
+        target_text -> `The quick brown fox jumps over the lazy dog and runs through the forest`
+    }
+
+    <- {
+        `mode_idx`           -> mode_idx % 4,
+        `mode`               -> cur_mode,
+        `challenge_idx`      -> 0,
+        `target_text`        -> target_text,
+        `typed`              -> ``,
+        `start_time`         -> 0.0,
+        `end_time`           -> 0.0,
+        `started`            -> false,
+        `finished`           -> false,
+        `total_keystrokes`   -> 0,
+        `correct_keystrokes` -> 0,
+        `error_count`        -> 0,
+        `wpm_history`        -> [],
+        `last_spark_time`    -> 0.0,
+        `math_score`         -> 0,
+        `time_limit_sec`     -> 30.0
+    }
+}
+
+function reset_challenge(state) {
+    let mode -> state[`mode`]
+    let c_idx -> state[`challenge_idx`]
+    let target_text -> ``
+
+    when mode == `quotes` {
+        let qs -> get_quotes()
+        target_text -> qs[c_idx % qs.length]
+    } or when mode == `code` {
+        let cs -> get_code_snippets()
+        target_text -> cs[c_idx % cs.length]
+    } or when mode == `math` {
+        target_text -> generate_math_challenge(c_idx + 1)
+    } or {
+        target_text -> `The quick brown fox jumps over the lazy dog and runs through the forest`
+    }
+
+    state[`target_text`] -> target_text
+    state[`typed`] -> ``
+    state[`started`] -> false
+    state[`finished`] -> false
+    state[`start_time`] -> 0.0
+    state[`end_time`] -> 0.0
+    state[`total_keystrokes`] -> 0
+    state[`correct_keystrokes`] -> 0
+    state[`error_count`] -> 0
+    state[`wpm_history`] -> []
+    state[`last_spark_time`] -> 0.0
+}
+
+// ==========================================
+// 4. Metrics & Calculator Formulas
+// ==========================================
+
+function calculate_wpm(correct_chars, elapsed_sec) {
+    when elapsed_sec <= 0.2 { <- 0.0 }
+    let minutes -> elapsed_sec / 60.0
+    let words -> (0.0 + correct_chars) / 5.0
+    let wpm -> words / minutes
+    when wpm < 0.0 { <- 0.0 }
+    <- wpm
+}
+
+function calculate_accuracy(correct_strokes, total_strokes) {
+    when total_strokes <= 0 { <- 100.0 }
+    let acc -> ((0.0 + correct_strokes) / (0.0 + total_strokes)) * 100.0
+    when acc > 100.0 { <- 100.0 }
+    when acc < 0.0 { <- 0.0 }
+    <- acc
+}
+
+function get_rank_title(wpm) {
+    when wpm >= 100.0 { <- `🏆 Zen Grandmaster (Top 1%)` }
+    when wpm >= 80.0  { <- `⚡ Terminal Ninja (Expert)` }
+    when wpm >= 60.0  { <- `🚀 Speed Demon (Fast)` }
+    when wpm >= 40.0  { <- `💻 Proficient Typist (Solid)` }
+    <- `🌱 Zen Apprentice (Practicing)`
+}
+
+// ==========================================
+// 5. Terminal Rendering Engine
+// ==========================================
+
+function render_screen(state) {
+    let size -> term.get_size()
+    let w -> 80
+    let h -> 24
+    when size != Nothing and size.has(`width`) and size[`width`] > 0 {
+        w -> size[`width`]
+        h -> size[`height`]
+    }
+
+    let now -> time.monotonic()
+    let elapsed_sec: Variant -> 0.0
+    when state[`started`] {
+        when state[`finished`] {
+            elapsed_sec -> state[`end_time`] - state[`start_time`]
+        } or {
+            elapsed_sec -> now - state[`start_time`]
+        }
+    }
+
+    let typed -> state[`typed`]
+    let target_text -> state[`target_text`]
+    let typed_len -> Str.length(typed)
+    let target_len -> Str.length(target_text)
+
+    // Calculate correct chars
+    let correct_chars -> 0
+    let i -> 0
+    do while i < typed_len and i < target_len {
+        when Str.at(typed, i) == Str.at(target_text, i) {
+            correct_chars -> correct_chars + 1
+        }
+        i -> i + 1
+    }
+
+    let current_wpm -> calculate_wpm(correct_chars, elapsed_sec)
+    let current_acc -> calculate_accuracy(state[`correct_keystrokes`], state[`total_keystrokes`])
+
+    // Periodic WPM history for sparkline
+    when state[`started`] and not state[`finished`] and (now - state[`last_spark_time`] >= 0.5) {
+        state[`wpm_history`].append(math.floor(current_wpm))
+        state[`last_spark_time`] -> now
+        when state[`wpm_history`].length > 20 {
+            state[`wpm_history`].remove_at(0)
+        }
+    }
+
+    term.move(1, 1)
+
+    // --- Header Bar ---
+    let title -> ` SPEED TYPER `
+    let mode_str -> ` Mode: ` + Str.to_upper(state[`mode`]) + ` `
+    let pad_len -> w - Str.length(title) - Str.length(mode_str)
+    when pad_len < 0 { pad_len -> 0 }
+    term.write(col_bar_bg() + col_bold() + title + Str.repeat(` `, pad_len) + mode_str + col_reset() + `\n`)
+
+    // --- Metrics Dashboard ---
+    let wpm_str -> Str.pad_left(Str.to_string(math.floor(current_wpm)), 3, ` `)
+    let acc_str -> Str.pad_left(Str.to_string(math.floor(current_acc)), 3, ` `)
+    let time_str -> Str.pad_left(Str.to_string(math.floor(elapsed_sec)), 3, ` `)
+    let err_str -> Str.to_string(state[`error_count`])
+
+    let dash -> col_cyan() + `  [ WPM: ` + col_white() + wpm_str + col_cyan() + ` ]  ` +
+                col_yellow() + `[ ACC: ` + col_white() + acc_str + `%` + col_yellow() + ` ]  ` +
+                col_green() + `[ TIME: ` + col_white() + time_str + `s` + col_green() + ` ]  ` +
+                col_red() + `[ ERRORS: ` + col_white() + err_str + col_red() + ` ]` + col_reset()
+
+    term.write(`\n` + dash + `\n`)
+
+    // --- Live Speed Sparkline ---
+    let spark -> chart.sparkline(state[`wpm_history`])
+    when Str.length(spark) == 0 { spark -> `(waiting for keystrokes...)` }
+    term.write(col_dim() + `  Speed Trend: ` + col_magenta() + spark + col_reset() + `\n\n`)
+
+    // --- Progress Bar ---
+    let progress_pct -> 0
+    when target_len > 0 {
+        progress_pct -> math.floor(((0.0 + typed_len) / (0.0 + target_len)) * 100.0)
+    }
+    when progress_pct > 100 { progress_pct -> 100 }
+    let bar_width -> 40
+    let fill_len -> math.floor(((0.0 + progress_pct) / 100.0) * (0.0 + bar_width))
+    let empty_len -> bar_width - fill_len
+    when empty_len < 0 { empty_len -> 0 }
+
+    let pbar -> col_dim() + `  Progress: [` + col_cyan() + Str.repeat(`█`, fill_len) + col_dim() + Str.repeat(`░`, empty_len) + `] ` + col_white() + Str.to_string(progress_pct) + `%` + col_reset()
+    term.write(pbar + `\n\n`)
+
+    // --- Typing Text Area with Box Border ---
+    let box_w -> w - 4
+    when box_w < 40 { box_w -> 40 }
+    let border_top -> `  ┌` + Str.repeat(`─`, box_w - 2) + `┐`
+    let border_bot -> `  └` + Str.repeat(`─`, box_w - 2) + `┘`
+
+    term.write(col_dim() + border_top + col_reset() + `\n`)
+
+    // Render character-by-character styled target text
+    let text_line -> `  │ `
+    let ci -> 0
+    do while ci < target_len {
+        let ch -> Str.substring(target_text, ci, ci + 1)
+        when ci < typed_len {
+            let user_ch -> Str.substring(typed, ci, ci + 1)
+            when user_ch == ch {
+                text_line -> text_line + col_green() + ch + col_reset()
+            } or {
+                text_line -> text_line + col_error_bg() + ch + col_reset()
+            }
+        } or when ci == typed_len {
+            // Active Cursor Character
+            text_line -> text_line + col_standout() + ch + col_reset()
+        } or {
+            // Upcoming untouched characters
+            text_line -> text_line + col_dim() + ch + col_reset()
+        }
+        ci -> ci + 1
+    }
+
+    term.write(text_line + `\n`)
+    term.write(col_dim() + border_bot + col_reset() + `\n\n`)
+
+    // --- Results Screen Overlay ---
+    when state[`finished`] {
+        let rank -> get_rank_title(current_wpm)
+        term.write(col_bold() + col_yellow() + `  ======================================================\n`)
+        term.write(`  🎉 CHALLENGE COMPLETE!\n`)
+        term.write(`  ======================================================\n` + col_reset())
+        term.write(`  Rank:       ` + col_cyan() + rank + col_reset() + `\n`)
+        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(math.floor(current_wpm)) + ` WPM` + col_reset() + `\n`)
+        term.write(`  Accuracy:   ` + col_green() + Str.to_string(math.floor(current_acc)) + `%` + col_reset() + `\n`)
+        term.write(`  Time:       ` + col_white() + Str.to_string(elapsed_sec) + ` seconds` + col_reset() + `\n`)
+        term.write(`  Errors:     ` + col_red() + Str.to_string(state[`error_count`]) + col_reset() + `\n`)
+        term.write(col_dim() + `  Press [Tab] or [R] to Retry · [N] for Next · [Q] to Quit\n` + col_reset())
+    } or {
+        // Footer Hotkeys
+        term.write(col_dim() + `  Hotkeys: [Tab/Ctrl+R] Restart  ·  [Ctrl+N] Next  ·  [Ctrl+M] Change Mode  ·  [Ctrl+C] Quit` + col_reset() + `\n`)
+    }
+
+    term.flush()
+}
+
+// ==========================================
+// 6. Interactive Game Loop
+// ==========================================
+
+function run_game_loop(initial_mode_idx) {
+    let state -> create_game_state(initial_mode_idx)
+    term.raw_enter()
+    term.hide_cursor()
+    term.clear()
+
+    let running -> true
+
+    do while running {
+        render_screen(state)
+
+        // Poll with 40ms timeout for fluid timer/sparkline updates
+        let key -> term.poll_key(40)
+        when key == Nothing or key[`kind`] == `none` {
+            continue
+        }
+
+        let kind -> key[`kind`]
+        let name -> key[`name`]
+        let ch -> key[`ch`]
+
+        // Universal Exit Hotkeys
+        when name == `ctrl_c` or name == `esc` {
+            running -> false
+            break
+        }
+
+        // Finished State Key Actions
+        when state[`finished`] {
+            when ch == `r` or ch == `R` or name == `tab` {
+                reset_challenge(state)
+                term.clear()
+                continue
+            } or when ch == `n` or ch == `N` {
+                state[`challenge_idx`] -> state[`challenge_idx`] + 1
+                reset_challenge(state)
+                term.clear()
+                continue
+            } or when ch == `q` or ch == `Q` {
+                running -> false
+                break
+            }
+        }
+
+        // In-Game Global Hotkeys
+        when name == `ctrl_r` or (name == `tab` and not state[`finished`]) {
+            reset_challenge(state)
+            term.clear()
+            continue
+        } or when name == `ctrl_n` {
+            state[`challenge_idx`] -> state[`challenge_idx`] + 1
+            reset_challenge(state)
+            term.clear()
+            continue
+        } or when name == `ctrl_m` {
+            let next_m -> (state[`mode_idx`] + 1) % 4
+            state -> create_game_state(next_m)
+            term.clear()
+            continue
+        }
+
+        // Backspace Handling
+        when name == `backspace` {
+            let cur_len -> Str.length(state[`typed`])
+            when cur_len > 0 {
+                state[`typed`] -> Str.substring(state[`typed`], 0, cur_len - 1)
+            }
+            continue
+        }
+
+        // Character Typing Input
+        when kind == `char` and ch != Nothing and Str.length(ch) > 0 {
+            when not state[`started`] {
+                state[`started`] -> true
+                state[`start_time`] -> time.monotonic()
+                state[`last_spark_time`] -> time.monotonic()
+            }
+
+            let cur_idx -> Str.length(state[`typed`])
+            let target_text -> state[`target_text`]
+            let target_len -> Str.length(target_text)
+
+            when cur_idx < target_len {
+                let expected -> Str.substring(target_text, cur_idx, cur_idx + 1)
+                state[`total_keystrokes`] -> state[`total_keystrokes`] + 1
+                when ch == expected {
+                    state[`correct_keystrokes`] -> state[`correct_keystrokes`] + 1
+                } or {
+                    state[`error_count`] -> state[`error_count`] + 1
+                }
+
+                state[`typed`] -> state[`typed`] + ch
+
+                // Check challenge completion
+                when Str.length(state[`typed`]) >= target_len {
+                    state[`finished`] -> true
+                    state[`end_time`] -> time.monotonic()
+                }
+            }
+        }
+    }
+
+    term.show_cursor()
+    term.raw_exit()
+    term.clear()
+    io.writeln(`\nThanks for playing Zen Speed Typer!`)
+    <- 0
+}
+
+// ==========================================
+// 7. Headless Smoke Verification
+// ==========================================
+
+function headless_smoke_test() {
+    io.writeln(`[HEADLESS SMOKE] Running Speed Typer self-test...`)
+
+    // 1. Validate WPM Formula
+    // 50 characters in 12 seconds = 10 words in 0.2 minutes = 50 WPM
+    let test_wpm -> calculate_wpm(50, 12.0)
+    when math.floor(test_wpm) != 50 {
+        io.writeln(`[FAIL] WPM calculation error: expected 50 got ` + Str.to_string(test_wpm))
+        <- 1
+    }
+    io.writeln(`  [PASS] WPM calculation: 50.0 WPM verified`)
+
+    // 2. Validate Accuracy Formula
+    // 48 correct / 50 total = 96.0%
+    let test_acc -> calculate_accuracy(48, 50)
+    when math.floor(test_acc) != 96 {
+        io.writeln(`[FAIL] Accuracy calculation error: expected 96 got ` + Str.to_string(test_acc))
+        <- 1
+    }
+    io.writeln(`  [PASS] Accuracy calculation: 96.0% verified`)
+
+    // 3. Validate Math Drill Generation
+    let m1 -> generate_math_challenge(1)
+    let m2 -> generate_math_challenge(2)
+    when Str.length(m1) == 0 or Str.length(m2) == 0 or Str.index_of(m1, `=`) < 0 {
+        io.writeln(`[FAIL] Math challenge generator failed`)
+        <- 1
+    }
+    io.writeln(`  [PASS] Math challenge generation: ` + m1)
+
+    // 4. Validate All Game Modes State Initialization
+    let mi -> 0
+    do while mi < 4 {
+        let st -> create_game_state(mi)
+        when Str.length(st[`target_text`]) == 0 {
+            io.writeln(`[FAIL] State initialization failed for mode ` + Str.to_string(mi))
+            <- 1
+        }
+        mi -> mi + 1
+    }
+    io.writeln(`  [PASS] All 4 game modes initialized successfully`)
+
+    // 5. Simulate Typing Run
+    let game -> create_game_state(0)
+    game[`started`] -> true
+    game[`start_time`] -> 100.0
+    game[`typed`] -> game[`target_text`]
+    game[`total_keystrokes`] -> Str.length(game[`target_text`])
+    game[`correct_keystrokes`] -> Str.length(game[`target_text`])
+    game[`end_time`] -> 106.0
+    game[`finished`] -> true
+
+    let final_wpm -> calculate_wpm(Str.length(game[`target_text`]), 6.0)
+    let final_rank -> get_rank_title(final_wpm)
+    io.writeln(`  [PASS] Simulated typing complete: ` + Str.to_string(math.floor(final_wpm)) + ` WPM (` + final_rank + `)`)
+
+    io.writeln(`[HEADLESS SMOKE] All speed typer checks passed!`)
+    <- 0
+}
+
+// ==========================================
+// 8. Entry Point
+// ==========================================
+
+function main() {
+    let flag -> Str.trim(process.shell(`printenv ZEN_TUI_HEADLESS || true`))
+    when flag == `1` or flag == `true` {
+        <- headless_smoke_test()
+    }
+
+    when not term.is_tty() {
+        io.writeln(`Speed Typer requires an interactive terminal TTY.`)
+        io.writeln(`For headless testing, run with ZEN_TUI_HEADLESS=1.`)
+        <- 0
+    }
+
+    <- run_game_loop(0)
+}

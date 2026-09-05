@@ -39,20 +39,20 @@ import zen.text.string as Str
 // --- ANSI Escape Constants ---
 
 function ansi_move(x, y) {
-    <- "\033[" + Str.to_string(y) + ";" + Str.to_string(x) + "H"
+    <- `\x1b[` + Str.to_string(y) + `;` + Str.to_string(x) + `H`
 }
 
-function ansi_reset() { <- "\033[0m" }
-function ansi_bright_magenta() { <- "\033[1;35m" }
-function ansi_bright_cyan() { <- "\033[1;36m" }
-function ansi_bright_green() { <- "\033[1;32m" }
-function ansi_green() { <- "\033[32m" }
-function ansi_bright_yellow() { <- "\033[1;33m" }
-function ansi_bright_black() { <- "\033[90m" }
-function ansi_white() { <- "\033[37m" }
-function ansi_bright_blue() { <- "\033[1;34m" }
-function ansi_violet() { <- "\033[35m" }
-function ansi_bright_red() { <- "\033[1;31m" }
+function ansi_reset() { <- `\x1b[0m` }
+function ansi_bright_magenta() { <- `\x1b[1;35m` }
+function ansi_bright_cyan() { <- `\x1b[1;36m` }
+function ansi_bright_green() { <- `\x1b[1;32m` }
+function ansi_green() { <- `\x1b[32m` }
+function ansi_bright_yellow() { <- `\x1b[1;33m` }
+function ansi_bright_black() { <- `\x1b[90m` }
+function ansi_white() { <- `\x1b[37m` }
+function ansi_bright_blue() { <- `\x1b[1;34m` }
+function ansi_violet() { <- `\x1b[35m` }
+function ansi_bright_red() { <- `\x1b[1;31m` }
 
 function ansi_rainbow_color(depth) {
     let d -> depth % 5
@@ -62,14 +62,14 @@ function ansi_rainbow_color(depth) {
     when d == 3 { <- ansi_bright_green() }
     <- ansi_violet()
 }
-function ansi_top_bar() { <- "\033[30;46m" }
-function ansi_status_bar() { <- "\033[30;47m" }
-function ansi_alert_bar() { <- "\033[30;43m" }
-function ansi_modal_header() { <- "\033[30;43m" }
-function ansi_modal_item() { <- "\033[37;44m" }
-function ansi_modal_selected() { <- "\033[30;47m" }
-function ansi_doc_header() { <- "\033[30;46m" }
-function ansi_doc_body() { <- "\033[37;100m" }
+function ansi_top_bar() { <- `\x1b[30;46m` }
+function ansi_status_bar() { <- `\x1b[30;47m` }
+function ansi_alert_bar() { <- `\x1b[30;43m` }
+function ansi_modal_header() { <- `\x1b[30;43m` }
+function ansi_modal_item() { <- `\x1b[37;44m` }
+function ansi_modal_selected() { <- `\x1b[30;47m` }
+function ansi_doc_header() { <- `\x1b[30;46m` }
+function ansi_doc_body() { <- `\x1b[37;100m` }
 
 // --- String Utilities ---
 
@@ -1301,7 +1301,7 @@ class Playground {
             self.col_off -> self.col - ed_inner_w + 1
         }
 
-        term.write("\033[?25l") // Hide cursor during render
+        term.write(`\x1b[?25l`) // Hide cursor during render
 
         // 1. Top Header Bar
         term.move(1, 1)
@@ -1477,9 +1477,9 @@ class Playground {
                 let item -> self.ac_items[ai]
                 term.move(ac_x, 0 + ac_y + ai)
                 when ai == self.ac_idx {
-                    term.write("\033[30;106m" + Str.pad_right(" ▶ " + item, ac_w, " ") + ansi_reset())
+                    term.write(`\x1b[30;106m` + Str.pad_right(` ▶ ` + item, ac_w, ` `) + ansi_reset())
                 } or {
-                    term.write("\033[37;40m" + Str.pad_right("   " + item, ac_w, " ") + ansi_reset())
+                    term.write(`\x1b[37;40m` + Str.pad_right(`   ` + item, ac_w, ` `) + ansi_reset())
                 }
                 ai -> 0 + ai + 1
             }
@@ -1580,7 +1580,7 @@ class Playground {
         
         term.move(cx, cy)
         when not self.in_template_picker and not self.in_settings_picker {
-            term.write("\033[?25h") // Show cursor
+            term.write(`\x1b[?25h`) // Show cursor
         }
         
         term.flush()
