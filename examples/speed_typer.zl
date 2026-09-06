@@ -199,6 +199,33 @@ function get_rank_title(wpm) {
 // 5. Terminal Rendering Engine
 // ==========================================
 
+function wrap_text_lines(text, max_w) {
+    let words -> Str.split(text, ` `)
+    let lines -> []
+    let cur_line -> ``
+    let wi -> 0
+    do while wi < words.length {
+        let word -> words[wi]
+        let word_with_sp -> word
+        when wi < words.length - 1 {
+            word_with_sp -> word + ` `
+        }
+        when Str.length(cur_line) == 0 {
+            cur_line -> word_with_sp
+        } or when Str.length(cur_line) + Str.length(word_with_sp) <= max_w {
+            cur_line -> cur_line + word_with_sp
+        } or {
+            lines.append(cur_line)
+            cur_line -> word_with_sp
+        }
+        wi -> wi + 1
+    }
+    when Str.length(cur_line) > 0 {
+        lines.append(cur_line)
+    }
+    <- lines
+}
+
 function render_screen(state) {
     let size -> term.get_size()
     let w -> 80
@@ -223,7 +250,6 @@ function render_screen(state) {
     let typed_len -> Str.length(typed)
     let target_len -> Str.length(target_text)
 
-    // Calculate correct chars
     let correct_chars -> 0
     let i -> 0
     do while i < typed_len and i < target_len {
@@ -236,7 +262,6 @@ function render_screen(state) {
     let current_wpm -> calculate_wpm(correct_chars, elapsed_sec)
     let current_acc -> calculate_accuracy(state[`correct_keystrokes`], state[`total_keystrokes`])
 
-    // Periodic WPM history for sparkline
     when state[`started`] and not state[`finished`] and (now - state[`last_spark_time`] >= 0.5) {
         state[`wpm_history`].append(Integer(math.floor(current_wpm)))
         state[`last_spark_time`] -> now
@@ -245,16 +270,24 @@ function render_screen(state) {
         }
     }
 
-    term.move(1, 1)
+    let row -> 1
 
-    // --- Header Bar ---
+    // 1. Header Bar
+    term.move(1, row)
     let title -> ` SPEED TYPER `
     let mode_str -> ` Mode: ` + Str.to_upper(state[`mode`]) + ` `
-    let pad_len -> w - Str.length(title) - Str.length(mode_str)
+    let pad_len -> (w - 1) - Str.length(title) - Str.length(mode_str)
     when pad_len < 0 { pad_len -> 0 }
-    term.write(col_bar_bg() + col_bold() + title + Str.repeat(` `, pad_len) + mode_str + col_reset() + `\n`)
+    term.write(col_bar_bg() + col_bold() + title + Str.repeat(` `, pad_len) + mode_str + col_reset() + `\x1b[K`)
+    row -> row + 1
 
-    // --- Metrics Dashboard ---
+    // 2. Blank
+    term.move(1, row)
+    term.write(`\x1b[K`)
+    row -> row + 1
+
+    // 3. Metrics Dashboard
+    term.move(1, row)
     let wpm_str -> Str.pad_left(Str.to_string(Integer(math.floor(current_wpm))), 3, ` `)
     let acc_str -> Str.pad_left(Str.to_string(Integer(math.floor(current_acc))), 3, ` `)
     let time_str -> Str.pad_left(Str.to_string(Integer(math.floor(elapsed_sec))), 3, ` `)
@@ -264,77 +297,156 @@ function render_screen(state) {
                 col_yellow() + `[ ACC: ` + col_white() + acc_str + `%` + col_yellow() + ` ]  ` +
                 col_green() + `[ TIME: ` + col_white() + time_str + `s` + col_green() + ` ]  ` +
                 col_red() + `[ ERRORS: ` + col_white() + err_str + col_red() + ` ]` + col_reset()
+    term.write(dash + `\x1b[K`)
+    row -> row + 1
 
-    term.write(`\n` + dash + `\n`)
+    // 4. Blank
+    term.move(1, row)
+    term.write(`\x1b[K`)
+    row -> row + 1
 
-    // --- Live Speed Sparkline ---
+    // 5. Live Speed Sparkline
+    term.move(1, row)
     let spark -> chart.sparkline(state[`wpm_history`])
     when Str.length(spark) == 0 { spark -> `(waiting for keystrokes...)` }
-    term.write(col_dim() + `  Speed Trend: ` + col_magenta() + spark + col_reset() + `\n\n`)
+    term.write(col_dim() + `  Speed Trend: ` + col_magenta() + spark + col_reset() + `\x1b[K`)
+    row -> row + 1
 
-    // --- Progress Bar ---
+    // 6. Blank
+    term.move(1, row)
+    term.write(`\x1b[K`)
+    row -> row + 1
+
+    // 7. Progress Bar
+    term.move(1, row)
     let progress_pct -> 0
     when target_len > 0 {
         progress_pct -> Integer(math.floor(((0.0 + typed_len) / (0.0 + target_len)) * 100.0))
     }
     when progress_pct > 100 { progress_pct -> 100 }
     let bar_width -> 40
+    when bar_width > w - 24 { bar_width -> w - 24 }
+    when bar_width < 10 { bar_width -> 10 }
     let fill_len -> Integer(math.floor(((0.0 + progress_pct) / 100.0) * (0.0 + bar_width)))
     let empty_len -> bar_width - fill_len
     when empty_len < 0 { empty_len -> 0 }
 
     let pbar -> col_dim() + `  Progress: [` + col_cyan() + Str.repeat(`█`, fill_len) + col_dim() + Str.repeat(`░`, empty_len) + `] ` + col_white() + Str.to_string(progress_pct) + `%` + col_reset()
-    term.write(pbar + `\n\n`)
+    term.write(pbar + `\x1b[K`)
+    row -> row + 1
 
-    // --- Typing Text Area with Box Border ---
+    // 8. Blank
+    term.move(1, row)
+    term.write(`\x1b[K`)
+    row -> row + 1
+
+    // 9. Word-Wrapped Typing Box
     let box_w -> w - 4
     when box_w < 40 { box_w -> 40 }
-    let border_top -> `  ┌` + Str.repeat(`─`, box_w - 2) + `┐`
-    let border_bot -> `  └` + Str.repeat(`─`, box_w - 2) + `┘`
+    let max_line_w -> box_w - 6
+    when max_line_w < 20 { max_line_w -> 20 }
 
-    term.write(col_dim() + border_top + col_reset() + `\n`)
+    // Top border
+    term.move(1, row)
+    term.write(col_dim() + `  ┌` + Str.repeat(`─`, box_w - 2) + `┐` + col_reset() + `\x1b[K`)
+    row -> row + 1
 
-    // Render character-by-character styled target text
-    let text_line -> `  │ `
-    let ci -> 0
-    do while ci < target_len {
-        let ch -> Str.substring(target_text, ci, ci + 1)
-        when ci < typed_len {
-            let user_ch -> Str.substring(typed, ci, ci + 1)
-            when user_ch == ch {
-                text_line -> text_line + col_green() + ch + col_reset()
+    let wrapped_lines -> wrap_text_lines(target_text, max_line_w)
+    let global_ci -> 0
+    let l_idx -> 0
+    do while l_idx < wrapped_lines.length {
+        let line_text -> wrapped_lines[l_idx]
+        let line_len -> Str.length(line_text)
+        let line_buf -> `  │ `
+        let col_i -> 0
+        do while col_i < line_len {
+            let ch -> Str.substring(line_text, col_i, col_i + 1)
+            let actual_ci -> global_ci + col_i
+            when actual_ci < typed_len {
+                let user_ch -> Str.substring(typed, actual_ci, actual_ci + 1)
+                when user_ch == ch {
+                    line_buf -> line_buf + col_green() + ch + col_reset()
+                } or {
+                    line_buf -> line_buf + col_error_bg() + ch + col_reset()
+                }
+            } or when actual_ci == typed_len {
+                line_buf -> line_buf + col_standout() + ch + col_reset()
             } or {
-                text_line -> text_line + col_error_bg() + ch + col_reset()
+                line_buf -> line_buf + col_dim() + ch + col_reset()
             }
-        } or when ci == typed_len {
-            // Active Cursor Character
-            text_line -> text_line + col_standout() + ch + col_reset()
-        } or {
-            // Upcoming untouched characters
-            text_line -> text_line + col_dim() + ch + col_reset()
+            col_i -> col_i + 1
         }
-        ci -> ci + 1
+        let pad_right_len -> box_w - 3 - line_len
+        when pad_right_len < 0 { pad_right_len -> 0 }
+        line_buf -> line_buf + Str.repeat(` `, pad_right_len) + col_dim() + `│` + col_reset()
+
+        term.move(1, row)
+        term.write(line_buf + `\x1b[K`)
+        row -> row + 1
+        global_ci -> global_ci + line_len
+        l_idx -> l_idx + 1
     }
 
-    term.write(text_line + `\n`)
-    term.write(col_dim() + border_bot + col_reset() + `\n\n`)
+    // Bottom border
+    term.move(1, row)
+    term.write(col_dim() + `  └` + Str.repeat(`─`, box_w - 2) + `┘` + col_reset() + `\x1b[K`)
+    row -> row + 1
 
-    // --- Results Screen Overlay ---
+    // Blank
+    term.move(1, row)
+    term.write(`\x1b[K`)
+    row -> row + 1
+
+    // Results screen or Hotkeys
     when state[`finished`] {
         let rank -> get_rank_title(current_wpm)
-        term.write(col_bold() + col_yellow() + `  ======================================================\n`)
-        term.write(`  🎉 CHALLENGE COMPLETE!\n`)
-        term.write(`  ======================================================\n` + col_reset())
-        term.write(`  Rank:       ` + col_cyan() + rank + col_reset() + `\n`)
-        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(Integer(math.floor(current_wpm))) + ` WPM` + col_reset() + `\n`)
-        term.write(`  Accuracy:   ` + col_green() + Str.to_string(Integer(math.floor(current_acc))) + `%` + col_reset() + `\n`)
-        term.write(`  Time:       ` + col_white() + Str.to_string(Integer(math.floor(elapsed_sec))) + ` seconds` + col_reset() + `\n`)
-        term.write(`  Errors:     ` + col_red() + Str.to_string(state[`error_count`]) + col_reset() + `\n`)
-        term.write(col_dim() + `  Press [Tab] or [R] to Retry · [N] for Next · [Q] to Quit\n` + col_reset())
+        term.move(1, row)
+        term.write(col_bold() + col_yellow() + `  ======================================================` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(col_bold() + col_yellow() + `  🎉 CHALLENGE COMPLETE!` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(col_bold() + col_yellow() + `  ======================================================` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(`  Rank:       ` + col_cyan() + rank + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(Integer(math.floor(current_wpm))) + ` WPM` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(`  Accuracy:   ` + col_green() + Str.to_string(Integer(math.floor(current_acc))) + `%` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(`  Time:       ` + col_white() + Str.to_string(Integer(math.floor(elapsed_sec))) + ` seconds` + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(`  Errors:     ` + col_red() + Str.to_string(state[`error_count`]) + col_reset() + `\x1b[K`)
+        row -> row + 1
+
+        term.move(1, row)
+        term.write(col_dim() + `  Press [Tab] or [R] to Retry · [N] for Next · [Q] to Quit` + col_reset() + `\x1b[K`)
+        row -> row + 1
     } or {
-        // Footer Hotkeys
-        term.write(col_dim() + `  Hotkeys: [Tab/Ctrl+R] Restart  ·  [Ctrl+N] Next  ·  [Ctrl+M] Change Mode  ·  [Ctrl+C] Quit` + col_reset() + `\n`)
+        let hotkey_str -> `  Hotkeys: [Tab] Restart  ·  [Ctrl+N] Next  ·  [Ctrl+M] Mode  ·  [Ctrl+C] Quit`
+        when w < 80 {
+            hotkey_str -> `  [Tab] Restart · [^N] Next · [^M] Mode · [^C] Quit`
+        }
+        term.move(1, row)
+        term.write(col_dim() + hotkey_str + col_reset() + `\x1b[K`)
+        row -> row + 1
     }
+
+    term.move(1, row)
+    term.write(`\x1b[J`)
 
     term.flush()
 }
@@ -346,6 +458,7 @@ function render_screen(state) {
 function run_game_loop(initial_mode_idx) {
     let state -> create_game_state(initial_mode_idx)
     term.raw_enter()
+    term.alt_screen_enter()
     term.hide_cursor()
     term.clear()
 
@@ -399,7 +512,11 @@ function run_game_loop(initial_mode_idx) {
             continue
         } or when name == `ctrl_m` {
             let next_m -> (state[`mode_idx`] + 1) % 4
-            state -> create_game_state(next_m)
+            let new_state -> create_game_state(next_m)
+            state[`mode_idx`] -> new_state[`mode_idx`]
+            state[`mode`] -> new_state[`mode`]
+            state[`challenge_idx`] -> 0
+            reset_challenge(state)
             term.clear()
             continue
         }
@@ -446,8 +563,9 @@ function run_game_loop(initial_mode_idx) {
     }
 
     term.show_cursor()
+    term.alt_screen_exit()
     term.raw_exit()
-    term.clear()
+    term.reset()
     io.writeln(`\nThanks for playing Zen Speed Typer!`)
     <- 0
 }
