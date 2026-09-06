@@ -127,7 +127,7 @@ Part of `selfhost/` parity effort.
 - Codegen: stream to `out_path` when compiling to a file; in-memory join is pairwise (`join_parts_tree`); ints via `Str.to_string`. STRING/RUNE use `emit_literal_node` (never `looks_int` on backtick digits).
 - **Always emit IndexAssign** (`obj[k] -> v` → `ZenValue_set_at`) — required for module maps.
 - **Multi-file namespacing:** `Driver.module_fn_prefix` + `append_file_stmts` rewrite; Codegen `Module.fn` → `z_Module_fn`. Fixtures not namespaced.
-- Lexer escapes: `escape_piece(esc)`; `_ch_nl`/`_ch_tab` real chars (not `\n` string literals).
+- Lexer & Parser escapes: `escape_piece(esc)`; `_ch_nl`/`_ch_tab`/`_ch_esc` real chars (not `\n`/`\x1b` string literals); `unescape_string_literal` and Codegen `escape_rec` convert `\x1b`, `\e`, and `\033` into real ESC bytes.
 - `file_stem` / path scans: recursive, no `do while` rebind under `-g`.
 - Avoid reserved names (`object`, `parent`, `scope` as function prefix, alias `T`).
 - CLI paths: branch to helpers instead of rebinding `let` under nested `when` (`-g`).

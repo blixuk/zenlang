@@ -3528,6 +3528,10 @@ function _cg_cr() {
     <- _cg_nl()
 }
 
+function _cg_esc() {
+    <- Parser._ch_esc()
+}
+
 function escape_c_string(s) {
     // minimal: backslash and quotes
     let n -> Str.length(s)
@@ -3553,6 +3557,9 @@ function escape_rec(s, i, n, acc) {
     }
     when ch == _cg_tab() {
         <- escape_rec(s, i + 1, n, acc + `\\t`)
+    }
+    when ch == _cg_esc() {
+        <- escape_rec(s, i + 1, n, acc + `\\x1b`)
     }
     <- escape_rec(s, i + 1, n, acc + ch)
 }

@@ -28,6 +28,10 @@ function _ks(t) {
     <- Str.to_string(Tok.tok_kind(t))
 }
 
+export function _ch_esc() {
+    <- Lexer._ch_esc()
+}
+
 function unescape_string_literal(s) {
     when s == Nothing or s == `` {
         <- ``
@@ -43,11 +47,21 @@ function unescape_string_literal(s) {
         when c == `\\` and i + 1 < n {
             let esc -> Str.at(s, i + 1)
             when esc == `x` and i + 3 < n {
-                acc -> acc + `\\x` + Str.at(s, i + 2) + Str.at(s, i + 3)
-                i -> i + 4
+                let h1 -> Str.at(s, i + 2)
+                let h2 -> Str.at(s, i + 3)
+                when (h1 == `1`) and (h2 == `b` or h2 == `B`) {
+                    acc -> acc + Lexer._ch_esc()
+                    i -> i + 4
+                } or {
+                    acc -> acc + `\\x` + h1 + h2
+                    i -> i + 4
+                }
             } or when esc == `e` {
-                acc -> acc + `\\x1b`
+                acc -> acc + Lexer._ch_esc()
                 i -> i + 2
+            } or when esc == `0` and i + 3 < n and Str.at(s, i + 2) == `3` and Str.at(s, i + 3) == `3` {
+                acc -> acc + Lexer._ch_esc()
+                i -> i + 4
             } or when esc == `0` {
                 acc -> acc + `\\0`
                 i -> i + 2

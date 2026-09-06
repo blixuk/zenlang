@@ -92,6 +92,10 @@ function _ch_cr() {
     <- _ch_nl()
 }
 
+export function _ch_esc() {
+    <- `\x1b`
+}
+
 function _is_ws(c) {
     <- c == ` ` or c == _ch_tab() or c == _ch_nl() or c == `\r`
 }
@@ -305,6 +309,9 @@ function escape_piece(esc) {
     }
     when esc == `t` {
         <- _ch_tab()
+    }
+    when esc == `e` {
+        <- _ch_esc()
     }
     when esc == `\\` {
         <- `\\`

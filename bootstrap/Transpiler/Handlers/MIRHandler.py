@@ -15,7 +15,7 @@ class MIRHandler:
             return arg
         if arg.startswith("`") and arg.endswith("`"):
             inner = arg[1:-1]
-            inner = inner.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            inner = inner.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t").replace("\x1b", "\\x1b")
             return f'ZenValue_make_string("{inner}")'
         if arg.isdigit():
             return f"ZenValue_make_integer({arg})"
@@ -974,7 +974,7 @@ class MIRHandler:
             inner = val
             if inner.startswith("`") and inner.endswith("`"):
                 inner = inner[1:-1]
-            inner = inner.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            inner = inner.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t").replace("\x1b", "\\x1b")
             val = f'ZenValue_make_string("{inner}")'
         elif instr.type in ("int", "Integer", "IntegerLite") or (val.isdigit() and instr.type != "bool"):
             val = f"ZenValue_make_integer({val})"

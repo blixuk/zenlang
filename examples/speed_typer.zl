@@ -238,7 +238,7 @@ function render_screen(state) {
 
     // Periodic WPM history for sparkline
     when state[`started`] and not state[`finished`] and (now - state[`last_spark_time`] >= 0.5) {
-        state[`wpm_history`].append(math.floor(current_wpm))
+        state[`wpm_history`].append(Integer(math.floor(current_wpm)))
         state[`last_spark_time`] -> now
         when state[`wpm_history`].length > 20 {
             state[`wpm_history`].remove_at(0)
@@ -255,9 +255,9 @@ function render_screen(state) {
     term.write(col_bar_bg() + col_bold() + title + Str.repeat(` `, pad_len) + mode_str + col_reset() + `\n`)
 
     // --- Metrics Dashboard ---
-    let wpm_str -> Str.pad_left(Str.to_string(math.floor(current_wpm)), 3, ` `)
-    let acc_str -> Str.pad_left(Str.to_string(math.floor(current_acc)), 3, ` `)
-    let time_str -> Str.pad_left(Str.to_string(math.floor(elapsed_sec)), 3, ` `)
+    let wpm_str -> Str.pad_left(Str.to_string(Integer(math.floor(current_wpm))), 3, ` `)
+    let acc_str -> Str.pad_left(Str.to_string(Integer(math.floor(current_acc))), 3, ` `)
+    let time_str -> Str.pad_left(Str.to_string(Integer(math.floor(elapsed_sec))), 3, ` `)
     let err_str -> Str.to_string(state[`error_count`])
 
     let dash -> col_cyan() + `  [ WPM: ` + col_white() + wpm_str + col_cyan() + ` ]  ` +
@@ -275,11 +275,11 @@ function render_screen(state) {
     // --- Progress Bar ---
     let progress_pct -> 0
     when target_len > 0 {
-        progress_pct -> math.floor(((0.0 + typed_len) / (0.0 + target_len)) * 100.0)
+        progress_pct -> Integer(math.floor(((0.0 + typed_len) / (0.0 + target_len)) * 100.0))
     }
     when progress_pct > 100 { progress_pct -> 100 }
     let bar_width -> 40
-    let fill_len -> math.floor(((0.0 + progress_pct) / 100.0) * (0.0 + bar_width))
+    let fill_len -> Integer(math.floor(((0.0 + progress_pct) / 100.0) * (0.0 + bar_width)))
     let empty_len -> bar_width - fill_len
     when empty_len < 0 { empty_len -> 0 }
 
@@ -326,9 +326,9 @@ function render_screen(state) {
         term.write(`  🎉 CHALLENGE COMPLETE!\n`)
         term.write(`  ======================================================\n` + col_reset())
         term.write(`  Rank:       ` + col_cyan() + rank + col_reset() + `\n`)
-        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(math.floor(current_wpm)) + ` WPM` + col_reset() + `\n`)
-        term.write(`  Accuracy:   ` + col_green() + Str.to_string(math.floor(current_acc)) + `%` + col_reset() + `\n`)
-        term.write(`  Time:       ` + col_white() + Str.to_string(elapsed_sec) + ` seconds` + col_reset() + `\n`)
+        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(Integer(math.floor(current_wpm))) + ` WPM` + col_reset() + `\n`)
+        term.write(`  Accuracy:   ` + col_green() + Str.to_string(Integer(math.floor(current_acc))) + `%` + col_reset() + `\n`)
+        term.write(`  Time:       ` + col_white() + Str.to_string(Integer(math.floor(elapsed_sec))) + ` seconds` + col_reset() + `\n`)
         term.write(`  Errors:     ` + col_red() + Str.to_string(state[`error_count`]) + col_reset() + `\n`)
         term.write(col_dim() + `  Press [Tab] or [R] to Retry · [N] for Next · [Q] to Quit\n` + col_reset())
     } or {
@@ -510,7 +510,7 @@ function headless_smoke_test() {
 
     let final_wpm -> calculate_wpm(Str.length(game[`target_text`]), 6.0)
     let final_rank -> get_rank_title(final_wpm)
-    io.writeln(`  [PASS] Simulated typing complete: ` + Str.to_string(math.floor(final_wpm)) + ` WPM (` + final_rank + `)`)
+    io.writeln(`  [PASS] Simulated typing complete: ` + Str.to_string(Integer(math.floor(final_wpm))) + ` WPM (` + final_rank + `)`)
 
     io.writeln(`[HEADLESS SMOKE] All speed typer checks passed!`)
     <- 0
