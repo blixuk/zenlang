@@ -282,9 +282,11 @@ function render_screen(state) {
     row -> row + 1
 
     // 2. Blank
-    term.move(1, row)
-    term.write(`\x1b[K`)
-    row -> row + 1
+    when h >= 22 {
+        term.move(1, row)
+        term.write(`\x1b[K`)
+        row -> row + 1
+    }
 
     // 3. Metrics Dashboard
     term.move(1, row)
@@ -301,9 +303,11 @@ function render_screen(state) {
     row -> row + 1
 
     // 4. Blank
-    term.move(1, row)
-    term.write(`\x1b[K`)
-    row -> row + 1
+    when h >= 26 {
+        term.move(1, row)
+        term.write(`\x1b[K`)
+        row -> row + 1
+    }
 
     // 5. Live Speed Sparkline
     term.move(1, row)
@@ -313,14 +317,18 @@ function render_screen(state) {
     row -> row + 1
 
     // 6. Blank
-    term.move(1, row)
-    term.write(`\x1b[K`)
-    row -> row + 1
+    when h >= 28 {
+        term.move(1, row)
+        term.write(`\x1b[K`)
+        row -> row + 1
+    }
 
     // 7. Progress Bar
     term.move(1, row)
     let progress_pct -> 0
-    when target_len > 0 {
+    when state[`finished`] {
+        progress_pct -> 100
+    } or when target_len > 0 {
         progress_pct -> Integer(math.floor(((0.0 + typed_len) / (0.0 + target_len)) * 100.0))
     }
     when progress_pct > 100 { progress_pct -> 100 }
@@ -336,9 +344,11 @@ function render_screen(state) {
     row -> row + 1
 
     // 8. Blank
-    term.move(1, row)
-    term.write(`\x1b[K`)
-    row -> row + 1
+    when h >= 20 {
+        term.move(1, row)
+        term.write(`\x1b[K`)
+        row -> row + 1
+    }
 
     // 9. Word-Wrapped Typing Box
     let box_w -> w - 4
@@ -393,47 +403,37 @@ function render_screen(state) {
     row -> row + 1
 
     // Blank
-    term.move(1, row)
-    term.write(`\x1b[K`)
-    row -> row + 1
+    when h >= 22 {
+        term.move(1, row)
+        term.write(`\x1b[K`)
+        row -> row + 1
+    }
 
     // Results screen or Hotkeys
     when state[`finished`] {
         let rank -> get_rank_title(current_wpm)
         term.move(1, row)
-        term.write(col_bold() + col_yellow() + `  ======================================================` + col_reset() + `\x1b[K`)
-        row -> row + 1
-
-        term.move(1, row)
         term.write(col_bold() + col_yellow() + `  🎉 CHALLENGE COMPLETE!` + col_reset() + `\x1b[K`)
-        row -> row + 1
-
-        term.move(1, row)
-        term.write(col_bold() + col_yellow() + `  ======================================================` + col_reset() + `\x1b[K`)
         row -> row + 1
 
         term.move(1, row)
         term.write(`  Rank:       ` + col_cyan() + rank + col_reset() + `\x1b[K`)
         row -> row + 1
 
+        let summary_str -> `  Results:    ` + col_white() + col_bold() + Str.to_string(Integer(math.floor(current_wpm))) + ` WPM` + col_reset() +
+                           col_dim() + `  ·  ` + col_reset() + col_green() + Str.to_string(Integer(math.floor(current_acc))) + `% Acc` + col_reset() +
+                           col_dim() + `  ·  ` + col_reset() + col_white() + Str.to_string(Integer(math.floor(elapsed_sec))) + `s Time` + col_reset() +
+                           col_dim() + `  ·  ` + col_reset() + col_red() + Str.to_string(state[`error_count`]) + ` Errors` + col_reset()
         term.move(1, row)
-        term.write(`  Net Speed:  ` + col_white() + col_bold() + Str.to_string(Integer(math.floor(current_wpm))) + ` WPM` + col_reset() + `\x1b[K`)
+        term.write(summary_str + `\x1b[K`)
         row -> row + 1
 
+        let action_str -> col_bold() + col_cyan() + `  Action:     ` + col_yellow() + `[Tab/R] Retry  ·  [N] Next  ·  [M] Mode  ·  [Q] Quit` + col_reset()
+        when w < 80 {
+            action_str -> col_bold() + col_cyan() + `  Action: ` + col_yellow() + `[R] Retry · [N] Next · [M] Mode · [Q] Quit` + col_reset()
+        }
         term.move(1, row)
-        term.write(`  Accuracy:   ` + col_green() + Str.to_string(Integer(math.floor(current_acc))) + `%` + col_reset() + `\x1b[K`)
-        row -> row + 1
-
-        term.move(1, row)
-        term.write(`  Time:       ` + col_white() + Str.to_string(Integer(math.floor(elapsed_sec))) + ` seconds` + col_reset() + `\x1b[K`)
-        row -> row + 1
-
-        term.move(1, row)
-        term.write(`  Errors:     ` + col_red() + Str.to_string(state[`error_count`]) + col_reset() + `\x1b[K`)
-        row -> row + 1
-
-        term.move(1, row)
-        term.write(col_dim() + `  Press [Tab] or [R] to Retry · [N] for Next · [Q] to Quit` + col_reset() + `\x1b[K`)
+        term.write(action_str + `\x1b[K`)
         row -> row + 1
     } or {
         let hotkey_str -> `  Hotkeys: [Tab] Restart  ·  [Ctrl+N] Next  ·  [Ctrl+M] Mode  ·  [Ctrl+C] Quit`
@@ -497,6 +497,18 @@ function run_game_loop(initial_mode_idx) {
             } or when ch == `q` or ch == `Q` {
                 running -> false
                 break
+            } or when ch == `m` or ch == `M` or name == `ctrl_m` {
+                let next_m -> (state[`mode_idx`] + 1) % 4
+                let new_state -> create_game_state(next_m)
+                state[`mode_idx`] -> new_state[`mode_idx`]
+                state[`mode`] -> new_state[`mode`]
+                state[`challenge_idx`] -> 0
+                reset_challenge(state)
+                term.clear()
+                continue
+            } or {
+                // Ignore any other keys (including backspace or letters) while on finished screen
+                continue
             }
         }
 
