@@ -1,0 +1,62 @@
+// ==========================================================
+// zenshell (zsh) Manual (ZenMark format)
+// ==========================================================
+
+Entry {
+    title   -> `zenshell (zsh) User Manual`,
+    author  -> `Zen Ecosystem Contributors`,
+    version -> `0.1.0`,
+    date    -> `2026`
+},
+
+Heading { id -> `overview`, text -> `1. Overview`, size -> 1 },
+
+Paragraph {
+    text -> `zenshell (zsh) is a modern Unix shell built natively in Zenlang. It brings structured computing to the terminal by combining the Zen Trinity: ZenLang (.zl) for scripting, ZenData (.zd) for declarative configuration and data, and ZenMark (.zm) for formatted documentation and manuals.`
+},
+
+Callout {
+    type  -> `tip`,
+    title -> `Structured Pipelines`,
+    text  -> `Unlike traditional shells that pass unstructured byte streams, zenshell commands can pass typed ZenValue records, maps, and tables directly through the pipe (|).`
+},
+
+Heading { id -> `commands`, text -> `2. Built-in Core Commands`, size -> 2 },
+
+Table {
+    headers -> [`Command`, `Usage`, `Description`],
+    rows -> [
+        [`directory`, `directory change <path> | push | pop | jump <n> | list`, `Manage directory stack, shortcuts, and named bookmarks (alias: dir)`],
+        [`zd`, `zd parse <file> | zd stringify <data>`, `Parse and inspect ZenData records in the shell pipeline`],
+        [`doc`, `doc <command> | doc manual`, `View formatted ZenMark manuals directly in the terminal`],
+        [`table`, `table [options]`, `Format tabular lists and maps into clean Unicode box tables`],
+        [`alias`, `alias add <name> <cmd> | alias list | alias remove <name>`, `Manage shell command aliases with persistent storage`],
+        [`view`, `view <file> | view head | view tail | view linecount`, `Inspect and view files in styled Unicode boxes`],
+        [`catsay`, `catsay <message>`, `Speak a message through the zenshell ASCII cat`],
+        [`echo`, `echo <args>`, `Print text arguments to standard output`],
+        [`clear`, `clear`, `Clear the terminal window and home cursor`]
+    ]
+},
+
+Heading { id -> `navigation`, text -> `3. Smart Navigation`, size -> 2 },
+
+Paragraph {
+    text -> `zenshell includes built-in directory shortcuts such as .. (parent), ... (grandparent), and .3 through .6 for rapid traversal without chaining multiple cd commands.`
+},
+
+Callout {
+    type  -> `note`,
+    title -> `Directory Stack & Bookmarks`,
+    text  -> `Use 'dir push <path>' to save current location to the stack, and 'dir jump <idx>' or 'dir pop' to return. Save frequent folders using 'dir add <name> <path>'.`
+},
+
+Heading { id -> `scripting`, text -> `4. Scripting with ZenLang`, size -> 2 },
+
+Paragraph {
+    text -> `Shell scripts are authored in ZenLang (.zl) using '#!/usr/bin/env zen'. Scripts gain access to the standard library including zen.sys.process, zen.io.file, and zen.concurrency.`
+},
+
+CodeBlock {
+    lang -> `zen`,
+    code -> `import zen.sys.process as process\n\nlet res -> process.shell(\`git status --short\`)\nwhen res.code == 0 {\n    writeln(\`Clean status\`)\n}`
+}

@@ -1,0 +1,195 @@
+/!
+  zen.crypto.chacha20 - ChaCha20 Stream Cipher (RFC 8439).
+  Modern, high-security 256-bit symmetric stream cipher in pure Zenlang.
+  Features 20 rounds (10 column and 10 diagonal double-rounds) with zero table lookups.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+use zen.crypto.hex as Hex
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _rotl32(v, c) {
+    let u -> v & 0xffffffff
+    let left -> (u << c) & 0xffffffff
+    let right -> (u >> (32 - c)) & 0xffffffff
+    <- left | right
+}
+
+function _qr(s, a, b, c, d) {
+    s[a] -> (s[a] + s[b]) & 0xffffffff
+    s[d] -> _rotl32(s[d] ^^ s[a], 16)
+    s[c] -> (s[c] + s[d]) & 0xffffffff
+    s[b] -> _rotl32(s[b] ^^ s[c], 12)
+    s[a] -> (s[a] + s[b]) & 0xffffffff
+    s[d] -> _rotl32(s[d] ^^ s[a], 8)
+    s[c] -> (s[c] + s[d]) & 0xffffffff
+    s[b] -> _rotl32(s[b] ^^ s[c], 7)
+}
+
+function _bytes_to_u32(bytes, offset) {
+    let b0 -> bytes[offset] & 255
+    let b1 -> bytes[offset + 1] & 255
+    let b2 -> bytes[offset + 2] & 255
+    let b3 -> bytes[offset + 3] & 255
+    <- b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+/!
+  Generates a 64-byte ChaCha20 keystream block for a given key, counter, and nonce.
+  @param key_bytes 32-byte key list.
+  @param counter 32-bit integer block counter.
+  @param nonce_bytes 12-byte nonce list.
+  @return 64-byte keystream list.
+!/
+export function chacha20_block(key_bytes, counter, nonce_bytes) {
+    let state -> [
+        0x61707865, 0x3320646e, 0x79622d32, 0x6b206574,
+        _bytes_to_u32(key_bytes, 0), _bytes_to_u32(key_bytes, 4),
+        _bytes_to_u32(key_bytes, 8), _bytes_to_u32(key_bytes, 12),
+        _bytes_to_u32(key_bytes, 16), _bytes_to_u32(key_bytes, 20),
+        _bytes_to_u32(key_bytes, 24), _bytes_to_u32(key_bytes, 28),
+        counter & 0xffffffff,
+        _bytes_to_u32(nonce_bytes, 0),
+        _bytes_to_u32(nonce_bytes, 4),
+        _bytes_to_u32(nonce_bytes, 8)
+    ]
+
+    let working -> []
+    let i -> 0
+    do while i < 16 {
+        working.append(state[i])
+        i -> i + 1
+    }
+
+    let round -> 0
+    do while round < 10 {
+        // Column rounds
+        _qr(working, 0, 4, 8, 12)
+        _qr(working, 1, 5, 9, 13)
+        _qr(working, 2, 6, 10, 14)
+        _qr(working, 3, 7, 11, 15)
+
+        // Diagonal rounds
+        _qr(working, 0, 5, 10, 15)
+        _qr(working, 1, 6, 11, 12)
+        _qr(working, 2, 7, 8, 13)
+        _qr(working, 3, 4, 9, 14)
+
+        round -> round + 1
+    }
+
+    // Add working state to initial state and serialize to 64 bytes
+    let block -> []
+    i -> 0
+    do while i < 16 {
+        let val -> (working[i] + state[i]) & 0xffffffff
+        block.append(val & 255)
+        block.append((val >> 8) & 255)
+        block.append((val >> 16) & 255)
+        block.append((val >> 24) & 255)
+        i -> i + 1
+    }
+    <- block
+}
+
+/!
+  Encrypts or decrypts data using ChaCha20 stream cipher (symmetric).
+  @param key 32-byte key (string or byte list). Padded with 0s if shorter than 32.
+  @param nonce 12-byte nonce (string or byte list). Padded with 0s if shorter than 12.
+  @param data Plaintext or ciphertext (string or byte list).
+  @param initial_counter Initial block counter (defaults to 1 per RFC 8439).
+  @return List of encrypted/decrypted byte integers (0-255).
+!/
+export function crypt(key, nonce, data, initial_counter) {
+    let k_bytes -> _to_bytes(key)
+    let n_bytes -> _to_bytes(nonce)
+    let d_bytes -> _to_bytes(data)
+
+    // Normalize key to 32 bytes
+    let key32 -> []
+    let i -> 0
+    do while i < 32 {
+        when i < k_bytes.length {
+            key32.append(k_bytes[i])
+        } or {
+            key32.append(0)
+        }
+        i -> i + 1
+    }
+
+    // Normalize nonce to 12 bytes
+    let nonce12 -> []
+    i -> 0
+    do while i < 12 {
+        when i < n_bytes.length {
+            nonce12.append(n_bytes[i])
+        } or {
+            nonce12.append(0)
+        }
+        i -> i + 1
+    }
+
+    let ctr -> when (initial_counter != Nothing) { initial_counter } or { 1 }
+    let out -> []
+    let len -> d_bytes.length
+    let pos -> 0
+
+    do while pos < len {
+        let keystream -> chacha20_block(key32, ctr, nonce12)
+        let block_len -> when (len - pos < 64) { len - pos } or { 64 }
+        let j -> 0
+        do while j < block_len {
+            let enc_byte -> d_bytes[pos + j] ^^ keystream[j]
+            out.append(enc_byte)
+            j -> j + 1
+        }
+        ctr -> (ctr + 1) & 0xffffffff
+        pos -> pos + 64
+    }
+
+    <- out
+}
+
+/!
+  Encrypts data using ChaCha20 and returns byte list.
+!/
+export function encrypt(key, nonce, data, initial_counter) {
+    <- crypt(key, nonce, data, initial_counter)
+}
+
+/!
+  Decrypts ChaCha20 ciphertext bytes into plaintext string.
+!/
+export function decrypt(key, nonce, data, initial_counter) {
+    let decrypted_bytes -> crypt(key, nonce, data, initial_counter)
+    <- __builtin.bytes_to_string(decrypted_bytes)
+}
+
+/!
+  Encrypts data using ChaCha20 and returns a hex-encoded string.
+!/
+export function encrypt_hex(key, nonce, data, initial_counter) {
+    let encrypted_bytes -> crypt(key, nonce, data, initial_counter)
+    <- Hex.encode(encrypted_bytes)
+}
+
+/!
+  Decrypts a hex-encoded ChaCha20 ciphertext string into original plaintext string.
+!/
+export function decrypt_hex(key, nonce, hex_str, initial_counter) {
+    let cipher_bytes -> Hex.decode_bytes(hex_str)
+    <- decrypt(key, nonce, cipher_bytes, initial_counter)
+}

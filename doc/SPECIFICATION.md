@@ -6,6 +6,7 @@
 | **Authority** | Authoritative Ground Truth for Grammar, Syntax, Types, and Semantics |
 | **Execution Target** | Dual-Path (Script Bytecode VM & Ahead-of-Time C Compilation) |
 | **Value ABI** | `ZenValue` Universal Tagged-Union Layer |
+| **Platform Version** | `v1.0.0-beta.1` (Unified Developer Platform & Native Self-Host Closure) |
 | **Documentation Standards** | [DOCUMENTATION_STANDARDS.md](DOCUMENTATION_STANDARDS.md) |
 
 ---
@@ -17,14 +18,30 @@
 3. [Variables, Mutability & Sentinels](#3-variables-mutability--sentinels)
 4. [Data Types & Type Hierarchy](#4-data-types--type-hierarchy)
 5. [The 5 Core Collection Types](#5-the-5-core-collection-types)
+   - [5.1 Collection Syntax Modes](#51-collection-syntax-modes)
+   - [5.2 First-Class Collection Member Methods](#52-first-class-collection-member-methods)
+   - [5.3 Sequence Slicing & Negative Indexing](#53-sequence-slicing--negative-indexing)
+   - [5.4 Directional Comprehensions](#54-directional-comprehensions)
+   - [5.5 Collection Spreads (`...`)](#55-collection-spreads-)
 6. [Operators, Logic & Precedence](#6-operators-logic--precedence)
+   - [6.6 Flow Operators: Null Coalescing (`??`) & Pipeline (`|>`)](#66-flow-operators-null-coalescing--pipeline-)
+   - [6.7 Symbol Keywords & Aliases](#67-symbol-keywords--aliases)
+   - [6.8 Operator Precedence Table](#68-operator-precedence-table)
 7. [First-Class Type Casting](#7-first-class-type-casting)
+   - [7.1 `Byte` Casting & Conversions](#71-byte-casting--conversions)
+   - [7.2 Sized Type Casting & Bit-Width Truncation](#72-sized-type-casting--bit-width-truncation)
+   - [7.3 Type Cast Matrix](#73-type-cast-matrix)
+   - [7.4 Universal Type Introspection (`type(x)`)](#74-universal-type-introspection-typex)
 8. [Control Flow & Branching](#8-control-flow--branching)
 9. [Pattern Matching & Destructuring](#9-pattern-matching--destructuring)
 10. [Functions, Returns & Closures](#10-functions-returns--closures)
 11. [Container Types & Object Architecture](#11-container-types--object-architecture)
 12. [Error Handling & Resilience Model](#12-error-handling--resilience-model)
 13. [Modules, Namespaces & Packaging](#13-modules-namespaces--packaging)
+   - [13.1 Importing Modules](#131-importing-modules)
+   - [13.2 Intrinsic `module` Metadata](#132-intrinsic-module-metadata)
+   - [13.3 Direct C Header Imports (`extern use`)](#133-direct-c-header-imports-extern-use)
+   - [13.4 Dynamic Foreign Function Interface (FFI) & Zero-Glue System Modules](#134-dynamic-foreign-function-interface-ffi--zero-glue-system-modules)
 14. [Scoped Resource Management & Memory Arenas (`with`)](#14-scoped-resource-management--memory-arenas-with)
 15. [The Unified Task Concurrency Substrate](#15-the-unified-task-concurrency-substrate)
 16. [Developer Toolchain & CLI Reference](#16-developer-toolchain--cli-reference)
@@ -194,16 +211,20 @@ Zenlang provides a robust, optionally typed type system with fine-grained numeri
 
 ### 4.1 Base Types Table
 
-| Type Name | Aliases | Description | Default Zero-State (`Default`) | Example Literal |
+Zenlang strictly enforces canonical type names with zero informal aliases. Informal abbreviations (such as `Int`, `Int64`, `Int32`, `Int16`, `Int8`, `UInt8`, `Float`, `Float64`, `Float32`, `Double`, `Str`, `Bool`, `Char`, `Glyph`, and `Buffer`) are deprecated and strictly forbidden.
+
+| Type Name | Sized Forms | Description | Default Zero-State (`Default`) | Example Literal / Cast |
 |:---|:---|:---|:---|:---|
-| **`Integer`** | `Int`, `Int64`, `Int32`, `Int16`, `Int8` | 64-bit signed integer | `0` | `42`, `-10`, `0x7B`, `0o173`, `0b1010` |
-| **`Decimal`** | `Float`, `Float64`, `Float32` | 64-bit IEEE 754 float | `0.0` | `3.14159`, `-0.5`, `1e-5` |
-| **`Byte`** | — | 8-bit unsigned raw byte (`0x00..0xFF`) | `0x00` | `0x41`, `65 <: Byte`, `Byte(0x7B)` |
-| **`Bytes`** | `Buffer` | Sequence / buffer of `Byte` values | `Bytes{}` | `Bytes{ 0xDE, 0xAD }`, `B{ 0x01 }` |
-| **`String`** | `Str` | UTF-8 encoded text buffer | ```` ```` | ```` `Hello, Zen!` ```` |
-| **`Boolean`** | `Bool` | Boolean truth values (`True` / `False`) | `False` | `True`, `False` |
-| **`Rune`** | `Char` | 32-bit Unicode code point scalar | `'\0'` | `'A'`, `'\n'` |
+| **`Integer`** | `Integer[8]`, `Integer[16]`, `Integer[32]`, `Integer[64]` | Signed integer (defaults to 64-bit signed) | `0` | `42`, `-10`, `70000 <: Integer[16]` |
+| **`Decimal`** | `Decimal[32]`, `Decimal[64]` | IEEE 754 floating point (defaults to 64-bit) | `0.0` | `3.14159`, `-0.5`, `3.5 <: Decimal[32]` |
+| **`Byte`** | — | 8-bit unsigned raw byte (`0x00..0xFF`) | `0x00` | `0x41`, `300 <: Byte`, `Byte(0x7B)` |
+| **`Bytes`** | — | Sequence / buffer of `Byte` values | `Bytes{}` | `Bytes{ 0xDE, 0xAD }`, `B{ 0x01 }` |
+| **`String`** | `String[SIZE]` | UTF-8 encoded text buffer (length-clamped if sized) | ```` ```` | ```` `Hello, Zen!` ````, ```` `HelloWorld` <: String[5] ```` |
+| **`Boolean`** | — | Boolean truth values (`True` / `False`) | `False` | `True`, `False` |
+| **`Rune`** | — | 32-bit Unicode code point scalar | `'\0'` | `'A'`, `'\n'` |
 | **`Void`** | — | Unit type representing absence of return | `Void` | `Void` |
+| **`Nothing`** | — | Absent / unassigned value | `Nothing` | `Nothing` |
+| **`Default`** | — | Type natural zero-state value | `Default` | `Default` |
 | **`Variant`** | — | Dynamic tagged-union container | `Nothing` | (any value) |
 
 ### 4.2 Numeric Prefixes & Separators
@@ -237,12 +258,14 @@ Zenlang categorizes all values into five clear structural families:
 ┌────────────────────────────────────────────────────────────────────────────────┐
 │                               THE TYPE UNIVERSE                                │
 ├──────────────────────────┬─────────────────────────────────────────────────────┤
-│ **1. Primitive Scalars** │ `Integer`, `Decimal`, `Byte`, `Bytes`, `String`,    │
-│                          │ `Boolean`, `Rune`, `Void`, `Nothing`, `Default`     │
+│ **1. Primitive Scalars** │ `Integer`, `Integer[SIZE]`, `Decimal`,              │
+│                          │ `Decimal[SIZE]`, `Byte`, `Bytes`, `String`,         │
+│                          │ `String[SIZE]`, `Boolean`, `Rune`, `Void`,          │
+│                          │ `Nothing`, `Default`                                │
 ├──────────────────────────┼─────────────────────────────────────────────────────┤
 │ **2. Core Collections**  │ `List` (Dynamic array), `Set` (Unique set),         │
-│                          │ `Vector` (Fixed immutable), `Tuple` (Record),       │
-│                          │ `Map` (Key-Value dictionary)                        │
+│                          │ `Vector` / `Vector[LENGTH]` (Fixed array),          │
+│                          │ `Tuple` (Fixed record), `Map` (Dictionary)          │
 ├──────────────────────────┼─────────────────────────────────────────────────────┤
 │ **3. Container Tiers**   │ `structure` (Fixed C ABI value record),             │
 │                          │ `object` (Fluid runtime entity + Zen Data .zd),     │
@@ -253,9 +276,66 @@ Zenlang categorizes all values into five clear structural families:
 │                          │ `Task` (Suspendable concurrent fiber),              │
 │                          │ `Channel` (Message-passing queue)                   │
 ├──────────────────────────┼─────────────────────────────────────────────────────┤
-│ **5. Polymorphic Box**   │ `Variant` (Universal tagged-union container)        │
+│ **5. Polymorphic & Err** │ `Variant` (Universal tagged-union container),       │
+│                          │ `Error` (Structured runtime error instance)         │
 └──────────────────────────┴─────────────────────────────────────────────────────┘
 ```
+
+### 4.5 Abstract & Union Types
+
+Zenlang provides four first-class abstract union types that categorize related base types for pattern matching, type annotations, and type casting:
+
+| Abstract Type | Underlying Subtypes | Description | Example Pattern / Cast |
+|:---|:---|:---|:---|
+| **`Number`** | `Integer` (including sized `Integer[8..64]`, `Byte`), `Decimal` (`Decimal[32..64]`) | Any numeric value | `val is Number`, `Number("42")`, `"3.14" <: Number` |
+| **`Text`** | `String` (including sized `String[SIZE]`), `Rune` | Any character or string textual value | `val is Text`, `Text(123)`, `42 <: Text` |
+| **`Collection`** | `List`, `Vector`, `Set`, `Tuple`, `Map` | Any composite data collection or sequence | `val is Collection`, `Collection("abc")` |
+| **`Container`** | `Structure`, `Object`, `Class`, `Enumerator` | Any record, OOP class instance, or enum state | `val is Container` |
+
+Abstract types can be used across all typing and control flow constructs:
+
+```zl
+// 1. Type Testing and Pattern Matching
+when input is Number {
+    // Matches Integer, Decimal, Byte
+}
+when input is Text {
+    // Matches String, Rune
+}
+when input is Collection {
+    // Matches List, Map, Set, Vector, Tuple
+}
+when input is Container {
+    // Matches Structure, Class, Object, Enumerator
+}
+
+// 2. Type Annotations
+let count    : Number     -> 42
+let greeting : Text       -> `hello`
+let items    : Collection -> [1, 2, 3]
+
+// 3. Type Casting
+let n -> `3.14` <: Number     // Evaluates to 3.14
+let t -> 100 <: Text          // Evaluates to `100`
+let c -> `xyz` <: Collection  // Evaluates to [`x`, `y`, `z`]
+```
+
+### 4.6 User-Defined Generics & Parameterized Types
+
+Zenlang provides first-class support for parameterized generic types and generic definitions across functions, structures, and classes using standard angle bracket `<...>` syntax:
+
+#### 1. Generic Parameter Declarations
+- **Generic Functions:** `function identity<T>(x: T) : T { <- x }`
+- **Generic Structures:** `structure Box<T> { value: T }`, `structure Pair<A, B> { first: A, second: B }`
+- **Generic Classes:** `class Storage<T> { let item: T ... }`
+
+#### 2. Generic Invocations & Instantiations
+- **Explicit Type Arguments:** `identity<Integer>(42)`, `Box<Integer>{ value: 777 }`, `Storage<String>(`initial`)`
+- **Type-Inferred Calls:** `identity(100)` automatically infers `T -> Integer`
+- **Pattern Matching & Structural Subtyping:** Generic types unify structurally; `Box<Integer>` matches `b is Box` and `b is Box<Integer>`.
+
+#### 3. Strict Canonical Type Enforcement
+In accordance with Zenlang type rules, informal single-letter abbreviations (`T`, `L`, `S`, `M`, `V`) remain strictly forbidden as collection type aliases, and are only valid identifiers when explicitly declared as active generic type parameters in the current lexical scope.
 
 ---
 
@@ -273,30 +353,25 @@ Zenlang provides 5 distinct first-class collection types covering all combinatio
 
 ### 5.1 Collection Syntax Modes
 
-#### 1. Explicit Type-Tagged Literals (`Type{ ... }` and `T{ ... }`)
+#### 1. Explicit Type-Tagged Literals (`Type{ ... }`)
 Can be used anywhere in expressions with complete clarity:
 
 ```zl
 // 1. Vector (Fixed, Immutable)
 let v -> Vector{ 1, 2, 3, 4 }
-let v -> V{ 1, 2, 3, 4 }
 
 // 2. Set (Dynamic, Unique)
 let s -> Set{ 1, 2, 3, 4 }
-let s -> S{ 1, 2, 3, 4 }
 
 // 3. Tuple (Fixed, Heterogeneous / Named)
 let t -> Tuple{ `Attack`, 100, True }
-let t -> T{ `Attack`, 100, True }
 let nt -> Tuple{ name -> `Alice`, score -> 95 } // Named Tuple
 
 // 4. List (Dynamic, Ordered)
 let l -> List{ 1, 2, 3 }
-let l -> L{ 1, 2, 3 }
 
 // 5. Map (Key-Value)
 let m -> Map{ `a` -> 1, `b` -> 2 }
-let m -> M{ `a` -> 1, `b` -> 2 }
 ```
 
 #### 2. Contextual Type Inference (`let x : Type -> { ... }`)
@@ -315,6 +390,139 @@ For fast daily scripting, Zenlang maps the 3 ASCII bracket pairs to their most c
 - **`[1, 2, 3]`** $\rightarrow$ Defaults to **`List`**
 - **`{ key -> value }`** $\rightarrow$ Defaults to **`Map`**
 - **`(1, 2, 3)`** $\rightarrow$ Defaults to **`Tuple`**
+
+---
+
+### 5.2 First-Class Collection Member Methods
+
+Zenlang provides expressive built-in member methods across core collection types with 100% execution parity across interpreter VM, bytecode runtime, and native AOT compiled binaries:
+
+#### `List` Member Methods
+- **Transformation & Reordering:**
+  - `list.reverse()`: Returns a new reversed list.
+  - `list.unique()`: Returns a new list with duplicate elements removed (preserving initial insertion order).
+  - `list.flatten()`: Recursively flattens nested lists into a single-depth list.
+  - `list.chunk(size)`: Chunks elements into sublists of length `size`.
+- **Selection & Slicing:**
+  - `list.take(count)`: Returns the first `count` elements.
+  - `list.drop(count)`: Returns all elements following the first `count` elements.
+  - `list.join(delimiter)`: Joins string representations of elements with `delimiter`.
+- **Higher-Order Combinators:**
+  - `list.map(fn)`: Transforms elements through unary mapping function `fn`.
+  - `list.filter(fn)`: Retains elements where predicate `fn(x)` evaluates truthy.
+  - `list.reduce(fn, initial)`: Accumulates values left-to-right via `fn(acc, item)`.
+  - `list.each(fn)`: Iterates over elements executing `fn(x)` for side-effects.
+  - `list.find(fn)`: Returns first element satisfying `fn(x)`, or `Nothing`.
+  - `list.any(fn)`: Evaluates `True` if at least one element satisfies `fn(x)`.
+  - `list.all(fn)`: Evaluates `True` if every element satisfies `fn(x)`.
+
+#### `Map` Member Methods
+- `map.keys()`: Returns a list of all map keys.
+- `map.values()`: Returns a list of all map values.
+- `map.items()`: Returns a list of `Tuple{ key, value }` pairs.
+- `map.has(key)`: Returns `True` if `key` exists in map.
+- `map.get(key, default_val?)`: Retrieves value for `key`, returning `default_val` or `Nothing` if missing.
+- `map.merge(other_map)`: Returns a new merged map with keys from `other_map` overriding.
+- `map.invert()`: Returns a new map with values inverted into keys.
+
+#### `Set` Member Methods
+- `set.to_list()`: Materializes set elements as a list.
+- `set.has(item)`: Tests containment (`item in set`).
+- `set.add(item)`: Inserts element into set.
+- `set.remove(item)`: Removes element from set.
+- `set.union(other_set)`: Set union ($A \cup B$).
+- `set.intersection(other_set)`: Set intersection ($A \cap B$).
+- `set.difference(other_set)`: Set difference ($A \setminus B$).
+
+---
+
+### 5.3 Sequence Slicing & Negative Indexing
+
+Strings and Lists support uniform Python-style interval slicing and negative indexing:
+
+```zl
+let items -> [10, 20, 30, 40, 50]
+let word  -> `Zenlang`
+
+// 1. Negative indexing (counting from end)
+let last_item -> items[-1]       // 50
+let last_char -> word[-1]        // 'g'
+
+// 2. Interval slicing: seq[start:end:step]
+let sub -> items[1:4]            // [20, 30, 40]
+let pre -> word[:3]              // `Zen`
+let post -> word[3:]             // `lang`
+
+// 3. Stepping and sequence reversal
+let evens -> items[::2]          // [10, 30, 50]
+let rev_word -> word[::-1]       // `gnalneZ`
+let rev_list -> items[::-1]      // [50, 40, 30, 20, 10]
+```
+
+---
+
+### 5.4 Directional Comprehensions
+
+Zenlang introduces **Directional Comprehensions**, leveraging Zen's signature `->` data-flow operator to transform and filter collections concisely without imperative loops or callbacks:
+
+#### 1. Directional List Comprehensions
+A list comprehension consists of bracket delimiters `[...]` enclosing an iterative generator clause `for <var> in <iterable>`, an optional filtering predicate `when <condition>`, and the visual transformation arrow `-> <expression>`:
+
+```zl
+// Standard transformation:
+let squares -> [for x in 1...5 -> x * x]
+// Result: [1, 4, 9, 16, 25]
+
+// Filtered transformation (when clause):
+let evens -> [for x in 1...10 when x % 2 == 0 -> x]
+// Result: [2, 4, 6, 8, 10]
+
+// Transforming existing collections:
+let names -> [`alice`, `bob`, `charlie`]
+let shout -> [for name in names -> name + `!`]
+// Result: [`alice!`, `bob!`, `charlie!`]
+```
+
+#### 2. Directional Map Comprehensions
+A map comprehension enclosed within braces `{...}` iterates over collections or key-value sequences to construct a dynamic `Map`:
+
+```zl
+// Constructing inverted or keyed records:
+let users -> [{ `id` -> 101, `name` -> `Alice` }, { `id` -> 102, `name` -> `Bob` }]
+let id_lookup -> {for u in users -> u.id: u.name}
+// Result: { 101 -> `Alice`, 102 -> `Bob` }
+
+// Filtered map comprehension:
+let scores -> { `Alice` -> 95, `Bob` -> 62, `Charlie` -> 88 }
+let honors -> {for k, v in scores when v >= 80 -> k: v}
+// Result: { `Alice` -> 95, `Charlie` -> 88 }
+```
+
+---
+
+### 5.5 Collection Spreads (`...`)
+
+The collection spread operator `...` unpacks elements of an existing collection into a newly constructed literal:
+
+#### 1. List Spreading
+```zl
+let head -> [1, 2, 3]
+let tail -> [4, 5, 6]
+let combined -> [...head, ...tail, 7, 8]
+// Result: [1, 2, 3, 4, 5, 6, 7, 8]
+```
+
+#### 2. Map Spreading & Immutable Merging
+In map literals, spreading unpacks key-value pairs into the new map. Subsequent entries override earlier keys, providing clean immutable update patterns:
+
+```zl
+let default_cfg -> { `host` -> `localhost`, `port` -> 8080, `debug` -> False }
+let production_cfg -> {
+    ...default_cfg,
+    `host` -> `zenlang.org`,
+    `debug` -> True
+}
+```
 
 ---
 
@@ -409,7 +617,36 @@ items--                       // drops last element -> [0, 1, 2]
 --items                       // drops first element -> [1, 2]
 ```
 
-### 6.6 Symbol Keywords & Aliases
+### 6.6 Flow Operators: Null Coalescing (`??`) & Pipeline (`|>`)
+
+Zenlang provides two dedicated data-flow operators that streamline pipelines and sentinel fallback handling:
+
+#### 1. Nullish / Sentinel Coalescing (`??`)
+Evaluates the left operand; if the value equals `Nothing`, evaluates and returns the fallback right operand:
+
+```zl
+let username -> input_user ?? `Guest`
+let timeout  -> config[`timeout`] ?? 30
+```
+
+#### 2. Directional Pipeline (`|>`)
+Chains sequential transformations by passing the left-hand expression as the first argument into the right-hand function call:
+
+```zl
+use zen.text.string as Str
+
+let clean -> raw_input
+    |> Str.trim
+    |> Str.to_lower
+```
+When the target function expects additional arguments, `x |> func(y)` evaluates to `func(x, y)`:
+```zl
+let result -> `zenlang` |> Str.replace(`zen`, `fast_zen`)
+```
+
+---
+
+### 6.7 Symbol Keywords & Aliases
 
 Zenlang provides 1:1 keyword equivalents for visual operators:
 
@@ -426,11 +663,11 @@ Zenlang provides 1:1 keyword equivalents for visual operators:
 | **`!`** | `assert` | Invariant assertion |
 | **`^`** | `raise` | Exception unwinding |
 
-### 6.7 Operator Precedence Table
+### 6.8 Operator Precedence Table
 
 | Precedence | Operator Class | Operators | Associativity | Description |
 |:---|:---|:---|:---|:---|
-| **1 (Highest)** | Primary | `()`, `[]`, `.`, `()` (call) | Left | Member access, indexing, invocation |
+| **1 (Highest)** | Primary | `()`, `[]`, `.`, `()` (call), `...` (spread) | Left | Member access, indexing, invocation, unpacking |
 | **2** | Type Cast | `<:`, `cast` | Left | Type casting operator |
 | **3** | Unary | `not`, `-`, `!!`, `++`, `--`, `~`, `?`, `!`, `^` | Right | Unary prefixes, inversions, error ops |
 | **4** | Multiplicative | `*`, `/`, `//`, `%`, `%%`, `**` | Left | Multiplication, division, modulo, power |
@@ -441,7 +678,9 @@ Zenlang provides 1:1 keyword equivalents for visual operators:
 | **9** | Bitwise Logic | `&&`, `^^`, `\|\|`, `!&`, `!\|`, `!^` | Left | Complete 7-gate bitwise logic |
 | **10** | Logical Logic | `and`, `xor`, `or`, `nand`, `nor`, `xnor` | Left | Complete 7-gate boolean logic |
 | **11** | Range | `..`, `..+`, `..-`, `...` | Non-assoc | Range construction |
-| **12 (Lowest)** | Visual Flow | `->`, `<-`, `<~` | Right | Assignment, return, yield |
+| **12** | Null Coalescing | `??` | Left | Fallback sentinel evaluation |
+| **13** | Pipeline | `\|>` | Left | Directional function piping |
+| **14 (Lowest)** | Visual Flow | `->`, `<-`, `<~` | Right | Assignment, return, yield |
 
 ---
 
@@ -492,7 +731,34 @@ Byte(`A`)         // 0x41
 Byte(`0x41`)      // 0x41
 ```
 
-### 7.2 Type Cast Matrix
+### 7.2 Sized Type Casting & Bit-Width Truncation
+
+Casting to sized types applies deterministic bit-width truncation and wrapping across all execution backends (C runtime, Bytecode VM, Interpreter):
+
+```zl
+// Byte: unsigned 8-bit [0..255]
+300 <: Byte               // 44 (300 & 0xFF)
+(-1) <: Byte              // 255
+Byte(300)                 // 44
+
+// Integer[16]: signed 16-bit [-32768..32767]
+70000 <: Integer[16]      // 4464
+(-32769) <: Integer[16]   // 32767
+Integer[16](70000)        // 4464
+
+// Integer[32]: signed 32-bit
+5000000000 <: Integer[32] // 705032704
+Integer[32](5000000000)   // 705032704
+
+// Decimal[32]: single-precision 32-bit float
+3.5 <: Decimal[32]        // 3.5
+
+// String[SIZE]: maximum character length clamping
+`HelloWorld` <: String[5] // `Hello`
+`Zen` <: String[10]        // `Zen`
+```
+
+### 7.3 Type Cast Matrix
 
 | Source Type | Target: `Integer` | Target: `Decimal` | Target: `Byte` | Target: `String` | Target: `Boolean` | Target: `Rune` | Target: `List` | Target: `Map` |
 |:---|:---|:---|:---|:---|:---|:---|:---|:---|
@@ -506,7 +772,7 @@ Byte(`0x41`)      // 0x41
 | **`Map`** | `.length` | `.length` float | `.length & 0xFF` | String representation | `len > 0` | ```` ```` | Key list | Identity |
 | **`Nothing`** | `0` | `0.0` | `0x00` | ```` ```` | `False` | ```` ```` | `[]` | `{}` |
 
-### 7.3 Universal Type Introspection (`type(x)`)
+### 7.4 Universal Type Introspection (`type(x)`)
 
 Zenlang provides `type(x)` as a first-class universal prelude available without imports. It returns a string naming the underlying Zen type:
 
@@ -1160,6 +1426,45 @@ Every file has access to an intrinsic `module` object:
 - `module.path`: Full canonical filesystem path.
 - `module.is_entry`: Boolean flag indicating if file was process entry point.
 - `module.entry`: Entry function pointer (defaults to `main`).
+
+---
+
+### 13.3 Direct C Header Imports (`extern use`)
+
+Zenlang features zero-wrapper native C interoperability. C system and external library headers can be imported directly into Zenlang source files:
+
+```zl
+// 1. Direct system header include:
+extern use `<unistd.h>`
+extern use `<math.h>`
+extern use `<sys/sysinfo.h>`
+
+// 2. Importing with namespace alias:
+extern use unistd as u
+
+// 3. Selective C symbol import:
+extern from `<math.h>` use sqrt, pow, cos, sin
+```
+
+#### Automatic Type Boxing & Marshalling
+Direct C calls seamlessly bridge the C11 and `ZenValue` runtimes:
+- Primitive return values from C functions (integers, doubles, pointers, booleans) automatically box into `ZenValue` via C11 `_Generic` macros (`ZenValue_from_c(...)`).
+- Zenlang arguments passed to `extern` C functions are unboxed into native scalar C types automatically based on signature inference.
+- Headers are deduplicated and emitted directly during Ahead-of-Time C compilation (`zen compile` / `zen run`).
+
+---
+
+### 13.4 Dynamic Foreign Function Interface (FFI) & Zero-Glue System Modules
+
+For runtime dynamic linking and operating system inspection without manual C shims, the standard library provides core modules:
+
+| Module | Purpose | Key Functions / Capabilities |
+|:---|:---|:---|
+| **`zen.sys.ffi`** | Dynamic library (`.so` / `.dylib`) loader | `load(path)`, `open(path)`, `symbol(h, name, type)`, `call(fn, args, ret)`, `close(h)`, `error()`, `resolve(name)` |
+| **`zen.sys.hardware`** | Host CPU & memory architecture | `cpu_count()`, `available_cpu_count()`, `page_size()`, `physical_pages()`, `available_pages()`, `clock_ticks()`, `hardware_summary()` |
+| **`zen.sys.meminfo`** | System RAM statistics & consumption | `total_ram_bytes()`, `available_ram_bytes()`, `used_ram_bytes()`, `total_ram_mb()`, `available_ram_mb()`, `used_ram_mb()`, `total_ram_gb()`, `ram_usage_pct()`, `memory_summary()` |
+| **`zen.sys.termposix`** | POSIX TTY & terminal stream flushing | `is_stdin_tty()`, `is_stdout_tty()`, `is_stderr_tty()`, `is_tty_fd(fd)`, `flush_input()`, `flush_output()`, `flush_both()`, `terminal_summary()` |
+| **`zen.sys.readline`** | 100% Pure Zen terminal line editor | Interactive line navigation, history search, rainbow delimiter matching, tab autocompletion |
 
 ---
 

@@ -29,6 +29,14 @@ CORE=(
   tests/language/flow_operators_01.zl
   tests/language/fstring_test_01.zl
   tests/language/sequence_slicing_01.zl
+  tests/language/test_comprehensions.zl
+  tests/language/test_spreads.zl
+  tests/language/test_functional_programming.zl
+  tests/language/test_sized_types.zl
+  tests/language/test_abstract_types.zl
+  tests/language/test_generic_type_annotations.zl
+  tests/language/test_user_generics.zl
+  tests/language/test_turing_completeness.zl
 )
 
 normalize() {

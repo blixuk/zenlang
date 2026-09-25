@@ -2,10 +2,11 @@
 
 Unix-native programming language for scripts, terminal apps, and networked services.
 
-- Visual data flow: `->` (bind), `<-` (return)
+- Visual data flow: `->` (bind), `<-` (return), `|>` (pipeline), `??` (coalesce)
 - Explicit over magic; terminal-first
+- Modern ergonomics: directional comprehensions (`[for x in list -> x*2]`), collection spreads (`[...items]`), and direct C header imports (`extern use '<header.h>'`)
 - Dual execution: **interpret** scripts or **AOT to C** binaries; mix on one value ABI ([three-layer](selfhost/THREE_LAYER.md))
-- Self-hosting compiler in progress under `selfhost/`
+- Stage 2 self-hosting closure in standalone `bin/zen` single-binary platform (`v1.0.0-beta.1`)
 
 ## Quick start
 

@@ -21,6 +21,8 @@
 #include "core/zen_reflect.h"
 #include "core/zen_net.h"
 #include "core/zen_vm.h"
+#include "core/zen_ast.h"
+#include "core/zen_ffi.h"
 
 // Memory
 #include "memory/zen_memory.h"

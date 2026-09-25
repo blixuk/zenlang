@@ -1,0 +1,80 @@
+function assert_equal(actual, expected, msg) {
+    when actual != expected {
+        stdout.writeln(f`FAIL: {msg} - expected {expected}, got {actual}`)
+        <- 1
+    }
+    stdout.writeln(f`PASS: {msg}`)
+    <- 0
+}
+
+function test_list_comprehension_basic() {
+    let squares -> [for x in 1...5 -> x * x]
+    let failures -> 0
+    failures -> failures + assert_equal(squares.length, 5, `squares length`)
+    failures -> failures + assert_equal(squares[0], 1, `squares[0] == 1`)
+    failures -> failures + assert_equal(squares[1], 4, `squares[1] == 4`)
+    failures -> failures + assert_equal(squares[2], 9, `squares[2] == 9`)
+    failures -> failures + assert_equal(squares[3], 16, `squares[3] == 16`)
+    failures -> failures + assert_equal(squares[4], 25, `squares[4] == 25`)
+    <- failures
+}
+
+function test_list_comprehension_filter() {
+    let evens -> [for x in 1...10 when x % 2 == 0 -> x]
+    let failures -> 0
+    failures -> failures + assert_equal(evens.length, 5, `evens length`)
+    failures -> failures + assert_equal(evens[0], 2, `evens[0] == 2`)
+    failures -> failures + assert_equal(evens[1], 4, `evens[1] == 4`)
+    failures -> failures + assert_equal(evens[2], 6, `evens[2] == 6`)
+    failures -> failures + assert_equal(evens[3], 8, `evens[3] == 8`)
+    failures -> failures + assert_equal(evens[4], 10, `evens[4] == 10`)
+    <- failures
+}
+
+function test_list_comprehension_over_list() {
+    let items -> [`apple`, `banana`, `cherry`]
+    let upper -> [for s in items -> s + `!` ]
+    let failures -> 0
+    failures -> failures + assert_equal(upper.length, 3, `upper length`)
+    failures -> failures + assert_equal(upper[0], `apple!`, `upper[0] == apple!`)
+    failures -> failures + assert_equal(upper[1], `banana!`, `upper[1] == banana!`)
+    failures -> failures + assert_equal(upper[2], `cherry!`, `upper[2] == cherry!`)
+    <- failures
+}
+
+function test_map_comprehension_basic() {
+    let id_map -> {for x in 1...3 -> f`id_{x}`: x * 10}
+    let failures -> 0
+    failures -> failures + assert_equal(id_map.length, 3, `id_map length`)
+    failures -> failures + assert_equal(id_map[`id_1`], 10, `id_1 == 10`)
+    failures -> failures + assert_equal(id_map[`id_2`], 20, `id_2 == 20`)
+    failures -> failures + assert_equal(id_map[`id_3`], 30, `id_3 == 30`)
+    <- failures
+}
+
+function test_map_comprehension_filter() {
+    let odd_map -> {for x in 1...5 when x % 2 != 0 -> f`k{x}` -> x * 100}
+    let failures -> 0
+    failures -> failures + assert_equal(odd_map.length, 3, `odd_map length`)
+    failures -> failures + assert_equal(odd_map[`k1`], 100, `k1 == 100`)
+    failures -> failures + assert_equal(odd_map[`k3`], 300, `k3 == 300`)
+    failures -> failures + assert_equal(odd_map[`k5`], 500, `k5 == 500`)
+    <- failures
+}
+
+function main() {
+    stdout.writeln(`=== Running Directional Comprehensions Tests ===`)
+    let total_failures -> 0
+    total_failures -> total_failures + test_list_comprehension_basic()
+    total_failures -> total_failures + test_list_comprehension_filter()
+    total_failures -> total_failures + test_list_comprehension_over_list()
+    total_failures -> total_failures + test_map_comprehension_basic()
+    total_failures -> total_failures + test_map_comprehension_filter()
+    
+    when total_failures > 0 {
+        stdout.writeln(f`=== {total_failures} test(s) failed ===`)
+        <- 1
+    }
+    stdout.writeln(`=== All Directional Comprehension Tests Passed ===`)
+    <- 0
+}

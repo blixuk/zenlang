@@ -22,24 +22,24 @@ Standard library maintainers. This is the batteries layer — power without bloa
   | memory | `zen.memory` — auto default; opt-in arenas (`create_arena`/`push`/`pop`/`free`, `region_run`, `using_arena`) |
   | time | `zen.time` |
   | io | `zen.io.io`, `zen.io.file`, `zen.io.path` |
-  | sys | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.readline`, `zen.sys.cli`, `zen.sys.env` |
+  | sys | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.readline`, `zen.sys.cli`, `zen.sys.env`, `zen.sys.ffi`, `zen.sys.hardware`, `zen.sys.meminfo`, `zen.sys.termposix` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.regex`, … |
   | math | `zen.math.math`, `zen.math.random`, `zen.math.range` |
-  | collections | `zen.collections.list`, `.set`, `.stack`, `.queue`, `.collections` |
+  | collections | `zen.collections.list`, `.set`, `.stack`, `.queue`, `.trie`, `.collections` |
   | data | `zen.data.json`, `.csv`, `.xml`, … |
   | geometry | `zen.geometry.point`, …, `zen.geometry` |
   | ui | `zen.ui.canvas`, `.widgets`, `.term` |
   | net | `zen.net.http` (curl under `-g`), `.socket` (interpret) |
-  | graphics | `zen.graphics.bmp`, `.ppm` |
+  | graphics | `zen.graphics.bmp`, `.ppm`, `.qrcode` (ISO/IEC 18004) |
   | patterns | `zen.patterns.ecs`, `.fsm` |
-  | crypto | `zen.crypto.hash`, `.base64`, `.hex`, `.uuid` |
+  | crypto | `zen.crypto.crypto` (`zen.crypto`), `.chacha20`, `.rc4`, `.xor_cipher`, `.crc32`, `.hash`, `.sha256`, `.sha512`, `.sha1`, `.md5`, `.fnv`, `.base16`, `.base32`, `.base58`, `.base64`, `.base85`, `.hex`, `.uuid`, `.hmac`, `.jwt`, `.pbkdf2`, `.poly1305`, `.aead`, `.xtea`, `.aes`, `.padding`, `.modes`, `.dh`, `.classical`, `.merkle`, `.blockchain` |
   | color | `zen.color` (`.color`, `zen.ui.color`) — RGB, Hex, HSL, 8/16/256 ANSI, TrueColor, WCAG contrast |
   | net | `zen.net.http` (curl under `-g`), `.socket` (interpret), `.url`, `.mime` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.lorem`, `zen.text.zenmark` (`.zenmark`, `zen.zenmark`), `zen.text.regex`, `.wrap`, `.template`, `.diff`, `.html`, … |
   | data | `zen.data.zendata` (`.zendata`, `zen.zendata`), `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.dotenv`, `.ini`, … |
   | tooling | `zen.tooling.zencode` (`.zencode`, `zen.zencode`), `zen.tooling.builder`, `zen.tooling.pkg` |
 
-- Short aliases (`zen.string`, `zen.file`, `zen.term`, `zen.list`, `zen.json`, `zen.random`, `zen.io`, `zen.process`, `zen.zendata`, `zen.zencode`, `zen.zenmark`) resolve via `bootstrap/Module/Resolver.py` for compatibility; **prefer nested forms** in new code.
+- Short aliases (`zen.string`, `zen.file`, `zen.term`, `zen.list`, `zen.json`, `zen.random`, `zen.io`, `zen.process`, `zen.zendata`, `zen.zencode`, `zen.zenmark`, `zen.qrcode`, `zen.data.qrcode`) resolve via `bootstrap/Module/Resolver.py` for compatibility; **prefer nested forms** in new code.
 - No flat `lib/zen/*.zl` modules.
 - Public APIs use `/! … !/` documentation comments.
 - Prefer pure Zenlang; bridge to C builtins only for OS/primitives.
@@ -77,20 +77,20 @@ Standard library maintainers. This is the batteries layer — power without bloa
 - memory/: arena / memory primitives
 - time/: clocks, Duration (arithmetic, constructors, formatting), Timer, cron, timestamp formatting (to_utc, format_iso, format_date, format_time), measure
 - io/: io (console I/O, write/write_line/writeln, read/read_line/readln, flush, info/warn/error/debug), file (`list_dir`, `walk`, `walk_depth`, `list_files`, `find_files`, `mkdir`/`mkdir_p`, `copy`, `copy_tree`, `remove_tree`, `lines`, `size`, `touch`), path
-- sys/: sys, process (`which`, `run`, `run_result`, `run_ok`, `run_require`, `exec`, `output`, `capture`, `pid`, `sleep`, pipelines, `shell_env`), term (`is_tty`/style/mouse/`spinner_frame`/`readline`), readline (zero-dependency in-line editor, rainbow brackets, matching pair standout, unmatched delimiter alerts, unclosed depth tracking, history, and autocompletion), cli (`--opt=val`, `_rest`, `parse_args`), env
+- sys/: sys, process (`which`, `run`, `run_result`, `run_ok`, `run_require`, `exec`, `output`, `capture`, `pid`, `sleep`, pipelines, `shell_env`), term (`is_tty`/style/mouse/`spinner_frame`/`readline`), readline (zero-dependency in-line editor, rainbow brackets, matching pair standout, unmatched delimiter alerts, unclosed depth tracking, history, and autocompletion), cli (`--opt=val`, `_rest`, `parse_args`), env, ffi (dynamic shared library loader, dlopen, dlsym, call, close, error, resolve), hardware (cpu_count, available_cpu_count, page_size, physical_pages, available_pages, clock_ticks, hardware_summary), meminfo (total/available/used RAM bytes, MB, GB, percentage, memory_summary), termposix (POSIX TTY detection, stream flushes)
 - net/: http (`get`, `post`, `put`, `patch`, `delete`, `head`, `options`, `post_json`, `put_json`, `patch_json`, `get_json`, `json_body`, `status_text`, `is_success`, `is_redirect`, `is_client_error`, `is_server_error`, `bearer_auth`, `basic_auth`, case-insensitive `header`), socket, url (`parse`, `build`, `encode_component`, `decode_component`, `encode_query`, `decode_query`, `join_path`, `resolve`, `get_query_param`, `set_query_param`, `remove_query_param`), mime (lookup/extension), ip (v4/v6 parsing, CIDR, private detection), server (router, request dispatch, text/json response builders)
 - text/: string (pad_left/pad_right), text, lorem (classical Latin words, sentences, paragraphs, titles, seedable generation), regex, markdown, columns, zenmark, wrap (wrap/fill/indent/dedent/shorten), template ({{ var }}, #if, #each), diff (diff_lines, unified_diff), html (escape/unescape, builders, parse_attributes, find_tags), fuzzy (Levenshtein, search, rank), inflect (camel, snake, kebab, Pascal, title, slugify, pluralize)
 - math/: math, random, range, stats (sum, mean, median, variance, stdev, percentiles, summary)
-- collections/: list, set, stack, queue, collections (map/set helpers; Map.items), priority_queue (min/max heap queue), lru (fixed-capacity cache), ring_buffer (circular sliding buffer)
+- collections/: list (`sort`, `sort_by`, `map`, `filter`, `reduce`), set, stack, queue, collections (map/set helpers; Map.items), priority_queue (min/max heap queue), lru (fixed-capacity cache), ring_buffer (circular sliding buffer), trie (Prefix tree, autocomplete, longest prefix matching)
 - reflect/: type_name, is_*, fields/call/apply, keys/values/items
 - plugins/: create, add, has, list, dispatch, merge
 - data/: json (parse, stringify, stringify_pretty, load, dump, dump_pretty), csv (parse, parse_with_headers, stringify, stringify_with_headers, load, load_with_headers, dump, dump_with_headers), xml, yaml, toml, bytes, serialize, sexp, logfmt, database, dotenv (parse/stringify), ini (parse/stringify/get), schema (declarative validation, type/range/enum checks), tar (USTAR format archive creator & parser)
 - geometry/: point, vectors, shapes, geometry package entry
 - ui/: app shell (Bubble Tea–style), canvas, map layout (dual-path); term; prompt (confirm, text, password, select, multiselect), tree (ASCII/Unicode hierarchy formatting), chart (sparkline, bar charts), color bridge
 - color/: Color (RGB, RGBA, Hex, HSL, named 8/16 ANSI palette, TrueColor SGR escapes, 256-color, blend, luminance, contrast_ratio)
-- graphics/: bmp, ppm
+- graphics/: bmp, ppm, qrcode (pure ISO/IEC 18004 QR code matrix generation & decoding across Numeric, Alphanumeric, and Byte modes with RS error correction, terminal half-blocks, ASCII, SVG, and 24-bit uncompressed BMP render targets)
 - patterns/: ecs, fsm
-- crypto/: base64 (standard & URL-safe), hash (SHA-256, FNV-1a), hmac (RFC 2104 HMAC-SHA256, verify), jwt (HS256 sign, decode, verify), hex (encode/decode/hexdump), uuid (uuid_v4)
+- crypto/: base16 (RFC 4648 §8), base32 (RFC 4648 §6, §7 Base32Hex, Crockford), base58 (Bitcoin/IPFS Base58, Base58Check), base64 (standard & URL-safe), base85 (Ascii85 Adobe, ZeroMQ Z85), hash (unified facade for SHA-256, SHA-224, SHA-512, SHA-384, SHA-1, MD5, FNV-1a), sha256 (SHA-256/224), sha512 (SHA-512/384 32-bit limb core), sha1 (SHA-1), md5 (MD5), fnv (FNV-1a 32/64-bit), hmac (RFC 2104 HMAC-SHA256, verify), jwt (HS256 sign, decode, verify), hex (encode/decode/hexdump/decode_bytes), uuid (uuid_v4), chacha20 (RFC 8439 256-bit symmetric stream cipher), rc4 (ARC4 stream cipher), xor_cipher (repeating-key XOR & OTP), crc32 (IEEE 802.3 CRC-32 & Adler-32 checksums), pbkdf2 (PBKDF2-HMAC-SHA256 key derivation), poly1305 (RFC 8439 128-bit MAC), aead (ChaCha20-Poly1305 authenticated encryption), aes (AES-128 block cipher), xtea (64-bit Feistel cipher), modes (CBC/CTR modes), padding (PKCS#7), dh (Diffie-Hellman key exchange), classical (Caesar, ROT13, Vigenere, Atbash, Rail Fence), crypto (unified package entry point) — lib/zen/crypto/AGENTS.md
 - util/: awk, table, bench (micro-benchmarking & throughput), inspect (type inspection & formatting), profile (function/block profiling, self/total time, call tree)
 - tooling/: Developer toolchain & project manager (.zbuild, zen.lock, templates, builder, watcher, docgen, pkg, publish, todo, tester, bench, profiler) — lib/zen/tooling/AGENTS.md
 - concurrency/: Channels, Tasks, WaitGroup, Mutex, Atomic, Barrier, Semaphore, Once, and Fibers — lib/zen/concurrency/AGENTS.md

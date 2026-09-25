@@ -85,6 +85,7 @@ class FunctionStatement(Statement):
     body: Any
     return_type: Optional[Type] = None
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "FunctionStatement"
 
 
@@ -96,6 +97,7 @@ class TaskStatement(Statement):
     body: Any
     return_type: Optional[Type] = None
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "TaskStatement"
 
 
@@ -108,6 +110,7 @@ class StructureStatement(Statement):
     reflectable: bool = False
     declared_type: str = "Structure"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "StructureStatement"
 
 
@@ -120,6 +123,7 @@ class ObjectStatement(Statement):
     reflectable: bool = False
     declared_type: str = "Object"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "ObjectStatement"
 
 
@@ -150,6 +154,7 @@ class ClassStatement(Statement):
     reflectable: bool = False
     declared_type: str = "Class"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "ClassStatement"
 
 
@@ -275,6 +280,7 @@ class ImportStatement(Statement):
     name: str # alias or module name
     path: str
     alias: Optional[str] = None
+    is_extern: bool = False
     node_type: Optional[str] = "ImportStatement"
 
 
@@ -282,6 +288,7 @@ class ImportStatement(Statement):
 class FromImportStatement(Statement):
     path: str
     symbols: List[Dict[str, str]] # List of {"name": str, "alias": Optional[str]}
+    is_extern: bool = False
     node_type: Optional[str] = "FromImportStatement"
 
 

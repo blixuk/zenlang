@@ -58,6 +58,54 @@ function arena_depth() {
     <- __builtin_memory.arena_depth()
 }
 
+function arena_allocated(a) {
+    when a == Nothing {
+        <- __builtin_memory.arena_allocated(Nothing)
+    }
+    when type(a) == `Map` {
+        when a.has(`handle`) {
+            <- __builtin_memory.arena_allocated(a[`handle`])
+        }
+    }
+    <- __builtin_memory.arena_allocated(a)
+}
+
+function arena_capacity(a) {
+    when a == Nothing {
+        <- __builtin_memory.arena_capacity(Nothing)
+    }
+    when type(a) == `Map` {
+        when a.has(`handle`) {
+            <- __builtin_memory.arena_capacity(a[`handle`])
+        }
+    }
+    <- __builtin_memory.arena_capacity(a)
+}
+
+function arena_chunks(a) {
+    when a == Nothing {
+        <- __builtin_memory.arena_chunks(Nothing)
+    }
+    when type(a) == `Map` {
+        when a.has(`handle`) {
+            <- __builtin_memory.arena_chunks(a[`handle`])
+        }
+    }
+    <- __builtin_memory.arena_chunks(a)
+}
+
+function arena_stats(a) {
+    when a == Nothing {
+        <- __builtin_memory.arena_stats(Nothing)
+    }
+    when type(a) == `Map` {
+        when a.has(`handle`) {
+            <- __builtin_memory.arena_stats(a[`handle`])
+        }
+    }
+    <- __builtin_memory.arena_stats(a)
+}
+
 /!
  Run body while arena is pushed; always pop (even if body fails via when).
  Prefer free functions + maps for dual-path. body is a zero-arg function.

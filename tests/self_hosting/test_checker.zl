@@ -5,6 +5,7 @@
 import compiler.TypeChecker as Checker
 import zen.test as test
 import zen.text.string as Str
+import zen.io.io as IO
 
 function errors_join(errs) {
     let n -> errs.length
@@ -311,6 +312,129 @@ function main() {
     <- pass
 }
 
+function test_generic_list_ok() {
+    let src -> ```
+function main() {
+    let l : List[Integer] -> [1, 2, 3]
+    l.append(4)
+    let x : Integer -> l[0]
+    <- x
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `generic list ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no list errors`)
+    <- pass
+}
+
+function test_generic_list_mismatch() {
+    let src -> ```
+function main() {
+    let l : List[Integer] -> [`not_an_int`]
+    <- l
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic list mismatch not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`) or Str.contains(joined, `List`), true, `list mismatch msg`)
+    <- pass
+}
+
+function test_generic_append_mismatch() {
+    let src -> ```
+function main() {
+    let l : List[Integer] -> [1, 2]
+    l.append(`not_an_int`)
+    <- l
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic append mismatch not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `mismatch`), true, `append mismatch msg`)
+    <- pass
+}
+
+function test_generic_map_ok() {
+    let src -> ```
+function main() {
+    let m : Map[String, Integer] -> { `a` -> 1, `b` -> 2 }
+    let x : Integer -> m[`a`]
+    <- x
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `generic map ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no map errors`)
+    <- pass
+}
+
+function test_generic_map_mismatch() {
+    let src -> ```
+function main() {
+    let m : Map[String, Integer] -> { `a` -> `wrong` }
+    <- m
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic map mismatch not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`), true, `map mismatch msg`)
+    <- pass
+}
+
+function test_return_inference_ok() {
+    let src -> ```
+function get_data() : List[Integer] {
+    <- [10, 20, 30]
+}
+function main() {
+    let data : List[Integer] -> get_data()
+    <- data[0]
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `return inference ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no return inference errors`)
+    <- pass
+}
+
+function test_inconsistent_return_error() {
+    let src -> ```
+function bad(b: Boolean) {
+    when b {
+        <- 42
+    }
+    <- `not_an_int`
+}
+function main() {
+    <- bad(true)
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `inconsistent return not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Inconsistent return type`), true, `inconsistent return msg`)
+    <- pass
+}
+
+function test_generic_call_mismatch() {
+    let src -> ```
+function take_ints(xs: List[Integer]) : Integer {
+    <- xs.length
+}
+function main() {
+    <- take_ints([`a`, `b`])
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic call mismatch not ok`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `mismatch`), true, `call mismatch msg`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Checker.ok_program`, `fn` -> test_ok_program},
@@ -328,7 +452,15 @@ function run_tests() {
         {`name` -> `Checker.wrong_arity`, `fn` -> test_wrong_arity},
         {`name` -> `Checker.with_note`, `fn` -> test_with_non_arena_note},
         {`name` -> `Checker.owned_move`, `fn` -> test_owned_use_after_move},
-        {`name` -> `Checker.borrowed_escape`, `fn` -> test_borrowed_escape}
+        {`name` -> `Checker.borrowed_escape`, `fn` -> test_borrowed_escape},
+        {`name` -> `Checker.generic_list_ok`, `fn` -> test_generic_list_ok},
+        {`name` -> `Checker.generic_list_mismatch`, `fn` -> test_generic_list_mismatch},
+        {`name` -> `Checker.generic_append_mismatch`, `fn` -> test_generic_append_mismatch},
+        {`name` -> `Checker.generic_map_ok`, `fn` -> test_generic_map_ok},
+        {`name` -> `Checker.generic_map_mismatch`, `fn` -> test_generic_map_mismatch},
+        {`name` -> `Checker.return_inference_ok`, `fn` -> test_return_inference_ok},
+        {`name` -> `Checker.inconsistent_return_error`, `fn` -> test_inconsistent_return_error},
+        {`name` -> `Checker.generic_call_mismatch`, `fn` -> test_generic_call_mismatch}
     ]
     <- test.run_suite(`Selfhost Stage4 Checker`, tests)
 }
@@ -340,3 +472,4 @@ function main() {
         <- 1
     }
 }
+

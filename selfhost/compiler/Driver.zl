@@ -43,6 +43,13 @@ function fs_list_dir(path) {
     <- __builtin_file.list_dir(path)
 }
 
+function fs_remove(path) {
+    when fs_is_file(path) {
+        <- __builtin_file.remove(path)
+    }
+    <- false
+}
+
 function parse_file_cached(path) {
     let p -> GraphBuilder.parse_cached(path)
     when p != Nothing {
@@ -322,9 +329,9 @@ function collect_local_fn_names(stmts, i, n, acc) {
         }
         let sc_body -> AST.scope_body(s)
         let sc_stmts -> []
-        when sc_body != Nothing and sc_body is List {
-            when sc_body.length > 3 and sc_body[0] == 20 {
-                sc_stmts -> sc_body[3]
+        when sc_body != Nothing {
+            when AST.ast_kind(sc_body) == AST.K_BLOCK {
+                sc_stmts -> AST.block_stmts(sc_body)
             } or {
                 sc_stmts -> sc_body
             }
@@ -431,7 +438,7 @@ function filter_names_excluding_params(names, params, body) {
     let nn -> names.length
     do while ni < nn {
         let nm -> names[ni]
-        when pmap[nm] != true {
+        when not pmap.has(nm) {
             res.append(nm)
         }
         ni -> ni + 1
@@ -645,7 +652,7 @@ function collect_import_alias_pairs(stmts, i, n, acc) {
                 let nn -> names.length
                 do while ni < nn {
                     let nm -> Str.to_string(names[ni])
-                    when nm != `` {
+                    when nm != `` and nm != `TokenType` {
                         acc.append({`a` -> nm, `p` -> pfx + `_` + nm, `from_import` -> true})
                     }
                     ni -> ni + 1
@@ -660,7 +667,7 @@ function collect_import_alias_pairs(stmts, i, n, acc) {
             alias -> import_path_stem(path)
         }
         let als -> Str.to_string(alias)
-        when import_should_rewrite(path) {
+        when import_should_rewrite(path) and als != `TokenType` {
             let pfx -> prefix_for_import_path(path)
             when pfx != `` {
                 acc.append({`a` -> als, `p` -> pfx, `from_import` -> false})
@@ -1007,9 +1014,9 @@ function prepare_file_chunk(stmts, path, entry_path) {
                 let scname -> Str.to_string(AST.scope_name(s))
                 let sc_body -> AST.scope_body(s)
                 let sc_stmts -> []
-                when sc_body != Nothing and sc_body is List {
-                    when sc_body.length > 3 and sc_body[0] == 20 {
-                        sc_stmts -> sc_body[3]
+                when sc_body != Nothing {
+                    when AST.ast_kind(sc_body) == AST.K_BLOCK {
+                        sc_stmts -> AST.block_stmts(sc_body)
                     } or {
                         sc_stmts -> sc_body
                     }
@@ -1146,6 +1153,39 @@ function prof_log(on, label, t0) {
     <- Nothing
 }
 
+function prof_arena_log(on, label) {
+    when on != true {
+        <- Nothing
+    }
+    let stats -> __builtin_memory.arena_stats(Nothing)
+    when stats != Nothing and type(stats) == `Map` and stats.has(`allocated`) {
+        let alloc -> stats[`allocated`]
+        let cap -> stats[`capacity`]
+        let ch -> stats[`chunks`]
+        io.writeln(`profile arena ` + label + ` allocated: ` + Str.to_string(alloc) + ` B, capacity: ` + Str.to_string(cap) + ` B, chunks: ` + Str.to_string(ch))
+    }
+    <- Nothing
+}
+
+function compute_content_sig(s) {
+    when s == Nothing {
+        <- `0_0`
+    }
+    let slen -> Str.length(s)
+    let h -> 2166136261
+    let i -> 0
+    let step -> 1
+    when slen > 65536 {
+        step -> slen / 32768
+    }
+    do while i < slen {
+        let b -> Str.byte_at(s, i)
+        h -> (h * 31 + b + i) % 2147483647
+        i -> i + step
+    }
+    <- Str.to_string(slen) + `_` + Str.to_string(h)
+}
+
 /!
  Compile entry .zl with multi-file dependency merge (Stage 5.x / 7.x).
  Search roots: entry dir, ., lib, selfhost (+ Resolver always adds tests/self_hosting).
@@ -1223,6 +1263,7 @@ function compile_file(source_path, output_path, do_check) {
         let marker -> Codegen.transpile_program_to_file(prog, output_path)
         prof_log(want, `codegen`, t_cg)
         prof_log(want, `total`, t_all)
+        prof_arena_log(want, `summary`)
         when marker != `ok` {
             let pe -> []
             pe.append(`codegen: empty or parse error output`)
@@ -1246,6 +1287,7 @@ function compile_file(source_path, output_path, do_check) {
     let c_code -> Codegen.transpile_program(prog, true, `zen_module_init`)
     prof_log(want, `codegen`, t_cg2)
     prof_log(want, `total`, t_all)
+    prof_arena_log(want, `summary`)
     when c_code == Nothing or c_code == `` or Str.starts_with(c_code, `/* parse error`) {
         let pe -> []
         pe.append(`codegen: empty or parse error output`)
@@ -1461,7 +1503,18 @@ function compile_file_multi(source_path, out_dir, do_check, incremental) {
         }
     }
 
+    let shared_sig -> compute_content_sig(shared)
+    let shared_changed -> false
+    when incremental == true {
+        when not cache_map.has(`__shared__`) or cache_map[`__shared__`] != shared_sig {
+            shared_changed -> true
+        }
+    }
+
     let new_cache_lines -> []
+    new_cache_lines.append(`__shared__=` + shared_sig)
+    let cached_units -> 0
+    let compiled_units -> 0
     let wi -> 0
     do while wi < un {
         let u -> ulist[wi]
@@ -1470,19 +1523,21 @@ function compile_file_multi(source_path, out_dir, do_check, incremental) {
         init_names.append(iname)
         // No host main in module TUs — host file owns main.
         let cpath -> Path.join(dir, stem + `.c`)
+        let objpath -> Path.join(dir, stem + `.o`)
         let upath -> u[`path`]
         let u_content -> fs_read(upath)
-        let u_sig -> Str.to_string(Str.length(u_content))
+        let u_sig -> compute_content_sig(u_content)
         new_cache_lines.append(upath + `=` + u_sig)
 
         let skip_codegen -> false
-        when incremental == true and fs_is_file(cpath) {
+        when incremental == true and not shared_changed and fs_is_file(cpath) {
             when cache_map.has(upath) and cache_map[upath] == u_sig {
                 skip_codegen -> true
             }
         }
 
         when not skip_codegen {
+            fs_remove(objpath)
             let code -> Codegen.transpile_unit_ex_to_file(u[`program`], false, iname, shared, cpath)
             when code != `ok` {
                 let pe -> []
@@ -1494,6 +1549,9 @@ function compile_file_multi(source_path, out_dir, do_check, incremental) {
                     `out_dir` -> dir
                 }
             }
+            compiled_units -> compiled_units + 1
+        } or {
+            cached_units -> cached_units + 1
         }
         c_files.append(cpath)
         wi -> wi + 1
@@ -1505,8 +1563,13 @@ function compile_file_multi(source_path, out_dir, do_check, incremental) {
 
     let host -> Codegen.emit_multi_host_main(init_names)
     let host_path -> Path.join(dir, `zen_host_main.c`)
+    let host_obj -> Path.join(dir, `zen_host_main.o`)
+    fs_remove(host_obj)
     fs_write(host_path, host)
     c_files.append(host_path)
+
+    let want -> prof_on()
+    prof_arena_log(want, `multi`)
 
     <- {
         `ok` -> true,
@@ -1515,7 +1578,9 @@ function compile_file_multi(source_path, out_dir, do_check, incremental) {
         `errors` -> [],
         `files` -> order,
         `out_dir` -> dir,
-        `c_code` -> host
+        `c_code` -> host,
+        `cached_units` -> cached_units,
+        `compiled_units` -> compiled_units
     }
 }
 
@@ -2323,12 +2388,21 @@ function run_test_fn_list(env, test_fns, i, n, passed) {
  build <file.zl> [exe] [--typecheck|-t] [--workdir dir]
  !/
 function build_cli(src_path, args, opt_start, n) {
-    let opts -> parse_build_opts(args, opt_start, n, `output/build/selfhost_native/zen_program`, `output/build/selfhost_native`, false)
-    let r -> build_file(src_path, opts[`workdir`], opts[`exe`], opts[`check`])
+    let opts -> parse_build_opts(args, opt_start, n, `output/build/selfhost_native/zen_program`, `output/build/selfhost_native`, false, false, false)
+    let r -> Nothing
+    when opts[`multi`] == true or opts[`incremental`] == true {
+        r -> build_file_multi(src_path, opts[`workdir`], opts[`exe`], opts[`check`], opts[`incremental`])
+    } or {
+        r -> build_file(src_path, opts[`workdir`], opts[`exe`], opts[`check`])
+    }
     when r[`ok`] == true {
+        let msg -> `built ` + r[`exe`]
+        when opts[`incremental`] == true {
+            msg -> msg + ` (cached: ` + Str.to_string(r[`cached_units`]) + `, compiled: ` + Str.to_string(r[`compiled_units`]) + `)`
+        }
         <- {
             `code` -> 0,
-            `message` -> `built ` + r[`exe`]
+            `message` -> msg
         }
     }
     <- {
@@ -2403,38 +2477,87 @@ function build_file(source_path, workdir, exe_path, do_check) {
     }
 }
 
-function parse_build_opts(args, k, n, exe_path, workdir, do_check) {
+/!
+ Multi-unit incremental pipeline: compile_file_multi → CLink.build_multi_units.
+ !/
+function build_file_multi(source_path, workdir, exe_path, do_check, incremental) {
+    when not fs_is_file(source_path) {
+        <- {
+            `ok` -> false,
+            `message` -> `file not found: ` + source_path,
+            `exe` -> ``
+        }
+    }
+    when workdir == Nothing or workdir == `` {
+        workdir -> `output/multi_c`
+    }
+    __builtin_file.mkdir_p(workdir)
+    let cr -> compile_file_multi(source_path, workdir, do_check, incremental)
+    when cr[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `message` -> join_errs(cr[`errors`]),
+            `exe` -> ``
+        }
+    }
+    let lr -> CLink.build_multi_units(cr[`c_files`], workdir, exe_path, incremental)
+    when lr[`ok`] != true {
+        <- {
+            `ok` -> false,
+            `message` -> lr[`message`],
+            `exe` -> ``
+        }
+    }
+    <- {
+        `ok` -> true,
+        `message` -> lr[`message`],
+        `exe` -> lr[`exe`],
+        `cached_units` -> cr[`cached_units`],
+        `compiled_units` -> cr[`compiled_units`],
+        `workdir` -> workdir
+    }
+}
+
+function parse_build_opts(args, k, n, exe_path, workdir, do_check, multi, incremental) {
     when k >= n {
         <- {
             `exe` -> exe_path,
             `workdir` -> workdir,
-            `check` -> do_check
+            `check` -> do_check,
+            `multi` -> multi,
+            `incremental` -> incremental
         }
     }
     let a -> Str.to_string(args[k])
     when a == `--typecheck` or a == `-t` {
-        <- parse_build_opts(args, k + 1, n, exe_path, workdir, true)
+        <- parse_build_opts(args, k + 1, n, exe_path, workdir, true, multi, incremental)
+    }
+    when a == `--multi` or a == `-m` {
+        <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check, true, incremental)
+    }
+    when a == `--incremental` or a == `-i` {
+        <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check, true, true)
     }
     when a == `-o` or a == `--output` or a == `--out` {
         when k + 1 < n {
-            <- parse_build_opts(args, k + 2, n, Str.to_string(args[k + 1]), workdir, do_check)
+            <- parse_build_opts(args, k + 2, n, Str.to_string(args[k + 1]), workdir, do_check, multi, incremental)
         }
     }
     when Str.starts_with(a, `--output=`) {
         let val -> Str.substring(a, 9, Str.length(a))
-        <- parse_build_opts(args, k + 1, n, val, workdir, do_check)
+        <- parse_build_opts(args, k + 1, n, val, workdir, do_check, multi, incremental)
     }
     when a == `--workdir` {
         when k + 1 >= n {
-            <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check)
+            <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check, multi, incremental)
         }
-        <- parse_build_opts(args, k + 2, n, exe_path, Str.to_string(args[k + 1]), do_check)
+        <- parse_build_opts(args, k + 2, n, exe_path, Str.to_string(args[k + 1]), do_check, multi, incremental)
     }
     when not Str.starts_with(a, `-`) {
         // bare path = exe output
-        <- parse_build_opts(args, k + 1, n, a, workdir, do_check)
+        <- parse_build_opts(args, k + 1, n, a, workdir, do_check, multi, incremental)
     }
-    <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check)
+    <- parse_build_opts(args, k + 1, n, exe_path, workdir, do_check, multi, incremental)
 }
 
 function parse_run_opts(args, k, n, workdir, do_check, prog_args) {
@@ -2681,7 +2804,7 @@ function command_help(cmd) {
 }
 
 function usage_text() {
-    let u -> Extensions.style_bold(`Zenlang Standalone Self-Hosted Compiler (v0.9.0-beta)`) + `\n`
+    let u -> Extensions.style_bold(`Zenlang Standalone Self-Hosted Compiler (v1.0.0-beta.1)`) + `\n`
     u -> u + Extensions.style_dim(`Modern visual data-flow language with three-layer execution (AOT C + Bytecode VM)\n\n`)
     
     u -> u + Extensions.style_bold(`USAGE:\n`)

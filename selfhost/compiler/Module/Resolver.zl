@@ -65,6 +65,9 @@ function apply_alias(import_path) {
     when import_path == `zen.test` or import_path == `lib/zen/test` {
         <- `zen.test.test`
     }
+    when import_path == `zen.qrcode` or import_path == `lib/zen/qrcode` or import_path == `zen.data.qrcode` or import_path == `lib/zen/data/qrcode` {
+        <- `zen.graphics.qrcode`
+    }
     <- import_path
 }
 

@@ -1,0 +1,199 @@
+/!
+  zenshell - Semantic Place Tagging & Terminal Dividers (tag)
+  Inspired by the Python prototype's 'tag' command and 'Notes.md'.
+!/
+
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.data.zendata as zd
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function get_tags_file_path() {
+    let home -> sys.get_env(`HOME`)
+    when home == Nothing { home -> `/tmp` }
+    let dir -> path.join(home, `.config/zenshell`)
+    __builtin_file.mkdir_p(dir)
+    <- path.join(dir, `tags.zd`)
+}
+
+function load_tags() {
+    let p -> get_tags_file_path()
+    when not __builtin_file.is_file(p) {
+        <- {}
+    }
+    let content -> __builtin_file.read(p)
+    when content == Nothing or Str.trim(content) == `` {
+        <- {}
+    }
+    let parsed -> zd.parse(content)
+    when parsed != Nothing and parsed[`tags`] != Nothing {
+        <- parsed[`tags`]
+    }
+    <- {}
+}
+
+function save_tags(tags_map) {
+    let p -> get_tags_file_path()
+    let payload -> {
+        `tags` -> tags_map
+    }
+    let serialized -> zd.stringify(payload, 0)
+    __builtin_file.write(p, serialized)
+}
+
+function handle_tag_list(args, c) {
+    let tags -> load_tags()
+    let keys -> tags.keys()
+    when keys.length == 0 {
+        <- color.dim(`No tags defined yet. Use 'tag add <name> [note]' to tag the current directory.`)
+    }
+
+    let rows -> []
+    let i -> 0
+    do while i < keys.length {
+        let k -> keys[i]
+        i -> i + 1
+        let val -> tags[k]
+        let p -> val[`path`]
+        let note -> when (val[`note`] != Nothing) { val[`note`] } or { `-` }
+        rows.append([color.bold(color.cyan(k)), color.blue(p), note])
+    }
+
+    let headers -> [`Tag`, `Path`, `Note`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let count_str -> color.dim(Str.to_string(rows.length) + ` saved tags`)
+    <- tbl + `\n` + count_str
+}
+
+function handle_tag_add(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: tag add <name> [note]`)
+    }
+    let name -> args[0]
+    let note -> when (args.length > 1) { Str.join(args[1:], ` `) } or { `-` }
+
+    let tags -> load_tags()
+    tags[name] -> {
+        `path` -> c.cwd,
+        `note` -> note
+    }
+    save_tags(tags)
+    c.bookmarks[name] -> c.cwd
+
+    <- color.green(`✓ Tagged '` + name + `' -> ` + c.cwd + ` (` + note + `)`)
+}
+
+function handle_tag_jump(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: tag jump <name>`)
+    }
+    let name -> args[0]
+    let tags -> load_tags()
+
+    when not tags.has(name) {
+        <- color.red(`Error: Tag not found: '` + name + `'. Run 'tag list' to view available tags.`)
+    }
+
+    let target_path -> tags[name][`path`]
+    when not __builtin_file.is_dir(target_path) {
+        <- color.red(`Error: Tagged directory no longer exists: ` + target_path)
+    }
+
+    c.update_cwd(target_path)
+    sys.chdir(target_path)
+    <- color.cyan(`Jumped to tag '` + name + `' -> ` + target_path)
+}
+
+function handle_tag_remove(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: tag remove <name>`)
+    }
+    let name -> args[0]
+    let tags -> load_tags()
+
+    when not tags.has(name) {
+        <- color.red(`Error: Tag not found: '` + name + `'`)
+    }
+
+    tags.remove(name)
+    save_tags(tags)
+    when c.bookmarks.has(name) {
+        c.bookmarks.remove(name)
+    }
+
+    <- color.green(`✓ Removed tag '` + name + `'`)
+}
+
+function handle_tag_banner(args, c) {
+    let title -> when (args.length > 0) { Str.join(args, ` `) } or { `` }
+    let width -> 60
+
+    when title == `` {
+        let line -> Str.repeat(`─`, width)
+        <- color.bold(color.blue(line))
+    }
+
+    let title_styled -> ` ` + title + ` `
+    let t_len -> Str.length(title) + 2
+    let side_pad -> (width - t_len) / 2
+    when side_pad < 2 { side_pad -> 2 }
+
+    let left_bar -> Str.repeat(`─`, side_pad)
+    let right_bar -> Str.repeat(`─`, side_pad)
+    <- color.bold(color.blue(left_bar)) + color.bold(color.cyan(title_styled)) + color.bold(color.blue(right_bar))
+}
+
+function handle_tag_default(args, c) {
+    when args == Nothing or args.length == 0 {
+        <- handle_tag_list(args, c)
+    }
+    let sub -> args[0]
+    let sub_args -> when (args.length > 1) { args[1:] } or { [] }
+
+    when sub == `list` or sub == `ls` {
+        <- handle_tag_list(sub_args, c)
+    } or when sub == `add` {
+        <- handle_tag_add(sub_args, c)
+    } or when sub == `jump` or sub == `goto` {
+        <- handle_tag_jump(sub_args, c)
+    } or when sub == `remove` or sub == `rm` {
+        <- handle_tag_remove(sub_args, c)
+    } or when sub == `banner` or sub == `divider` {
+        <- handle_tag_banner(sub_args, c)
+    } or {
+        // Shorthand: tag <name> -> jumps directly if tag exists, or adds tag if given note
+        let tags -> load_tags()
+        when tags.has(sub) {
+            <- handle_tag_jump([sub], c)
+        }
+        <- color.yellow(`Unknown tag subcommand '` + sub + `'. Try 'tag list' or 'tag help'.`)
+    }
+}
+
+let DOC_TAG -> ```
+# tag - Semantic Place Tagging & Terminal Markers
+
+Tag directories with friendly semantic names and optional descriptions to jump
+across project workspaces instantly.
+
+## Subcommands
+- `tag` / `tag list` — Lists all saved tags, paths, and notes in a table.
+- `tag add <name> [note]` — Tags current directory with <name>.
+- `tag jump <name>` (or `tag <name>`) — Hops directly to tagged directory.
+- `tag remove <name>` — Deletes tag.
+- `tag banner [text]` — Draws a styled terminal divider or section heading.
+```
+
+export function create_tag_command(ctx) {
+    let cmd -> cmd_base.Command(`tag`, `Semantic place tagging, quick jump bookmarks and terminal dividers`)
+    cmd.set_default(handle_tag_default)
+    cmd.add_subcommand(`list`, `Lists all saved tags in a table`, handle_tag_list)
+    cmd.add_subcommand(`add`, `Tags current directory: tag add <name> [note]`, handle_tag_add)
+    cmd.add_subcommand(`jump`, `Jumps to tagged directory: tag jump <name>`, handle_tag_jump)
+    cmd.add_subcommand(`remove`, `Deletes tag: tag remove <name>`, handle_tag_remove)
+    cmd.add_subcommand(`banner`, `Draws a styled terminal divider or section heading: tag banner [text]`, handle_tag_banner)
+    <- cmd
+}

@@ -1,0 +1,75 @@
+/!
+  zenshell - ZenMark Documentation & Manual Viewer (doc)
+!/
+
+import zen.data.zendata as zd
+import zen.text.zenmark as zm
+import zen.io.file as file
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+let g_docs_root -> `zenshell/docs`
+
+function join_path(p1, p2) {
+    when p1 == `` or p1 == Nothing { <- p2 }
+    when p2 == `` or p2 == Nothing { <- p1 }
+    when Str.ends_with(p1, `/`) { <- p1 + p2 }
+    <- p1 + `/` + p2
+}
+
+function render_manual() {
+    let manual_file -> join_path(g_docs_root, `zenshell.zm`)
+    when file.exists(manual_file) {
+        let content -> file.read(manual_file)
+        let parsed -> zd.parse(content)
+        when parsed != Nothing {
+            let doc -> zm.Document(parsed, Nothing)
+            let term_view -> zm.render_term(doc)
+            when term_view != Nothing and term_view != `` {
+                <- term_view
+            }
+        }
+        <- content
+    }
+    <- color.red(`Error: Manual file not found at ` + manual_file)
+}
+
+function handle_doc_default(args, c) {
+    <- render_manual()
+}
+
+function handle_doc_manual(args, c) {
+    <- render_manual()
+}
+
+function handle_doc_view(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: doc view <file.zm>`)
+    }
+    let doc_file -> args[0]
+    when not file.exists(doc_file) {
+        <- color.red(`Error: File '` + doc_file + `' not found`)
+    }
+    let content -> file.read(doc_file)
+    let parsed -> zd.parse(content)
+    when parsed != Nothing {
+        let doc -> zm.Document(parsed, Nothing)
+        let term_view -> zm.render_term(doc)
+        when term_view != Nothing and term_view != `` {
+            <- term_view
+        }
+    }
+    <- content
+}
+
+export function create_doc_command(ctx, docs_root) {
+    when docs_root != Nothing {
+        g_docs_root -> docs_root
+    }
+    let cmd -> cmd_base.Command(`doc`, `View interactive ZenMark (.zm) documentation and manuals`)
+    cmd.set_default(handle_doc_default)
+    cmd.add_subcommand(`view`, `Render a ZenMark (.zm) file to the terminal`, handle_doc_view)
+    cmd.add_subcommand(`manual`, `Display the zenshell manual in ZenMark format`, handle_doc_manual)
+    <- cmd
+}

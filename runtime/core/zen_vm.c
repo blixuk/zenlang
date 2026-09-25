@@ -446,6 +446,12 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
             TARGET(OP_LOAD_GLOBAL) {
                 ZenValue name = READ_CONST(frame);
                 ZenValue val = ZenMap_get_value_at_key(ZenValue_from_map(vm->globals), name);
+                if (val.type == ZEN_NOTHING && name.type == ZEN_STRING && name.as.string) {
+                    val = ZenFFI_resolve_symbol(name.as.string);
+                    if (val.type != ZEN_NOTHING) {
+                        ZenMap_set_value_at_key(ZenValue_from_map(vm->globals), name, val);
+                    }
+                }
                 push(vm, val);
                 NEXT();
             }
@@ -676,7 +682,20 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 ZenValue key = READ_CONST(frame);
                 ZenValue target = pop(vm);
                 if (target.type == ZEN_MAP) {
-                    push(vm, ZenMap_get_value_at_key(target, key));
+                    ZenValue val = ZenMap_get_value_at_key(target, key);
+                    if (val.type == ZEN_NOTHING && key.type == ZEN_STRING && key.as.string) {
+                        ZenValue is_ext = ZenMap_get_value_at_key(target, ZenValue_make_string("__is_extern_module"));
+                        if (is_ext.type == ZEN_BOOLEAN && is_ext.as.boolean) {
+                            ZenValue h_val = ZenMap_get_value_at_key(target, ZenValue_make_string("__handle"));
+                            void* handle = (h_val.type == ZEN_OBJECT) ? h_val.as.object : NULL;
+                            void* sym = ZenFFI_dlsym(handle, key.as.string);
+                            if (sym) {
+                                val = ZenFFI_make_callable(sym, key.as.string, NULL, -1);
+                                ZenMap_set_value_at_key(target, key, val);
+                            }
+                        }
+                    }
+                    push(vm, val);
                 } else if (key.type == ZEN_STRING && key.as.string) {
                     push(vm, ZenValue_get_field(target, key.as.string));
                 } else {

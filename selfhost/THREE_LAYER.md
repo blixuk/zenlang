@@ -39,7 +39,7 @@ Not VM-only (loses real executables unless we write a JIT). Not C-only (loses fa
 | Phase | Work | Done when |
 |-------|------|-----------|
 | **0** | Stage timers (`ZEN_PROFILE=1`) + `scripts/profile_selfhost.py` | **Done** — `stage7_add.zl` (~5.5s `-O0` host): graph 6ms, **lex ~1.9s**, **parse ~3.2s**, codegen ~0.37s. Map-walk lexer/parser profile mapped. |
-| **1** | Compiler IR: Token structs, then AST nodes; Parser walks structs | **Done** — Zero-copy 7-tuple tokens + positional AST list nodes with arena allocation. |
+| **1** | Compiler IR: Token structs, then AST nodes; Parser walks structs | **Done** — Native C structs (`ZenToken` 24B, `ZenAstNode` 112B) in `runtime/core/zen_ast.h` with arena bump allocation, `__builtin_ast` bridge, and full index dispatch parity across bootstrap interpret, bootstrap `-g`, selfhost VM, and selfhost AOT. |
 | **2** | Incremental `--multi` / `-O0` rebuild of `zen.zl` (edit loop) | **Done** — `install-selfhost-fast` and resident background daemon (`zen daemon`). |
 | **3** | Bytecode VM for interpret; Codegen can still AOT AST→C | **Done** — `Bytecode.zl` + `runtime/core/zen_vm.c` stack VM; `.zbc` binary caching & standalone packaging (`zen bundle`); source-free bytecode execution. |
 | **4** | Embed + import of compiled modules from VM; Compiler Plugins | **Done** — Mixed ABI (`test_mixed_abi.zl`); `Plugin.zl` lifecycle hooks (`on_ast`, `on_check`, `on_codegen`, `commands`) for modular compiler tooling. |

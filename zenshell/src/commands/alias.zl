@@ -1,0 +1,52 @@
+/!
+  zenshell - Alias Manager Command (alias)
+!/
+
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function handle_alias_default(args, c) {
+    let headers -> [`Alias`, `Expansion`]
+    let rows -> []
+    do for k in c.aliases.keys() {
+        let v -> c.aliases[k]
+        rows.append([color.green(k), color.yellow(v)])
+    }
+    when rows.length == 0 {
+        <- color.dim(`No aliases configured. Use 'alias add <name> <command>' to create one.`)
+    }
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_alias_add(args, c) {
+    when args.length < 2 {
+        <- color.yellow(`Usage: alias add <name> <command>`)
+    }
+    let name -> args[0]
+    let expansion -> Str.join(args[1:], ` `)
+    c.aliases[name] -> expansion
+    <- color.green(`Added alias '` + name + `' -> ` + expansion)
+}
+
+function handle_alias_remove(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: alias remove <name>`)
+    }
+    let name -> args[0]
+    when c.aliases.has(name) {
+        c.aliases.remove(name)
+        <- color.green(`Removed alias '` + name + `'`)
+    }
+    <- color.yellow(`Alias '` + name + `' not found`)
+}
+
+export function create_alias_command(ctx) {
+    let cmd -> cmd_base.Command(`alias`, `View, add, and remove command aliases`)
+    cmd.set_default(handle_alias_default)
+    cmd.add_subcommand(`list`, `List all active command aliases in a table`, handle_alias_default)
+    cmd.add_subcommand(`add`, `Register a new alias: alias add <name> <command>`, handle_alias_add)
+    cmd.add_subcommand(`remove`, `Remove an alias: alias remove <name>`, handle_alias_remove)
+    <- cmd
+}

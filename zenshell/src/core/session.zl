@@ -1,0 +1,126 @@
+/!
+  zenshell - ZenData Session Persistence Engine
+!/
+
+import zen.sys.sys as sys
+import zen.data.zendata as zd
+import zen.text.string as Str
+
+export function get_sessions_dir() {
+    let home -> sys.get_env(`HOME`)
+    let dir -> when (home != Nothing and home != ``) { home + `/.config/zenshell/sessions` } or { `.zenshell/sessions` }
+    __builtin_file.mkdir_p(dir)
+    <- dir
+}
+
+export function save_session(ctx, name) {
+    let sess_name -> when (name != Nothing and name != ``) { name } or { `main` }
+    let s_dir -> get_sessions_dir()
+    let filepath -> s_dir + `/` + sess_name + `.zd`
+    
+    let sess_data -> {
+        `name` -> sess_name,
+        `cwd` -> ctx.cwd,
+        `bookmarks` -> ctx.bookmarks,
+        `tags` -> ctx.tags,
+        `dir_stack` -> ctx.dir_stack,
+        `aliases` -> ctx.aliases
+    }
+
+    let zd_text -> zd.stringify(sess_data, 0)
+    __builtin_file.write(filepath, zd_text)
+    <- filepath
+}
+
+export function load_session(ctx, name) {
+    let sess_name -> when (name != Nothing and name != ``) { name } or { `main` }
+    let s_dir -> get_sessions_dir()
+    let filepath -> s_dir + `/` + sess_name + `.zd`
+    
+    when not __builtin_file.is_file(filepath) {
+        <- false
+    }
+
+    let content -> __builtin_file.read(filepath)
+    when content == Nothing or content == `` {
+        <- false
+    }
+
+    let parsed -> zd.parse(content)
+    when parsed == Nothing {
+        <- false
+    }
+
+    when parsed.has(`cwd`) and parsed[`cwd`] != Nothing {
+        let dest -> parsed[`cwd`]
+        when sys.chdir(dest) {
+            ctx.update_cwd(sys.get_cwd())
+        }
+    }
+
+    when parsed.has(`bookmarks`) and parsed[`bookmarks`] != Nothing {
+        let bm -> parsed[`bookmarks`]
+        do for k in bm.keys() {
+            ctx.bookmarks[k] -> bm[k]
+        }
+    }
+
+    when parsed.has(`tags`) and parsed[`tags`] != Nothing {
+        let tg -> parsed[`tags`]
+        do for k in tg.keys() {
+            ctx.tags[k] -> tg[k]
+        }
+    }
+
+    when parsed.has(`dir_stack`) and parsed[`dir_stack`] != Nothing {
+        ctx.dir_stack -> parsed[`dir_stack`]
+    }
+
+    when parsed.has(`aliases`) and parsed[`aliases`] != Nothing {
+        let al -> parsed[`aliases`]
+        do for k in al.keys() {
+            ctx.aliases[k] -> al[k]
+        }
+    }
+
+    <- true
+}
+
+export function get_session_info(name) {
+    let s_dir -> get_sessions_dir()
+    let filepath -> s_dir + `/` + name + `.zd`
+    when not __builtin_file.is_file(filepath) {
+        <- Nothing
+    }
+    let content -> __builtin_file.read(filepath)
+    when content == Nothing { <- Nothing }
+    let parsed -> zd.parse(content)
+    <- parsed
+}
+
+export function list_sessions() {
+    let s_dir -> get_sessions_dir()
+    let raw_files -> __builtin_file.list_dir(s_dir)
+    when raw_files == Nothing {
+        <- []
+    }
+    let sessions -> []
+    do for f in raw_files {
+        when Str.ends_with(f, `.zd`) {
+            let s_name -> Str.substring(f, 0, Str.length(f) - 3)
+            sessions.append(s_name)
+        }
+    }
+    <- sessions
+}
+
+export function remove_session(name) {
+    let sess_name -> when (name != Nothing and name != ``) { name } or { `main` }
+    let s_dir -> get_sessions_dir()
+    let filepath -> s_dir + `/` + sess_name + `.zd`
+    when __builtin_file.is_file(filepath) {
+        __builtin_file.remove(filepath)
+        <- true
+    }
+    <- false
+}

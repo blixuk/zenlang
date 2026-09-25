@@ -27,11 +27,11 @@ Owned by the self-hosting effort.
 | 1 | Token + Lexer | **Done** — dual-path green (`tests/self_hosting/test_lexer.zl`) |
 | 2 | Parser + AST | **Done (MVP)** — map AST + index-only RD parser dual-path green (`test_parser.zl`) |
 | 3 | Module graph | **Done (MVP)** — Resolver + DependencyGraph + GraphBuilder dual-path green (`test_module.zl`) |
-| 4 | Checker | **Done (MVP+)** — with/class/enum/lambda/is; dual-path green (`test_checker.zl` 11) |
+| 4 | Checker | **Done (MVP+ / Phase C+)** — generics/containers/with/class/enum/lambda/is; dual-path green (`test_checker.zl` 24) |
 | 5 | Transpiler / C | **Done + classes/enums/lambdas/with** — multi-unit; inheritance; enum; closures; region push/pop |
 | 6 | Driver | **Done (MVP) + multi-file + multi-unit** — merge default; `--multi` one C TU/module + host; `build`/`run`/`bundle`/`plugin` |
 | 7 | Native + E2E | **Done + Standalone Native Host** — self-compilation loop green; pure native `bin/zen`; `.zbc` packaging & caching; compiler plugins |
-| 8 | Version 1 Beta | **Done (`v0.9.0-beta`)** — unified single-binary toolchain; manifest builds/runs (`zen.pkg.zd`); package manager (`zen pkg`); interactive REPL; formatter (`zen fmt`); zero-config `deps/` resolution |
+| 8 | Version 1 Beta | **Done (`v1.0.0-beta.1`)** — pure selfhost compiler closure (Stage 2 native); directional comprehensions (`[for ... -> ...]`, `{for ... -> ...}`); collection spreads (`[...x]`, `{...m}`); unified single-binary toolchain; release packaging pipeline (`scripts/zen release`); 100% test ladder parity |
 
 # Work Guidance
 

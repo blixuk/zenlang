@@ -13,7 +13,7 @@ Owned by the editor support / tooling effort.
 - **Zed:** `zed/` — language extension; requires Tree-sitter grammar in `tree-sitter-zen/`.
 - **Tree-sitter:** `tree-sitter-zen/` — `grammar.js` + generated `src/parser.c` + `queries/`.
 - **Sublime:** `sublime/zenlang.sublime-syntax`.
-- Changes to keywords (`yield`, `before`, `after`, `task`, `object`), operators (`->`, `<-`, `<~`, `:>`, `<:`, `..`, `..=`, `..+`, `..-`, `...`), types (`Byte`, `Bytes`, `Int`, `Str`), or string syntax (triple-backtick multiline strings) require updates in **all** active grammars.
+- Changes to keywords (`yield`, `before`, `after`, `task`, `object`, `extern`), operators (`->`, `<-`, `<~`, `:>`, `<:`, `??`, `|>`, `..`, `..+`, `..-`, `...`), types (`Byte`, `Bytes`, `Integer`, `String`, `Channel`, `Number`, `Text`, `Collection`, `Container`), collections (directional comprehensions `[for x in list -> expr]`, spreads `[...items]`), or string syntax (triple-backtick multiline strings) require updates in **all** active grammars.
 
 # Work Guidance
 

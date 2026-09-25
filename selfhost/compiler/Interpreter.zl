@@ -241,9 +241,18 @@ function env_lookup(env, name) {
     <- env_lookup(env[`outer`], name)
 }
 
+function env_has(env, name) {
+    let sym -> env_lookup(env, name)
+    <- sym != Nothing
+}
+
 function env_get(env, name) {
     let sym -> env_lookup(env, name)
     when sym == Nothing {
+        let ffi_sym -> __builtin_ffi.resolve(Str.to_string(name))
+        when ffi_sym != Nothing {
+            <- ffi_sym
+        }
         set_error(`Undefined variable '` + Str.to_string(name) + `'`)
         <- Nothing
     }
@@ -366,6 +375,9 @@ function is_bound_builtin_method(v) {
 
 function is_fn_val(v) {
     when map_kind(v) == `fn` {
+        <- true
+    }
+    when type(v) == `Function` {
         <- true
     }
     <- false
@@ -729,7 +741,7 @@ function bind_captures(names, i, env, snap) {
 }
 
 function collect_free_names(node, excludes, acc) {
-    when node == Nothing or not (node is List) {
+    when node == Nothing or not AST.is_node(node) {
         <- acc
     }
     let k -> AST.ast_kind(node)
@@ -976,6 +988,11 @@ function env_prelude() {
     global -> env_define(global, `stdin`, make_builtin_mod(`stdin`), false)
     global -> env_define(global, `__builtin_vm`, make_builtin_mod(`vm`), false)
     global -> env_define(global, `vm`, make_builtin_mod(`vm`), false)
+    global -> env_define(global, `__builtin_ffi`, make_builtin_mod(`__builtin_ffi`), false)
+    global -> env_define(global, `ffi`, make_builtin_mod(`ffi`), false)
+    global -> env_define(global, `FFI`, make_builtin_mod(`ffi`), false)
+    global -> env_define(global, `__builtin_ast`, make_builtin_mod(`ast`), false)
+    global -> env_define(global, `ast`, make_builtin_mod(`ast`), false)
     global -> env_define(global, `write`, make_builtin(`stdout`, `write`), false)
     global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
     global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
@@ -1251,6 +1268,59 @@ function maybe_bind_import(s, env, file_path) {
     when is_kind(s, AST.K_IMPORT) or is_kind(s, AST.K_FROM_IMPORT) {
         <- bind_one_import(s, env, file_path)
     }
+    when is_kind(s, AST.K_EXTERN_IMPORT) {
+        <- bind_one_extern_import(s, env, file_path)
+    }
+    <- env
+}
+
+function header_default_alias_interp(hdr) {
+    when hdr == Nothing or hdr == `` {
+        <- ``
+    }
+    let s -> Str.to_string(hdr)
+    when Str.starts_with(s, `<`) or Str.starts_with(s, `"`) or Str.starts_with(s, `'`) {
+        s -> Str.substring(s, 1, s.length - 1)
+    }
+    when Str.ends_with(s, `.h`) {
+        s -> Str.substring(s, 0, s.length - 2)
+    }
+    when Str.contains(s, `.`) {
+        let parts -> Str.split(s, `.`)
+        <- parts[parts.length - 1]
+    }
+    when Str.contains(s, `/`) {
+        let parts -> Str.split(s, `/`)
+        <- parts[parts.length - 1]
+    }
+    <- s
+}
+
+function bind_one_extern_import(node, env, file_path) {
+    let hdr -> Str.to_string(AST.extern_header(node))
+    let alias -> AST.extern_alias(node)
+    let names -> AST.extern_names(node)
+    when alias == Nothing or alias == `` {
+        when names == Nothing {
+            alias -> header_default_alias_interp(hdr)
+        }
+    }
+    let mod_obj -> __builtin_ffi.load(hdr)
+    when alias != Nothing and alias != `` {
+        env -> env_define(env, Str.to_string(alias), mod_obj, false)
+    }
+    when names != Nothing {
+        do for nm in names {
+            let nms -> Str.to_string(nm)
+            let sym_fn -> __builtin_ffi.symbol(mod_obj, nms, Nothing)
+            when sym_fn == Nothing {
+                sym_fn -> __builtin_ffi.resolve(nms)
+            }
+            when sym_fn != Nothing {
+                env -> env_define(env, nms, sym_fn, false)
+            }
+        }
+    }
     <- env
 }
 
@@ -1486,7 +1556,7 @@ function eval_stmt(node, env) {
         env -> env_define(env, name, fn, false)
         <- Nothing
     }
-    when is_kind(node, AST.K_IMPORT) or is_kind(node, AST.K_FROM_IMPORT) {
+    when is_kind(node, AST.K_IMPORT) or is_kind(node, AST.K_FROM_IMPORT) or is_kind(node, AST.K_EXTERN_IMPORT) {
         <- Nothing
     }
     when is_kind(node, AST.K_CLASS) {
@@ -1604,6 +1674,9 @@ function match_pattern_value(pat, v, lookup_env, bind_env) {
         let name -> Str.to_string(AST.var_name(pat))
         when name == `_` {
             <- true
+        }
+        when is_type_name_str(name) {
+            <- Bytecode.eval_is_type_vm(v, name)
         }
         bind_env -> env_define(bind_env, name, v, true)
         <- true
@@ -1955,7 +2028,17 @@ function eval_expr(node, env) {
         <- coerce_literal_node(node)
     }
     when is_kind(node, AST.K_VARIABLE) {
-        <- env_get(env, Str.to_string(AST.var_name(node)))
+        let vname -> Str.to_string(AST.var_name(node))
+        when env_has(env, vname) {
+            <- env_get(env, vname)
+        }
+        when Str.contains(vname, `<`) and Str.ends_with(vname, `>`) {
+            let base_name -> Str.substring(vname, 0, Str.index_of(vname, `<`))
+            when env_has(env, base_name) {
+                <- env_get(env, base_name)
+            }
+        }
+        <- env_get(env, vname)
     }
     when is_kind(node, AST.K_GROUPING) {
         <- eval_expr(AST.grp_expr(node), env)
@@ -2136,7 +2219,19 @@ function eval_list_elems(elems, i, env, out) {
     when get_error() != Nothing or is_returning() {
         <- out
     }
-    let v -> eval_expr(elems[i], env)
+    let el -> elems[i]
+    when is_kind(el, AST.K_REST) {
+        let sub -> eval_expr(AST.rest_expr(el), env)
+        when sub is List {
+            let si -> 0
+            do while si < sub.length {
+                list_push(out, sub[si])
+                si -> si + 1
+            }
+        }
+        <- eval_list_elems(elems, i + 1, env, out)
+    }
+    let v -> eval_expr(el, env)
     let next -> list_push(out, v)
     <- eval_list_elems(elems, i + 1, env, next)
 }
@@ -2155,6 +2250,8 @@ function eval_struct_init(node, env) {
     let sname -> Str.to_string(AST.struct_init_name(node))
     when sname != Nothing and sname != `` {
         out[`__type`] -> sname
+        out[`__type__`] -> sname
+        out[`kind`] -> sname
     }
     let fields -> AST.struct_init_fields(node)
     <- eval_map_entries(fields, 0, env, out)
@@ -2172,6 +2269,19 @@ function eval_map_entries(entries, i, env, out) {
         <- out
     }
     let e -> entries[i]
+    when is_kind(e, AST.K_REST) {
+        let sub -> eval_expr(AST.rest_expr(e), env)
+        when sub is Map {
+            let sk -> sub.keys()
+            let si -> 0
+            do while si < sk.length {
+                let k -> sk[si]
+                out[k] -> sub[k]
+                si -> si + 1
+            }
+        }
+        <- eval_map_entries(entries, i + 1, env, out)
+    }
     let key -> Str.to_string(AST.struct_field_name(e))
     let val -> eval_expr(AST.struct_field_val(e), env)
     when get_error() != Nothing {
@@ -2270,10 +2380,34 @@ function eval_call(node, env) {
         let cname -> ``
         when is_kind(callee_node, AST.K_VARIABLE) {
             cname -> Str.to_string(AST.var_name(callee_node))
-        } or {
+        } or when is_kind(callee_node, AST.K_LITERAL) {
             cname -> Str.to_string(AST.lit_val(callee_node))
+        } or when is_kind(callee_node, AST.K_INDEX) {
+            let c_obj -> AST.idx_obj(callee_node)
+            let c_idx -> AST.idx_expr(callee_node)
+            when c_obj != Nothing and c_idx != Nothing {
+                let oname -> ``
+                when is_kind(c_obj, AST.K_VARIABLE) { oname -> Str.to_string(AST.var_name(c_obj)) }
+                or when is_kind(c_obj, AST.K_LITERAL) { oname -> Str.to_string(AST.lit_val(c_obj)) }
+                let iname -> ``
+                when is_kind(c_idx, AST.K_LITERAL) { iname -> Str.to_string(AST.lit_val(c_idx)) }
+                or when is_kind(c_idx, AST.K_VARIABLE) { iname -> Str.to_string(AST.var_name(c_idx)) }
+                when oname != `` and iname != `` {
+                    cname -> oname + `[` + iname + `]`
+                }
+            }
         }
-        when is_type_name_str(cname) {
+        let is_cast_type -> false
+        when cname != `` and is_type_name_str(cname) {
+            is_cast_type -> true
+            when Str.contains(cname, `<`) and Str.ends_with(cname, `>`) {
+                let base_name -> Str.substring(cname, 0, Str.index_of(cname, `<`))
+                when env_has(env, base_name) {
+                    is_cast_type -> false
+                }
+            }
+        }
+        when is_cast_type {
             let arg_nodes -> AST.call_args(node)
             let args -> eval_arg_list(arg_nodes, 0, env, [])
             when args != Nothing and args.length >= 1 {
@@ -2320,85 +2454,128 @@ function eval_call(node, env) {
 }
 
 function is_type_name_str(s) {
-    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
-    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
-    when s == `String` or s == `Str` { <- true }
-    when s == `Boolean` or s == `Bool` { <- true }
-    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
-    when s == `Bytes` or s == `Buffer` { <- true }
-    when s == `List` or s == `Set` or s == `Map` { <- true }
-    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) { <- true }
+    let ch -> Str.substring(s, 0, 1)
+    when ch >= `A` and ch <= `Z` { <- true }
     <- false
 }
 
 function eval_cast(val, target_type) {
-    when target_type == `Integer` or target_type == `Int` or target_type == `Int64` or
-         target_type == `Int32` or target_type == `Int16` or target_type == `Int8` or target_type == `Byte` {
-        when val is Integer { <- val }
-        when val is Decimal { <- parse_int_str(Str.to_string(val)) }
-        when val == true { <- 1 }
-        when val == false { <- 0 }
-        when val == Nothing { <- 0 }
-        when val is String {
-            when val == `` { <- 0 }
+    when target_type == `Integer` or target_type == `Integer[64]` or
+         target_type == `Integer[32]` or target_type == `Integer[16]` or
+         target_type == `Integer[8]` or target_type == `Byte` {
+        let n -> 0
+        when (val is Integer) {
+            n -> val
+        } or when (val is Decimal) {
+            let s -> Str.to_string(val)
+            let dot -> Str.index_of(s, `.`)
+            when dot != -1 { s -> Str.substring(s, 0, dot) }
+            n -> parse_int_str(s)
+        } or when val == true {
+            n -> 1
+        } or when val == false {
+            n -> 0
+        } or when val == Nothing {
+            n -> 0
+        } or when (val is String) {
+            when val == `` { n -> 0 }
             when Str.length(val) == 1 and not Str.contains(`0123456789`, val) {
-                <- parse_int_str(Str.to_string(val))
+                n -> parse_int_str(Str.to_string(val))
             }
-            <- parse_int_str(val)
+            when n == 0 and val != `0` {
+                n -> parse_int_str(val)
+            }
+        } or when (val is List) {
+            n -> val.length
+        } or when (val is Map) {
+            n -> val.length
         }
-        when val is List { <- val.length }
-        when val is Map { <- val.length }
-        <- 0
+
+        when target_type == `Byte` or target_type == `Integer[8]` {
+            let u -> n % 256
+            when u < 0 { u -> u + 256 }
+            when target_type == `Integer[8]` and u >= 128 { u -> u - 256 }
+            <- u
+        }
+        when target_type == `Integer[16]` {
+            let u -> n % 65536
+            when u < 0 { u -> u + 65536 }
+            when u >= 32768 { u -> u - 65536 }
+            <- u
+        }
+        when target_type == `Integer[32]` {
+            let u -> n % 4294967296
+            when u < 0 { u -> u + 4294967296 }
+            when u >= 2147483648 { u -> u - 4294967296 }
+            <- u
+        }
+        <- n
     }
-    when target_type == `Decimal` or target_type == `Float` or target_type == `Double` {
-        when val is Decimal { <- val }
-        when val is Integer { <- val + 0.0 }
+    when target_type == `Decimal` or target_type == `Decimal[64]` or target_type == `Decimal[32]` {
+        when (val is Decimal) { <- val }
+        when (val is Integer) { <- val + 0.0 }
         when val == true { <- 1.0 }
         when val == false { <- 0.0 }
         when val == Nothing { <- 0.0 }
-        when val is String {
+        when (val is String) {
             let clean -> strip_underscores(val)
             let num -> clean.to_number()
-            when num is Decimal { <- num }
-            when num is Integer { <- num + 0.0 }
+            when (num is Decimal) { <- num }
+            when (num is Integer) { <- num + 0.0 }
             <- 0.0
         }
         <- 0.0
     }
-    when target_type == `String` or target_type == `Str` {
-        when val is String { <- val }
-        when val == true { <- `True` }
-        when val == false { <- `False` }
-        when val == Nothing { <- `` }
-        <- Str.to_string(val)
+    when target_type == `String` or Str.starts_with(target_type, `String[`) {
+        let s -> ``
+        when (val is String) { s -> val }
+        or when val == true { s -> `True` }
+        or when val == false { s -> `False` }
+        or when val == Nothing { s -> `` }
+        or { s -> Str.to_string(val) }
+        when Str.starts_with(target_type, `String[`) and Str.ends_with(target_type, `]`) {
+            let inner -> Str.substring(target_type, 7, Str.length(target_type) - 1)
+            let max_len -> inner <: Integer
+            when max_len > 0 and Str.length(s) > max_len {
+                s -> Str.substring(s, 0, max_len)
+            }
+        }
+        <- s
     }
-    when target_type == `Boolean` or target_type == `Bool` {
+    when target_type == `Boolean` {
         when val == true or val == false { <- val }
-        when val is Integer { <- val != 0 }
-        when val is Decimal { <- val != 0.0 }
-        when val is String {
+        when (val is Integer) { <- val != 0 }
+        when (val is Decimal) { <- val != 0.0 }
+        when (val is String) {
             when val == `True` or val == `true` or val == `1` { <- true }
             <- false
         }
-        when val is List or val is Map { <- val.length > 0 }
+        when (val is List) or (val is Map) { <- val.length > 0 }
         when val == Nothing { <- false }
         <- true
     }
-    when target_type == `Rune` or target_type == `Char` or target_type == `Glyph` {
-        when val is String {
+    when target_type == `Rune` {
+        when (val is String) {
             when Str.length(val) >= 1 {
                 <- Str.substring(val, 0, 1)
             }
             <- ``
         }
-        when val is Integer {
+        when (val is Integer) {
             let s -> Str.to_string(val)
             <- Str.substring(s, 0, 1)
         }
         <- ``
     }
-    when target_type == `Bytes` or target_type == `Buffer` {
-        when val is String {
+    when target_type == `Bytes` {
+        when (val is String) {
             let res -> []
             let len -> Str.length(val)
             let i -> 0
@@ -2408,11 +2585,13 @@ function eval_cast(val, target_type) {
             }
             <- res
         }
-        when val is List { <- val }
-        when val is Integer { <- [val] }
+        when (val is List) { <- val }
+        when (val is Integer) { <- [val] }
         <- []
     }
-    when target_type == `List` {
+    when target_type == `List` or Str.starts_with(target_type, `List<`) or Str.starts_with(target_type, `List[`) or
+         target_type == `Vector` or Str.starts_with(target_type, `Vector<`) or Str.starts_with(target_type, `Vector[`) or
+         target_type == `Tuple` or Str.starts_with(target_type, `Tuple<`) or Str.starts_with(target_type, `Tuple[`) {
         when val is List { <- val }
         when val is String {
             let res -> []
@@ -2426,7 +2605,7 @@ function eval_cast(val, target_type) {
         }
         <- [val]
     }
-    when target_type == `Set` {
+    when target_type == `Set` or Str.starts_with(target_type, `Set<`) or Str.starts_with(target_type, `Set[`) {
         when val is Set { <- val }
         when val is List {
             <- __builtin_set.from_list(val)
@@ -2437,9 +2616,33 @@ function eval_cast(val, target_type) {
         }
         <- __builtin_set.from_list([val])
     }
-    when target_type == `Map` {
+    when target_type == `Map` or Str.starts_with(target_type, `Map<`) or Str.starts_with(target_type, `Map[`) {
         when val is Map { <- val }
         <- {}
+    }
+    when target_type == `Number` {
+        when (val is Integer) or (val is Decimal) { <- val }
+        when val == true { <- 1 }
+        when val == false { <- 0 }
+        when val == Nothing { <- 0 }
+        when (val is String) {
+            let s -> Str.trim(val)
+            when Str.contains(s, `.`) or Str.contains(s, `e`) or Str.contains(s, `E`) {
+                <- eval_cast(val, `Decimal`)
+            }
+            <- eval_cast(val, `Integer`)
+        }
+        <- eval_cast(val, `Integer`)
+    }
+    when target_type == `Text` {
+        <- eval_cast(val, `String`)
+    }
+    when target_type == `Collection` {
+        when (val is List) or (val is Map) or (val is Set) { <- val }
+        <- eval_cast(val, `List`)
+    }
+    when target_type == `Container` {
+        <- val
     }
     <- val
 }
@@ -2515,6 +2718,16 @@ function guest_get(obj, name) {
         }
         when obj.has(name) {
             <- obj[name]
+        }
+        when (obj.has(`__is_extern_module`) and obj[`__is_extern_module`] == true) or obj.has(`__handle`) {
+            let sym_val -> __builtin_ffi.symbol(obj, name, Nothing)
+            when sym_val == Nothing {
+                sym_val -> __builtin_ffi.resolve(name)
+            }
+            when sym_val != Nothing {
+                obj[name] -> sym_val
+                <- sym_val
+            }
         }
     }
     <- Nothing
@@ -2681,6 +2894,9 @@ function eval_builtin(name, args) {
     let a0 -> nth_arg(args, 0)
     let a1 -> nth_arg(args, 1)
     let a2 -> nth_arg(args, 2)
+    when Str.starts_with(name, `ast.`) {
+        <- args
+    }
     when name == `reflect.type` or name == `type` {
         when a0 == Nothing { <- `Nothing` }
         when (a0 is Map) and a0[`kind`] == `DefaultSentinel` { <- `Default` }
@@ -2740,6 +2956,28 @@ function eval_builtin(name, args) {
     when name == `vm.run_file` or name == `__builtin_vm.run_file` or name == `vm.run` or name == `__builtin_vm.run` {
         <- Bytecode.eval_bytecode_file(a0, Bytecode.create_vm_prelude())
     }
+    when Str.starts_with(name, `ffi.`) or Str.starts_with(name, `__builtin_ffi.`) {
+        let mname -> Str.replace(name, `__builtin_ffi.`, ``)
+        mname -> Str.replace(mname, `ffi.`, ``)
+        when mname == `load` or mname == `open` {
+            <- __builtin_ffi.load(a0)
+        }
+        when mname == `symbol` or mname == `sym` {
+            <- __builtin_ffi.symbol(a0, a1, a2)
+        }
+        when mname == `call` {
+            <- __builtin_ffi.call(a0, a1, a2)
+        }
+        when mname == `close` {
+            <- __builtin_ffi.close(a0)
+        }
+        when mname == `error` {
+            <- __builtin_ffi.error()
+        }
+        when mname == `resolve` {
+            <- __builtin_ffi.resolve(a0)
+        }
+    }
     when name == `string.to_string` {
         <- Str.to_string(a0)
     }
@@ -2748,6 +2986,9 @@ function eval_builtin(name, args) {
     }
     when name == `string.at` {
         <- Str.at(a0, a1)
+    }
+    when name == `string.byte_at` {
+        <- Str.byte_at(a0, a1)
     }
     when name == `string.contains` {
         <- Str.contains(a0, a1)
@@ -2870,6 +3111,22 @@ function eval_builtin(name, args) {
     when name == `memory.arena_depth` {
         <- MEM[`depth`]
     }
+    when name == `memory.arena_allocated` {
+        <- 0
+    }
+    when name == `memory.arena_capacity` {
+        <- 0
+    }
+    when name == `memory.arena_chunks` {
+        <- 0
+    }
+    when name == `memory.arena_stats` {
+        let stats -> {}
+        stats[`allocated`] -> 0
+        stats[`capacity`] -> 0
+        stats[`chunks`] -> 0
+        <- stats
+    }
     when name == `sys.get_args` or name == `sys.args` {
         <- Sys.get_args()
     }
@@ -2955,6 +3212,9 @@ function eval_builtin(name, args) {
 }
 
 function call_fn(fn, args, env) {
+    when type(fn) == `Function` {
+        <- __builtin_ffi.call(fn, args, Nothing)
+    }
     let closure -> fn[`closure`]
     when closure == Nothing {
         closure -> env
@@ -2996,13 +3256,35 @@ function call_fn(fn, args, env) {
     <- result
 }
 
+function eval_add_op(l, r) {
+    when (l is Map) and (r is Map) {
+        let res -> {}
+        let k1 -> l.keys()
+        let mi -> 0
+        do while mi < k1.length {
+            let k -> k1[mi]
+            res[k] -> l[k]
+            mi -> mi + 1
+        }
+        let k2 -> r.keys()
+        mi -> 0
+        do while mi < k2.length {
+            let k -> k2[mi]
+            res[k] -> r[k]
+            mi -> mi + 1
+        }
+        <- res
+    }
+    <- l + r
+}
+
 function eval_binary(op, l, r) {
     when op == `??` {
         when l != Nothing { <- l }
         <- r
     }
     when op == `+` {
-        <- l + r
+        <- eval_add_op(l, r)
     }
     when op == `-` {
         <- l - r
@@ -3480,7 +3762,11 @@ function coerce_literal(value) {
     when looks_int_str(s) {
         <- parse_int_str(s)
     }
-    // leave strings / decimals as-is (decimal parse optional later)
+    // decimal?
+    when looks_dec_str(s) {
+        <- Decimal(s)
+    }
+    // leave strings as-is
     <- value
 }
 

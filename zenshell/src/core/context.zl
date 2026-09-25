@@ -1,0 +1,68 @@
+/!
+  zenshell - Execution Context & State
+!/
+
+import zen.sys.sys as sys
+import zen.text.string as Str
+
+function join_path(p1, p2) {
+    when p1 == `` or p1 == Nothing { <- p2 }
+    when p2 == `` or p2 == Nothing { <- p1 }
+    when Str.ends_with(p1, `/`) { <- p1 + p2 }
+    <- p1 + `/` + p2
+}
+
+export class Context {
+    let cwd
+    let dir_stack
+    let bookmarks
+    let aliases
+    let history
+    let variables
+    let last_status
+    let last_duration_ms
+    let running
+
+    function init() {
+        self.cwd -> sys.get_cwd()
+        self.dir_stack -> [self.cwd]
+        let home -> sys.get_env(`HOME`)
+        when home == Nothing { home -> `/` }
+        
+        self.bookmarks -> {
+            `home` -> home,
+            `downloads` -> join_path(home, `Downloads`),
+            `docs` -> join_path(home, `Documents`),
+            `zen` -> self.cwd
+        }
+        self.aliases -> {
+            `ls`  -> `list`,
+            `l`   -> `list`,
+            `ll`  -> `list detailed`,
+            `la`  -> `list -a`,
+            `sys` -> `sysinfo`,
+            `cal` -> `calendar`,
+            `jot` -> `note`,
+            `o`   -> `open`,
+            `g`   -> `git`,
+            `..`  -> `directory change ..`,
+            `...` -> `directory change ../..`
+        }
+        self.tags -> {}
+        self.history -> []
+        self.variables -> {}
+        self.last_status -> 0
+        self.last_duration_ms -> 0.0
+        self.running -> true
+    }
+
+    function update_cwd(new_path) {
+        self.cwd -> new_path
+    }
+
+    function add_history(line) {
+        when line != Nothing and line != `` {
+            self.history.append(line)
+        }
+    }
+}

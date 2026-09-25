@@ -1,0 +1,197 @@
+/!
+  turing_machine.zl — Universal Computation & Turing Completeness Showcase.
+  Demonstrates:
+  1. Universal Turing Machine with dynamic bidirectional tape & state machine
+  2. Step-by-step visual tape execution
+  3. Rule 110 Elementary Cellular Automaton (Turing complete via Matthew Cook, 2004)
+  4. Pure Lambda Calculus Fixed-Point Combinator
+!/
+
+function print_banner() {
+    writeln(`\x1b[1;36m============================================================\x1b[0m`)
+    writeln(`\x1b[1;36m       Zenlang Turing Completeness & Automata Showcase      \x1b[0m`)
+    writeln(`\x1b[1;36m============================================================\x1b[0m\n`)
+}
+
+class TuringMachine {
+    let tape: List
+    let head: Integer
+    let state: String
+    let halted: Boolean
+    let transitions: Map
+
+    function init(initial_tape, initial_state, initial_head) {
+        self.tape -> initial_tape
+        self.head -> initial_head
+        self.state -> initial_state
+        self.halted -> false
+        self.transitions -> {}
+    }
+
+    function add_transition(from_state, read_symbol, to_state, write_symbol, direction) {
+        let key -> f`{from_state}:{read_symbol}`
+        self.transitions[key] -> {
+            `next_state` -> to_state,
+            `write_val`  -> write_symbol,
+            `dir`        -> direction
+        }
+    }
+
+    function render_tape(step_num) {
+        let tape_str -> `[`
+        let pointer_str -> ` `
+        let i -> 0
+        do while i < self.tape.length {
+            let cell -> Str.to_string(self.tape[i])
+            when i == self.head {
+                tape_str -> tape_str + f`\x1b[1;31m{cell}\x1b[0m`
+                pointer_str -> pointer_str + `^`
+            } or {
+                tape_str -> tape_str + cell
+                pointer_str -> pointer_str + ` `
+            }
+            when i + 1 < self.tape.length {
+                tape_str -> tape_str + ` `
+                pointer_str -> pointer_str + ` `
+            }
+            i -> i + 1
+        }
+        tape_str -> tape_str + `]`
+        writeln(f`  Step {step_num:2} | State: {self.state:8} | Tape: {tape_str}`)
+    }
+
+    function step() {
+        when self.halted { <- false }
+
+        // Dynamic tape expansion
+        when self.head < 0 {
+            self.tape -> [0, ...self.tape]
+            self.head -> 0
+        } or when self.head >= self.tape.length {
+            self.tape.append(0)
+        }
+
+        let symbol -> self.tape[self.head]
+        let key -> f`{self.state}:{symbol}`
+
+        when not self.transitions.has(key) {
+            self.halted -> true
+            <- false
+        }
+
+        let trans -> self.transitions[key]
+        self.tape[self.head] -> trans[`write_val`]
+        self.state -> trans[`next_state`]
+
+        when trans[`dir`] == `R` {
+            self.head -> self.head + 1
+        } or when trans[`dir`] == `L` {
+            self.head -> self.head - 1
+        }
+
+        when self.state == `halt` {
+            self.halted -> true
+        }
+
+        <- true
+    }
+
+    function run_animated(max_steps) {
+        let count -> 0
+        self.render_tape(count)
+        do while count < max_steps and not self.halted {
+            self.step()
+            count -> count + 1
+            self.render_tape(count)
+        }
+        <- count
+    }
+}
+
+// Rule 110 step function
+function step_rule110(tape) {
+    let n -> tape.length
+    let next_tape -> []
+    let i -> 0
+    do while i < n {
+        let left  -> when i > 0 { tape[i - 1] } or { 0 }
+        let mid   -> tape[i]
+        let right -> when i + 1 < n { tape[i + 1] } or { 0 }
+
+        // Rule 110 truth table: 110, 101, 011, 010, 001 -> 1
+        let bit -> 0
+        when (left == 1 and mid == 1 and right == 0) or
+             (left == 1 and mid == 0 and right == 1) or
+             (left == 0 and mid == 1 and right == 1) or
+             (left == 0 and mid == 1 and right == 0) or
+             (left == 0 and mid == 0 and right == 1) {
+            bit -> 1
+        }
+        next_tape.append(bit)
+        i -> i + 1
+    }
+    <- next_tape
+}
+
+// Fixed-Point Combinator (Z Combinator)
+function make_z_combinator() {
+    <- function(f) {
+        let g -> function(x) {
+            let captured_x -> x
+            let captured_f -> f
+            <- captured_f(function(v) {
+                let rec_step -> captured_x(captured_x)
+                <- rec_step(v)
+            })
+        }
+        <- g(g)
+    }
+}
+
+use zen.text.string as Str
+
+function main() {
+    print_banner()
+
+    // 1. Universal Turing Machine
+    writeln(`\x1b[1;33m[1] Universal Turing Machine Simulation: Binary Incrementer\x1b[0m`)
+    writeln(`  Input: [1, 0, 1, 1] (binary 11) -> Desired: [1, 1, 0, 0] (binary 12)\n`)
+
+    let tm -> TuringMachine([1, 0, 1, 1], `add_one`, 3)
+    tm.add_transition(`add_one`, 1, `add_one`, 0, `L`)
+    tm.add_transition(`add_one`, 0, `halt`, 1, `L`)
+
+    let total_steps -> tm.run_animated(20)
+    writeln(f`\n  \x1b[1;32mExecution Halted in {total_steps} steps. Final tape: {tm.tape}\x1b[0m\n`)
+
+    // 2. Rule 110 Cellular Automaton
+    writeln(`\x1b[1;33m[2] Rule 110 Elementary Cellular Automaton (Proven Turing Complete)\x1b[0m`)
+    let r110 -> [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+    let g -> 0
+    do while g < 12 {
+        let row -> ``
+        do for cell in r110 {
+            row -> row + when cell == 1 { `\x1b[1;32m■ \x1b[0m` } or { `\x1b[90m· \x1b[0m` }
+        }
+        writeln(f`  Gen {g:2}: {row}`)
+        r110 -> step_rule110(r110)
+        g -> g + 1
+    }
+    writeln(``)
+
+    // 3. Lambda Calculus Fixed-Point Combinator
+    writeln(`\x1b[1;33m[3] Pure Lambda Calculus: Fixed-Point Z-Combinator\x1b[0m`)
+    let Z -> make_z_combinator()
+    let fact -> Z(function(f) {
+        let rec_fn -> f
+        <- function(n) {
+            when n <= 1 { <- 1 }
+            <- n * rec_fn(n - 1)
+        }
+    })
+
+    writeln(f`  Z-Combinator fact(5) = \x1b[1;32m{fact(5)}\x1b[0m`)
+    writeln(f`  Z-Combinator fact(7) = \x1b[1;32m{fact(7)}\x1b[0m\n`)
+
+    writeln(`\x1b[1;32mTuring completeness demonstrations executed successfully!\x1b[0m`)
+}

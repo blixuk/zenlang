@@ -1,0 +1,4 @@
+name: c_interop
+entry: src/main.zl
+target: build/c_interop
+c_flags: -O2

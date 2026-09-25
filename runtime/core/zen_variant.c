@@ -66,24 +66,46 @@ ZenValue ZenValue_is_type_name(ZenValue val, const char* expected_type) {
     if (!expected_type) return ZenValue_make_boolean(false);
 
     if (strcmp(expected_type, "Nothing") == 0) return ZenValue_make_boolean(val.type == ZEN_NOTHING);
-    if (strcmp(expected_type, "Boolean") == 0 || strcmp(expected_type, "Bool") == 0) return ZenValue_make_boolean(val.type == ZEN_BOOLEAN);
-    if (strcmp(expected_type, "Integer") == 0 || strcmp(expected_type, "Int") == 0 ||
-        strcmp(expected_type, "Int64") == 0 || strcmp(expected_type, "Int32") == 0 ||
-        strcmp(expected_type, "Int16") == 0 || strcmp(expected_type, "Int8") == 0 ||
+    if (strcmp(expected_type, "Boolean") == 0) return ZenValue_make_boolean(val.type == ZEN_BOOLEAN);
+    if (strcmp(expected_type, "Number") == 0) return ZenValue_make_boolean(val.type == ZEN_INTEGER || val.type == ZEN_DECIMAL);
+    if (strcmp(expected_type, "Text") == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
+    if (strcmp(expected_type, "Collection") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_MAP || val.type == ZEN_SET || val.type == ZEN_AST_NODE || val.type == ZEN_TOKEN);
+    if (strcmp(expected_type, "Container") == 0) return ZenValue_make_boolean(val.type == ZEN_MAP || val.type == ZEN_OBJECT || val.type == ZEN_VARIANT);
+    if (strcmp(expected_type, "Integer") == 0 ||
+        strcmp(expected_type, "Integer[64]") == 0 || strcmp(expected_type, "Integer[32]") == 0 ||
+        strcmp(expected_type, "Integer[16]") == 0 || strcmp(expected_type, "Integer[8]") == 0 ||
         strcmp(expected_type, "Byte") == 0) return ZenValue_make_boolean(val.type == ZEN_INTEGER);
-    if (strcmp(expected_type, "Decimal") == 0 || strcmp(expected_type, "Float") == 0 || strcmp(expected_type, "Double") == 0) return ZenValue_make_boolean(val.type == ZEN_DECIMAL);
-    if (strcmp(expected_type, "String") == 0 || strcmp(expected_type, "Str") == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
-    if (strcmp(expected_type, "Rune") == 0 || strcmp(expected_type, "Char") == 0 || strcmp(expected_type, "Glyph") == 0) {
+    if (strcmp(expected_type, "Decimal") == 0 || strcmp(expected_type, "Decimal[64]") == 0 || strcmp(expected_type, "Decimal[32]") == 0) return ZenValue_make_boolean(val.type == ZEN_DECIMAL);
+    if (strcmp(expected_type, "String") == 0 || strncmp(expected_type, "String[", 7) == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
+    if (strcmp(expected_type, "Rune") == 0) {
         return ZenValue_make_boolean(val.type == ZEN_STRING && val.as.string && strlen(val.as.string) == 1);
     }
-    if (strcmp(expected_type, "Bytes") == 0 || strcmp(expected_type, "Buffer") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_STRING);
-    if (strcmp(expected_type, "List") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST);
-    if (strcmp(expected_type, "Set") == 0) return ZenValue_make_boolean(val.type == ZEN_SET);
-    if (strcmp(expected_type, "Map") == 0) return ZenValue_make_boolean(val.type == ZEN_MAP);
+    if (strcmp(expected_type, "Bytes") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_STRING);
+    if (strcmp(expected_type, "List") == 0 || strncmp(expected_type, "List<", 5) == 0 || strncmp(expected_type, "List[", 5) == 0 ||
+        strcmp(expected_type, "Tuple") == 0 || strncmp(expected_type, "Tuple<", 6) == 0 || strncmp(expected_type, "Tuple[", 6) == 0 ||
+        strcmp(expected_type, "Vector") == 0 || strncmp(expected_type, "Vector[", 7) == 0 || strncmp(expected_type, "Vector<", 7) == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_AST_NODE || val.type == ZEN_TOKEN);
+    if (strcmp(expected_type, "AstNode") == 0) return ZenValue_make_boolean(val.type == ZEN_AST_NODE);
+    if (strcmp(expected_type, "Token") == 0) return ZenValue_make_boolean(val.type == ZEN_TOKEN);
+    if (strcmp(expected_type, "Set") == 0 || strncmp(expected_type, "Set<", 4) == 0 || strncmp(expected_type, "Set[", 4) == 0) return ZenValue_make_boolean(val.type == ZEN_SET);
+    if (strcmp(expected_type, "Map") == 0 || strncmp(expected_type, "Map<", 4) == 0 || strncmp(expected_type, "Map[", 4) == 0) return ZenValue_make_boolean(val.type == ZEN_MAP);
     if (strcmp(expected_type, "Variant") == 0) return ZenValue_make_boolean(val.type == ZEN_VARIANT);
     if (strcmp(expected_type, "Error") == 0) {
         if (val.type == ZEN_ERROR) {
             return ZenValue_make_boolean(true);
+        }
+        if (val.type == ZEN_MAP) {
+            ZenValue type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type__"));
+            if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, "Error") == 0) {
+                return ZenValue_make_boolean(true);
+            }
+            type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type"));
+            if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, "Error") == 0) {
+                return ZenValue_make_boolean(true);
+            }
+            ZenValue is_err = ZenMap_get_value_at_key(val, ZenValue_make_string("is_error"));
+            if (is_err.type == ZEN_BOOLEAN && is_err.as.boolean) {
+                return ZenValue_make_boolean(true);
+            }
         }
         return ZenValue_make_boolean(
             val.type == ZEN_VARIANT &&
@@ -100,12 +122,28 @@ ZenValue ZenValue_is_type_name(ZenValue val, const char* expected_type) {
 
     if (val.type == ZEN_MAP) {
         ZenValue type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type__"));
-        if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, expected_type) == 0) {
-            return ZenValue_make_boolean(true);
+        if (type_field.type == ZEN_STRING && type_field.as.string) {
+            if (strcmp(type_field.as.string, expected_type) == 0) return ZenValue_make_boolean(true);
+            size_t elen = strlen(expected_type);
+            if (strncmp(type_field.as.string, expected_type, elen) == 0 && type_field.as.string[elen] == '<') return ZenValue_make_boolean(true);
+            size_t tlen = strlen(type_field.as.string);
+            if (strncmp(expected_type, type_field.as.string, tlen) == 0 && expected_type[tlen] == '<') return ZenValue_make_boolean(true);
         }
         type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("__type"));
-        if (type_field.type == ZEN_STRING && type_field.as.string && strcmp(type_field.as.string, expected_type) == 0) {
-            return ZenValue_make_boolean(true);
+        if (type_field.type == ZEN_STRING && type_field.as.string) {
+            if (strcmp(type_field.as.string, expected_type) == 0) return ZenValue_make_boolean(true);
+            size_t elen = strlen(expected_type);
+            if (strncmp(type_field.as.string, expected_type, elen) == 0 && type_field.as.string[elen] == '<') return ZenValue_make_boolean(true);
+            size_t tlen = strlen(type_field.as.string);
+            if (strncmp(expected_type, type_field.as.string, tlen) == 0 && expected_type[tlen] == '<') return ZenValue_make_boolean(true);
+        }
+        type_field = ZenMap_get_value_at_key(val, ZenValue_make_string("kind"));
+        if (type_field.type == ZEN_STRING && type_field.as.string) {
+            if (strcmp(type_field.as.string, expected_type) == 0) return ZenValue_make_boolean(true);
+            size_t elen = strlen(expected_type);
+            if (strncmp(type_field.as.string, expected_type, elen) == 0 && type_field.as.string[elen] == '<') return ZenValue_make_boolean(true);
+            size_t tlen = strlen(type_field.as.string);
+            if (strncmp(expected_type, type_field.as.string, tlen) == 0 && expected_type[tlen] == '<') return ZenValue_make_boolean(true);
         }
     }
 

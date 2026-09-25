@@ -1,0 +1,137 @@
+/!
+  functional_programming.zl — Showcase of Functional Programming Idioms in Zenlang.
+  Demonstrates:
+  - First-class & higher-order functions
+  - Lexical closures
+  - Function currying & composition
+  - Fluent pipeline operator (|>)
+  - Head/tail recursive pattern matching
+  - Declarative collection transformations
+!/
+
+function print_banner() {
+    writeln(`\x1b[1;35m============================================================\x1b[0m`)
+    writeln(`\x1b[1;35m       Zenlang Functional Programming Paradigm Showcase     \x1b[0m`)
+    writeln(`\x1b[1;35m============================================================\x1b[0m\n`)
+}
+
+// Higher-order function
+function apply_twice(f, x) {
+    <- f(f(x))
+}
+
+// Currying: transforms f(a, b) into f(a)(b)
+function curry2(f) {
+    <- function(a) {
+        let fn_captured -> f
+        <- function(b) {
+            <- fn_captured(a, b)
+        }
+    }
+}
+
+// Function composition: (f . g)(x) = f(g(x))
+function compose(f, g) {
+    <- function(x) {
+        <- f(g(x))
+    }
+}
+
+// Pure recursive list sum via pattern matching
+function rec_sum(list) {
+    check list {
+        case [] {
+            <- 0
+        }
+        case [head, ...tail] {
+            <- head + rec_sum(tail)
+        }
+    } or {
+        <- 0
+    }
+}
+
+// Pure recursive list map
+function rec_map(list, f) {
+    check list {
+        case [] {
+            <- []
+        }
+        case [head, ...tail] {
+            <- [f(head), ...rec_map(tail, f)]
+        }
+    } or {
+        <- []
+    }
+}
+
+function inc(x) { <- x + 1 }
+function sq(x)  { <- x * x }
+
+function main() {
+    print_banner()
+
+    // 1. Closures & First-Class Functions
+    writeln(`\x1b[1;33m[1] First-Class Functions & Lexical Closures\x1b[0m`)
+    let make_multiplier -> function(factor) {
+        <- function(x) { <- x * factor }
+    }
+    let times3 -> make_multiplier(3)
+    let times10 -> make_multiplier(10)
+    writeln(f`  times3(7)  = \x1b[1;32m{times3(7)}\x1b[0m`)
+    writeln(f`  times10(7) = \x1b[1;32m{times10(7)}\x1b[0m\n`)
+
+    // 2. Currying & Partial Application
+    writeln(`\x1b[1;33m[2] Currying & Partial Application\x1b[0m`)
+    let power -> function(base, exp) {
+        let acc -> 1
+        let i -> 0
+        do while i < exp {
+            acc -> acc * base
+            i -> i + 1
+        }
+        <- acc
+    }
+    let curried_power -> curry2(power)
+    let power_of_2 -> curried_power(2)
+    writeln(f`  curried_power(2)(8) = \x1b[1;32m{power_of_2(8)}\x1b[0m (expected: 256)\n`)
+
+    // 3. Function Composition & Pipelines
+    writeln(`\x1b[1;33m[3] Function Composition & Pipeline Flow (|>) \x1b[0m`)
+    let inc_and_sq -> compose(sq, inc)
+    writeln(f`  compose(sq, inc)(4) = \x1b[1;32m{inc_and_sq(4)}\x1b[0m (expected: 25)`)
+    
+    let piped -> 4 |> inc |> sq
+    writeln(f`  4 |> inc |> sq      = \x1b[1;32m{piped}\x1b[0m (expected: 25)\n`)
+
+    // 4. Higher-Order Collection Combinators
+    writeln(`\x1b[1;33m[4] Higher-Order Collection Combinators (filter, map, reduce)\x1b[0m`)
+    let data -> [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    let even_squares_sum -> data
+        .filter(function(x) { <- x % 2 == 0 })
+        .map(function(x) { <- x * x })
+        .reduce(0, function(acc, x) { <- acc + x })
+    writeln(f`  Sum of even squares from 1..10 = \x1b[1;32m{even_squares_sum}\x1b[0m (2^2+4^2+6^2+8^2+10^2 = 220)\n`)
+
+    // 5. Directional Comprehensions
+    writeln(`\x1b[1;33m[5] Directional Comprehensions\x1b[0m`)
+    let comp -> [for x in data when x % 2 != 0 -> x * 10]
+    writeln(f`  Odd numbers times 10: \x1b[1;32m{comp}\x1b[0m\n`)
+
+    // 6. Pure Recursive Pattern Matching on Head & Tail
+    writeln(`\x1b[1;33m[6] Structural Pattern Matching Recursion ([head, ...tail])\x1b[0m`)
+    let sample -> [5, 15, 25, 35]
+    let total -> rec_sum(sample)
+    writeln(f`  rec_sum({sample}) = \x1b[1;32m{total}\x1b[0m (expected: 80)`)
+
+    let doubled -> rec_map(sample, function(x) { <- x * 2 })
+    writeln(f`  rec_map({sample}, * 2) = \x1b[1;32m{doubled}\x1b[0m\n`)
+
+    // 7. Null Coalescing Monadic Defaults
+    writeln(`\x1b[1;33m[7] Safe Optional Fallbacks (??)\x1b[0m`)
+    let options -> { `theme` -> `zen-dark` }
+    let fontSize -> options.get(`fontSize`, Nothing) ?? 14
+    writeln(f`  options.get('fontSize') ?? 14 = \x1b[1;32m{fontSize}\x1b[0m\n`)
+
+    writeln(`\x1b[1;32mAll functional programming demonstrations executed successfully!\x1b[0m`)
+}

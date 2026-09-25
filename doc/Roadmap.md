@@ -20,6 +20,10 @@ Zenlang's development follows three core design tenets:
 | **Terminal & TUI Engine** | `zen.ui.canvas`, `zen.ui.table`, `zen.ui.spinner`, ANSI raw terminal control, and mouse/keyboard event loops. | ✅ Shipped |
 | **Task Concurrency Model** | Fibers, channels, WaitGroups, mutexes, task pools, async combinators, and timeouts. | ✅ Shipped |
 | **Reflection & Plugin System** | Dynamic reflection (`zen.reflect`), `is reflectable` types, method registration thunks, and runtime plugin loading. | ✅ Shipped |
+| **Flow Operators & Slicing** | Null-coalescing (`??`), directional pipeline (`\|>`), negative indexing (`[-1]`), and interval slicing (`[start:end:step]`). | ✅ Shipped |
+| **Directional Comprehensions & Spreads** | Directional comprehensions (`[for x in iter -> expr]`, `{for k, v in iter -> k: v}`) and collection spreads (`...list`, `...map`) with 100% execution parity. | ✅ Shipped |
+| **Zero-Wrapper C Interop & FFI** | Direct C system header imports (`extern use`), dynamic library loader (`zen.sys.ffi`), and zero-glue system modules (`zen.sys.hardware`, `zen.sys.meminfo`, `zen.sys.termposix`). | ✅ Shipped |
+| **Version 1 Beta (`v1.0.0-beta.1`) Platform** | Standalone single-binary `bin/zen` developer platform with Stage 2 native self-hosting closure and complete Python bootstrap retirement. | ✅ Shipped |
 
 ---
 
@@ -193,19 +197,21 @@ Focus: Expressive destructuring and type-safe tagged union handling.
 
 ---
 
-## 6. Milestone 5: Collections & Metaprogramming
+## 6. Milestone 5: Collections & Metaprogramming (✅ Shipped in `v1.0.0-beta.1`)
 
 ### 5.1 Directional List & Map Comprehensions
+- **Status**: ✅ Shipped with 100% parity across C runtime, selfhost C Codegen, Bytecode VM, and Interpreter.
 - **Syntax**:
   ```zen
   // List comprehension
-  let squares -> [for x in 1..=10 when x % 2 == 0 -> x * x]
+  let squares -> [for x in 1...10 when x % 2 == 0 -> x * x]
 
   // Map comprehension
   let id_map -> {for u in users -> u.id: u.name}
   ```
 
-### 5.2 Flow Map Spread & Deep Merge
+### 5.2 Collection Spread & Deep Merge
+- **Status**: ✅ Shipped across lists and maps.
 - **Syntax**:
   ```zen
   let base_config -> { `timeout` -> 30, `retries` -> 3, `debug` -> False }

@@ -38,6 +38,7 @@ class TokenType(Enum):
     CASE = "CASE"
     WITH = "WITH"
     TASK = "TASK"
+    CHANNEL = "CHANNEL"
     YIELD = "YIELD"
     AWAIT = "AWAIT"
 
@@ -133,6 +134,7 @@ class TokenType(Enum):
     IMPORT = "IMPORT"
     FROM = "FROM"
     AS = "AS"
+    EXTERN = "EXTERN"
 
     CHECK_SYMBOL = "CHECK_SYMBOL"
     RAISE_SYMBOL = "RAISE_SYMBOL"
@@ -230,71 +232,75 @@ KEYWORDS: list = [
     "target",
     "owned",
     "borrowed",
+    "extern",
 ]
 
 TYPES: list = [
+    "Variant",
     "Void",
     "Nothing",
-    "Variant",
-    "Integer",
-    "Int",
-    "Decimal",
-    "Float",
-    "String",
-    "Str",
-    "Character",
-    "Char",
-    "Rune",
+    "Default",
+    "Boolean",
     "Byte",
     "Bytes",
-    "Buffer",
-    "Boolean",
-    "Bool",
-    "Structure",
-    "Function",
-    "Class",
-    "Map",
-    "Vector",
+    "Rune",
+    "Integer",
+    "Decimal",
+    "String",
     "List",
-    "Tuple",
     "Set",
-    "V",  # Vector abbreviation
-    "L",  # List abbreviation
-    "S",  # Set abbreviation
-    "T",  # Tuple abbreviation
-    "M",  # Map abbreviation
-    "Iterator",
-    "Iterable",
+    "Vector",
+    "Tuple",
+    "Map",
+    "Structure",
+    "Object",
+    "Class",
     "Enumerator",
+    "Function",
+    "Task",
+    "Channel",
     "Error",
     "Option",
     "Result",
+    "Iterator",
+    "Iterable",
+    "Number",
+    "Text",
+    "Collection",
+    "Container",
 ]
 
 TYPE_TOKENS: list = [
+    TokenType.VARIANT,
     TokenType.VOID,
     TokenType.NOTHING,
     TokenType.DEFAULT,
-    TokenType.VARIANT,
+    TokenType.BOOLEAN,
+    TokenType.BYTE,
+    TokenType.BYTES,
+    TokenType.RUNE,
     TokenType.INTEGER,
     TokenType.DECIMAL,
     TokenType.STRING,
-    TokenType.RUNE,
-    TokenType.BYTE,
-    TokenType.BYTES,
-    TokenType.BOOLEAN,
-    TokenType.STRUCTURE,
-    TokenType.FUNCTION,
-    TokenType.CLASS,
     TokenType.LIST,
+    TokenType.SET,
+    TokenType.VECTOR,
     TokenType.TUPLE,
     TokenType.MAP,
-    TokenType.VECTOR,
-    TokenType.SET,
+    TokenType.STRUCTURE,
+    TokenType.OBJECT,
+    TokenType.CLASS,
+    TokenType.ENUMERATOR,
+    TokenType.FUNCTION,
+    TokenType.TASK,
+    TokenType.CHANNEL,
     TokenType.ITERATOR,
     TokenType.ITERABLE,
-    TokenType.ENUMERATOR,
     TokenType.AUTO,
+    TokenType.NUMBER,
+    TokenType.TEXT,
+    TokenType.COLLECTION,
+    TokenType.CONTAINER,
 ]
 
 ASSIGNMENTS: dict = {
@@ -387,6 +393,7 @@ for _t in TYPES:
     IDENTIFIER_MAP[_t] = TokenType.TYPE
 for _k in KEYWORDS:
     IDENTIFIER_MAP[_k] = TokenType.KEYWORD
+IDENTIFIER_MAP["extern"] = TokenType.EXTERN
 for _k, _v in LOGICALS.items():
     IDENTIFIER_MAP[_k] = _v
 for _k, _v in LITERALS.items():

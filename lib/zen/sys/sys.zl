@@ -69,3 +69,25 @@ export function version() {
 export function exec(cmd) {
     <- __builtin_sys.exec(cmd)
 }
+
+/!
+  Returns the number of available CPU cores.
+!/
+export function cpu_count() {
+    let hw_count -> __builtin_ffi.resolve(`get_nprocs`)
+    when hw_count != Nothing {
+        <- __builtin_ffi.call(hw_count, [], `int`)
+    }
+    <- 1
+}
+
+/!
+  Returns the process ID of the current process.
+!/
+export function pid() {
+    let pid_fn -> __builtin_ffi.resolve(`getpid`)
+    when pid_fn != Nothing {
+        <- __builtin_ffi.call(pid_fn, [], `int`)
+    }
+    <- 0
+}

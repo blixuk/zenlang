@@ -41,8 +41,14 @@ Core ladder (must stay green for “language works”):
 - Type introspection: `tests/language/test_type_introspection.zl` (core + parity)
 - Frontend syntax parity (bases, strings, arrow bodies, 4-boundary ranges): `tests/language/test_frontend_parity_01.zl`
 - Sentinels & type casting (`Nothing`, `Default`, `<:`, `Type(val)`): `tests/language/test_nothing_default_01.zl`
+- Sized primitive types & bounds truncation (`Integer[SIZE]`, `Decimal[SIZE]`, `Byte`, `String[SIZE]`, `Vector[N]`, `Tuple`): `tests/language/test_sized_types.zl` (core + parity)
+- Canonical collection literals (`List{...}`, `Vector{...}`, `Map{...}`, `Set{...}`, `Tuple{...}`) and rejection of single-letter abbreviations (`V`, `L`, `S`, `T`, `M`) & informal type aliases: `tests/language/test_canonical_collection_literals.zl` (core + parity), `tests/language/test_forbidden_types_reject.py`
+- Abstract & Union types (`Number`, `Text`, `Collection`, `Container`): `tests/language/test_abstract_types.zl` (core + parity)
+- Parameterized Generic Type Annotations (`List<T>`, `Map<K, V>`, `Set<T>`, `Vector[N]<T>`, `Tuple<...>`): `tests/language/test_generic_type_annotations.zl` (core + parity)
 - Directional guard returns & concise functions: `tests/core/test_guard_concise_syntax.zl` (core + parity)
 - Diagnostic source frames, Zen Data & Zen Mark Callouts: `tests/core/test_diagnostics.zl` (core + parity)
+- Functional Programming paradigms (closures, currying, composition, pipeline, recursive head/tail pattern matching): `tests/language/test_functional_programming.zl` (core + parity)
+- Turing Completeness (Universal Turing Machine, Rule 110 cellular automaton, fixed-point Z-combinator): `tests/language/test_turing_completeness.zl` (core + parity)
 - Three-Layer Self-Hosting Architecture (ZenValue ABI, Compiler IR, Bytecode VM bridge): `tests/self_hosting/test_three_layer.zl` (dual-path)
 - Individual: `python3 bootstrap/Zen.py path/to/test.zl` or `./bin/zen` after `./scripts/zen install`
 

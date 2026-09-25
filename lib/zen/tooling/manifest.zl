@@ -93,6 +93,31 @@ export function parse_manifest(text) {
             manifest_map -> j_map
         }
     }
+    when manifest_map == Nothing or not (manifest_map is Map) or (not manifest_map.has(`name`) and not manifest_map.has(`entry`) and not manifest_map.has(`version`)) {
+        let lines -> Str.split(text, `\n`)
+        let kv_map -> {}
+        do for raw_line in lines {
+            let line -> Str.trim(raw_line)
+            when line != `` and not Str.starts_with(line, `#`) and not Str.starts_with(line, `//`) {
+                when Str.contains(line, `:`) {
+                    let parts -> Str.split(line, `:`)
+                    when parts.length >= 2 {
+                        let k -> Str.trim(parts[0])
+                        let v -> Str.trim(parts[1])
+                        k -> Str.replace(k, `\``, ``)
+                        v -> Str.replace(v, `"`, ``)
+                        v -> Str.replace(v, `'`, ``)
+                        v -> Str.replace(v, `\``, ``)
+                        v -> Str.replace(v, `,`, ``)
+                        kv_map[k] -> v
+                    }
+                }
+            }
+        }
+        when kv_map.has(`name`) or kv_map.has(`entry`) or kv_map.has(`version`) {
+            manifest_map -> kv_map
+        }
+    }
     when manifest_map == Nothing or not (manifest_map is Map) {
         <- default_manifest(`unnamed`)
     }
@@ -122,6 +147,8 @@ export function parse_manifest(text) {
     let tgt_bin -> `build/` + name
     when manifest_map.has(`target`) and manifest_map[`target`] != Nothing {
         tgt_bin -> Str.to_string(manifest_map[`target`])
+    } or when manifest_map.has(`output`) and manifest_map[`output`] != Nothing {
+        tgt_bin -> Str.to_string(manifest_map[`output`])
     }
 
     let description -> ``

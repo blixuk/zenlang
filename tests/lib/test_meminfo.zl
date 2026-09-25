@@ -1,0 +1,61 @@
+import zen.sys.meminfo as mem
+import zen.test as test
+
+function test_ram_bytes() {
+    let total -> mem.total_ram_bytes()
+    let avail -> mem.available_ram_bytes()
+    let used -> mem.used_ram_bytes()
+    test.assert_true(total > 0, `total RAM should be positive`)
+    test.assert_true(avail >= 0, `available RAM should be non-negative`)
+    test.assert_true(avail <= total, `available RAM should not exceed total RAM`)
+    test.assert_true(used >= 0, `used RAM should be non-negative`)
+    test.assert_true(used <= total, `used RAM should not exceed total RAM`)
+    <- true
+}
+
+function test_ram_units() {
+    let mb_total -> mem.total_ram_mb()
+    let mb_avail -> mem.available_ram_mb()
+    let mb_used -> mem.used_ram_mb()
+    test.assert_true(mb_total >= 1, `total RAM in MB should be at least 1`)
+    test.assert_true(mb_avail >= 0, `available RAM in MB should be non-negative`)
+    test.assert_true(mb_used >= 0, `used RAM in MB should be non-negative`)
+
+    let gb_total -> mem.total_ram_gb()
+    test.assert_true(gb_total >= 0, `total RAM in GB should be non-negative`)
+
+    let pct -> mem.ram_usage_pct()
+    test.assert_true(pct >= 0.0, `usage percent should be >= 0.0`)
+    test.assert_true(pct <= 100.0, `usage percent should be <= 100.0`)
+    <- true
+}
+
+function test_summary() {
+    let s -> mem.memory_summary()
+    test.assert_true(s.has(`total_bytes`), `summary should have total_bytes`)
+    test.assert_true(s.has(`available_bytes`), `summary should have available_bytes`)
+    test.assert_true(s.has(`used_bytes`), `summary should have used_bytes`)
+    test.assert_true(s.has(`total_mb`), `summary should have total_mb`)
+    test.assert_true(s.has(`available_mb`), `summary should have available_mb`)
+    test.assert_true(s.has(`used_mb`), `summary should have used_mb`)
+    test.assert_true(s.has(`usage_pct`), `summary should have usage_pct`)
+    <- true
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `MemInfo.ram_bytes`, `fn` -> test_ram_bytes},
+        {`name` -> `MemInfo.ram_units`, `fn` -> test_ram_units},
+        {`name` -> `MemInfo.summary`, `fn` -> test_summary}
+    ]
+
+    <- test.run_suite(`Memory Info Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

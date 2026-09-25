@@ -1,0 +1,137 @@
+import zen.test as test
+import zen.collections.trie as Trie
+import zen.collections.collections as coll
+
+function test_create_and_size() {
+    let t -> Trie.create()
+    let pass -> test.assert_true(Trie.is_empty(t), `new trie should be empty`)
+    pass -> pass and test.assert_equal(Trie.size(t), 0, `new trie size should be 0`)
+    pass -> pass and test.assert_equal(Trie.words(t), [], `new trie words should be empty list`)
+    <- pass
+}
+
+function test_insert_and_lookup() {
+    let t -> Trie.create()
+    Trie.insert(t, `apple`, 100)
+    Trie.insert(t, `app`, 50)
+    Trie.insert(t, `banana`, 200)
+
+    let pass -> test.assert_false(Trie.is_empty(t), `trie should not be empty after inserts`)
+    pass -> pass and test.assert_equal(Trie.size(t), 3, `trie size should be 3`)
+
+    pass -> pass and test.assert_true(Trie.has(t, `apple`), `has apple should be true`)
+    pass -> pass and test.assert_true(Trie.has(t, `app`), `has app should be true`)
+    pass -> pass and test.assert_true(Trie.contains(t, `banana`), `contains banana should be true`)
+    pass -> pass and test.assert_false(Trie.has(t, `orange`), `has orange should be false`)
+    pass -> pass and test.assert_false(Trie.has(t, `ap`), `has ap prefix should be false`)
+
+    pass -> pass and test.assert_equal(Trie.get(t, `apple`, 0), 100, `get apple should return 100`)
+    pass -> pass and test.assert_equal(Trie.get(t, `app`, 0), 50, `get app should return 50`)
+    pass -> pass and test.assert_equal(Trie.get(t, `orange`, -1), -1, `get missing should return fallback`)
+
+    // Updating existing word
+    Trie.insert(t, `app`, 999)
+    pass -> pass and test.assert_equal(Trie.size(t), 3, `size should remain 3 after value update`)
+    pass -> pass and test.assert_equal(Trie.get(t, `app`, 0), 999, `get app should return updated value`)
+
+    <- pass
+}
+
+function test_prefix_queries() {
+    let t -> Trie.create()
+    Trie.insert(t, `cart`, 1)
+    Trie.insert(t, `car`, 2)
+    Trie.insert(t, `carbon`, 3)
+    Trie.insert(t, `dog`, 4)
+
+    let pass -> test.assert_true(Trie.starts_with(t, `car`), `starts_with car should be true`)
+    pass -> pass and test.assert_true(Trie.starts_with(t, `ca`), `starts_with ca should be true`)
+    pass -> pass and test.assert_true(Trie.starts_with(t, `d`), `starts_with d should be true`)
+    pass -> pass and test.assert_false(Trie.starts_with(t, `cat`), `starts_with cat should be false`)
+
+    let car_matches -> Trie.find_by_prefix(t, `car`, -1)
+    pass -> pass and test.assert_equal(car_matches, [`car`, `carbon`, `cart`], `find_by_prefix should return sorted matches`)
+
+    let limited -> Trie.find_by_prefix(t, `car`, 2)
+    pass -> pass and test.assert_equal(limited.length, 2, `find_by_prefix with limit should return 2 items`)
+
+    let entries -> Trie.find_entries_by_prefix(t, `dog`, -1)
+    pass -> pass and test.assert_equal(entries.length, 1, `find_entries_by_prefix should find 1 entry`)
+    pass -> pass and test.assert_equal(entries[0][`word`], `dog`, `entry word should be dog`)
+    pass -> pass and test.assert_equal(entries[0][`value`], 4, `entry value should be 4`)
+
+    <- pass
+}
+
+function test_longest_prefix_of() {
+    let t -> Trie.create()
+    Trie.add(t, `a`)
+    Trie.add(t, `app`)
+    Trie.add(t, `apple`)
+    Trie.add(t, `sub`)
+
+    let pass -> test.assert_equal(Trie.longest_prefix_of(t, `applepie`), `apple`, `longest prefix of applepie`)
+    pass -> pass and test.assert_equal(Trie.longest_prefix_of(t, `application`), `app`, `longest prefix of application`)
+    pass -> pass and test.assert_equal(Trie.longest_prefix_of(t, `automobile`), `a`, `longest prefix of automobile`)
+    pass -> pass and test.assert_equal(Trie.longest_prefix_of(t, `banana`), ``, `longest prefix of non-matching should be empty`)
+    <- pass
+}
+
+function test_remove_and_prune() {
+    let t -> Trie.create()
+    Trie.add(t, `app`)
+    Trie.add(t, `apple`)
+    Trie.add(t, `apt`)
+
+    let pass -> test.assert_true(Trie.remove(t, `app`), `remove app should return true`)
+    pass -> pass and test.assert_equal(Trie.size(t), 2, `size should decrease to 2`)
+    pass -> pass and test.assert_false(Trie.has(t, `app`), `has app should be false after removal`)
+    pass -> pass and test.assert_true(Trie.has(t, `apple`), `has apple should remain true`)
+    pass -> pass and test.assert_true(Trie.has(t, `apt`), `has apt should remain true`)
+
+    // Removing non-existent
+    pass -> pass and test.assert_false(Trie.remove(t, `nonexistent`), `remove missing should return false`)
+    pass -> pass and test.assert_equal(Trie.size(t), 2, `size should remain unchanged`)
+
+    // Removing leaf
+    pass -> pass and test.assert_true(Trie.remove(t, `apple`), `remove apple leaf should return true`)
+    pass -> pass and test.assert_equal(Trie.size(t), 1, `size should decrease to 1`)
+    pass -> pass and test.assert_equal(Trie.words(t), [`apt`], `remaining word should be apt`)
+
+    <- pass
+}
+
+function test_clear_and_scope() {
+    let t -> coll.Trie.create()
+    coll.Trie.add(t, `hello`)
+    coll.Trie.add(t, `world`)
+
+    let pass -> test.assert_equal(coll.Trie.size(t), 2, `coll.Trie scope insertion`)
+    let matches -> coll.Trie.find(t, `hel`)
+    pass -> pass and test.assert_equal(matches, [`hello`], `coll.Trie.find by prefix`)
+    coll.Trie.clear(t)
+    pass -> pass and test.assert_true(coll.Trie.is_empty(t), `trie should be empty after clear`)
+    pass -> pass and test.assert_equal(coll.Trie.size(t), 0, `size should be 0 after clear`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Trie.create_and_size`, `fn` -> test_create_and_size},
+        {`name` -> `Trie.insert_and_lookup`, `fn` -> test_insert_and_lookup},
+        {`name` -> `Trie.prefix_queries`, `fn` -> test_prefix_queries},
+        {`name` -> `Trie.longest_prefix_of`, `fn` -> test_longest_prefix_of},
+        {`name` -> `Trie.remove_and_prune`, `fn` -> test_remove_and_prune},
+        {`name` -> `Trie.clear_and_scope`, `fn` -> test_clear_and_scope}
+    ]
+
+    <- test.run_suite(`Trie Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -56,7 +56,7 @@ Owned by tooling / developer experience maintainers.
 
 # Child DOX Index
 
-- zen — primary host CLI (install, install-rollback, install-handoff, handoff-soak, install-selfhost, install-selfhost-fast, selfhost-smoke, test-golden, test-*, ci, ci-soak, run, doc-pdf, clean)
+- zen — primary host CLI (install, install-rollback, install-handoff, handoff-soak, install-selfhost, install-selfhost-fast, selfhost-smoke, test-golden, test-*, ci, ci-soak, run, doc-pdf, shell/zsh, clean)
 - zen_bin_handoff.sh — hybrid bin/zen template (selfhost compiler CLI + interpret; bootstrap language host)
 - handoff_soak.sh — production handoff gate (interpret matrix + -g try-selfhost + golden)
 - run_golden.sh — E3 golden: bootstrap vs selfhost exit+stdout (`tests/self_hosting/fixtures/GOLDEN.txt`)

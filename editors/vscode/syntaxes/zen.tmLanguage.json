@@ -62,6 +62,13 @@
     "imports": {
       "patterns": [
         {
+          "match": "\\b(extern)\\s+(from|import|use)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.extern.zenlang" },
+            "2": { "name": "keyword.control.import.zenlang" }
+          }
+        },
+        {
           "match": "\\b(export)\\s+(function|class|structure|enumerator|let|set)?",
           "captures": {
             "1": { "name": "keyword.control.export.zenlang" },
@@ -69,14 +76,14 @@
           }
         },
         {
-          "match": "\\b(from|import)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)",
+          "match": "\\b(from|import|use)\\s+([a-zA-Z_][a-zA-Z0-9_]*(?:\\.[a-zA-Z_][a-zA-Z0-9_]*)*)",
           "captures": {
             "1": { "name": "keyword.control.import.zenlang" },
             "2": { "name": "entity.name.namespace.zenlang" }
           }
         },
         {
-          "match": "\\b(from|import)\\s+(`)([^`]*)(`)",
+          "match": "\\b(from|import|use)\\s+(`)([^`]*)(`)",
           "captures": {
             "1": { "name": "keyword.control.import.zenlang" },
             "2": { "name": "punctuation.definition.string.begin.zenlang" },
@@ -151,11 +158,11 @@
       "patterns": [
         {
           "name": "keyword.control.zenlang",
-          "match": "\\b(when|or|and|not|xor|nor|nand|xnor|do|while|until|for|in|break|continue|return|case|with|check|raise|assert|defer|export|extends?|object|scope|task|assign|is|type|yield|before|after)\\b"
+          "match": "\\b(when|or|and|not|xor|nor|nand|xnor|do|while|until|for|in|break|continue|return|case|with|check|raise|assert|defer|export|extends?|object|scope|task|assign|is|type|yield|before|after|extern)\\b"
         },
         {
           "name": "storage.type.zenlang",
-          "match": "\\b(let|set|function|class|structure|enumerator|import|use|from|auto|reflectable)\\b"
+          "match": "\\b(let|set|function|class|structure|enumerator|import|use|from|auto|reflectable|extern)\\b"
         },
         {
           "name": "variable.language.zenlang",
@@ -183,7 +190,7 @@
       "patterns": [
         {
           "name": "support.type.builtin.zenlang",
-          "match": "\\b(Void|Nothing|Variant|Integer|Int|Decimal|Float|String|Str|Boolean|Bool|Rune|Char|Byte|Bytes|Buffer|List|Map|Dictionary|Tuple|Vector|Set|Iterable|Iterator|Auto|Function|Structure|Class|Object|Enumerator|Error|Task)\\b"
+          "match": "\\b(Void|Nothing|Default|Variant|Boolean|Byte|Bytes|Rune|Integer|Decimal|String|List|Set|Vector|Tuple|Map|Structure|Object|Class|Enumerator|Function|Task|Channel|Error|Number|Text|Collection|Container)\\b"
         },
         {
           "name": "entity.name.type.zenlang",
@@ -222,12 +229,20 @@
     "operators": {
       "patterns": [
         {
+          "name": "keyword.operator.flow.zenlang",
+          "match": "\\?\\?|\\|>"
+        },
+        {
           "name": "keyword.operator.assignment.zenlang",
           "match": "->|<-|<~|:>|=>|<:"
         },
         {
+          "name": "keyword.operator.spread.zenlang",
+          "match": "\\.\\.\\."
+        },
+        {
           "name": "keyword.operator.range.zenlang",
-          "match": "\\.\\.\\.|\\.\\.\\+|\\.\\.\\-|\\.\\.=|\\.\\."
+          "match": "\\.\\.\\+|\\.\\.\\-|\\.\\.=|\\.\\."
         },
         {
           "name": "keyword.operator.comparison.zenlang",

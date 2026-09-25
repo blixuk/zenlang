@@ -1,0 +1,64 @@
+/!
+  zen.sys.ffi - Dynamic Foreign Function Interface (FFI) Loader.
+  Enables runtime dynamic loading of shared libraries (.so / .dylib)
+  and invocation of C functions with automatic type marshalling across
+  the Bytecode VM, Interpreter, and native execution.
+!/
+
+use zen.text.string as Str
+
+/! Load a shared library by file path or canonical name.
+   Returns an opaque library module handle, or Nothing on failure. !/
+export function load(path) {
+    when path == Nothing or path == `` {
+        <- __builtin_ffi.load(``)
+    }
+    <- __builtin_ffi.load(Str.to_string(path))
+}
+
+/! Alias for load(). !/
+export function open(path) {
+    <- load(path)
+}
+
+/! Resolve a function symbol from a loaded library handle.
+   ret_type can optionally specify 'int', 'double', 'string', 'bool', or 'void'. !/
+export function symbol(handle, name, ret_type) {
+    when handle == Nothing or name == Nothing {
+        <- Nothing
+    }
+    <- __builtin_ffi.symbol(handle, Str.to_string(name), ret_type)
+}
+
+/! Call a resolved native function pointer or closure with arguments. !/
+export function call(fn_ptr, args, ret_type) {
+    when fn_ptr == Nothing {
+        <- Nothing
+    }
+    let arg_list -> args
+    when arg_list == Nothing {
+        arg_list -> []
+    }
+    <- __builtin_ffi.call(fn_ptr, arg_list, ret_type)
+}
+
+/! Close a previously opened library handle. !/
+export function close(handle) {
+    when handle == Nothing {
+        <- 0
+    }
+    <- __builtin_ffi.close(handle)
+}
+
+/! Retrieve the last dynamic linker error message, if any. !/
+export function error() {
+    <- __builtin_ffi.error()
+}
+
+/! Resolve a global or libc symbol by name across the host process. !/
+export function resolve(name) {
+    when name == Nothing {
+        <- Nothing
+    }
+    <- __builtin_ffi.resolve(Str.to_string(name))
+}

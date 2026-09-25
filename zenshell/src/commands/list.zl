@@ -1,0 +1,309 @@
+/!
+  zenshell - Structured Tabular Directory Listing Command (list)
+  Replaces raw 'ls' with modern Unicode box tables and color-coded file classification.
+!/
+
+import zen.io.path as path
+import zen.io.file as file
+import zen.util.table as utbl
+import zen.text.string as Str
+import zen.sys.process as process
+import ui.theme as color
+import core.command as cmd_base
+
+function sort_strings(list) {
+    let n -> list.length
+    let i -> 0
+    do while i < n {
+        let j -> i + 1
+        do while j < n {
+            when list[j] < list[i] {
+                let tmp -> list[i]
+                list[i] -> list[j]
+                list[j] -> tmp
+            }
+            j -> j + 1
+        }
+        i -> i + 1
+    }
+    <- list
+}
+
+function format_file_size(bytes) {
+    when bytes == Nothing or bytes < 0 { <- `-` }
+    when bytes < 1024 { <- Str.to_string(bytes) + ` B` }
+    when bytes < 1048576 {
+        let kb -> Integer(bytes / 1024)
+        <- Str.to_string(kb) + ` KB`
+    }
+    when bytes < 1073741824 {
+        let mb -> Integer(bytes / 1048576)
+        <- Str.to_string(mb) + ` MB`
+    }
+    let gb -> Integer(bytes / 1073741824)
+    <- Str.to_string(gb) + ` GB`
+}
+
+function resolve_target_dir(raw_path, c) {
+    when raw_path == Nothing or raw_path == `` or raw_path == `.` {
+        <- c.cwd
+    }
+    when Str.starts_with(raw_path, `/`) {
+        <- raw_path
+    }
+    when Str.starts_with(raw_path, `~`) {
+        let home -> c.bookmarks[`home`]
+        when home == Nothing { home -> `/` }
+        <- home + Str.substring(raw_path, 1, Str.length(raw_path))
+    }
+    <- path.join(c.cwd, raw_path)
+}
+
+function is_executable(filepath) {
+    when Str.ends_with(filepath, `.sh`) or Str.ends_with(filepath, `.zl`) or Str.ends_with(filepath, `.py`) {
+        <- true
+    }
+    let res -> process.result(`test -x "` + filepath + `"`)
+    when res != Nothing and res[`code`] == 0 {
+        <- true
+    }
+    <- false
+}
+
+function handle_list_default(args, c) {
+    let show_hidden -> false
+    let is_detailed -> false
+    let target_raw -> Nothing
+
+    let i -> 0
+    do while i < args.length {
+        let a -> args[i]
+        when a == `-a` or a == `--all` {
+            show_hidden -> true
+        } or when a == `-l` or a == `--long` or a == `detailed` {
+            is_detailed -> true
+        } or when a == `-la` or a == `-al` or a == `-lah` {
+            show_hidden -> true
+            is_detailed -> true
+        } or when not Str.starts_with(a, `-`) {
+            target_raw -> a
+        }
+        i -> i + 1
+    }
+
+    when is_detailed {
+        <- handle_list_detailed(args, c)
+    }
+
+    let target_dir -> resolve_target_dir(target_raw, c)
+    when not __builtin_file.is_dir(target_dir) {
+        when __builtin_file.is_file(target_dir) {
+            let sz -> format_file_size(file.size(target_dir))
+            let r -> [[`FILE`, path.basename(target_dir), sz]]
+            <- utbl.render_table([`Kind`, `Name`, `Size`], r, {`border_style` -> `rounded`})
+        }
+        <- color.red(`Error: Directory not found: ` + target_dir)
+    }
+
+    let raw_entries -> __builtin_file.list_dir(target_dir)
+    when raw_entries == Nothing {
+        <- color.red(`Error: Unable to read directory: ` + target_dir)
+    }
+
+    let entries -> sort_strings(raw_entries)
+    let rows -> []
+    let dir_count -> 0
+    let file_count -> 0
+
+    let ei -> 0
+    do while ei < entries.length {
+        let entry -> entries[ei]
+        ei -> ei + 1
+
+        when not show_hidden and Str.starts_with(entry, `.`) {
+            continue
+        }
+
+        let full_path -> path.join(target_dir, entry)
+        let is_d -> __builtin_file.is_dir(full_path)
+        let is_f -> __builtin_file.is_file(full_path)
+
+        when is_d {
+            dir_count -> dir_count + 1
+            let kind_badge -> color.bold(color.blue(`DIR`))
+            let name_badge -> color.bold(color.blue(entry + `/`))
+            rows.append([kind_badge, name_badge, `-`])
+        } or when is_f {
+            file_count -> file_count + 1
+            let exec -> is_executable(full_path)
+            let kind_badge -> when exec { color.bold(color.green(`EXE`)) } or { color.dim(`FILE`) }
+            let name_badge -> when exec { color.bold(color.green(entry + `*`)) } or { entry }
+            let sz_str -> format_file_size(file.size(full_path))
+            rows.append([kind_badge, name_badge, sz_str])
+        } or {
+            let kind_badge -> color.yellow(`LINK`)
+            let name_badge -> color.yellow(entry + `@`)
+            rows.append([kind_badge, name_badge, `-`])
+        }
+    }
+
+    when rows.length == 0 {
+        <- color.dim(`Empty directory: ` + target_dir)
+    }
+
+    let headers -> [`Kind`, `Name`, `Size`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let summary -> color.dim(Str.to_string(rows.length) + ` items (` + Str.to_string(dir_count) + ` directories, ` + Str.to_string(file_count) + ` files) in ` + target_dir)
+    <- tbl + `\n` + summary
+}
+
+function handle_list_detailed(args, c) {
+    let show_hidden -> false
+    let target_raw -> Nothing
+
+    let i -> 0
+    do while i < args.length {
+        let a -> args[i]
+        when a == `-a` or a == `--all` or a == `-la` or a == `-al` or a == `-lah` {
+            show_hidden -> true
+        } or when a != `-l` and a != `--long` and a != `detailed` and not Str.starts_with(a, `-`) {
+            target_raw -> a
+        }
+        i -> i + 1
+    }
+
+    let target_dir -> resolve_target_dir(target_raw, c)
+    when not __builtin_file.is_dir(target_dir) {
+        <- color.red(`Error: Directory not found: ` + target_dir)
+    }
+
+    // Try fast POSIX stat query for accurate permissions and modification times
+    let glob_flag -> when show_hidden { target_dir + `/.?* ` + target_dir + `/*` } or { target_dir + `/*` }
+    let cmd -> `stat -c '%A|%F|%s|%y|%n' ` + glob_flag + ` 2>/dev/null`
+    let stat_res -> process.result(cmd)
+
+    when stat_res != Nothing and stat_res[`code`] == 0 and stat_res[`stdout`] != Nothing and Str.trim(stat_res[`stdout`]) != `` {
+        let lines -> Str.split(stat_res[`stdout`], `\n`)
+        let rows -> []
+        let li -> 0
+        do while li < lines.length {
+            let line -> lines[li]
+            li -> li + 1
+            when Str.trim(line) == `` { continue }
+
+            let fields -> Str.split(line, `|`)
+            when fields.length < 5 { continue }
+
+            let perms -> fields[0]
+            let raw_type -> fields[1]
+            let bytes_num -> Integer(fields[2])
+            let time_full -> fields[3]
+            let raw_name -> fields[4]
+            let base -> path.basename(raw_name)
+
+            when not show_hidden and Str.starts_with(base, `.`) {
+                continue
+            }
+            when base == `.` or base == `..` {
+                continue
+            }
+
+            let time_short -> Str.substring(time_full, 0, 16)
+            let is_d -> Str.starts_with(perms, `d`)
+            let is_x -> Str.contains(perms, `x`)
+            let is_l -> Str.starts_with(perms, `l`)
+
+            let kind_badge -> when is_d { color.bold(color.blue(`DIR`)) } or when is_l { color.yellow(`LINK`) } or when is_x { color.bold(color.green(`EXE`)) } or { color.dim(`FILE`) }
+            let name_badge -> when is_d { color.bold(color.blue(base + `/`)) } or when is_l { color.yellow(base + `@`) } or when is_x { color.bold(color.green(base + `*`)) } or { base }
+            let sz_str -> when is_d { `-` } or { format_file_size(bytes_num) }
+
+            rows.append([perms, kind_badge, sz_str, time_short, name_badge])
+        }
+
+        when rows.length > 0 {
+            let headers -> [`Perms`, `Kind`, `Size`, `Modified`, `Name`]
+            let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+            let summary -> color.dim(Str.to_string(rows.length) + ` items in ` + target_dir)
+            <- tbl + `\n` + summary
+        }
+    }
+
+    // Fallback: Default listing if stat failed
+    <- handle_list_default(args, c)
+}
+
+function render_tree_level(current_dir, current_depth, max_depth, prefix) {
+    when current_depth > max_depth { <- `` }
+    let raw_entries -> __builtin_file.list_dir(current_dir)
+    when raw_entries == Nothing { <- `` }
+
+    let entries -> sort_strings(raw_entries)
+    let total -> entries.length
+    let i -> 0
+    let out -> ``
+
+    do while i < total {
+        let entry -> entries[i]
+        let is_last -> (i == total - 1)
+        i -> i + 1
+
+        when Str.starts_with(entry, `.`) { continue }
+
+        let full -> path.join(current_dir, entry)
+        let is_d -> __builtin_file.is_dir(full)
+
+        let branch -> when is_last { `└── ` } or { `├── ` }
+        let next_prefix -> prefix + (when is_last { `    ` } or { `│   ` })
+
+        when is_d {
+            out -> out + prefix + branch + color.bold(color.blue(entry + `/`)) + `\n`
+            let sub -> render_tree_level(full, current_depth + 1, max_depth, next_prefix)
+            out -> out + sub
+        } or {
+            let exec -> is_executable(full)
+            let styled -> when exec { color.bold(color.green(entry + `*`)) } or { entry }
+            out -> out + prefix + branch + styled + `\n`
+        }
+    }
+    <- out
+}
+
+function handle_list_tree(args, c) {
+    let target_raw -> when (args.length > 0) { args[0] } or { Nothing }
+    let max_depth -> when (args.length > 1) { Integer(args[1]) } or { 2 }
+    when max_depth == Nothing or max_depth < 1 { max_depth -> 2 }
+
+    let target_dir -> resolve_target_dir(target_raw, c)
+    when not __builtin_file.is_dir(target_dir) {
+        <- color.red(`Error: Directory not found: ` + target_dir)
+    }
+
+    let out -> color.bold(color.blue(target_dir)) + `\n`
+    let tree_content -> render_tree_level(target_dir, 1, max_depth, ``)
+    <- out + tree_content
+}
+
+let DOC_LIST -> ```
+# list - Structured Directory Listing
+
+Replaces raw unstructured `ls` with rich, color-coded Unicode box tables.
+
+## Usage
+- `list [path] [-a]` — Standard tabular directory listing.
+- `list detailed [path]` (or `list -l`, `ll`) — Permissions, size, modified date and type.
+- `list tree [path] [depth]` — Visual branch tree representation.
+
+## Aliases
+- `ls` -> `list`
+- `l`  -> `list`
+- `ll` -> `list detailed`
+- `la` -> `list -a`
+```
+
+export function create_list_command(ctx) {
+    let cmd -> cmd_base.Command(`list`, `List directory contents in styled Unicode tables (aliases: l, ls, ll, la)`)
+    cmd.set_default(handle_list_default)
+    cmd.add_subcommand(`detailed`, `Detailed table with permissions, size, and modified time (alias: ll)`, handle_list_detailed)
+    cmd.add_subcommand(`tree`, `Visual branch tree view: list tree [path] [max_depth]`, handle_list_tree)
+    <- cmd
+}

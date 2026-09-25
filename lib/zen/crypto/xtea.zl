@@ -1,0 +1,307 @@
+/!
+  zen.crypto.xtea - XTEA (Extended Tiny Encryption Algorithm) Block Cipher.
+  64-bit block cipher with 128-bit key using a 64-round Feistel network.
+  Supports raw block encryption, PKCS#7 padding, and CBC / ECB modes.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.padding as Padding
+use zen.crypto.hex as Hex
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _bytes_to_u32_be(bytes, offset) {
+    let b0 -> bytes[offset] & 255
+    let b1 -> bytes[offset + 1] & 255
+    let b2 -> bytes[offset + 2] & 255
+    let b3 -> bytes[offset + 3] & 255
+    <- ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 0xffffffff
+}
+
+function _u32_to_bytes_be(val) {
+    let out -> []
+    out.append((val >> 24) & 255)
+    out.append((val >> 16) & 255)
+    out.append((val >> 8) & 255)
+    out.append(val & 255)
+    <- out
+}
+
+function _parse_key(key) {
+    let k_bytes -> _to_bytes(key)
+    let k -> []
+    let i -> 0
+    do while i < 16 {
+        when i < k_bytes.length {
+            k.append(k_bytes[i])
+        } or {
+            k.append(0)
+        }
+        i -> i + 1
+    }
+    let k0 -> _bytes_to_u32_be(k, 0)
+    let k1 -> _bytes_to_u32_be(k, 4)
+    let k2 -> _bytes_to_u32_be(k, 8)
+    let k3 -> _bytes_to_u32_be(k, 12)
+    <- [k0, k1, k2, k3]
+}
+
+/!
+  Encrypts a single 8-byte block using XTEA (64 rounds).
+  @param key 16-byte key (string or byte list).
+  @param block 8-byte block (string or byte list).
+  @return 8-byte encrypted block list.
+!/
+export function encrypt_block(key, block) {
+    let b_bytes -> _to_bytes(block)
+    let b -> []
+    let i -> 0
+    do while i < 8 {
+        when i < b_bytes.length {
+            b.append(b_bytes[i])
+        } or {
+            b.append(0)
+        }
+        i -> i + 1
+    }
+
+    let k -> _parse_key(key)
+    let k0 -> k[0]
+    let k1 -> k[1]
+    let k2 -> k[2]
+    let k3 -> k[3]
+
+    let v0 -> _bytes_to_u32_be(b, 0)
+    let v1 -> _bytes_to_u32_be(b, 4)
+    let sum -> 0
+    let delta -> 0x9e3779b9
+
+    let round -> 0
+    do while round < 32 {
+        let term0 -> ((((v1 << 4) ^^ (v1 >> 5)) + v1) & 0xffffffff)
+        let idx0 -> sum & 3
+        let kval0 -> when (idx0 == 0) { k0 } or when (idx0 == 1) { k1 } or when (idx0 == 2) { k2 } or { k3 }
+        v0 -> (v0 + (term0 ^^ ((sum + kval0) & 0xffffffff))) & 0xffffffff
+
+        sum -> (sum + delta) & 0xffffffff
+
+        let term1 -> ((((v0 << 4) ^^ (v0 >> 5)) + v0) & 0xffffffff)
+        let idx1 -> (sum >> 11) & 3
+        let kval1 -> when (idx1 == 0) { k0 } or when (idx1 == 1) { k1 } or when (idx1 == 2) { k2 } or { k3 }
+        v1 -> (v1 + (term1 ^^ ((sum + kval1) & 0xffffffff))) & 0xffffffff
+
+        round -> round + 1
+    }
+
+    let out -> []
+    let b0 -> _u32_to_bytes_be(v0)
+    let b1 -> _u32_to_bytes_be(v1)
+    i -> 0
+    do while i < 4 {
+        out.append(b0[i])
+        i -> i + 1
+    }
+    i -> 0
+    do while i < 4 {
+        out.append(b1[i])
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Decrypts a single 8-byte block using XTEA (64 rounds).
+  @param key 16-byte key (string or byte list).
+  @param block 8-byte block (string or byte list).
+  @return 8-byte decrypted block list.
+!/
+export function decrypt_block(key, block) {
+    let b_bytes -> _to_bytes(block)
+    let b -> []
+    let i -> 0
+    do while i < 8 {
+        when i < b_bytes.length {
+            b.append(b_bytes[i])
+        } or {
+            b.append(0)
+        }
+        i -> i + 1
+    }
+
+    let k -> _parse_key(key)
+    let k0 -> k[0]
+    let k1 -> k[1]
+    let k2 -> k[2]
+    let k3 -> k[3]
+
+    let v0 -> _bytes_to_u32_be(b, 0)
+    let v1 -> _bytes_to_u32_be(b, 4)
+    let delta -> 0x9e3779b9
+    // sum after 32 rounds is delta * 32 & 0xFFFFFFFF = 0xC6EF3720
+    let sum -> 0xc6ef3720
+
+    let round -> 0
+    do while round < 32 {
+        let term1 -> ((((v0 << 4) ^^ (v0 >> 5)) + v0) & 0xffffffff)
+        let idx1 -> (sum >> 11) & 3
+        let kval1 -> when (idx1 == 0) { k0 } or when (idx1 == 1) { k1 } or when (idx1 == 2) { k2 } or { k3 }
+        v1 -> (v1 - (term1 ^^ ((sum + kval1) & 0xffffffff))) & 0xffffffff
+
+        sum -> (sum - delta) & 0xffffffff
+
+        let term0 -> ((((v1 << 4) ^^ (v1 >> 5)) + v1) & 0xffffffff)
+        let idx0 -> sum & 3
+        let kval0 -> when (idx0 == 0) { k0 } or when (idx0 == 1) { k1 } or when (idx0 == 2) { k2 } or { k3 }
+        v0 -> (v0 - (term0 ^^ ((sum + kval0) & 0xffffffff))) & 0xffffffff
+
+        round -> round + 1
+    }
+
+    let out -> []
+    let b0 -> _u32_to_bytes_be(v0)
+    let b1 -> _u32_to_bytes_be(v1)
+    i -> 0
+    do while i < 4 {
+        out.append(b0[i])
+        i -> i + 1
+    }
+    i -> 0
+    do while i < 4 {
+        out.append(b1[i])
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Encrypts data using XTEA in CBC (Cipher Block Chaining) mode with PKCS#7 padding.
+  @param key 16-byte key (string or byte list).
+  @param iv 8-byte initialization vector (string or byte list).
+  @param data Plaintext (string or byte list).
+  @return List of encrypted ciphertext bytes.
+!/
+export function encrypt_cbc(key, iv, data) {
+    let iv_bytes -> _to_bytes(iv)
+    let iv8 -> []
+    let i -> 0
+    do while i < 8 {
+        when i < iv_bytes.length {
+            iv8.append(iv_bytes[i])
+        } or {
+            iv8.append(0)
+        }
+        i -> i + 1
+    }
+
+    let padded -> Padding.pad(data, 8)
+    let ct -> []
+    let prev -> iv8
+    let offset -> 0
+    let len -> padded.length
+
+    do while offset < len {
+        let block -> []
+        i -> 0
+        do while i < 8 {
+            block.append(padded[offset + i] ^^ prev[i])
+            i -> i + 1
+        }
+
+        let enc_block -> encrypt_block(key, block)
+        i -> 0
+        do while i < 8 {
+            ct.append(enc_block[i])
+            i -> i + 1
+        }
+        prev -> enc_block
+        offset -> offset + 8
+    }
+
+    <- ct
+}
+
+/!
+  Decrypts XTEA CBC ciphertext and removes PKCS#7 padding.
+  @param key 16-byte key.
+  @param iv 8-byte initialization vector.
+  @param ciphertext Encrypted byte list or hex string.
+  @return Decrypted byte list, or Nothing if padding is invalid.
+!/
+export function decrypt_cbc(key, iv, ciphertext) {
+    let iv_bytes -> _to_bytes(iv)
+    let iv8 -> []
+    let i -> 0
+    do while i < 8 {
+        when i < iv_bytes.length {
+            iv8.append(iv_bytes[i])
+        } or {
+            iv8.append(0)
+        }
+        i -> i + 1
+    }
+
+    let ct_bytes -> []
+    when (ciphertext.kind == `String`) {
+        ct_bytes -> Hex.decode_bytes(ciphertext)
+    } or {
+        ct_bytes -> ciphertext
+    }
+
+    when (ct_bytes.length == 0 or (ct_bytes.length % 8) != 0) {
+        <- Nothing
+    }
+
+    let pt_padded -> []
+    let prev -> iv8
+    let offset -> 0
+    let len -> ct_bytes.length
+
+    do while offset < len {
+        let block -> []
+        i -> 0
+        do while i < 8 {
+            block.append(ct_bytes[offset + i])
+            i -> i + 1
+        }
+
+        let dec_block -> decrypt_block(key, block)
+        i -> 0
+        do while i < 8 {
+            pt_padded.append(dec_block[i] ^^ prev[i])
+            i -> i + 1
+        }
+        prev -> block
+        offset -> offset + 8
+    }
+
+    <- Padding.unpad(pt_padded, 8)
+}
+
+/!
+  Encrypts data using XTEA-CBC and returns a hexadecimal string.
+!/
+export function encrypt_hex(key, iv, data) {
+    let ct_bytes -> encrypt_cbc(key, iv, data)
+    <- Hex.encode(ct_bytes)
+}
+
+/!
+  Decrypts hex-encoded XTEA-CBC ciphertext into original plaintext string.
+!/
+export function decrypt_hex(key, iv, hex_str) {
+    let pt_bytes -> decrypt_cbc(key, iv, hex_str)
+    when (pt_bytes == Nothing) { <- Nothing }
+    <- __builtin.bytes_to_string(pt_bytes)
+}

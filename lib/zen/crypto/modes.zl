@@ -1,0 +1,186 @@
+/!
+  zen.crypto.modes - Block Cipher Modes of Operation.
+  Implements CBC (Cipher Block Chaining) and CTR (Counter Mode).
+  Turns any block cipher into a streaming or chained authenticated cipher.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.padding as Padding
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Encrypts data in CBC mode using a block encryption callback.
+  @param encrypt_block_fn Function (block) -> encrypted_block.
+  @param block_size Block size in bytes (8 or 16).
+  @param iv Initialization vector.
+  @param data Plaintext data.
+  @return Padded ciphertext bytes.
+!/
+export function cbc_encrypt(encrypt_block_fn, block_size, iv, data) {
+    let iv_bytes -> _to_bytes(iv)
+    let iv_block -> []
+    let i -> 0
+    do while i < block_size {
+        when i < iv_bytes.length {
+            iv_block.append(iv_bytes[i])
+        } or {
+            iv_block.append(0)
+        }
+        i -> i + 1
+    }
+
+    let padded -> Padding.pad(data, block_size)
+    let ct -> []
+    let prev -> iv_block
+    let offset -> 0
+    let len -> padded.length
+
+    do while offset < len {
+        let block -> []
+        i -> 0
+        do while i < block_size {
+            block.append(padded[offset + i] ^^ prev[i])
+            i -> i + 1
+        }
+
+        let enc_block -> encrypt_block_fn(block)
+        i -> 0
+        do while i < block_size {
+            ct.append(enc_block[i])
+            i -> i + 1
+        }
+        prev -> enc_block
+        offset -> offset + block_size
+    }
+
+    <- ct
+}
+
+/!
+  Decrypts CBC ciphertext using a block decryption callback and unpads.
+  @param decrypt_block_fn Function (block) -> decrypted_block.
+  @param block_size Block size in bytes.
+  @param iv Initialization vector.
+  @param ciphertext Encrypted bytes.
+  @return Decrypted bytes, or Nothing if padding is invalid.
+!/
+export function cbc_decrypt(decrypt_block_fn, block_size, iv, ciphertext) {
+    let iv_bytes -> _to_bytes(iv)
+    let iv_block -> []
+    let i -> 0
+    do while i < block_size {
+        when i < iv_bytes.length {
+            iv_block.append(iv_bytes[i])
+        } or {
+            iv_block.append(0)
+        }
+        i -> i + 1
+    }
+
+    let ct_bytes -> _to_bytes(ciphertext)
+    when (ct_bytes.length == 0 or (ct_bytes.length % block_size) != 0) {
+        <- Nothing
+    }
+
+    let pt_padded -> []
+    let prev -> iv_block
+    let offset -> 0
+    let len -> ct_bytes.length
+
+    do while offset < len {
+        let block -> []
+        i -> 0
+        do while i < block_size {
+            block.append(ct_bytes[offset + i])
+            i -> i + 1
+        }
+
+        let dec_block -> decrypt_block_fn(block)
+        i -> 0
+        do while i < block_size {
+            pt_padded.append(dec_block[i] ^^ prev[i])
+            i -> i + 1
+        }
+        prev -> block
+        offset -> offset + block_size
+    }
+
+    <- Padding.unpad(pt_padded, block_size)
+}
+
+/!
+  Counter Mode (CTR) symmetric encryption/decryption.
+  Turns any block cipher into a stream cipher.
+  @param encrypt_block_fn Function (block) -> encrypted_block.
+  @param block_size Block size in bytes (8 or 16).
+  @param nonce Nonce prefix (block_size / 2 bytes or full block).
+  @param data Plaintext or ciphertext bytes.
+  @return Processed byte list.
+!/
+export function ctr_crypt(encrypt_block_fn, block_size, nonce, data) {
+    let n_bytes -> _to_bytes(nonce)
+    let d_bytes -> _to_bytes(data)
+    let len -> d_bytes.length
+    when (len == 0) { <- [] }
+
+    let out -> []
+    let counter -> 0
+    let offset -> 0
+
+    do while offset < len {
+        // Construct counter block: nonce bytes + counter (big-endian)
+        let ctr_block -> []
+        let i -> 0
+        let nonce_prefix_len -> block_size - 4
+        when (nonce_prefix_len < 0) { nonce_prefix_len -> 0 }
+
+        do while i < nonce_prefix_len {
+            when i < n_bytes.length {
+                ctr_block.append(n_bytes[i])
+            } or {
+                ctr_block.append(0)
+            }
+            i -> i + 1
+        }
+
+        ctr_block.append((counter >> 24) & 255)
+        ctr_block.append((counter >> 16) & 255)
+        ctr_block.append((counter >> 8) & 255)
+        ctr_block.append(counter & 255)
+
+        // Pad to block_size if needed
+        do while ctr_block.length < block_size {
+            ctr_block.append(0)
+        }
+
+        let keystream -> encrypt_block_fn(ctr_block)
+        let chunk_len -> block_size
+        when (offset + chunk_len > len) {
+            chunk_len -> len - offset
+        }
+
+        i -> 0
+        do while i < chunk_len {
+            out.append(d_bytes[offset + i] ^^ keystream[i])
+            i -> i + 1
+        }
+
+        counter -> counter + 1
+        offset -> offset + chunk_len
+    }
+
+    <- out
+}

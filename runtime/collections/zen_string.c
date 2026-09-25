@@ -105,6 +105,20 @@ ZenValue ZenValue_to_string(ZenValue value) {
             snprintf(buf_s, sizeof(buf_s), "Set(%s)", (s.type == ZEN_STRING && s.as.string) ? s.as.string : "[]");
             return ZenValue_make_string(buf_s);
         }
+        case ZEN_AST_NODE: {
+            if (!value.as.ast_node) return ZenValue_make_string("AstNode(null)");
+            char buf_a[128];
+            snprintf(buf_a, sizeof(buf_a), "AstNode(kind=%d, line=%d, col=%d)",
+                     (int)value.as.ast_node->kind, (int)value.as.ast_node->line, (int)value.as.ast_node->col);
+            return ZenValue_make_string(buf_a);
+        }
+        case ZEN_TOKEN: {
+            if (!value.as.token) return ZenValue_make_string("Token(null)");
+            char buf_t[128];
+            snprintf(buf_t, sizeof(buf_t), "Token(kind=%d, line=%d, col=%d, len=%d)",
+                     (int)value.as.token->kind, (int)value.as.token->line, (int)value.as.token->col, (int)value.as.token->length);
+            return ZenValue_make_string(buf_t);
+        }
         case ZEN_VARIANT: {
             if (!value.as.variant) return ZenValue_make_string("Variant(null)");
             char buf_v[256];
@@ -244,6 +258,14 @@ ZenValue ZenString_index_of(ZenValue string, ZenValue substring) {
 
 ZenValue ZenString_at(ZenValue string, ZenValue index) {
     return ZenString_get_character_at_index(string, index);
+}
+
+ZenValue ZenString_byte_at(ZenValue string, ZenValue index) {
+    const char* s = ZenString_get_pointer(string);
+    if (!s || index.type != ZEN_INTEGER) return ZenValue_make_integer(-1LL);
+    long long idx = index.as.integer;
+    if (idx < 0 || idx >= (long long)strlen(s)) return ZenValue_make_integer(-1LL);
+    return ZenValue_make_integer((long long)((unsigned char)s[idx]));
 }
 
 ZenValue ZenString_contains(ZenValue string, ZenValue substring) {

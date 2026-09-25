@@ -1,0 +1,132 @@
+/!
+  c_interop — Demonstration of Zero-Wrapper C Interoperability in Zenlang.
+  Uses direct C header imports (extern use) and builds via .zbuild.
+!/
+
+extern use `<math.h>`
+extern use `<unistd.h>`
+extern use sys.sysinfo
+
+use zen.text.string as Str
+
+extern from math use sqrt, hypot, pow, sin, cos
+extern from unistd use getpid, getppid, getuid, sysconf
+extern from sys.sysinfo use get_nprocs, get_nprocs_conf
+
+function print_banner() {
+    writeln(`\x1b[1;36m============================================================\x1b[0m`)
+    writeln(`\x1b[1;36m       Zenlang Zero-Wrapper C Interoperability Demo         \x1b[0m`)
+    writeln(`\x1b[1;36m       Built via .zbuild manifest & Native AOT Compiler     \x1b[0m`)
+    writeln(`\x1b[1;36m============================================================\x1b[0m`)
+    writeln(``)
+}
+
+function show_system_telemetry() {
+    writeln(`\x1b[1;33m[1] POSIX Process & System Hardware Telemetry (<unistd.h> & <sys/sysinfo.h>)\x1b[0m`)
+    
+    let pid -> getpid()
+    let ppid -> getppid()
+    let uid -> getuid()
+    let cpus_online -> get_nprocs()
+    let cpus_total -> get_nprocs_conf()
+    
+    // POSIX sysconf constants: 30 = _SC_PAGESIZE, 85 = _SC_PHYS_PAGES
+    let page_sz -> sysconf(30)
+    let phys_pages -> sysconf(85)
+    let total_ram_mb -> (page_sz * phys_pages) / (1024 * 1024)
+
+    writeln(f`  Process ID (getpid):          \x1b[1;32m{pid}\x1b[0m`)
+    writeln(f`  Parent Process ID (getppid):  \x1b[1;32m{ppid}\x1b[0m`)
+    writeln(f`  User ID (getuid):             \x1b[1;32m{uid}\x1b[0m`)
+    writeln(f`  Online CPU Cores (get_nprocs): \x1b[1;32m{cpus_online}\x1b[0m of {cpus_total} configured`)
+    writeln(f`  Memory Page Size:             \x1b[1;32m{page_sz}\x1b[0m bytes`)
+    writeln(f`  Physical Memory Pages:        \x1b[1;32m{phys_pages}\x1b[0m pages (~{total_ram_mb} MB)`)
+    writeln(``)
+}
+
+function show_c_math() {
+    writeln(`\x1b[1;33m[2] Native C Floating-Point Mathematics (<math.h>)\x1b[0m`)
+    
+    let a -> 3.0
+    let b -> 4.0
+    let hyp -> hypot(a, b)
+    writeln(f`  Euclidean hypot({a}, {b}):      \x1b[1;32m{hyp}\x1b[0m (expected: 5.0)`)
+    
+    let val -> 256.0
+    let sq -> sqrt(val)
+    writeln(f`  Square root sqrt({val}):     \x1b[1;32m{sq}\x1b[0m (expected: 16.0)`)
+    
+    let base -> 2.0
+    let exp -> 10.0
+    let pw -> pow(base, exp)
+    writeln(f`  Exponentiation pow({base}, {exp}): \x1b[1;32m{pw}\x1b[0m (expected: 1024.0)`)
+    
+    let angle -> 0.0
+    let s -> sin(angle)
+    let c -> cos(angle)
+    writeln(f`  Trigonometry at 0 rad:        sin={s}, cos={c}`)
+    writeln(``)
+}
+
+function run_benchmark() {
+    writeln(`\x1b[1;33m[3] Native C Function Call Micro-Benchmark\x1b[0m`)
+    let iterations -> 100000
+    let sum -> 0.0
+    let i -> 0
+    
+    writeln(f`  Executing {iterations} direct calls to C hypot() and sqrt()...`)
+    do while i < iterations {
+        let x -> (i <: Decimal) + 1.0
+        let h -> hypot(x, x * 2.0)
+        let s -> sqrt(h)
+        sum -> sum + s
+        i -> i + 1
+    }
+    
+    writeln(f`  \x1b[1;32mDone!\x1b[0m Accumulated checksum: {sum}`)
+    writeln(``)
+}
+
+function print_usage() {
+    writeln(`Usage: c_interop [command]`)
+    writeln(``)
+    writeln(`Commands:`)
+    writeln(`  info     Show POSIX system & process telemetry (default)`)
+    writeln(`  math     Show C <math.h> floating-point calculations`)
+    writeln(`  bench    Run tight-loop native C math benchmark`)
+    writeln(`  all      Run all demonstrations`)
+    writeln(`  help     Print this help message`)
+}
+
+function main(args) {
+    print_banner()
+
+    let cmd -> `all`
+    when args != Nothing and args.length > 0 {
+        let first -> Str.to_string(args[0])
+        when (Str.ends_with(first, `c_interop`) or Str.contains(first, `/`)) and args.length > 1 {
+            cmd -> Str.to_string(args[1])
+        } or when not Str.ends_with(first, `c_interop`) and not Str.contains(first, `/`) {
+            cmd -> first
+        }
+    }
+
+    when cmd == `info` {
+        show_system_telemetry()
+    } or when cmd == `math` {
+        show_c_math()
+    } or when cmd == `bench` {
+        run_benchmark()
+    } or when cmd == `all` {
+        show_system_telemetry()
+        show_c_math()
+        run_benchmark()
+    } or when cmd == `help` or cmd == `--help` or cmd == `-h` {
+        print_usage()
+    } or {
+        writeln(f`Unknown command: '{cmd}'\n`)
+        print_usage()
+    }
+
+    writeln(`\x1b[1;32mExecution complete with 0 errors.\x1b[0m`)
+}

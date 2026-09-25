@@ -1,0 +1,14 @@
+// ==========================================================
+// Zenlang Package Manifest (zen.pkg.zd)
+// ==========================================================
+
+Package {
+    `name`         -> `zenshell`,
+    `version`      -> `0.1.0`,
+    `type`         -> `cli`,
+    `entry`        -> `src/main.zl`,
+    `target`       -> `bin/zsh`,
+    `description`  -> `Next-generation Unix shell unifying the Zen Trinity (.zl, .zd, .zm)`,
+    `c_flags`      -> `-O2`,
+    `license`      -> `MIT`
+}

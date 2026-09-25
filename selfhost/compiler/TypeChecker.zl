@@ -18,6 +18,7 @@ let C -> {
     `errors` -> [],
     `notes` -> [],
     `current_return` -> Nothing,
+    `inferred_return` -> Nothing,
     `in_function` -> false,
     `with_depth` -> 0,
     `src` -> Nothing,
@@ -60,8 +61,10 @@ function checker_reset(scope) {
     C[`errors`] -> []
     C[`notes`] -> []
     C[`current_return`] -> Ty.t_void()
+    C[`inferred_return`] -> Nothing
     C[`in_function`] -> false
     C[`with_depth`] -> 0
+    C[`has_extern`] -> false
 }
 
 function kind_str(node) {
@@ -89,6 +92,7 @@ export function check_source_file(src, filename) {
     C[`errors`] -> []
     C[`notes`] -> []
     C[`current_return`] -> Nothing
+    C[`inferred_return`] -> Nothing
     C[`in_function`] -> false
     C[`with_depth`] -> 0
     C[`src`] -> src
@@ -194,6 +198,8 @@ function declare_toplevel(node) {
     }
     when is_kind(node, AST.K_FUNCTION) {
         let name -> AST.fn_name(node)
+        let gens -> AST.fn_generics(node)
+        let old_tp -> Ty.set_active_type_params(gens)
         let params -> AST.fn_params(node)
         let ptypes -> []
         when params != Nothing {
@@ -209,7 +215,11 @@ function declare_toplevel(node) {
         when AST.fn_ret(node) != Nothing {
             ret -> Ty.type_from_ann(AST.fn_ret(node))
         }
+        Ty.reset_active_type_params(old_tp)
         let ft -> Ty.t_function(name, ptypes, ret)
+        when gens != Nothing and gens.length > 0 {
+            ft[`generics`] -> gens
+        }
         let sc -> C[`scope`]
         sc -> Ty.sc_define(sc, name, ft, `FUNCTION`, false)
         C[`scope`] -> sc
@@ -217,6 +227,8 @@ function declare_toplevel(node) {
     }
     when is_kind(node, AST.K_STRUCTURE) {
         let name -> AST.struct_name(node)
+        let gens -> AST.struct_generics(node)
+        let old_tp -> Ty.set_active_type_params(gens)
         let members -> {}
         let ms -> AST.struct_members(node)
         when ms != Nothing {
@@ -231,7 +243,11 @@ function declare_toplevel(node) {
                 }
             }
         }
+        Ty.reset_active_type_params(old_tp)
         let st -> Ty.t_structure(name, members)
+        when gens != Nothing and gens.length > 0 {
+            st[`generics`] -> gens
+        }
         let sc -> C[`scope`]
         sc -> Ty.sc_define(sc, name, st, `STRUCTURE`, false)
         C[`scope`] -> sc
@@ -245,10 +261,64 @@ function declare_toplevel(node) {
         declare_enumerator(node)
         <- Nothing
     }
+    when is_kind(node, AST.K_EXTERN_IMPORT) {
+        declare_extern_import(node)
+        <- Nothing
+    }
+}
+
+function header_default_alias(hdr) {
+    when hdr == Nothing or hdr == `` {
+        <- ``
+    }
+    let s -> Str.to_string(hdr)
+    when Str.starts_with(s, `<`) or Str.starts_with(s, `"`) or Str.starts_with(s, `'`) {
+        s -> Str.substring(s, 1, s.length - 1)
+    }
+    when Str.ends_with(s, `.h`) {
+        s -> Str.substring(s, 0, s.length - 2)
+    }
+    when Str.contains(s, `.`) {
+        let parts -> Str.split(s, `.`)
+        <- parts[parts.length - 1]
+    }
+    when Str.contains(s, `/`) {
+        let parts -> Str.split(s, `/`)
+        <- parts[parts.length - 1]
+    }
+    <- s
+}
+
+function declare_extern_import(node) {
+    C[`has_extern`] -> true
+    let alias -> AST.extern_alias(node)
+    let hdr -> AST.extern_header(node)
+    let names -> AST.extern_names(node)
+    when alias == Nothing or alias == `` {
+        when names == Nothing {
+            alias -> header_default_alias(hdr)
+        }
+    }
+    when alias != Nothing and alias != `` {
+        let sc -> C[`scope`]
+        sc -> Ty.sc_define(sc, alias, Ty.t_variant(), `MODULE`, false)
+        C[`scope`] -> sc
+    }
+    when names != Nothing {
+        let ni -> 0
+        let sc -> C[`scope`]
+        do while ni < names.length {
+            sc -> Ty.sc_define(sc, names[ni], Ty.t_variant(), `FUNCTION`, false)
+            ni -> ni + 1
+        }
+        C[`scope`] -> sc
+    }
 }
 
 function declare_class(node) {
     let name -> AST.class_name(node)
+    let gens -> AST.class_generics(node)
+    let old_tp -> Ty.set_active_type_params(gens)
     let members -> {}
     let ms -> AST.class_members(node)
     when ms != Nothing {
@@ -296,7 +366,11 @@ function declare_class(node) {
             }
         }
     }
+    Ty.reset_active_type_params(old_tp)
     let st -> Ty.t_class(name, members, method_tab)
+    when gens != Nothing and gens.length > 0 {
+        st[`generics`] -> gens
+    }
     let sc -> C[`scope`]
     sc -> Ty.sc_define(sc, name, st, `CLASS`, false)
     C[`scope`] -> sc
@@ -432,10 +506,17 @@ function check_class(node) {
     }
     let cname -> AST.class_name(node)
     let base_name -> AST.class_base(node)
+    let class_gens -> AST.class_generics(node)
+    let old_tp -> Ty.set_active_type_params(class_gens)
     do for meth in methods {
         when is_kind(meth, AST.K_FUNCTION) {
             let outer -> C[`scope`]
             let body_scope -> Ty.sc_create(outer)
+            when class_gens != Nothing {
+                do for cg in class_gens {
+                    body_scope -> Ty.sc_define(body_scope, cg, Ty.t_param(cg), `TYPE`, false)
+                }
+            }
             body_scope -> Ty.sc_define(body_scope, `self`, Ty.t_variant(), `PARAMETER`, true)
             when base_name != Nothing and base_name != `` {
                 // soft name for parent.meth receiver resolution only
@@ -478,6 +559,7 @@ function check_class(node) {
             C[`in_function`] -> prev_in
         }
     }
+    Ty.reset_active_type_params(old_tp)
     // silence unused
     when cname == Nothing {
         <- Nothing
@@ -488,6 +570,13 @@ function check_function(node) {
     let name -> AST.fn_name(node)
     let outer -> C[`scope`]
     let body_scope -> Ty.sc_create(outer)
+    let gens -> AST.fn_generics(node)
+    let old_tp -> Ty.set_active_type_params(gens)
+    when gens != Nothing {
+        do for g in gens {
+            body_scope -> Ty.sc_define(body_scope, g, Ty.t_param(g), `TYPE`, false)
+        }
+    }
     // params
     let params -> AST.fn_params(node)
     when params != Nothing {
@@ -500,12 +589,14 @@ function check_function(node) {
         }
     }
     let prev_ret -> C[`current_return`]
+    let prev_inferred -> C[`inferred_return`]
     let prev_in -> C[`in_function`]
-    let ret -> Ty.t_variant()
+    let ret -> Nothing
     when AST.fn_ret(node) != Nothing {
         ret -> Ty.type_from_ann(AST.fn_ret(node))
     }
     C[`current_return`] -> ret
+    C[`inferred_return`] -> Nothing
     C[`in_function`] -> true
     C[`scope`] -> body_scope
 
@@ -526,7 +617,9 @@ function check_function(node) {
 
     C[`scope`] -> outer
     C[`current_return`] -> prev_ret
+    C[`inferred_return`] -> prev_inferred
     C[`in_function`] -> prev_in
+    Ty.reset_active_type_params(old_tp)
 }
 
 function check_let(node) {
@@ -537,7 +630,12 @@ function check_let(node) {
     }
     let declared -> Nothing
     when AST.let_type(node) != Nothing {
-        declared -> Ty.type_from_ann(AST.let_type(node))
+        let ann -> AST.let_type(node)
+        let tname -> Ty.type_ann_name(ann)
+        when Ty.is_forbidden_type_name(tname) {
+            push_node_error(node, `Type '` + tname + `' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune')`)
+        }
+        declared -> Ty.type_from_ann(ann)
     }
     let value_t -> Ty.t_variant()
     let val_node -> AST.let_val(node)
@@ -545,18 +643,27 @@ function check_let(node) {
         value_t -> check_expr(val_node)
         maybe_mark_move(val_node)
     }
-    let final_t -> value_t
+    let mut -> true
+    when AST.let_mut(node) == false {
+        mut -> false
+    }
     when declared == Nothing {
+        let final_t -> Nothing
         when Ty.is_borrowed_type(value_t) or Ty.is_owned_type(value_t) {
             final_t -> Ty.copy_type_plain(value_t)
+        } or {
+            final_t -> value_t
         }
-    }
-    when declared != Nothing {
-        when not Ty.type_equal(declared, value_t) {
+        sc -> Ty.sc_define(sc, name, final_t, `VARIABLE`, mut)
+    } or {
+        when Ty.type_equal(declared, value_t) {
+            when declared[`bits`] != Nothing and val_node != Nothing and is_kind(val_node, AST.K_LITERAL) {
+                check_literal_bounds(node, declared, AST.lit_val(val_node))
+            }
+        } or {
             // materialize Default literal to declared type
             when Str.to_string(value_t[`kind`]) == `Default` and val_node != Nothing and is_kind(val_node, AST.K_LITERAL) {
                 materialize_default(val_node, declared)
-                final_t -> declared
             } or {
                 // allow Variant / Unknown
                 when Str.to_string(value_t[`kind`]) != `Variant` and Str.to_string(value_t[`kind`]) != `Unknown` {
@@ -566,13 +673,8 @@ function check_let(node) {
                 }
             }
         }
-        final_t -> declared
+        sc -> Ty.sc_define(sc, name, declared, `VARIABLE`, mut)
     }
-    let mut -> true
-    when AST.let_mut(node) == false {
-        mut -> false
-    }
-    sc -> Ty.sc_define(sc, name, final_t, `VARIABLE`, mut)
     C[`scope`] -> sc
 }
 
@@ -606,9 +708,22 @@ function check_return(node) {
             }
         }
         let expect -> C[`current_return`]
-        when expect != Nothing and not Ty.type_equal(expect, vt) {
-            when Str.to_string(expect[`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Variant` {
-                push_node_error(node, `Return type mismatch: expected ` + Ty.type_name(expect) + ` got ` + Ty.type_name(vt))
+        when expect != Nothing {
+            when not Ty.type_equal(expect, vt) {
+                when Str.to_string(expect[`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Variant` and Str.to_string(expect[`kind`]) != `Unknown` and Str.to_string(vt[`kind`]) != `Unknown` {
+                    push_node_error(node, `Return type mismatch: expected ` + Ty.type_name(expect) + ` got ` + Ty.type_name(vt))
+                }
+            }
+        } or {
+            when C[`inferred_return`] == Nothing {
+                C[`inferred_return`] -> vt
+            } or {
+                let inf -> C[`inferred_return`]
+                when not Ty.type_equal(inf, vt) {
+                    when Str.to_string(inf[`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Variant` and Str.to_string(inf[`kind`]) != `Unknown` and Str.to_string(vt[`kind`]) != `Unknown` {
+                        push_node_error(node, `Inconsistent return type: expected ` + Ty.type_name(inf) + ` got ` + Ty.type_name(vt))
+                    }
+                }
             }
         }
     }
@@ -775,7 +890,18 @@ function check_expr(node) {
     when is_kind(node, AST.K_VARIABLE) {
         let name -> AST.var_name(node)
         let sym -> Ty.sc_lookup(C[`scope`], name)
+        when sym == Nothing and Str.contains(Str.to_string(name), `<`) and Str.ends_with(Str.to_string(name), `>`) {
+            let base_name -> Str.substring(Str.to_string(name), 0, Str.index_of(Str.to_string(name), `<`))
+            let base_sym -> Ty.sc_lookup(C[`scope`], base_name)
+            when base_sym != Nothing {
+                let inst_t -> Ty.instantiate_generic_symbol(base_sym[`type`], name)
+                <- inst_t
+            }
+        }
         when sym == Nothing {
+            when C[`has_extern`] == true {
+                <- Ty.t_variant()
+            }
             push_node_error(node, `Undefined variable '` + Str.to_string(name) + `'`)
             <- Ty.t_unknown()
         }
@@ -826,7 +952,19 @@ function check_expr(node) {
         let _ot -> check_expr(AST.idx_obj(node))
         let _it -> check_expr(AST.idx_expr(node))
         when Str.to_string(_ot[`kind`]) == `List` {
-            <- _ot[`element`]
+            when _ot[`element`] != Nothing {
+                <- _ot[`element`]
+            }
+            <- Ty.t_variant()
+        }
+        when Str.to_string(_ot[`kind`]) == `Map` {
+            when _ot[`value`] != Nothing {
+                <- _ot[`value`]
+            }
+            <- Ty.t_variant()
+        }
+        when Str.to_string(_ot[`kind`]) == `String` {
+            <- Ty.t_rune()
         }
         <- Ty.t_variant()
     }
@@ -862,42 +1000,109 @@ function check_expr(node) {
     when is_kind(node, AST.K_CAST) {
         let _src_t -> check_expr(AST.cast_expr(node))
         let target_type_str -> Str.to_string(AST.cast_type(node))
+        when Ty.is_forbidden_type_name(target_type_str) {
+            push_node_error(node, `Type '` + target_type_str + `' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune')`)
+        }
         <- type_from_name_str(target_type_str)
+    }
+    when is_kind(node, AST.K_REST) {
+        let rt -> check_expr(AST.rest_expr(node))
+        when rt != Nothing and (rt is Map) and rt[`kind`] == `List` and rt[`element`] != Nothing {
+            <- rt[`element`]
+        }
+        <- Ty.t_variant()
     }
     when is_kind(node, AST.K_LIST) {
         let elems -> AST.list_elems(node)
         let et -> Ty.t_variant()
         when elems != Nothing and elems.length > 0 {
             et -> check_expr(elems[0])
-            // check rest loosely
-            let n -> elems.length
-            // skip full loop for -g; first element sets type
+            let idx -> 1
+            let all_same -> true
+            do while idx < elems.length {
+                let curr_t -> check_expr(elems[idx])
+                when not Ty.type_equal(et, curr_t) {
+                    all_same -> false
+                }
+                idx -> idx + 1
+            }
+            when not all_same {
+                et -> Ty.t_variant()
+            }
         }
         <- Ty.t_list(et)
     }
+    when is_kind(node, AST.K_MAP) {
+        let entries -> AST.list_elems(node)
+        let kt -> Ty.t_string()
+        let vt -> Ty.t_variant()
+        when entries != Nothing and entries.length > 0 {
+            let f0 -> entries[0]
+            when AST.struct_field_val(f0) != Nothing {
+                vt -> check_expr(AST.struct_field_val(f0))
+            }
+            let idx -> 1
+            let all_same -> true
+            do while idx < entries.length {
+                let f -> entries[idx]
+                when AST.struct_field_val(f) != Nothing {
+                    let curr_t -> check_expr(AST.struct_field_val(f))
+                    when not Ty.type_equal(vt, curr_t) {
+                        all_same -> false
+                    }
+                }
+                idx -> idx + 1
+            }
+            when not all_same {
+                vt -> Ty.t_variant()
+            }
+        }
+        <- Ty.t_map(kt, vt)
+    }
     when is_kind(node, AST.K_STRUCT_INIT) {
         let name -> AST.struct_init_name(node)
+        let sname -> Str.to_string(name)
         let sym -> Ty.sc_lookup(C[`scope`], name)
+        let struct_type -> Nothing
+        when sym == Nothing and Str.contains(sname, `<`) and Str.ends_with(sname, `>`) {
+            let base_name -> Str.substring(sname, 0, Str.index_of(sname, `<`))
+            let base_sym -> Ty.sc_lookup(C[`scope`], base_name)
+            when base_sym != Nothing {
+                sym -> base_sym
+                struct_type -> Ty.instantiate_generic_symbol(base_sym[`type`], sname)
+            }
+        }
+        when struct_type == Nothing and sym != Nothing {
+            struct_type -> sym[`type`]
+        }
         when sym == Nothing {
-            push_node_error(node, `Undefined structure '` + Str.to_string(name) + `'`)
+            push_node_error(node, `Undefined structure '` + sname + `'`)
             <- Ty.t_unknown()
         }
         // check fields exist if structure type
         let fields -> AST.struct_init_fields(node)
-        when fields != Nothing and Str.to_string(sym[`type`][`kind`]) == `Structure` {
-            let mems -> sym[`type`][`members`]
+        when fields != Nothing and Str.to_string(struct_type[`kind`]) == `Structure` {
+            let mems -> struct_type[`members`]
             do for f in fields {
                 let fn -> AST.struct_field_name(f)
                 when mems != Nothing and not mems.has(fn) {
-                    push_node_error(node, `Unknown field '` + Str.to_string(fn) + `' on ` + Str.to_string(name))
+                    push_node_error(node, `Unknown field '` + Str.to_string(fn) + `' on ` + sname)
                 }
                 when AST.struct_field_val(f) != Nothing {
-                    let _ft -> check_expr(AST.struct_field_val(f))
+                    let ft -> check_expr(AST.struct_field_val(f))
+                    when mems != Nothing and mems.has(fn) {
+                        let expected_ft -> mems[fn]
+                        when not is_untyped(expected_ft) and not is_untyped(ft) {
+                            when not Ty.type_equal(expected_ft, ft) {
+                                push_node_error(node, `Type mismatch for field '` + Str.to_string(fn) + `': expected ` + Ty.type_name(expected_ft) + `, got ` + Ty.type_name(ft))
+                            }
+                        }
+                    }
                 }
             }
         }
-        when sym != Nothing {
-            <- sym[`type`]
+        when struct_type != Nothing {
+            <- struct_type
         }
         <- Ty.t_unknown()
     }
@@ -955,6 +1160,25 @@ function check_expr(node) {
         let _ot -> check_expr(AST.idx_assign_obj(node))
         let _it -> check_expr(AST.idx_assign_expr(node))
         let vt -> check_expr(AST.idx_assign_val(node))
+        when Str.to_string(_ot[`kind`]) == `List` and _ot[`element`] != Nothing {
+            when not Ty.type_equal(_ot[`element`], vt) {
+                when Str.to_string(vt[`kind`]) != `Variant` and Str.to_string(_ot[`element`][`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Unknown` and Str.to_string(_ot[`element`][`kind`]) != `Unknown` {
+                    push_node_error(node, `Type mismatch in list index assignment: expected ` + Ty.type_name(_ot[`element`]) + ` got ` + Ty.type_name(vt))
+                }
+            }
+        }
+        when Str.to_string(_ot[`kind`]) == `Map` {
+            when _ot[`key`] != Nothing and not Ty.type_equal(_ot[`key`], _it) {
+                when Str.to_string(_it[`kind`]) != `Variant` and Str.to_string(_ot[`key`][`kind`]) != `Variant` and Str.to_string(_it[`kind`]) != `Unknown` and Str.to_string(_ot[`key`][`kind`]) != `Unknown` {
+                    push_node_error(node, `Type mismatch in map key assignment: expected ` + Ty.type_name(_ot[`key`]) + ` got ` + Ty.type_name(_it))
+                }
+            }
+            when _ot[`value`] != Nothing and not Ty.type_equal(_ot[`value`], vt) {
+                when Str.to_string(vt[`kind`]) != `Variant` and Str.to_string(_ot[`value`][`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Unknown` and Str.to_string(_ot[`value`][`kind`]) != `Unknown` {
+                    push_node_error(node, `Type mismatch in map value assignment: expected ` + Ty.type_name(_ot[`value`]) + ` got ` + Ty.type_name(vt))
+                }
+            }
+        }
         <- vt
     }
     // Fallback
@@ -974,6 +1198,13 @@ function check_call(node) {
             ai -> ai + 1
         }
     }
+    when is_kind(callee, AST.K_VARIABLE) {
+        let vname -> Str.to_string(AST.var_name(callee))
+        when Ty.is_forbidden_type_name(vname) {
+            push_node_error(node, `Type '` + vname + `' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune')`)
+            <- Ty.t_variant()
+        }
+    }
     let callee_t -> check_expr(callee)
     let ck -> Str.to_string(callee_t[`kind`])
     when ck == `Class` or ck == `Structure` {
@@ -983,9 +1214,46 @@ function check_call(node) {
     }
     when ck == `Function` {
         let cname -> callee_t[`name`]
-        check_arity(node, cname, callee_t, argc)
-        when callee_t[`return`] != Nothing {
-            <- callee_t[`return`]
+        let act_callee_t -> callee_t
+        when callee_t.has(`generics`) and callee_t[`generics`] != Nothing {
+            let gparams -> callee_t[`generics`]
+            let substs -> {}
+            let params0 -> callee_t[`params`]
+            when params0 != Nothing and args != Nothing {
+                let min_len -> params0.length
+                when args.length < min_len { min_len -> args.length }
+                let pi -> 0
+                do while pi < min_len {
+                    let act_at -> check_expr(args[pi])
+                    Ty.infer_type_substitutions(params0[pi], act_at, gparams, substs)
+                    pi -> pi + 1
+                }
+            }
+            when substs.keys().length > 0 {
+                act_callee_t -> Ty.substitute_type(callee_t, substs)
+            }
+        }
+        check_arity(node, cname, act_callee_t, argc)
+        let params -> act_callee_t[`params`]
+        when params != Nothing and args != Nothing {
+            let min_len -> params.length
+            when args.length < min_len {
+                min_len -> args.length
+            }
+            let pi -> 0
+            do while pi < min_len {
+                let exp_pt -> params[pi]
+                let act_at -> check_expr(args[pi])
+                when exp_pt != Nothing and act_at != Nothing and not Ty.type_equal(exp_pt, act_at) {
+                    when Str.to_string(exp_pt[`kind`]) != `Variant` and Str.to_string(act_at[`kind`]) != `Variant` and Str.to_string(exp_pt[`kind`]) != `Unknown` and Str.to_string(act_at[`kind`]) != `Unknown` and Str.to_string(exp_pt[`kind`]) != `TypeParam` {
+                        push_node_error(args[pi], `Argument ` + Str.to_string(pi + 1) + ` type mismatch in call to '` + Str.to_string(cname) + `': expected ` + Ty.type_name(exp_pt) + ` got ` + Ty.type_name(act_at))
+                    }
+                }
+                pi -> pi + 1
+            }
+        }
+        when act_callee_t[`return`] != Nothing {
+            <- act_callee_t[`return`]
         }
     }
     <- Ty.t_variant()
@@ -1016,6 +1284,9 @@ function check_arity(node, name, ft, argc) {
     when ft == Nothing {
         <- Nothing
     }
+    when name == `writeln` or name == `write` {
+        <- Nothing
+    }
     let params -> ft[`params`]
     let expect -> 0
     when params != Nothing {
@@ -1030,6 +1301,76 @@ function check_get(node) {
     let ot -> check_expr(AST.get_obj(node))
     let mn -> AST.get_name(node)
     let k -> Str.to_string(ot[`kind`])
+    when k == `List` {
+        when mn == `length` {
+            <- Ty.t_integer()
+        }
+        when mn == `append` {
+            let elem -> ot[`element`]
+            when elem == Nothing { elem -> Ty.t_variant() }
+            <- Ty.t_function(`append`, [elem], Ty.t_void())
+        }
+        when mn == `get` {
+            let elem -> ot[`element`]
+            when elem == Nothing { elem -> Ty.t_variant() }
+            <- Ty.t_function(`get`, [Ty.t_integer()], elem)
+        }
+        when mn == `has` {
+            let elem -> ot[`element`]
+            when elem == Nothing { elem -> Ty.t_variant() }
+            <- Ty.t_function(`has`, [elem], Ty.t_boolean())
+        }
+        when mn == `reverse` or mn == `unique` or mn == `flatten` {
+            <- Ty.t_function(mn, [], ot)
+        }
+    }
+    when k == `Map` {
+        when mn == `length` {
+            <- Ty.t_integer()
+        }
+        when mn == `has` {
+            let kt -> ot[`key`]
+            when kt == Nothing { kt -> Ty.t_variant() }
+            <- Ty.t_function(`has`, [kt], Ty.t_boolean())
+        }
+        when mn == `get` {
+            let kt -> ot[`key`]
+            when kt == Nothing { kt -> Ty.t_variant() }
+            let vt -> ot[`value`]
+            when vt == Nothing { vt -> Ty.t_variant() }
+            <- Ty.t_function(`get`, [kt], vt)
+        }
+        when mn == `keys` {
+            let kt -> ot[`key`]
+            when kt == Nothing { kt -> Ty.t_variant() }
+            <- Ty.t_function(`keys`, [], Ty.t_list(kt))
+        }
+        when mn == `values` {
+            let vt -> ot[`value`]
+            when vt == Nothing { vt -> Ty.t_variant() }
+            <- Ty.t_function(`values`, [], Ty.t_list(vt))
+        }
+    }
+    when k == `Set` {
+        when mn == `length` {
+            <- Ty.t_integer()
+        }
+        when mn == `has` or mn == `add` or mn == `remove` {
+            let elem -> ot[`element`]
+            when elem == Nothing { elem -> Ty.t_variant() }
+            <- Ty.t_function(mn, [elem], Ty.t_boolean())
+        }
+        when mn == `to_list` {
+            let elem -> ot[`element`]
+            when elem == Nothing { elem -> Ty.t_variant() }
+            <- Ty.t_function(`to_list`, [], Ty.t_list(elem))
+        }
+    }
+    when k == `String` {
+        when mn == `length` {
+            <- Ty.t_integer()
+        }
+    }
     when k == `Structure` or k == `Class` {
         let mems -> ot[`members`]
         when mems != Nothing and mems.has(mn) {
@@ -1167,6 +1508,60 @@ function all_in(s, i, n, alphabet) {
     <- all_in(s, i + 1, n, alphabet)
 }
 
+function parse_integer_value(s) {
+    when s == Nothing { <- 0 }
+    let str -> Str.to_string(s)
+    let n -> Str.length(str)
+    when n == 0 { <- 0 }
+    let sign -> 1
+    let i -> 0
+    let ch0 -> Str.at(str, 0)
+    when ch0 == `-` {
+        sign -> -1
+        i -> 1
+    }
+    let res -> 0
+    let digits -> `0123456789`
+    do while i < n {
+        let ch -> Str.at(str, i)
+        let d -> Str.index_of(digits, ch)
+        when d != -1 {
+            res -> res * 10 + d
+        }
+        i -> i + 1
+    }
+    <- sign * res
+}
+
+function check_literal_bounds(node, declared, val) {
+    when val == Nothing { <- Nothing }
+    let s -> Str.to_string(val)
+    when not looks_integer(s) { <- Nothing }
+    let n -> parse_integer_value(s)
+    let bits -> declared[`bits`]
+    let unsigned -> declared[`unsigned`]
+    when unsigned == true and bits == 8 {
+        when n < 0 or n > 255 {
+            push_node_error(node, `Literal value ` + Str.to_string(n) + ` exceeds bounds for ` + Ty.type_name(declared) + ` (0..255)`)
+        }
+    }
+    when unsigned == false and bits == 8 {
+        when n < -128 or n > 127 {
+            push_node_error(node, `Literal value ` + Str.to_string(n) + ` exceeds bounds for ` + Ty.type_name(declared) + ` (-128..127)`)
+        }
+    }
+    when bits == 16 {
+        when n < -32768 or n > 32767 {
+            push_node_error(node, `Literal value ` + Str.to_string(n) + ` exceeds bounds for ` + Ty.type_name(declared) + ` (-32768..32767)`)
+        }
+    }
+    when bits == 32 {
+        when n < -2147483648 or n > 2147483647 {
+            push_node_error(node, `Literal value ` + Str.to_string(n) + ` exceeds bounds for ` + Ty.type_name(declared) + ` (-2147483648..2147483647)`)
+        }
+    }
+}
+
 function materialize_default(node, target_type) {
     let k -> Str.to_string(target_type[`kind`])
     when k == `Integer` {
@@ -1222,41 +1617,76 @@ function infer_binary(op, lt, rt) {
 }
 
 function is_type_name_str(s) {
-    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
-    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
-    when s == `String` or s == `Str` { <- true }
-    when s == `Boolean` or s == `Bool` { <- true }
-    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
-    when s == `Bytes` or s == `Buffer` { <- true }
-    when s == `List` or s == `Set` or s == `Map` { <- true }
-    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    when Ty.is_forbidden_type_name(s) { <- false }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) { <- true }
+    let ch -> Str.substring(s, 0, 1)
+    when ch >= `A` and ch <= `Z` { <- true }
     <- false
 }
 
 function type_from_name_str(s) {
-    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` {
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) {
+        <- Ty.type_from_name(s)
+    }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) {
+        <- Ty.type_from_name(s)
+    }
+    when s == `Integer` {
         <- Ty.t_integer()
     }
-    when s == `Decimal` or s == `Float` or s == `Double` {
+    when s == `Byte` {
+        <- Ty.t_byte()
+    }
+    when s == `Decimal` {
         <- Ty.t_decimal()
     }
-    when s == `String` or s == `Str` {
+    when s == `Vector` {
+        <- Ty.t_vector(Ty.t_variant(), 0)
+    }
+    when s == `String` {
         <- Ty.t_string()
     }
-    when s == `Boolean` or s == `Bool` {
+    when s == `Boolean` {
         <- Ty.t_boolean()
     }
-    when s == `Rune` or s == `Char` or s == `Glyph` {
+    when s == `Rune` {
         <- Ty.t_rune()
     }
-    when s == `Bytes` or s == `Buffer` {
-        <- Ty.t_list(Ty.t_integer())
+    when s == `Bytes` {
+        <- Ty.t_list(Ty.t_integer_sized(8, false))
     }
-    when s == `List` or s == `Set` {
+    when s == `List` {
         <- Ty.t_list(Ty.t_variant())
     }
-    when s == `Map` {
-        <- Ty.t_variant()
+    when s == `Set` {
+        <- Ty.t_set(Ty.t_variant())
     }
-    <- Ty.t_variant()
+    when s == `Map` {
+        <- Ty.t_map(Ty.t_variant(), Ty.t_variant())
+    }
+    when s == `Option` {
+        <- Ty.t_option(Ty.t_variant())
+    }
+    when s == `Result` {
+        <- Ty.t_result(Ty.t_variant(), Ty.t_variant())
+    }
+    when s == `Task` {
+        <- Ty.t_task(Ty.t_variant())
+    }
+    when s == `Nothing` {
+        <- Ty.t_nothing()
+    }
+    when s == `Default` {
+        <- Ty.t_default()
+    }
+    when s == `Void` {
+        <- Ty.t_void()
+    }
+    <- Ty.type_from_name(s)
 }

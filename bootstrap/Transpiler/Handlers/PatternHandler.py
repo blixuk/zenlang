@@ -131,6 +131,18 @@ class PatternHandler:
             return tmp_match
 
         if isinstance(pattern, VariantPattern):
+            if not pattern.enum_name and not pattern.params:
+                type_check = self._alloc_temp(self.new_label("type_check"), node, "bool", region=current_reg)
+                self._emit(Call(target=type_check, callee="ZenValue_is_type_name", args=[subject, f'"{pattern.name}"'], region=current_reg), node)
+                var_check = self._alloc_temp(self.new_label("var_check"), node, "bool", region=current_reg)
+                zen_enum = self._alloc_temp(self.new_label("zen_enum"), node, "string", region=current_reg)
+                self._emit(Load(target=zen_enum, source='""', type="string"), node)
+                zen_variant = self._alloc_temp(self.new_label("zen_variant"), node, "string", region=current_reg)
+                self._emit(Load(target=zen_variant, source=f'"{pattern.name}"', type="string"), node)
+                self._emit(Call(target=var_check, callee="ZenValue_is_variant", args=[subject, zen_enum, zen_variant], region=current_reg), node)
+                self._emit(Compute(target=tmp_match, op="or", left=type_check, right=var_check), node)
+                return tmp_match
+
             # Use the 3-argument ZenValue_is_variant(val, enum, variant)
             zen_enum = self._alloc_temp(self.new_label("zen_enum"), node, "string", region=current_reg)
             self._emit(Load(target=zen_enum, source=f"`{pattern.enum_name}`", type="string"), node)

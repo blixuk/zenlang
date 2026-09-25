@@ -1,0 +1,29 @@
+/!
+  zenshell - Cat Say Command (catsay)
+!/
+
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function handle_catsay_default(args, c) {
+    let msg -> when (args.length > 0) { Str.join(args, ` `) } or { `Zen Trinity Shell is purr-fect!` }
+    let msg_len -> Str.length(msg)
+    let border -> Str.repeat(`-`, msg_len + 2)
+
+    let bubble -> ` _` + border + `_\n`
+    bubble -> bubble + `< ` + color.bold(color.cyan(msg)) + ` >\n`
+    bubble -> bubble + ` -` + border + `-\n`
+    bubble -> bubble + `        \\\n`
+    bubble -> bubble + `         \\  ` + color.yellow(`^~^  ,`) + `\n`
+    bubble -> bubble + `           ` + color.yellow(`('Y') )`) + `\n`
+    bubble -> bubble + `           ` + color.yellow(`/   \\/`) + `\n`
+    bubble -> bubble + `          ` + color.yellow(`(\\|||/)`)
+    <- bubble
+}
+
+export function create_catsay_command(ctx) {
+    let cmd -> cmd_base.Command(`catsay`, `Speak a message through the zenshell ASCII cat`)
+    cmd.set_default(handle_catsay_default)
+    <- cmd
+}

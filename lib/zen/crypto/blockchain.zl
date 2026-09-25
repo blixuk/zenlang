@@ -1,0 +1,421 @@
+/!
+  zen.crypto.blockchain - Pure Zenlang Blockchain & Ledger Module.
+  Provides a complete cryptographic distributed ledger with:
+    - Cryptographic transactions and deterministic txid hashing
+    - Merkle tree transaction root integration
+    - Proof-of-Work (PoW) consensus mining with configurable difficulty
+    - Ledger state, UTXO/account balance calculation, and history
+    - Complete chain integrity validation & tamper detection
+    - Bitcoin-style Base58Check wallet address generation
+!/
+
+use zen.crypto.sha256 as sha_mod
+use zen.crypto.merkle as merkle_mod
+use zen.crypto.base58 as b58_mod
+use zen.crypto.hex as hex_mod
+use zen.text.string as Str
+
+let GENESIS_PREV_HASH -> `0000000000000000000000000000000000000000000000000000000000000000`
+
+/!
+  Computes deterministic SHA-256 transaction hash (txid).
+!/
+function hash_transaction(tx) {
+    let s -> tx[`sender`]
+    let r -> tx[`recipient`]
+    let a -> tx[`amount`] <: String
+    let fee_val -> tx[`fee`] <: String
+    let d -> tx[`data`] <: String
+    let payload -> s + `:` + r + `:` + a + `:` + fee_val + `:` + d
+    <- sha_mod.sha256(payload)
+}
+
+/!
+  Creates a new transaction map with a computed txid.
+!/
+function create_transaction(sender, recipient, amount, fee, data) {
+    let actual_fee -> fee
+    when actual_fee == Nothing {
+        actual_fee -> 0
+    }
+    let actual_data -> data
+    when actual_data == Nothing {
+        actual_data -> ``
+    }
+
+    let tx -> {
+        `sender` -> sender,
+        `recipient` -> recipient,
+        `amount` -> amount,
+        `fee` -> actual_fee,
+        `data` -> actual_data,
+        `txid` -> ``
+    }
+    tx[`txid`] -> hash_transaction(tx)
+    <- tx
+}
+
+/!
+  Validates transaction structural integrity.
+!/
+function is_valid_transaction(tx) {
+    when not tx.has(`sender`) or not tx.has(`recipient`) or not tx.has(`amount`) {
+        <- False
+    }
+    when tx[`sender`] == `SYSTEM` {
+        when tx[`amount`] < 0 {
+            <- False
+        }
+    } or {
+        when tx[`amount`] <= 0 {
+            <- False
+        }
+    }
+    when tx.has(`fee`) and tx[`fee`] < 0 {
+        <- False
+    }
+    let expected_txid -> hash_transaction(tx)
+    <- tx[`txid`] == expected_txid
+}
+
+/!
+  Computes deterministic SHA-256 header hash of a block.
+!/
+function hash_block_header(block) {
+    let idx -> block[`index`] <: String
+    let ts -> block[`timestamp`] <: String
+    let prev -> block[`prev_hash`]
+    let root -> block[`merkle_root`]
+    let nonce -> block[`nonce`] <: String
+    let diff -> block[`difficulty`] <: String
+    let hdr -> idx + `:` + ts + `:` + prev + `:` + root + `:` + nonce + `:` + diff
+    <- sha_mod.sha256(hdr)
+}
+
+/!
+  Verifies that a block hash meets the Proof-of-Work difficulty target
+  (checks for 'difficulty' leading zero hex characters).
+!/
+function verify_pow(hash_str, difficulty) {
+    when Str.length(hash_str) < difficulty {
+        <- False
+    }
+    let i -> 0
+    while i < difficulty {
+        when Str.substring(hash_str, i, i + 1) != `0` {
+            <- False
+        }
+        i -> i + 1
+    }
+    <- True
+}
+
+/!
+  Mines a block by iterating nonce until block header hash satisfies difficulty.
+!/
+function mine_block(block, difficulty, max_iterations) {
+    let limit -> max_iterations
+    when limit == Nothing {
+        limit -> 1000000
+    }
+
+    block[`difficulty`] -> difficulty
+    block[`nonce`] -> 0
+
+    while block[`nonce`] < limit {
+        let h -> hash_block_header(block)
+        when verify_pow(h, difficulty) {
+            block[`hash`] -> h
+            <- block
+        }
+        block[`nonce`] -> block[`nonce`] + 1
+    }
+
+    // Fallback: set last computed hash
+    block[`hash`] -> hash_block_header(block)
+    <- block
+}
+
+/!
+  Creates a new unmined block with transactions and computed Merkle root.
+!/
+function create_block(index, prev_hash, transactions, difficulty, timestamp) {
+    let actual_diff -> difficulty
+    when actual_diff == Nothing {
+        actual_diff -> 2
+    }
+    let actual_time -> timestamp
+    when actual_time == Nothing {
+        actual_time -> 0
+    }
+
+    let tx_hashes -> []
+    for tx in transactions {
+        tx_hashes.append(tx[`txid`])
+    }
+    let root -> merkle_mod.compute_root(tx_hashes)
+
+    let block -> {
+        `index` -> index,
+        `timestamp` -> actual_time,
+        `prev_hash` -> prev_hash,
+        `merkle_root` -> root,
+        `nonce` -> 0,
+        `difficulty` -> actual_diff,
+        `transactions` -> transactions,
+        `hash` -> ``
+    }
+    block[`hash`] -> hash_block_header(block)
+    <- block
+}
+
+/!
+  Creates and mines the canonical Genesis block (Block 0).
+!/
+function create_genesis_block(difficulty, message) {
+    let diff -> difficulty
+    when diff == Nothing {
+        diff -> 2
+    }
+    let msg -> message
+    when msg == Nothing {
+        msg -> `Zenlang Genesis Block`
+    }
+
+    let coinbase_tx -> create_transaction(`SYSTEM`, `GENESIS`, 0, 0, msg)
+    let genesis -> create_block(0, GENESIS_PREV_HASH, [coinbase_tx], diff, 0)
+    <- mine_block(genesis, diff, 1000000)
+}
+
+/!
+  Creates a new blockchain ledger initialized with a mined Genesis block.
+!/
+function create_blockchain(difficulty, mining_reward, genesis_message) {
+    let diff -> difficulty
+    when diff == Nothing {
+        diff -> 2
+    }
+    let reward -> mining_reward
+    when reward == Nothing {
+        reward -> 50
+    }
+
+    let genesis -> create_genesis_block(diff, genesis_message)
+    <- {
+        `blocks` -> [genesis],
+        `difficulty` -> diff,
+        `mining_reward` -> reward,
+        `pending_transactions` -> []
+    }
+}
+
+/!
+  Returns the head block of the blockchain.
+!/
+function get_latest_block(chain) {
+    let len -> chain[`blocks`].length
+    <- chain[`blocks`][len - 1]
+}
+
+/!
+  Calculates account balance by traversing all confirmed transactions on chain.
+!/
+function get_balance(chain, address) {
+    let balance -> 0
+    for block in chain[`blocks`] {
+        for tx in block[`transactions`] {
+            when tx[`sender`] == address {
+                balance -> balance - tx[`amount`] - tx[`fee`]
+            }
+            when tx[`recipient`] == address {
+                balance -> balance + tx[`amount`]
+            }
+        }
+    }
+    <- balance
+}
+
+/!
+  Adds a transaction to the mempool after verifying funds and structural validity.
+!/
+function add_transaction(chain, tx) {
+    when not is_valid_transaction(tx) {
+        <- False
+    }
+
+    // System transactions (coinbase / rewards) bypass balance check
+    when tx[`sender`] != `SYSTEM` {
+        let current_bal -> get_balance(chain, tx[`sender`])
+        let required -> tx[`amount`] + tx[`fee`]
+        when current_bal < required {
+            <- False
+        }
+    }
+
+    chain[`pending_transactions`].append(tx)
+    <- True
+}
+
+/!
+  Mines pending transactions into a new block, rewards the miner, and appends to chain.
+!/
+function mine_pending_transactions(chain, miner_address) {
+    // Calculate total fees from pending transactions
+    let total_fees -> 0
+    for tx in chain[`pending_transactions`] {
+        total_fees -> total_fees + tx[`fee`]
+    }
+
+    // Coinbase reward transaction
+    let reward_amount -> chain[`mining_reward`] + total_fees
+    let coinbase_tx -> create_transaction(`SYSTEM`, miner_address, reward_amount, 0, `Mining Reward`)
+
+    let block_txs -> [coinbase_tx]
+    for tx in chain[`pending_transactions`] {
+        block_txs.append(tx)
+    }
+
+    let prev_block -> get_latest_block(chain)
+    let new_block -> create_block(
+        prev_block[`index`] + 1,
+        prev_block[`hash`],
+        block_txs,
+        chain[`difficulty`],
+        0
+    )
+
+    let mined -> mine_block(new_block, chain[`difficulty`], 1000000)
+    chain[`blocks`].append(mined)
+    chain[`pending_transactions`] -> []
+    <- mined
+}
+
+/!
+  Retrieves full transaction history for a given address.
+!/
+function get_transaction_history(chain, address) {
+    let history -> []
+    for block in chain[`blocks`] {
+        for tx in block[`transactions`] {
+            when tx[`sender`] == address or tx[`recipient`] == address {
+                history.append(tx)
+            }
+        }
+    }
+    <- history
+}
+
+/!
+  Validates entire chain integrity:
+    1. Genesis block validity (index 0, zero prev_hash, valid header hash, meets PoW).
+    2. Continuity: each block's prev_hash matches prior block's hash.
+    3. Proof-of-Work: each block meets its difficulty target.
+    4. Header authenticity: recomputed header hash matches block hash.
+    5. Merkle root integrity: recomputed Merkle root matches block merkle_root.
+!/
+function is_chain_valid(chain) {
+    let blocks -> chain[`blocks`]
+    let len -> blocks.length
+    when len == 0 {
+        <- False
+    }
+
+    // Validate Genesis block
+    let genesis -> blocks[0]
+    when genesis[`index`] != 0 or genesis[`prev_hash`] != GENESIS_PREV_HASH {
+        <- False
+    }
+    when hash_block_header(genesis) != genesis[`hash`] {
+        <- False
+    }
+    when not verify_pow(genesis[`hash`], genesis[`difficulty`]) {
+        <- False
+    }
+    for tx in genesis[`transactions`] {
+        when not is_valid_transaction(tx) {
+            <- False
+        }
+    }
+
+    // Validate chain links and blocks
+    let i -> 1
+    while i < len {
+        let curr -> blocks[i]
+        let prev -> blocks[i - 1]
+
+        // Link continuity
+        when curr[`index`] != prev[`index`] + 1 {
+            <- False
+        }
+        when curr[`prev_hash`] != prev[`hash`] {
+            <- False
+        }
+
+        // Header hash matches
+        when hash_block_header(curr) != curr[`hash`] {
+            <- False
+        }
+
+        // Proof-of-Work verified
+        when not verify_pow(curr[`hash`], curr[`difficulty`]) {
+            <- False
+        }
+
+        // Merkle root & transaction integrity verified
+        let tx_hashes -> []
+        for tx in curr[`transactions`] {
+            when not is_valid_transaction(tx) {
+                <- False
+            }
+            tx_hashes.append(tx[`txid`])
+        }
+        let expected_root -> merkle_mod.compute_root(tx_hashes)
+        when curr[`merkle_root`] != expected_root {
+            <- False
+        }
+
+        i -> i + 1
+    }
+
+    <- True
+}
+
+/!
+  Exports blockchain ledger state to a pure map structure.
+!/
+function export_chain(chain) {
+    <- {
+        `blocks` -> chain[`blocks`],
+        `difficulty` -> chain[`difficulty`],
+        `mining_reward` -> chain[`mining_reward`],
+        `pending_transactions` -> chain[`pending_transactions`]
+    }
+}
+
+/!
+  Imports and validates a blockchain ledger from an exported map.
+!/
+function import_chain(chain_map) {
+    when not is_chain_valid(chain_map) {
+        <- Nothing
+    }
+    <- chain_map
+}
+
+/!
+  Generates a valid Bitcoin-style Base58Check wallet address.
+  Uses SHA-256 and Base58Check with version byte 0x00 (prefix '1').
+!/
+function generate_wallet_address(label) {
+    let seed -> label
+    when seed == Nothing {
+        seed -> `zen-default-seed`
+    }
+    let h -> sha_mod.sha256(seed)
+
+    // 20-byte payload (40 hex chars) with version prefix 0x00
+    let ver_hex -> `00` + Str.substring(h, 0, 40)
+    let bytes -> hex_mod.decode_bytes(ver_hex)
+
+    <- b58_mod.encode_check(bytes)
+}

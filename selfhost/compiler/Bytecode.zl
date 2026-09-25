@@ -713,9 +713,67 @@ function emit_zero_of_type(ctx, type_ann, line) {
     }
 }
 
+function header_default_alias_bc(hdr) {
+    when hdr == Nothing or hdr == `` {
+        <- ``
+    }
+    let s -> Str.to_string(hdr)
+    when Str.starts_with(s, `<`) or Str.starts_with(s, `"`) or Str.starts_with(s, `'`) {
+        s -> Str.substring(s, 1, s.length - 1)
+    }
+    when Str.ends_with(s, `.h`) {
+        s -> Str.substring(s, 0, s.length - 2)
+    }
+    when Str.contains(s, `.`) {
+        let parts -> Str.split(s, `.`)
+        <- parts[parts.length - 1]
+    }
+    when Str.contains(s, `/`) {
+        let parts -> Str.split(s, `/`)
+        <- parts[parts.length - 1]
+    }
+    <- s
+}
+
 function compile_statement(ctx, stmt) {
     let kind -> stmt[0]
     let line -> stmt[1]
+
+    when kind == 49 { // K_EXTERN_IMPORT
+        let hdr -> stmt[3]
+        let alias -> stmt[4]
+        let names -> stmt[5]
+        when alias == Nothing or alias == `` {
+            when names == Nothing {
+                alias -> header_default_alias_bc(hdr)
+            }
+        }
+        when alias != Nothing and alias != `` {
+            let als -> Str.to_string(alias)
+            when ctx[`variables`] != Nothing {
+                ctx[`variables`][als] -> true
+            }
+            let name_idx -> add_constant(ctx, als)
+            emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
+            emit_u16(ctx, name_idx, line)
+            emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+            emit_u16(ctx, name_idx, line)
+        }
+        when names != Nothing {
+            do for nm in names {
+                let nms -> Str.to_string(nm)
+                when ctx[`variables`] != Nothing {
+                    ctx[`variables`][nms] -> true
+                }
+                let n_idx -> add_constant(ctx, nms)
+                emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
+                emit_u16(ctx, n_idx, line)
+                emit_byte(ctx, 35, line) // OP_STORE_GLOBAL
+                emit_u16(ctx, n_idx, line)
+            }
+        }
+        <- Nothing
+    }
 
     when kind == 19 { // K_LET
         let name -> stmt[3]
@@ -1440,7 +1498,11 @@ function compile_statement(ctx, stmt) {
             let mem -> c_members[memi]
             let memname -> ``
             when mem != Nothing and (mem is List) and mem.length > 3 {
-                memname -> Str.to_string(mem[3])
+                let mraw -> mem[3]
+                when mraw != Nothing and (mraw is List) and mraw.length > 3 and mraw[0] == 45 {
+                    mraw -> mraw[3]
+                }
+                memname -> Str.to_string(mraw)
             } or when mem != Nothing {
                 memname -> Str.to_string(mem)
             }
@@ -1679,7 +1741,7 @@ function compile_pattern_case(ctx, val_slot, pat, body, guard, end_jumps, line) 
         }
         when has_rest {
             let rest_node -> elems[elems.length - 1]
-            let rname -> Str.to_string(rest_node[3])
+            let rname -> Str.to_string(AST.rest_name(rest_node))
             when rname != `_` {
                 emit_constant(ctx, fixed_n, line)
                 emit_byte(ctx, 32, line)
@@ -1986,18 +2048,25 @@ function compile_expression(ctx, expr) {
         when name != Nothing and (name is List) and name.length > 3 and name[0] == 45 { // K_TYPE_ANN
             name -> name[3]
         }
-        name -> Str.to_string(name)
-        when name == `Nothing` or name == `nothing` {
+        let name_str -> Str.to_string(name)
+        when name_str == `Nothing` or name_str == `nothing` {
             emit_byte(ctx, 2, line) // OP_NOTHING
-        } or when name == `Default` or name == `default` {
+        } or when name_str == `Default` or name_str == `default` {
             emit_byte(ctx, 3, line) // OP_DEFAULT
             emit_u16(ctx, 1, line)  // ZEN_DEFAULT
-        } or when name == `True` or name == `true` {
+        } or when name_str == `True` or name_str == `true` {
             emit_byte(ctx, 4, line) // OP_TRUE
-        } or when name == `False` or name == `false` {
+        } or when name_str == `False` or name_str == `false` {
             emit_byte(ctx, 5, line) // OP_FALSE
         } or {
-            let resolved -> resolve_or_capture_local(ctx, name)
+            let base_name -> name_str + ``
+            when Str.contains(name_str, `<`) and Str.ends_with(name_str, `>`) {
+                base_name -> Str.substring(name_str, 0, Str.index_of(name_str, `<`))
+            }
+            let resolved -> resolve_or_capture_local(ctx, name_str)
+            when resolved == Nothing and base_name != name_str {
+                resolved -> resolve_or_capture_local(ctx, base_name)
+            }
             when resolved != Nothing {
                 when resolved[`type`] == `local` {
                     emit_byte(ctx, 32, line) // OP_LOAD_LOCAL
@@ -2007,7 +2076,11 @@ function compile_expression(ctx, expr) {
                     emit_u16(ctx, resolved[`index`], line)
                 }
             } or {
-                let name_idx -> add_constant(ctx, name)
+                let sym_name -> name_str + ``
+                when base_name != name_str and not is_canonical_generic_type_name(base_name) {
+                    sym_name -> base_name
+                }
+                let name_idx -> add_constant(ctx, sym_name)
                 emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
                 emit_u16(ctx, name_idx, line)
             }
@@ -2072,19 +2145,38 @@ function compile_expression(ctx, expr) {
     when kind == 5 { // K_CALL
         let callee -> expr[3]
         let args -> expr[4]
-        when callee != Nothing and (callee[0] == 4 or callee[0] == 2) { // K_VARIABLE or K_LITERAL
-            let cname -> Str.to_string(callee[3])
-            when is_type_name_str(cname) {
-                when args != Nothing and args.length >= 1 {
-                    compile_expression(ctx, args[0])
-                } or {
-                    emit_byte(ctx, 2, line) // OP_NOTHING
+        let cname -> ``
+        when callee != Nothing {
+            when callee[0] == 4 or callee[0] == 2 { // K_VARIABLE or K_LITERAL
+                cname -> Str.to_string(callee[3])
+            } or when callee[0] == 8 { // K_INDEX
+                let c_obj -> callee[3]
+                let c_idx -> callee[4]
+                when c_obj != Nothing and c_idx != Nothing {
+                    let oname -> ``
+                    when c_obj[0] == 4 or c_obj[0] == 2 { oname -> Str.to_string(c_obj[3]) }
+                    let iname -> ``
+                    when c_idx[0] == 2 or c_idx[0] == 4 { iname -> Str.to_string(c_idx[3]) }
+                    when oname != `` and iname != `` {
+                        cname -> oname + `[` + iname + `]`
+                    }
                 }
-                let const_idx -> add_constant(ctx, cname)
-                emit_byte(ctx, 86, line) // OP_CAST
-                emit_u16(ctx, const_idx, line)
-                <- Nothing
             }
+        }
+        let is_cast_type -> false
+        when cname != `` and is_builtin_cast_type_name(cname) {
+            is_cast_type -> true
+        }
+        when is_cast_type {
+            when args != Nothing and args.length >= 1 {
+                compile_expression(ctx, args[0])
+            } or {
+                emit_byte(ctx, 2, line) // OP_NOTHING
+            }
+            let const_idx -> add_constant(ctx, cname)
+            emit_byte(ctx, 86, line) // OP_CAST
+            emit_u16(ctx, const_idx, line)
+            <- Nothing
         }
         when callee != Nothing and callee[0] == 6 { // K_GET
             let obj -> callee[3]
@@ -2096,7 +2188,7 @@ function compile_expression(ctx, expr) {
                     is_local_var -> resolve_or_capture_local(ctx, oname) != Nothing
                 }
                 let is_top_var -> false
-                when ctx[`variables`] != Nothing and ctx[`variables`][oname] == true {
+                when ctx[`variables`] != Nothing and ctx[`variables`].has(oname) and ctx[`variables`][oname] == true {
                     is_top_var -> true
                 }
                 when is_local_var == false and is_top_var == false and
@@ -2107,6 +2199,7 @@ function compile_expression(ctx, expr) {
                      oname != `__builtin_time` and oname != `__builtin_string` and
                      oname != `__builtin_process` and oname != `__builtin_regex` and
                      oname != `__builtin_net` and
+                     oname != `__builtin_ffi` and oname != `ffi` and
                      oname != `__builtin_output` and oname != `__builtin_input` and
                      oname != `__builtin_reflect` and oname != `__builtin` {
                     let direct_name -> oname + `_` + mname
@@ -2190,33 +2283,97 @@ function compile_expression(ctx, expr) {
     when kind == 11 { // K_LIST
         let items -> expr[3]
         let in_len -> items.length
+        let has_rest -> false
         let ii -> 0
         do while ii < in_len {
-            compile_expression(ctx, items[ii])
+            let itm -> items[ii]
+            when itm != Nothing and (itm is List) and itm.length > 0 and itm[0] == 17 { // K_REST
+                has_rest -> true
+            }
             ii -> ii + 1
         }
-        emit_byte(ctx, 80, line) // OP_MAKE_LIST
-        emit_u16(ctx, in_len, line)
+        when has_rest == false {
+            ii -> 0
+            do while ii < in_len {
+                compile_expression(ctx, items[ii])
+                ii -> ii + 1
+            }
+            emit_byte(ctx, 80, line) // OP_MAKE_LIST
+            emit_u16(ctx, in_len, line)
+            <- Nothing
+        }
+        // With spread: start with empty list, concatenate / append
+        emit_byte(ctx, 80, line) // OP_MAKE_LIST 0
+        emit_u16(ctx, 0, line)
+        ii -> 0
+        do while ii < in_len {
+            let itm -> items[ii]
+            when itm != Nothing and (itm is List) and itm.length > 0 and itm[0] == 17 { // K_REST
+                compile_expression(ctx, itm[3])
+                emit_byte(ctx, 48, line) // OP_ADD (ZenList_concat)
+            } or {
+                compile_expression(ctx, itm)
+                emit_byte(ctx, 80, line) // OP_MAKE_LIST 1
+                emit_u16(ctx, 1, line)
+                emit_byte(ctx, 48, line) // OP_ADD
+            }
+            ii -> ii + 1
+        }
         <- Nothing
     }
 
     when kind == 12 { // K_MAP
         let entries -> expr[3]
         let en -> entries.length
+        let has_rest -> false
         let ei -> 0
         do while ei < en {
-            let entry -> entries[ei]
-            let knode -> entry[3]
-            when knode != Nothing and (knode is List) and knode.length > 0 {
-                compile_expression(ctx, knode)
-            } or {
-                emit_constant(ctx, Str.to_string(knode), line)
+            let ent -> entries[ei]
+            when ent != Nothing and (ent is List) and ent.length > 0 and ent[0] == 17 { // K_REST
+                has_rest -> true
             }
-            compile_expression(ctx, entry[4])
             ei -> ei + 1
         }
-        emit_byte(ctx, 81, line) // OP_MAKE_MAP
-        emit_u16(ctx, en, line)
+        when has_rest == false {
+            ei -> 0
+            do while ei < en {
+                let entry -> entries[ei]
+                let knode -> entry[3]
+                when knode != Nothing and (knode is List) and knode.length > 0 {
+                    compile_expression(ctx, knode)
+                } or {
+                    emit_constant(ctx, Str.to_string(knode), line)
+                }
+                compile_expression(ctx, entry[4])
+                ei -> ei + 1
+            }
+            emit_byte(ctx, 81, line) // OP_MAKE_MAP
+            emit_u16(ctx, en, line)
+            <- Nothing
+        }
+        // With spread: start with empty map, merge each entry
+        emit_byte(ctx, 81, line) // OP_MAKE_MAP 0
+        emit_u16(ctx, 0, line)
+        ei -> 0
+        do while ei < en {
+            let ent -> entries[ei]
+            when ent != Nothing and (ent is List) and ent.length > 0 and ent[0] == 17 { // K_REST
+                compile_expression(ctx, ent[3])
+                emit_byte(ctx, 48, line) // OP_ADD (ZenMap_merge)
+            } or {
+                let knode -> ent[3]
+                when knode != Nothing and (knode is List) and knode.length > 0 {
+                    compile_expression(ctx, knode)
+                } or {
+                    emit_constant(ctx, Str.to_string(knode), line)
+                }
+                compile_expression(ctx, ent[4])
+                emit_byte(ctx, 81, line) // OP_MAKE_MAP 1
+                emit_u16(ctx, 1, line)
+                emit_byte(ctx, 48, line) // OP_ADD (ZenMap_merge)
+            }
+            ei -> ei + 1
+        }
         <- Nothing
     }
 
@@ -2353,9 +2510,13 @@ function compile_expression(ctx, expr) {
 
     when kind == 47 { // K_CAST (<: syntax)
         let val_expr -> expr[3]
-        let target_type -> Str.to_string(expr[4])
+        let target_type -> expr[4]
+        when AST.is_type_ann(target_type) {
+            target_type -> AST.type_ann_name(target_type)
+        }
+        let target_type_str -> Str.to_string(target_type)
         compile_expression(ctx, val_expr)
-        let const_idx -> add_constant(ctx, target_type)
+        let const_idx -> add_constant(ctx, target_type_str)
         emit_byte(ctx, 86, line) // OP_CAST
         emit_u16(ctx, const_idx, line)
         <- Nothing
@@ -2930,6 +3091,42 @@ export function create_vm_prelude() {
     }
     g[`vm`] -> vm_mod
     g[`__builtin_vm`] -> vm_mod
+    
+    // FFI
+    let ffi_mod -> {
+        `load` -> make_native(`ffi_load`),
+        `open` -> make_native(`ffi_load`),
+        `symbol` -> make_native(`ffi_symbol`),
+        `sym` -> make_native(`ffi_symbol`),
+        `call` -> make_native(`ffi_call`),
+        `close` -> make_native(`ffi_close`),
+        `error` -> make_native(`ffi_error`),
+        `resolve` -> make_native(`ffi_resolve`)
+    }
+    g[`ffi`] -> ffi_mod
+    g[`__builtin_ffi`] -> ffi_mod
+    g[`__builtin_ffi_load`] -> make_native(`ffi_load`)
+    g[`__builtin_ffi_open`] -> make_native(`ffi_load`)
+    g[`__builtin_ffi_symbol`] -> make_native(`ffi_symbol`)
+    g[`__builtin_ffi_sym`] -> make_native(`ffi_symbol`)
+    g[`__builtin_ffi_call`] -> make_native(`ffi_call`)
+    g[`__builtin_ffi_close`] -> make_native(`ffi_close`)
+    g[`__builtin_ffi_error`] -> make_native(`ffi_error`)
+    g[`__builtin_ffi_resolve`] -> make_native(`ffi_resolve`)
+    
+    // AST & Token
+    let ast_mod -> {
+        `token` -> function(k, s, l, line, col, el, ec) { <- [k, s, l, line, col, el, ec] },
+        `create0` -> function(k, l, c) { <- [k, l, c] },
+        `create1` -> function(k, l, c, s0) { <- [k, l, c, s0] },
+        `create2` -> function(k, l, c, s0, s1) { <- [k, l, c, s0, s1] },
+        `create3` -> function(k, l, c, s0, s1, s2) { <- [k, l, c, s0, s1, s2] },
+        `create4` -> function(k, l, c, s0, s1, s2, s3) { <- [k, l, c, s0, s1, s2, s3] },
+        `create5` -> function(k, l, c, s0, s1, s2, s3, s4) { <- [k, l, c, s0, s1, s2, s3, s4] },
+        `create` -> function(k, l, c, s0, s1, s2, s3, s4, s5) { <- [k, l, c, s0, s1, s2, s3, s4, s5] }
+    }
+    g[`ast`] -> ast_mod
+    g[`__builtin_ast`] -> ast_mod
     
     // String & Text utils
     let str_mod -> {
@@ -3577,6 +3774,33 @@ export function invoke_callable_g(callee, args, globals) {
                 }
                 <- Nothing
             }
+            when nfn == `ffi_load` {
+                when args.length > 0 { <- __builtin_ffi.load(args[0]) }
+                <- __builtin_ffi.load(``)
+            }
+            when nfn == `ffi_symbol` {
+                let h -> when (args.length > 0) { args[0] } or { Nothing }
+                let s -> when (args.length > 1) { args[1] } or { `` }
+                let rt -> when (args.length > 2) { args[2] } or { Nothing }
+                <- __builtin_ffi.symbol(h, s, rt)
+            }
+            when nfn == `ffi_call` {
+                let fn_val -> when (args.length > 0) { args[0] } or { Nothing }
+                let f_args -> when (args.length > 1) { args[1] } or { [] }
+                let rt -> when (args.length > 2) { args[2] } or { Nothing }
+                <- __builtin_ffi.call(fn_val, f_args, rt)
+            }
+            when nfn == `ffi_close` {
+                when args.length > 0 { <- __builtin_ffi.close(args[0]) }
+                <- 0
+            }
+            when nfn == `ffi_error` {
+                <- __builtin_ffi.error()
+            }
+            when nfn == `ffi_resolve` {
+                when args.length > 0 { <- __builtin_ffi.resolve(args[0]) }
+                <- Nothing
+            }
             when nfn == `term_get_size` {
                 let sz -> __builtin_term.get_size()
                 when sz != Nothing and (sz is Map) and sz[`width`] != Nothing { <- sz }
@@ -3887,9 +4111,9 @@ export function invoke_callable_g(callee, args, globals) {
                     when obj is Bytes { <- `Bytes` }
                     when obj is Set { <- `Set` }
                     when obj is Map {
-                        when obj[`is_closure`] == true or obj[`is_native`] == true or obj[`code`] != Nothing { <- `Function` }
-                        when obj[`kind`] != Nothing { <- obj[`kind`] }
-                        when obj[`__type__`] != Nothing { <- obj[`__type__`] }
+                        when ((obj.has(`is_closure`) and obj[`is_closure`] == true) or (obj.has(`is_native`) and obj[`is_native`] == true) or (obj.has(`code`) and obj[`code`] != Nothing)) { <- `Function` }
+                        when obj.has(`kind`) and obj[`kind`] != Nothing { <- obj[`kind`] }
+                        when obj.has(`__type__`) and obj[`__type__`] != Nothing { <- obj[`__type__`] }
                         <- `Map`
                     }
                     <- `Variant`
@@ -3900,7 +4124,7 @@ export function invoke_callable_g(callee, args, globals) {
                 when args != Nothing and args.length > 0 {
                     let obj -> args[0]
                     when obj is Map {
-                        <- obj[`__type__`] != Nothing or obj[`kind`] != Nothing
+                        <- (obj.has(`__type__`) and obj[`__type__`] != Nothing) or (obj.has(`kind`) and obj[`kind`] != Nothing)
                     }
                 }
                 <- false
@@ -3935,8 +4159,11 @@ export function invoke_callable_g(callee, args, globals) {
             }
             when nfn == `reflect_has_method` {
                 when args != Nothing and args.length > 1 and (args[0] is Map) {
-                    let m -> args[0][args[1]]
-                    when m != Nothing and (m is Map) and (m[`is_closure`] == true or m[`is_native`] == true or m[`code`] != Nothing) {
+                    let m -> Nothing
+                    when args[0].has(args[1]) {
+                        m -> args[0][args[1]]
+                    }
+                    when m != Nothing and (m is Map) and ((m.has(`is_closure`) and m[`is_closure`] == true) or (m.has(`is_native`) and m[`is_native`] == true) or (m.has(`code`) and m[`code`] != Nothing)) {
                         <- true
                     }
                 }
@@ -3944,7 +4171,10 @@ export function invoke_callable_g(callee, args, globals) {
             }
             when nfn == `reflect_call` {
                 when args != Nothing and args.length > 1 and (args[0] is Map) {
-                    let fn_val -> args[0][args[1]]
+                    let fn_val -> Nothing
+                    when args[0].has(args[1]) {
+                        fn_val -> args[0][args[1]]
+                    }
                     let fn_args -> []
                     when args.length > 2 and (args[2] is List) { fn_args -> args[2] }
                     <- invoke_callable_g(fn_val, fn_args, globals)
@@ -3962,9 +4192,9 @@ export function invoke_callable_g(callee, args, globals) {
             }
             <- Nothing
         }
-        when callee[`is_method`] != Nothing {
+        when (callee is Map) and callee.has(`is_method`) and callee[`is_method`] != Nothing {
             let recv -> callee[`target`]
-            when callee[`method_fn`] != Nothing {
+            when callee.has(`method_fn`) and callee[`method_fn`] != Nothing {
                 let call_args -> [recv]
                 let ai -> 0
                 do while ai < args.length {
@@ -4424,20 +4654,22 @@ export function invoke_callable_g(callee, args, globals) {
             }
             <- Nothing
         }
-        when callee[`is_closure`] != Nothing {
+        when (callee is Map) and callee.has(`is_closure`) and callee[`is_closure`] != Nothing {
             <- eval_chunk_fn(callee[`chunk`], args, globals, callee[`captures`])
         }
-        when callee[`code`] != Nothing {
+        when (callee is Map) and callee.has(`code`) and callee[`code`] != Nothing {
             <- eval_chunk_fn(callee, args, globals, Nothing)
         }
-        when callee[`fn`] != Nothing {
+        when (callee is Map) and callee.has(`fn`) and callee[`fn`] != Nothing {
             <- invoke_callable_g(callee[`fn`], args, globals)
         }
-        when callee[`enum_name`] != Nothing or callee[`variant_name`] != Nothing {
-            let en -> callee[`enum_name`]
-            let vn -> callee[`variant_name`]
-            when en == Nothing { en -> callee[`enum`] }
-            when vn == Nothing { vn -> callee[`tag`] }
+        when (callee is Map) and ((callee.has(`enum_name`) and callee[`enum_name`] != Nothing) or (callee.has(`variant_name`) and callee[`variant_name`] != Nothing)) {
+            let en -> Nothing
+            when callee.has(`enum_name`) { en -> callee[`enum_name`] }
+            let vn -> Nothing
+            when callee.has(`variant_name`) { vn -> callee[`variant_name`] }
+            when en == Nothing and callee.has(`enum`) { en -> callee[`enum`] }
+            when vn == Nothing and callee.has(`tag`) { vn -> callee[`tag`] }
             <- {
                 `enum_name` -> en,
                 `variant_name` -> vn,
@@ -4451,7 +4683,7 @@ export function invoke_callable_g(callee, args, globals) {
 
 function vm_is_default(v) {
     when v == Default { <- true }
-    when (v is Map) and v[`kind`] == `DefaultSentinel` { <- true }
+    when (v is Map) and v.has(`kind`) and v[`kind`] == `DefaultSentinel` { <- true }
     <- false
 }
 
@@ -4584,10 +4816,22 @@ export function eval_chunk(chunk, globals) {
                 } or when globals[member_name] != Nothing {
                     stack.append(globals[member_name])
                 } or {
-                    stack.append(Nothing)
+                    let sym_val -> __builtin_ffi.resolve(gname)
+                    when sym_val != Nothing {
+                        globals[gname] -> sym_val
+                        stack.append(sym_val)
+                    } or {
+                        stack.append(Nothing)
+                    }
                 }
             } or {
-                stack.append(Nothing)
+                let sym_val -> __builtin_ffi.resolve(gname)
+                when sym_val != Nothing {
+                    globals[gname] -> sym_val
+                    stack.append(sym_val)
+                } or {
+                    stack.append(Nothing)
+                }
             }
         }
         or when op == 35 { // OP_STORE_GLOBAL
@@ -4602,7 +4846,26 @@ export function eval_chunk(chunk, globals) {
         or when op == 48 { // OP_ADD
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a + b)
+            when (a is Map) and (b is Map) {
+                let res -> {}
+                let k1 -> a.keys()
+                let mi -> 0
+                do while mi < k1.length {
+                    let k -> k1[mi]
+                    res[k] -> a[k]
+                    mi -> mi + 1
+                }
+                let k2 -> b.keys()
+                mi -> 0
+                do while mi < k2.length {
+                    let k -> k2[mi]
+                    res[k] -> b[k]
+                    mi -> mi + 1
+                }
+                stack.append(res)
+            } or {
+                stack.append(a + b)
+            }
         }
         or when op == 49 { // OP_SUB
             let b -> stack.pop()
@@ -4786,18 +5049,29 @@ export function eval_chunk(chunk, globals) {
             let obj -> stack.pop()
             when obj == Nothing {
                 stack.append(Nothing)
-            } or when (obj is Map) and obj[`__type__`] != Nothing and globals.has(obj[`__type__`] + `_` + prop) {
-                stack.append({
-                    `target` -> obj,
-                    `method_fn` -> globals[obj[`__type__`] + `_` + prop],
-                    `is_method` -> true
-                })
-            } or when (obj is Map) and obj[`__type`] != Nothing and globals.has(obj[`__type`] + `_` + prop) {
-                stack.append({
-                    `target` -> obj,
-                    `method_fn` -> globals[obj[`__type`] + `_` + prop],
-                    `is_method` -> true
-                })
+            } or when (obj is Map) and ((obj.has(`__type__`) and obj[`__type__`] != Nothing) or (obj.has(`__type`) and obj[`__type`] != Nothing)) {
+                let tn -> ``
+                when obj.has(`__type__`) and obj[`__type__`] != Nothing {
+                    tn -> Str.to_string(obj[`__type__`])
+                } or {
+                    tn -> Str.to_string(obj[`__type`])
+                }
+                when Str.contains(tn, `<`) {
+                    tn -> Str.split(tn, `<`)[0]
+                }
+                when tn != `` and globals.has(tn + `_` + prop) {
+                    stack.append({
+                        `target` -> obj,
+                        `method_fn` -> globals[tn + `_` + prop],
+                        `is_method` -> true
+                    })
+                } or when obj.has(prop) {
+                    stack.append(obj[prop])
+                } or when prop == `length` {
+                    stack.append(obj.length)
+                } or {
+                    stack.append(Nothing)
+                }
             } or when (obj is Map) and obj.has(prop) {
                 stack.append(obj[prop])
             } or when prop == `length` {
@@ -5050,7 +5324,7 @@ export function eval_chunk(chunk, globals) {
             }
             let callee -> stack.pop()
             
-            when callee != Nothing and (callee is Map) and callee[`is_method`] != Nothing and callee[`method_fn`] != Nothing {
+            when callee != Nothing and (callee is Map) and callee.has(`is_method`) and callee[`is_method`] != Nothing and callee.has(`method_fn`) and callee[`method_fn`] != Nothing {
                 let call_args -> [callee[`target`]]
                 let ai -> 0
                 do while ai < rargs.length {
@@ -5059,10 +5333,10 @@ export function eval_chunk(chunk, globals) {
                 }
                 let fn_res -> eval_chunk_fn(callee[`method_fn`], call_args, globals, Nothing)
                 stack.append(fn_res)
-            } or when callee != Nothing and (callee is Map) and callee[`is_closure`] != Nothing {
+            } or when callee != Nothing and (callee is Map) and callee.has(`is_closure`) and callee[`is_closure`] != Nothing {
                 let fn_res -> eval_chunk_fn(callee[`chunk`], rargs, globals, callee[`captures`])
                 stack.append(fn_res)
-            } or when callee != Nothing and (callee is Map) and callee[`code`] != Nothing {
+            } or when callee != Nothing and (callee is Map) and callee.has(`code`) and callee[`code`] != Nothing {
                 let fn_res -> eval_chunk_fn(callee, rargs, globals, Nothing)
                 stack.append(fn_res)
             } or {
@@ -5222,10 +5496,22 @@ function eval_chunk_fn(chunk, args, globals, captures) {
                 } or when globals[member_name] != Nothing {
                     stack.append(globals[member_name])
                 } or {
-                    stack.append(Nothing)
+                    let sym_val -> __builtin_ffi.resolve(gname)
+                    when sym_val != Nothing {
+                        globals[gname] -> sym_val
+                        stack.append(sym_val)
+                    } or {
+                        stack.append(Nothing)
+                    }
                 }
             } or {
-                stack.append(Nothing)
+                let sym_val -> __builtin_ffi.resolve(gname)
+                when sym_val != Nothing {
+                    globals[gname] -> sym_val
+                    stack.append(sym_val)
+                } or {
+                    stack.append(Nothing)
+                }
             }
         }
         or when op == 35 { // OP_STORE_GLOBAL
@@ -5240,7 +5526,26 @@ function eval_chunk_fn(chunk, args, globals, captures) {
         or when op == 48 { // OP_ADD
             let b -> stack.pop()
             let a -> stack.pop()
-            stack.append(a + b)
+            when (a is Map) and (b is Map) {
+                let res -> {}
+                let k1 -> a.keys()
+                let mi -> 0
+                do while mi < k1.length {
+                    let k -> k1[mi]
+                    res[k] -> a[k]
+                    mi -> mi + 1
+                }
+                let k2 -> b.keys()
+                mi -> 0
+                do while mi < k2.length {
+                    let k -> k2[mi]
+                    res[k] -> b[k]
+                    mi -> mi + 1
+                }
+                stack.append(res)
+            } or {
+                stack.append(a + b)
+            }
         }
         or when op == 49 { // OP_SUB
             let b -> stack.pop()
@@ -5424,18 +5729,29 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             let obj -> stack.pop()
             when obj == Nothing {
                 stack.append(Nothing)
-            } or when (obj is Map) and obj[`__type__`] != Nothing and globals.has(obj[`__type__`] + `_` + prop) {
-                stack.append({
-                    `target` -> obj,
-                    `method_fn` -> globals[obj[`__type__`] + `_` + prop],
-                    `is_method` -> true
-                })
-            } or when (obj is Map) and obj[`__type`] != Nothing and globals.has(obj[`__type`] + `_` + prop) {
-                stack.append({
-                    `target` -> obj,
-                    `method_fn` -> globals[obj[`__type`] + `_` + prop],
-                    `is_method` -> true
-                })
+            } or when (obj is Map) and ((obj.has(`__type__`) and obj[`__type__`] != Nothing) or (obj.has(`__type`) and obj[`__type`] != Nothing)) {
+                let tn -> ``
+                when obj.has(`__type__`) and obj[`__type__`] != Nothing {
+                    tn -> Str.to_string(obj[`__type__`])
+                } or {
+                    tn -> Str.to_string(obj[`__type`])
+                }
+                when Str.contains(tn, `<`) {
+                    tn -> Str.split(tn, `<`)[0]
+                }
+                when tn != `` and globals.has(tn + `_` + prop) {
+                    stack.append({
+                        `target` -> obj,
+                        `method_fn` -> globals[tn + `_` + prop],
+                        `is_method` -> true
+                    })
+                } or when obj.has(prop) {
+                    stack.append(obj[prop])
+                } or when prop == `length` {
+                    stack.append(obj.length)
+                } or {
+                    stack.append(Nothing)
+                }
             } or when (obj is Map) and obj.has(prop) {
                 stack.append(obj[prop])
             } or when prop == `length` {
@@ -5686,7 +6002,7 @@ function eval_chunk_fn(chunk, args, globals, captures) {
             }
             let callee2 -> stack.pop()
             
-            when callee2 != Nothing and (callee2 is Map) and callee2[`is_method`] != Nothing and callee2[`method_fn`] != Nothing {
+            when callee2 != Nothing and (callee2 is Map) and callee2.has(`is_method`) and callee2[`is_method`] != Nothing and callee2.has(`method_fn`) and callee2[`method_fn`] != Nothing {
                 let call_args2 -> [callee2[`target`]]
                 let ai2 -> 0
                 do while ai2 < rargs2.length {
@@ -5695,10 +6011,10 @@ function eval_chunk_fn(chunk, args, globals, captures) {
                 }
                 let fn_res2 -> eval_chunk_fn(callee2[`method_fn`], call_args2, globals, Nothing)
                 stack.append(fn_res2)
-            } or when callee2 != Nothing and (callee2 is Map) and callee2[`is_closure`] != Nothing {
+            } or when callee2 != Nothing and (callee2 is Map) and callee2.has(`is_closure`) and callee2[`is_closure`] != Nothing {
                 let fn_res2 -> eval_chunk_fn(callee2[`chunk`], rargs2, globals, callee2[`captures`])
                 stack.append(fn_res2)
-            } or when callee2 != Nothing and (callee2 is Map) and callee2[`code`] != Nothing {
+            } or when callee2 != Nothing and (callee2 is Map) and callee2.has(`code`) and callee2[`code`] != Nothing {
                 let fn_res2 -> eval_chunk_fn(callee2, rargs2, globals, Nothing)
                 stack.append(fn_res2)
             } or when callee2 == Nothing {
@@ -5980,16 +6296,30 @@ export function read_bytecode_file(filepath) {
 }
 
 export function get_cache_path(src_path) {
-    let filename -> src_path
-    do while Str.contains(filename, `/`) {
-        let sl -> Str.index_of(filename, `/`)
-        filename -> Str.substring(filename, sl + 1, Str.length(filename))
+    let dir -> ``
+    let filename -> ``
+    when Str.contains(src_path, `/`) {
+        let pos -> Str.length(src_path) - 1
+        let found -> false
+        do while pos >= 0 and not found {
+            when Str.substring(src_path, pos, pos + 1) == `/` {
+                found -> true
+            } or {
+                pos -> pos - 1
+            }
+        }
+        when found {
+            dir -> Str.substring(src_path, 0, pos + 1)
+            filename -> Str.substring(src_path, pos + 1, Str.length(src_path))
+        }
+    } or {
+        filename -> src_path
     }
     let stem -> filename
     when Str.ends_with(stem, `.zl`) {
         stem -> Str.substring(stem, 0, Str.length(stem) - 3)
     }
-    <- `__zcache__/` + stem + `.zbc`
+    <- dir + `__zcache__/` + stem + `.zbc`
 }
 
 export function compile_file_to_bundle(src_path, out_zbc_path) {
@@ -6097,37 +6427,60 @@ function eval_pow_vm(a, b) {
 }
 
 function eval_is_type_vm(val, type_name) {
-    when type_name == `Integer` or type_name == `Int` or type_name == `Int64` or
-         type_name == `Int32` or type_name == `Int16` or type_name == `Int8` or type_name == `Byte` {
+    when type_name == `Number` {
+        <- (val is Integer) or (val is Decimal)
+    }
+    when type_name == `Text` {
+        <- (val is String) or (val is Rune)
+    }
+    when type_name == `Collection` {
+        <- (val is List) or (val is Map) or (val is Set)
+    }
+    when type_name == `Container` {
+        when (val is Object) or (val is Structure) or (val is Class) or (val is Enumerator) or (val is Variant) {
+            <- true
+        }
+        when val != Nothing and (val is Map) {
+            when val[`__type__`] != Nothing or val[`__type`] != Nothing or val[`enum_name`] != Nothing or val[`kind`] != Nothing {
+                <- true
+            }
+        }
+        <- false
+    }
+    when type_name == `Integer` or type_name == `Integer[64]` or
+         type_name == `Integer[32]` or type_name == `Integer[16]` or
+         type_name == `Integer[8]` or type_name == `Byte` {
         <- val is Integer
     }
-    when type_name == `Decimal` or type_name == `Float` or type_name == `Double` {
+    when type_name == `Decimal` or type_name == `Decimal[64]` or type_name == `Decimal[32]` {
         <- val is Decimal
     }
-    when type_name == `String` or type_name == `Str` {
+    when type_name == `String` or Str.starts_with(type_name, `String[`) {
         <- val is String
     }
-    when type_name == `Boolean` or type_name == `Bool` {
+    when type_name == `Boolean` {
         <- val is Boolean
     }
-    when type_name == `Rune` or type_name == `Char` or type_name == `Glyph` {
+    when type_name == `Rune` {
         when val is Rune { <- true }
         when val is String and Str.length(val) == 1 { <- true }
         <- false
     }
-    when type_name == `Bytes` or type_name == `Buffer` {
+    when type_name == `Bytes` {
         <- val is Bytes
     }
-    when type_name == `List` {
+    when type_name == `List` or Str.starts_with(type_name, `List<`) or Str.starts_with(type_name, `List[`) or
+         type_name == `Tuple` or Str.starts_with(type_name, `Tuple<`) or Str.starts_with(type_name, `Tuple[`) or
+         type_name == `Vector` or Str.starts_with(type_name, `Vector<`) or Str.starts_with(type_name, `Vector[`) {
         <- val is List
     }
-    when type_name == `Set` {
+    when type_name == `Set` or Str.starts_with(type_name, `Set<`) or Str.starts_with(type_name, `Set[`) {
         <- val is Set
     }
-    when type_name == `Map` {
+    when type_name == `Map` or Str.starts_with(type_name, `Map<`) or Str.starts_with(type_name, `Map[`) {
         <- val is Map
     }
-    when type_name == `Nothing` or type_name == `nothing` or type_name == `None` {
+    when type_name == `Nothing` or type_name == `nothing` {
         <- val == Nothing
     }
     when type_name == `Error` {
@@ -6156,8 +6509,23 @@ function eval_is_type_vm(val, type_name) {
             <- true
         }
     }
-    when val != Nothing and val is Map and val[`__type__`] != Nothing and val[`__type__`] == type_name {
-        <- true
+    when val != Nothing and (val is Map) {
+        let vt -> ``
+        when val.has(`__type__`) and val[`__type__`] != Nothing {
+            vt -> Str.to_string(val[`__type__`])
+        } or when val.has(`__type`) and val[`__type`] != Nothing {
+            vt -> Str.to_string(val[`__type`])
+        }
+        when vt != `` {
+            when vt == type_name { <- true }
+            when Str.starts_with(vt, type_name + `<`) { <- true }
+            when Str.starts_with(type_name, vt + `<`) { <- true }
+            let base_vt -> vt
+            when Str.contains(vt, `<`) { base_vt -> Str.split(vt, `<`)[0] }
+            let base_tn -> type_name
+            when Str.contains(type_name, `<`) { base_tn -> Str.split(type_name, `<`)[0] }
+            when base_vt == base_tn { <- true }
+        }
     }
     <- false
 }
@@ -6306,86 +6674,153 @@ function eval_in_vm(item, container) {
     <- false
 }
 
+function is_canonical_generic_type_name(base) {
+    when base == `List` or base == `Set` or base == `Map` or base == `Vector` or base == `Tuple` { <- true }
+    when base == `Option` or base == `Result` or base == `Task` { <- true }
+    when base == `Number` or base == `Text` or base == `Collection` or base == `Container` { <- true }
+    when base == `Integer` or base == `Decimal` or base == `String` or base == `Boolean` or base == `Byte` or base == `Bytes` or base == `Rune` { <- true }
+    <- false
+}
+
+function is_builtin_cast_type_name(s) {
+    when s == `` or s == Nothing { <- false }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.starts_with(s, `Integer[`) or Str.starts_with(s, `Decimal[`) or Str.starts_with(s, `String[`) or Str.starts_with(s, `Vector[`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) {
+        let base -> Str.substring(s, 0, Str.index_of(s, `<`))
+        <- is_canonical_generic_type_name(base)
+    }
+    <- false
+}
+
 function is_type_name_str(s) {
-    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
-    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
-    when s == `String` or s == `Str` { <- true }
-    when s == `Boolean` or s == `Bool` { <- true }
-    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
-    when s == `Bytes` or s == `Buffer` { <- true }
-    when s == `List` or s == `Set` or s == `Map` { <- true }
-    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    when s == `` or s == Nothing { <- false }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) { <- true }
+    let ch -> Str.substring(s, 0, 1)
+    when ch >= `A` and ch <= `Z` { <- true }
     <- false
 }
 
 function eval_cast_vm(val, target_type) {
-    when target_type == `Integer` or target_type == `Int` or target_type == `Int64` or
-         target_type == `Int32` or target_type == `Int16` or target_type == `Int8` or target_type == `Byte` {
-        when val is Integer { <- val }
-        when val is Decimal { <- parse_int_str(Str.to_string(val)) }
-        when val == true { <- 1 }
-        when val == false { <- 0 }
-        when val == Nothing { <- 0 }
-        when val is String {
-            when val == `` { <- 0 }
+    when target_type == `Integer` or target_type == `Integer[64]` or
+         target_type == `Integer[32]` or target_type == `Integer[16]` or
+         target_type == `Integer[8]` or target_type == `Byte` {
+        let n -> 0
+        when (val is Integer) {
+            n -> val
+        } or when (val is Decimal) {
+            let s -> Str.to_string(val)
+            let dot -> Str.index_of(s, `.`)
+            when dot != -1 { s -> Str.substring(s, 0, dot) }
+            n -> parse_int_str(s)
+        } or when val == true {
+            n -> 1
+        } or when val == false {
+            n -> 0
+        } or when val == Nothing {
+            n -> 0
+        } or when (val is String) {
+            when val == `` { n -> 0 }
             when Str.length(val) == 1 and not Str.contains(`0123456789`, val) {
-                <- parse_int_str(Str.to_string(val))
+                n -> parse_int_str(Str.to_string(val))
             }
-            <- parse_int_str(val)
+            when n == 0 and val != `0` {
+                n -> parse_int_str(val)
+            }
+        } or when (val is List) {
+            n -> val.length
+        } or when (val is Map) {
+            n -> val.length
         }
-        when val is List { <- val.length }
-        when val is Map { <- val.length }
-        <- 0
+
+        when target_type == `Byte` or target_type == `Integer[8]` {
+            let u -> n % 256
+            when u < 0 { u -> u + 256 }
+            when target_type == `Integer[8]` and u >= 128 { u -> u - 256 }
+            <- u
+        }
+        when target_type == `Integer[16]` {
+            let u -> n % 65536
+            when u < 0 { u -> u + 65536 }
+            when u >= 32768 { u -> u - 65536 }
+            <- u
+        }
+        when target_type == `Integer[32]` {
+            let u -> n % 4294967296
+            when u < 0 { u -> u + 4294967296 }
+            when u >= 2147483648 { u -> u - 4294967296 }
+            <- u
+        }
+        <- n
     }
-    when target_type == `Decimal` or target_type == `Float` or target_type == `Double` {
-        when val is Decimal { <- val }
-        when val is Integer { <- val + 0.0 }
+    when target_type == `Decimal` or target_type == `Decimal[64]` or target_type == `Decimal[32]` {
+        when (val is Decimal) { <- val }
+        when (val is Integer) { <- val + 0.0 }
         when val == true { <- 1.0 }
         when val == false { <- 0.0 }
         when val == Nothing { <- 0.0 }
-        when val is String {
+        when (val is String) {
             let clean -> strip_underscores(val)
             let num -> clean.to_number()
-            when num is Decimal { <- num }
-            when num is Integer { <- num + 0.0 }
+            when (num is Decimal) { <- num }
+            when (num is Integer) { <- num + 0.0 }
             <- 0.0
         }
         <- 0.0
     }
-    when target_type == `String` or target_type == `Str` {
-        when val is String { <- val }
-        when val == true { <- `True` }
-        when val == false { <- `False` }
-        when val == Nothing { <- `` }
-        <- Str.to_string(val)
+    when target_type == `String` or Str.starts_with(target_type, `String[`) {
+        let s -> ``
+        when (val is String) { s -> val }
+        or when val == true { s -> `True` }
+        or when val == false { s -> `False` }
+        or when val == Nothing { s -> `` }
+        or { s -> Str.to_string(val) }
+        when Str.starts_with(target_type, `String[`) and Str.ends_with(target_type, `]`) {
+            let inner -> Str.substring(target_type, 7, Str.length(target_type) - 1)
+            let max_len -> inner <: Integer
+            when max_len > 0 and Str.length(s) > max_len {
+                s -> Str.substring(s, 0, max_len)
+            }
+        }
+        <- s
     }
-    when target_type == `Boolean` or target_type == `Bool` {
+    when target_type == `Boolean` {
         when val == true or val == false { <- val }
-        when val is Integer { <- val != 0 }
-        when val is Decimal { <- val != 0.0 }
-        when val is String {
+        when (val is Integer) { <- val != 0 }
+        when (val is Decimal) { <- val != 0.0 }
+        when (val is String) {
             when val == `True` or val == `true` or val == `1` { <- true }
             <- false
         }
-        when val is List or val is Map { <- val.length > 0 }
+        when (val is List) or (val is Map) { <- val.length > 0 }
         when val == Nothing { <- false }
         <- true
     }
-    when target_type == `Rune` or target_type == `Char` or target_type == `Glyph` {
-        when val is String {
+    when target_type == `Rune` {
+        when (val is String) {
             when Str.length(val) >= 1 {
                 <- Str.substring(val, 0, 1)
             }
             <- ``
         }
-        when val is Integer {
+        when (val is Integer) {
             let s -> Str.to_string(val)
             <- Str.substring(s, 0, 1)
         }
         <- ``
     }
-    when target_type == `Bytes` or target_type == `Buffer` {
-        when val is String {
+    when target_type == `Bytes` {
+        when (val is String) {
             let res -> []
             let len -> Str.length(val)
             let i -> 0
@@ -6395,11 +6830,13 @@ function eval_cast_vm(val, target_type) {
             }
             <- res
         }
-        when val is List { <- val }
-        when val is Integer { <- [val] }
+        when (val is List) { <- val }
+        when (val is Integer) { <- [val] }
         <- []
     }
-    when target_type == `List` {
+    when target_type == `List` or Str.starts_with(target_type, `List<`) or Str.starts_with(target_type, `List[`) or
+         target_type == `Vector` or Str.starts_with(target_type, `Vector<`) or Str.starts_with(target_type, `Vector[`) or
+         target_type == `Tuple` or Str.starts_with(target_type, `Tuple<`) or Str.starts_with(target_type, `Tuple[`) {
         when val is List { <- val }
         when val is String {
             let res -> []
@@ -6413,7 +6850,7 @@ function eval_cast_vm(val, target_type) {
         }
         <- [val]
     }
-    when target_type == `Set` {
+    when target_type == `Set` or Str.starts_with(target_type, `Set<`) or Str.starts_with(target_type, `Set[`) {
         when val is Set { <- val }
         when val is List {
             <- __builtin_set.from_list(val)
@@ -6424,7 +6861,7 @@ function eval_cast_vm(val, target_type) {
         }
         <- __builtin_set.from_list([val])
     }
-    when target_type == `Map` {
+    when target_type == `Map` or Str.starts_with(target_type, `Map<`) or Str.starts_with(target_type, `Map[`) {
         when val is Map { <- val }
         <- {}
     }
@@ -6439,6 +6876,30 @@ function eval_cast_vm(val, target_type) {
     }
     when target_type == `Nothing` or target_type == `nothing` {
         <- Nothing
+    }
+    when target_type == `Number` {
+        when (val is Integer) or (val is Decimal) { <- val }
+        when val == true { <- 1 }
+        when val == false { <- 0 }
+        when val == Nothing { <- 0 }
+        when (val is String) {
+            let s -> Str.trim(val)
+            when Str.contains(s, `.`) or Str.contains(s, `e`) or Str.contains(s, `E`) {
+                <- eval_cast_vm(val, `Decimal`)
+            }
+            <- eval_cast_vm(val, `Integer`)
+        }
+        <- eval_cast_vm(val, `Integer`)
+    }
+    when target_type == `Text` {
+        <- eval_cast_vm(val, `String`)
+    }
+    when target_type == `Collection` {
+        when (val is List) or (val is Map) or (val is Set) { <- val }
+        <- eval_cast_vm(val, `List`)
+    }
+    when target_type == `Container` {
+        <- val
     }
     <- val
 }

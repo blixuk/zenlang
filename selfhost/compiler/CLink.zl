@@ -21,6 +21,13 @@ function mkdir_p(path) {
     <- __builtin_file.mkdir_p(path)
 }
 
+function fs_remove(path) {
+    when fs_is_file(path) {
+        <- __builtin_file.remove(path)
+    }
+    <- false
+}
+
 /!
  Prefer gcc, then clang, then tcc (same as bootstrap CCompile).
  Override: ZEN_CC=tcc|gcc|clang. Opt: ZEN_OPT=0|1|2|3|s (default 2).
@@ -221,6 +228,93 @@ function build_c_code(c_code, workdir, exe_path) {
         `message` -> lr[`message`],
         `exe` -> lr[`exe`],
         `workdir` -> wd
+    }
+}
+
+/!
+ Build multi-unit C files into an executable.
+ In incremental mode: compiles changed .c files to .o, re-using existing .o files,
+ then links all .o files and runtime .o together into exe_path.
+ !/
+function build_multi_units(c_files, workdir, exe_path, incremental) {
+    let cc -> find_c_compiler()
+    when cc == `` {
+        <- {
+            `ok` -> false,
+            `message` -> `no C compiler found (gcc/clang/tcc)`,
+            `exe` -> ``
+        }
+    }
+    when workdir == Nothing or workdir == `` {
+        workdir -> `output/multi_c`
+    }
+    when exe_path == Nothing or exe_path == `` {
+        exe_path -> Path.join(workdir, `zen_program`)
+    }
+    let rt -> ensure_runtime_obj()
+    when rt[`ok`] != true {
+        <- {`ok` -> false, `message` -> rt[`message`], `exe` -> ``}
+    }
+
+    let obj_files -> []
+    let i -> 0
+    let n -> c_files.length
+    do while i < n {
+        let c_path -> c_files[i]
+        let obj_path -> Str.replace(c_path, `.c`, `.o`)
+        obj_files.append(obj_path)
+
+        let need_compile -> true
+        when incremental == true and fs_is_file(obj_path) {
+            need_compile -> false
+        }
+
+        when need_compile {
+            let cmd_c -> cc
+                + ` -c ` + shell_q(c_path)
+                + ` -o ` + shell_q(obj_path)
+                + c_opt_flag()
+                + ` -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+                + runtime_include_flags()
+            let rc -> Proc.result(cmd_c)
+            when result_code(rc) != 0 {
+                <- {
+                    `ok` -> false,
+                    `message` -> `unit compile failed (` + c_path + `):\n` + result_err(rc),
+                    `exe` -> ``
+                }
+            }
+        }
+        i -> i + 1
+    }
+
+    // Link all .o + runtime .o
+    let link_cmd -> cc
+    let oi -> 0
+    do while oi < obj_files.length {
+        link_cmd -> link_cmd + ` ` + shell_q(obj_files[oi])
+        oi -> oi + 1
+    }
+    link_cmd -> link_cmd + ` ` + shell_q(rt[`obj`])
+        + ` -o ` + shell_q(exe_path)
+        + c_opt_flag()
+        + ` -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+        + runtime_include_flags()
+        + ` -lm -lpthread -ldl`
+
+    let lr -> Proc.result(link_cmd)
+    when result_code(lr) != 0 {
+        <- {
+            `ok` -> false,
+            `message` -> `multi-unit C link failed:\n` + result_err(lr),
+            `exe` -> ``
+        }
+    }
+    Proc.result(`chmod +x ` + shell_q(exe_path))
+    <- {
+        `ok` -> true,
+        `message` -> `linked ` + exe_path,
+        `exe` -> exe_path
     }
 }
 

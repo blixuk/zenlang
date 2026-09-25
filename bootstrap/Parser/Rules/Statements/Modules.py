@@ -37,7 +37,7 @@ class ModuleParserMixin:
                 
         return path
 
-    def import_statement(self) -> ImportStatement:
+    def import_statement(self, is_extern: bool = False) -> ImportStatement:
         # `import` and `use` are aliases (prefer `use` in new code; full migration later)
         if self.token_handler.check_value("use"):
             token = self.token_handler.expect_type_value(
@@ -60,11 +60,11 @@ class ModuleParserMixin:
 
         name = alias if alias else path.split(".")[-1]
         statement = ImportStatement(
-            getattr(token, "line"), getattr(token, "column"), name, path, alias
+            getattr(token, "line"), getattr(token, "column"), name, path, alias, is_extern=is_extern
         )
         return statement
 
-    def from_import_statement(self) -> FromImportStatement:
+    def from_import_statement(self, is_extern: bool = False) -> FromImportStatement:
         token = self.token_handler.expect_type_value(
             TokenType.KEYWORD, "from", "Expected `from` keyword"
         )
@@ -109,8 +109,17 @@ class ModuleParserMixin:
             break
 
         return FromImportStatement(
-            getattr(token, "line"), getattr(token, "column"), path, symbols
+            getattr(token, "line"), getattr(token, "column"), path, symbols, is_extern=is_extern
         )
+
+    def extern_statement(self) -> ASTNode:
+        token = self.token_handler.advance() # consume 'extern'
+        if self.token_handler.check_value("from"):
+            return self.from_import_statement(is_extern=True)
+        elif self.token_handler.check_value("use") or self.token_handler.check_value("import"):
+            return self.import_statement(is_extern=True)
+        else:
+            raise self.logger.error_expect_token("Expected `use`, `import`, or `from` after `extern`", self.token_handler.peek())
 
     def scope_statement(self) -> ScopeStatement:
         token = self.handle_declaration("scope")

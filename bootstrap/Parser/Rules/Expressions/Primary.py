@@ -408,6 +408,40 @@ class PrimaryExpressionsMixin:
         node: ASTNode | None = self.primary()
 
         while True:
+            if isinstance(node, (Identifier, MemberExpression)) and self.token_handler.check_type(TokenType.LESS_THAN):
+                peek_idx = 1
+                depth = 1
+                is_generic = False
+                while True:
+                    tok = self.token_handler.peek(peek_idx)
+                    if not tok:
+                        break
+                    if tok.type == TokenType.LESS_THAN:
+                        depth += 1
+                    elif tok.type == TokenType.GREATER_THAN:
+                        depth -= 1
+                        if depth == 0:
+                            next_tok = self.token_handler.peek(peek_idx + 1)
+                            if next_tok and next_tok.type in (TokenType.LEFT_PAREN, TokenType.LEFT_BRACE):
+                                is_generic = True
+                            break
+                    elif tok.type in (TokenType.SEMICOLON, TokenType.ASSIGNMENT, TokenType.LEFT_BRACE):
+                        break
+                    peek_idx += 1
+                if is_generic:
+                    self.token_handler.advance()
+                    type_args = []
+                    while not self.token_handler.check_type(TokenType.GREATER_THAN) and not self.token_handler.at_end():
+                        targ_tok = self.token_handler.advance()
+                        type_args.append(targ_tok.value)
+                        self.token_handler.match_type(TokenType.COMMA)
+                    self.token_handler.expect_type(TokenType.GREATER_THAN, "Expected `>` after generic arguments")
+                    full_name = f"{getattr(node, 'name', str(node))}<{', '.join(type_args)}>"
+                    if isinstance(node, Identifier):
+                        node.name = full_name
+                    elif isinstance(node, MemberExpression):
+                        node.property = full_name
+
             if self.token_handler.match_type(TokenType.LEFT_PAREN):
                 arguments, arena_target = self.parse_arguments()
                 node = CallExpression(
@@ -491,7 +525,7 @@ class PrimaryExpressionsMixin:
                         name = node.property
 
                     if name in [
-                        "List", "L", "Vector", "V", "Map", "M", "Set", "S", "Tuple", "T",
+                        "List", "Vector", "Map", "Set", "Tuple",
                     ]:
                         self.token_handler.match_type(TokenType.LEFT_BRACE)
                         elements = self.parse_elements(TokenType.RIGHT_BRACE)
@@ -499,23 +533,23 @@ class PrimaryExpressionsMixin:
                             TokenType.RIGHT_BRACE, "Expected `}` after elements"
                         )
 
-                        if name in ["List", "L"]:
+                        if name == "List":
                             node = ListLiteral(
                                 getattr(node, "line"), getattr(node, "column"), elements
                             )
-                        elif name in ["Vector", "V"]:
+                        elif name == "Vector":
                             node = VectorLiteral(
                                 getattr(node, "line"), getattr(node, "column"), elements
                             )
-                        elif name in ["Map", "M"]:
+                        elif name == "Map":
                             node = MapLiteral(
                                 getattr(node, "line"), getattr(node, "column"), elements
                             )
-                        elif name in ["Set", "S"]:
+                        elif name == "Set":
                             node = SetLiteral(
                                 getattr(node, "line"), getattr(node, "column"), elements
                             )
-                        elif name in ["Tuple", "T"]:
+                        elif name == "Tuple":
                             node = TupleLiteral(
                                 getattr(node, "line"), getattr(node, "column"), elements
                             )

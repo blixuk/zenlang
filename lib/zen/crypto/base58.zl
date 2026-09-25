@@ -1,0 +1,268 @@
+/!
+    zen.crypto.base58 - Base58 and Base58Check Encoding / Decoding (Bitcoin / IPFS).
+    Pure Zenlang implementation compatible with both interpreter and native backend.
+!/
+
+use zen.text.string as Str
+use zen.crypto.sha256 as sha256_mod
+use zen.crypto.hex as hex_mod
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind != Nothing {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+/!
+    Encodes binary data or string into Bitcoin / IPFS Base58 format.
+    Preserves leading zero bytes as '1' characters.
+    @param data String or byte list.
+    @return Base58 encoded string.
+!/
+export function encode(data) {
+    let bytes -> _to_byte_list(data)
+    let len -> bytes.length
+    when len == 0 { <- `` }
+
+    let alpha -> `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`
+
+    // Count leading zeros
+    let zeros -> 0
+    let z_done -> false
+    let z -> 0
+    do while z < len and (not z_done) {
+        when bytes[z] == 0 {
+            zeros -> zeros + 1
+        } or {
+            z_done -> true
+        }
+        z -> z + 1
+    }
+
+    // Repeated division by 58 on remaining byte buffer
+    let digits -> []
+    let work -> []
+    let w -> zeros
+    do while w < len {
+        let b -> bytes[w]
+        when b < 0 { b -> b + 256 }
+        work.append(b)
+        w -> w + 1
+    }
+
+    do while work.length > 0 {
+        let carry -> 0
+        let new_work -> []
+        let idx -> 0
+        let wlen -> work.length
+
+        do while idx < wlen {
+            let val -> (carry << 8) + work[idx]
+            carry -> val % 58
+            let q -> (val - carry) / 58
+            when new_work.length > 0 or q > 0 {
+                new_work.append(q)
+            }
+            idx -> idx + 1
+        }
+
+        digits.append(carry)
+        work -> new_work
+    }
+
+    let out -> ``
+    let k -> 0
+    do while k < zeros {
+        out -> out + `1`
+        k -> k + 1
+    }
+
+    let dlen -> digits.length
+    let d -> dlen - 1
+    do while d >= 0 {
+        out -> out + Str.at(alpha, digits[d])
+        d -> d - 1
+    }
+
+    <- out
+}
+
+/!
+    Decodes a Base58 string into a list of byte integers (0-255).
+    Preserves leading '1' characters as zero bytes.
+    @param str Base58 string.
+    @return List of byte integers.
+!/
+export function decode_bytes(str) {
+    let clean -> Str.trim(str)
+    let len -> Str.length(clean)
+    when len == 0 { <- [] }
+
+    let alpha -> `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`
+
+    // Count leading '1' characters
+    let zeros -> 0
+    let z_done -> false
+    let z -> 0
+    do while z < len and (not z_done) {
+        when Str.at(clean, z) == `1` {
+            zeros -> zeros + 1
+        } or {
+            z_done -> true
+        }
+        z -> z + 1
+    }
+
+    // Convert from base 58 to base 256
+    let bytes_arr -> []
+    let i -> zeros
+
+    do while i < len {
+        let ch -> Str.at(clean, i)
+        let val -> Str.index_of(alpha, ch)
+        when val == -1 {
+            raise `Base58 decode failed: Invalid character "` + ch + `"`
+        }
+
+        let carry -> val
+        let new_arr -> []
+        let blen -> bytes_arr.length
+        let j -> blen - 1
+
+        do while j >= 0 {
+            let cur -> (bytes_arr[j] * 58) + carry
+            new_arr.append(cur & 255)
+            carry -> cur >> 8
+            j -> j - 1
+        }
+
+        do while carry > 0 {
+            new_arr.append(carry & 255)
+            carry -> carry >> 8
+        }
+
+        // Reverse new_arr into bytes_arr
+        bytes_arr -> []
+        let nlen -> new_arr.length
+        let k -> nlen - 1
+        do while k >= 0 {
+            bytes_arr.append(new_arr[k])
+            k -> k - 1
+        }
+
+        i -> i + 1
+    }
+
+    let out -> []
+    let z_idx -> 0
+    do while z_idx < zeros {
+        out.append(0)
+        z_idx -> z_idx + 1
+    }
+
+    let b_idx -> 0
+    let b_total -> bytes_arr.length
+    do while b_idx < b_total {
+        out.append(bytes_arr[b_idx])
+        b_idx -> b_idx + 1
+    }
+
+    <- out
+}
+
+/!
+    Decodes a Base58 string into the original text string.
+    @param str Base58 string.
+    @return Decoded string.
+!/
+export function decode(str) {
+    let bytes -> decode_bytes(str)
+    <- __builtin.bytes_to_string(bytes)
+}
+
+function _double_sha256_checksum(bytes) {
+    let h1_hex -> sha256_mod.sha256(bytes)
+    let h1_bytes -> hex_mod.decode_bytes(h1_hex)
+    let h2_hex -> sha256_mod.sha256(h1_bytes)
+    let h2_bytes -> hex_mod.decode_bytes(h2_hex)
+    <- [h2_bytes[0], h2_bytes[1], h2_bytes[2], h2_bytes[3]]
+}
+
+/!
+    Encodes binary data or string into Base58Check format with 4-byte double-SHA256 checksum.
+    @param data String or byte list.
+    @return Base58Check encoded string.
+!/
+export function encode_check(data) {
+    let bytes -> _to_byte_list(data)
+    let ck -> _double_sha256_checksum(bytes)
+
+    let full -> []
+    let i -> 0
+    let blen -> bytes.length
+    do while i < blen {
+        let b -> bytes[i]
+        when b < 0 { b -> b + 256 }
+        full.append(b)
+        i -> i + 1
+    }
+
+    full.append(ck[0])
+    full.append(ck[1])
+    full.append(ck[2])
+    full.append(ck[3])
+
+    <- encode(full)
+}
+
+/!
+    Decodes a Base58Check string into a list of byte integers, validating the 4-byte checksum.
+    Raises an error if the checksum or format is invalid.
+    @param str Base58Check string.
+    @return List of payload byte integers.
+!/
+export function decode_check_bytes(str) {
+    let raw -> decode_bytes(str)
+    let len -> raw.length
+    when len < 4 {
+        raise `Base58Check decode failed: Input too short for checksum`
+    }
+
+    let payload -> []
+    let p_idx -> 0
+    let p_len -> len - 4
+    do while p_idx < p_len {
+        payload.append(raw[p_idx])
+        p_idx -> p_idx + 1
+    }
+
+    let expected_ck -> _double_sha256_checksum(payload)
+    let c0 -> raw[len - 4]
+    let c1 -> raw[len - 3]
+    let c2 -> raw[len - 2]
+    let c3 -> raw[len - 1]
+
+    let match -> (c0 == expected_ck[0]) and (c1 == expected_ck[1]) and (c2 == expected_ck[2]) and (c3 == expected_ck[3])
+    when not match {
+        raise `Base58Check decode failed: Checksum mismatch`
+    }
+
+    <- payload
+}
+
+/!
+    Decodes a Base58Check string into the original text string, validating the checksum.
+    @param str Base58Check string.
+    @return Decoded payload string.
+!/
+export function decode_check(str) {
+    let bytes -> decode_check_bytes(str)
+    <- __builtin.bytes_to_string(bytes)
+}

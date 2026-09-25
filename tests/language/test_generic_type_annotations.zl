@@ -1,0 +1,123 @@
+function sum_list(items: List<Integer>) : Integer {
+    let acc -> 0
+    do for x in items {
+        acc -> acc + x
+    }
+    <- acc
+}
+
+function test_list_annotation() {
+    let numbers : List<Integer> -> [10, 20, 30]
+    ! numbers.length == 3
+    ! numbers[0] == 10
+    ! numbers[1] == 20
+    ! numbers[2] == 30
+    ! numbers is List
+    ! numbers is List<Integer>
+
+    let words : List<String> -> [`zen`, `lang`]
+    ! words.length == 2
+    ! words[0] == `zen`
+    ! words[1] == `lang`
+    ! words is List<String>
+
+    let total -> sum_list(numbers)
+    ! total == 60
+
+    let def_list : List<Integer> -> Default
+    ! def_list.length == 0
+}
+
+function test_map_annotation() {
+    let scores : Map<String, Integer> -> {`alice` -> 95, `bob` -> 88}
+    ! scores.length == 2
+    ! scores[`alice`] == 95
+    ! scores[`bob`] == 88
+    ! scores is Map
+    ! scores is Map<String, Integer>
+
+    let def_map : Map<String, Integer> -> Default
+    ! def_map.length == 0
+}
+
+function test_set_annotation() {
+    let tags : Set<String> -> Set{`zen`, `code`, `speed`}
+    ! tags.length == 3
+    ! `zen` in tags
+    ! `code` in tags
+    ! tags is Set
+    ! tags is Set<String>
+
+    let def_set : Set<Integer> -> Default
+    ! def_set.length == 0
+}
+
+function test_vector_annotation() {
+    let coords : Vector[3]<Decimal> -> Vector{1.5, 2.5, 3.5}
+    ! coords.length == 3
+    ! coords[0] == 1.5
+    ! coords[1] == 2.5
+    ! coords[2] == 3.5
+    ! coords is Vector
+    ! coords is Vector[3]<Decimal>
+
+    let def_vec : Vector[3]<Decimal> -> Default
+    ! def_vec.length == 0
+}
+
+function test_tuple_annotation() {
+    let pair : Tuple<Integer, String> -> Tuple{100, `percent`}
+    ! pair.length == 2
+    ! pair[0] == 100
+    ! pair[1] == `percent`
+    ! pair is Tuple
+    ! pair is Tuple<Integer, String>
+
+    let def_tup : Tuple<Integer, String> -> Default
+    ! def_tup.length == 0
+}
+
+function classify_container(c) {
+    when c is List<Integer> {
+        <- `integer_list`
+    }
+    when c is Map<String, Integer> {
+        <- `string_int_map`
+    }
+    when c is Set<String> {
+        <- `string_set`
+    }
+    <- `other`
+}
+
+function test_pattern_matching() {
+    ! classify_container([1, 2, 3]) == `integer_list`
+    ! classify_container({`a` -> 1}) == `string_int_map`
+    ! classify_container(Set{`tag`}) == `string_set`
+    ! classify_container(42) == `other`
+}
+
+function test_generic_casting() {
+    let casted_list -> `xyz` <: List<String>
+    ! casted_list.length == 3
+    ! casted_list[0] == `x`
+    ! casted_list[1] == `y`
+    ! casted_list[2] == `z`
+
+    let casted_set -> [1, 2, 2, 3] <: Set<Integer>
+    ! casted_set.length == 3
+    ! 1 in casted_set
+    ! 2 in casted_set
+    ! 3 in casted_set
+}
+
+function main() {
+    test_list_annotation()
+    test_map_annotation()
+    test_set_annotation()
+    test_vector_annotation()
+    test_tuple_annotation()
+    test_pattern_matching()
+    test_generic_casting()
+    writeln(`ALL_GENERIC_TYPE_ANNOTATIONS_PASSED`)
+}

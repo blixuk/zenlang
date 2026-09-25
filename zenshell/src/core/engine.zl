@@ -1,0 +1,162 @@
+/!
+  zenshell - Core Command Dispatcher & Pipeline Engine
+!/
+
+import zen.sys.process as process
+import zen.time.time as time
+import zen.text.string as Str
+import ui.theme as color
+
+export class Engine {
+    let registry
+    let context
+
+    function init(context) {
+        self.registry -> {}
+        self.context -> context
+    }
+
+    function register(cmd) {
+        self.registry[cmd.name] -> cmd
+    }
+
+    function expand_alias(line) {
+        let parts -> Str.split(line, ` `)
+        when parts.length == 0 { <- line }
+        let head -> parts[0]
+        when self.context.aliases.has(head) {
+            let expanded -> self.context.aliases[head]
+            when parts.length > 1 {
+                let tail -> Str.join(parts[1:], ` `)
+                <- expanded + ` ` + tail
+            }
+            <- expanded
+        }
+        <- line
+    }
+
+    function execute(raw_line) {
+        when raw_line == Nothing or Str.trim(raw_line) == `` {
+            <- Nothing
+        }
+
+        let start_t -> time.monotonic()
+        let line -> self.expand_alias(Str.trim(raw_line))
+
+        // In-line Zenlang Expression Evaluator (= or let)
+        when Str.starts_with(line, `=`) {
+            let expr -> Str.trim(Str.substring(line, 1, Str.length(line)))
+            when expr == `` {
+                <- color.yellow(`Usage: = <expression>`)
+            }
+            let eval_cmd -> self.registry[`eval`]
+            when eval_cmd != Nothing {
+                let res -> eval_cmd.dispatch([expr], self.context)
+                self.context.last_status -> 0
+                self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+                <- res
+            }
+        }
+        when Str.starts_with(line, `let `) {
+            let eval_cmd -> self.registry[`eval`]
+            when eval_cmd != Nothing {
+                let res -> eval_cmd.dispatch([line], self.context)
+                self.context.last_status -> 0
+                self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+                <- res
+            }
+        }
+
+        // Check for pipeline (|)
+        when Str.contains(line, `|`) {
+            let res -> self.execute_pipeline(line)
+            self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+            <- res
+        }
+
+        let tokens -> Str.split(line, ` `)
+        let cmd_name -> tokens[0]
+        let args -> when (tokens.length > 1) { tokens[1:] } or { [] }
+
+        // 1. Built-in command
+        when self.registry.has(cmd_name) {
+            let cmd -> self.registry[cmd_name]
+            let res -> cmd.dispatch(args, self.context)
+            self.context.last_status -> 0
+            self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+            <- res
+        }
+
+        // 2. Built-in special commands
+        when cmd_name == `exit` or cmd_name == `quit` or cmd_name == `:q` {
+            self.context.running -> false
+            <- color.dim(`Goodbye!`)
+        }
+        when cmd_name == `help` {
+            let out -> color.bold(`zenshell Built-in Commands:\n\n`)
+            do for name in self.registry.keys() {
+                let cmd -> self.registry[name]
+                out -> out + `  ` + color.cyan(name) + `\t` + cmd.description + `\n`
+            }
+            out -> out + `\nType '<command> help' or 'doc manual' for details.`
+            <- out
+        }
+
+        // 3. Fallback: External POSIX Binary via process.result
+        let proc_res -> process.result(line)
+        when proc_res != Nothing {
+            self.context.last_status -> proc_res[`code`]
+            self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+            
+            let stdout_text -> proc_res[`stdout`]
+            let stderr_text -> proc_res[`stderr`]
+            
+            when stderr_text != Nothing and Str.trim(stderr_text) != `` {
+                when stdout_text != Nothing and Str.trim(stdout_text) != `` {
+                    <- stdout_text + `\n` + color.red(stderr_text)
+                }
+                <- color.red(stderr_text)
+            }
+            <- stdout_text
+        }
+
+        self.context.last_status -> 1
+        self.context.last_duration_ms -> (time.monotonic() - start_t) * 1000.0
+        <- color.red(`Command not found: ` + cmd_name)
+    }
+
+    function execute_pipeline(pipeline_line) {
+        let stages -> Str.split(pipeline_line, `|`)
+        let last_out -> Nothing
+
+        do for stage in stages {
+            let st -> Str.trim(stage)
+            when st == `` { continue }
+
+            let tokens -> Str.split(st, ` `)
+            let cmd_name -> tokens[0]
+            let args -> when (tokens.length > 1) { tokens[1:] } or { [] }
+
+            when self.registry.has(cmd_name) {
+                let cmd -> self.registry[cmd_name]
+                when last_out != Nothing {
+                    args.append(last_out)
+                }
+                last_out -> cmd.dispatch(args, self.context)
+            } or {
+                // External binary in pipeline
+                let cmd_str -> st
+                when last_out != Nothing {
+                    cmd_str -> `echo "` + Str.replace(last_out, `"`, `\"`) + `" | ` + st
+                }
+                let proc_res -> process.result(cmd_str)
+                when proc_res != Nothing {
+                    last_out -> proc_res[`stdout`]
+                    self.context.last_status -> proc_res[`code`]
+                }
+            }
+        }
+
+        <- last_out
+    }
+}

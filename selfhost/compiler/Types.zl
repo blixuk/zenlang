@@ -25,11 +25,57 @@ function t_boolean() {
 }
 
 function t_integer() {
-    <- {`kind` -> `Integer`, `name` -> `Integer`}
+    <- {`kind` -> `Integer`, `name` -> `Integer`, `bits` -> 64, `unsigned` -> false}
+}
+
+function t_integer_sized(bits, unsigned) {
+    let b -> bits
+    when b == Nothing { b -> 64 }
+    let u -> unsigned
+    when u == Nothing { u -> false }
+    let name -> `Integer[` + Str.to_string(b) + `]`
+    when u and b == 8 {
+        name -> `Byte`
+    }
+    when not u and b == 64 {
+        name -> `Integer`
+    }
+    <- {`kind` -> `Integer`, `name` -> name, `bits` -> b, `unsigned` -> u}
+}
+
+function t_byte() {
+    <- t_integer_sized(8, true)
 }
 
 function t_decimal() {
-    <- {`kind` -> `Decimal`, `name` -> `Decimal`}
+    <- {`kind` -> `Decimal`, `name` -> `Decimal`, `bits` -> 64}
+}
+
+function t_decimal_sized(bits) {
+    let b -> bits
+    when b == Nothing { b -> 64 }
+    let name -> `Decimal[` + Str.to_string(b) + `]`
+    when b == 64 {
+        name -> `Decimal`
+    }
+    <- {`kind` -> `Decimal`, `name` -> name, `bits` -> b}
+}
+
+function t_vector(elem, length) {
+    let e -> elem
+    when e == Nothing { e -> t_variant() }
+    let len -> length
+    when len == Nothing { len -> 0 }
+    let name -> `Vector`
+    let el_str -> type_name(e)
+    when len > 0 and el_str != `Variant` and el_str != `Unknown` {
+        name -> `Vector[` + Str.to_string(len) + `]<` + el_str + `>`
+    } or when len > 0 {
+        name -> `Vector[` + Str.to_string(len) + `]`
+    } or when el_str != `Variant` and el_str != `Unknown` {
+        name -> `Vector<` + el_str + `>`
+    }
+    <- {`kind` -> `Vector`, `element` -> e, `length` -> len, `name` -> name}
 }
 
 function t_string() {
@@ -38,6 +84,22 @@ function t_string() {
 
 function t_rune() {
     <- {`kind` -> `Rune`, `name` -> `Rune`}
+}
+
+function t_number() {
+    <- {`kind` -> `Number`, `name` -> `Number`}
+}
+
+function t_text() {
+    <- {`kind` -> `Text`, `name` -> `Text`}
+}
+
+function t_collection() {
+    <- {`kind` -> `Collection`, `name` -> `Collection`}
+}
+
+function t_container() {
+    <- {`kind` -> `Container`, `name` -> `Container`}
 }
 
 function t_variant() {
@@ -49,7 +111,75 @@ function t_unknown() {
 }
 
 function t_list(elem) {
-    <- {`kind` -> `List`, `name` -> `List`, `element` -> elem}
+    let e -> elem
+    when e == Nothing {
+        e -> t_variant()
+    }
+    <- {`kind` -> `List`, `element` -> e}
+}
+
+function t_map(key_type, val_type) {
+    let k -> key_type
+    when k == Nothing {
+        k -> t_variant()
+    }
+    let v -> val_type
+    when v == Nothing {
+        v -> t_variant()
+    }
+    <- {`kind` -> `Map`, `key` -> k, `value` -> v}
+}
+
+function t_set(elem) {
+    let e -> elem
+    when e == Nothing {
+        e -> t_variant()
+    }
+    <- {`kind` -> `Set`, `element` -> e}
+}
+
+function t_tuple(elements) {
+    let els -> elements
+    when els == Nothing {
+        els -> []
+    }
+    <- {`kind` -> `Tuple`, `elements` -> els}
+}
+
+function t_option(val_type) {
+    let v -> val_type
+    when v == Nothing {
+        v -> t_variant()
+    }
+    <- {`kind` -> `Option`, `value` -> v}
+}
+
+function t_result(ok_type, err_type) {
+    let o -> ok_type
+    when o == Nothing {
+        o -> t_variant()
+    }
+    let e -> err_type
+    when e == Nothing {
+        e -> t_variant()
+    }
+    <- {`kind` -> `Result`, `ok` -> o, `error` -> e}
+}
+
+function t_task(res_type) {
+    let r -> res_type
+    when r == Nothing {
+        r -> t_variant()
+    }
+    <- {`kind` -> `Task`, `result` -> r}
+}
+
+function t_generic(base, params) {
+    <- {`kind` -> `Generic`, `base` -> base, `params` -> params}
+}
+
+function t_param(name) {
+    <- {`kind` -> `TypeParam`, `name` -> name}
 }
 
 function t_function(name, params, ret) {
@@ -91,6 +221,99 @@ function type_name(t) {
     when t == Nothing {
         <- `Unknown`
     }
+    let k -> Str.to_string(t[`kind`])
+    when k == `List` {
+        let el -> t[`element`]
+        when el != Nothing and Str.to_string(el[`kind`]) != `Variant` and Str.to_string(el[`kind`]) != `Unknown` {
+            <- `List<` + type_name(el) + `>`
+        }
+        <- `List`
+    }
+    when k == `Map` {
+        let kt -> t[`key`]
+        let vt -> t[`value`]
+        when kt != Nothing and vt != Nothing and (Str.to_string(kt[`kind`]) != `Variant` or Str.to_string(vt[`kind`]) != `Variant`) {
+            <- `Map<` + type_name(kt) + `, ` + type_name(vt) + `>`
+        }
+        <- `Map`
+    }
+    when k == `Set` {
+        let el -> t[`element`]
+        when el != Nothing and Str.to_string(el[`kind`]) != `Variant` and Str.to_string(el[`kind`]) != `Unknown` {
+            <- `Set<` + type_name(el) + `>`
+        }
+        <- `Set`
+    }
+    when k == `Tuple` {
+        let els -> t[`elements`]
+        when els != Nothing and els.length > 0 {
+            let nm -> `Tuple<`
+            let first -> true
+            do for el in els {
+                when not first { nm -> nm + `, ` }
+                first -> false
+                nm -> nm + type_name(el)
+            }
+            <- nm + `>`
+        }
+        <- `Tuple`
+    }
+    when k == `Option` {
+        let vt -> t[`value`]
+        when vt != Nothing and Str.to_string(vt[`kind`]) != `Variant` and Str.to_string(vt[`kind`]) != `Unknown` {
+            <- `Option[` + type_name(vt) + `]`
+        }
+        <- `Option`
+    }
+    when k == `Result` {
+        let ot -> t[`ok`]
+        let et -> t[`error`]
+        when ot != Nothing and et != Nothing and (Str.to_string(ot[`kind`]) != `Variant` or Str.to_string(et[`kind`]) != `Variant`) {
+            <- `Result[` + type_name(ot) + `, ` + type_name(et) + `]`
+        }
+        <- `Result`
+    }
+    when k == `Task` {
+        let rt -> t[`result`]
+        when rt != Nothing and Str.to_string(rt[`kind`]) != `Variant` and Str.to_string(rt[`kind`]) != `Unknown` {
+            <- `Task[` + type_name(rt) + `]`
+        }
+        <- `Task`
+    }
+    when k == `TypeParam` {
+        <- Str.to_string(t[`name`])
+    }
+    when k == `Generic` {
+        let b -> Str.to_string(t[`base`])
+        let ps -> t[`params`]
+        when ps != Nothing and ps.length > 0 {
+            let nm -> b + `<`
+            let first -> true
+            do for p in ps {
+                when not first { nm -> nm + `, ` }
+                first -> false
+                nm -> nm + type_name(p)
+            }
+            <- nm + `>`
+        }
+        <- b
+    }
+    when k == `Vector` {
+        let el -> t[`element`]
+        let len -> t[`length`]
+        let el_str -> `Variant`
+        when el != Nothing { el_str -> type_name(el) }
+        when len != Nothing and len > 0 and el != Nothing and el_str != `Variant` and el_str != `Unknown` {
+            <- `Vector[` + Str.to_string(len) + `]<` + el_str + `>`
+        }
+        when len != Nothing and len > 0 {
+            <- `Vector[` + Str.to_string(len) + `]`
+        }
+        when el != Nothing and el_str != `Variant` and el_str != `Unknown` {
+            <- `Vector<` + el_str + `>`
+        }
+        <- `Vector`
+    }
     when t[`name`] != Nothing {
         <- Str.to_string(t[`name`])
     }
@@ -103,19 +326,210 @@ function type_equal(a, b) {
     }
     let ka -> Str.to_string(a[`kind`])
     let kb -> Str.to_string(b[`kind`])
+    when ka == `Forbidden` or kb == `Forbidden` {
+        <- false
+    }
     when ka == `Unknown` or kb == `Unknown` or ka == `Variant` or kb == `Variant` {
         <- true
     }
+    when ka == `Number` or kb == `Number` {
+        let other -> kb
+        when kb == `Number` { other -> ka }
+        <- other == `Number` or other == `Integer` or other == `Decimal` or other == `Byte`
+    }
+    when ka == `Text` or kb == `Text` {
+        let other -> kb
+        when kb == `Text` { other -> ka }
+        <- other == `Text` or other == `String` or other == `Rune`
+    }
+    when ka == `Collection` or kb == `Collection` {
+        let other -> kb
+        when kb == `Collection` { other -> ka }
+        <- other == `Collection` or other == `List` or other == `Vector` or other == `Set` or other == `Map` or other == `Tuple`
+    }
+    when ka == `Container` or kb == `Container` {
+        let other -> kb
+        when kb == `Container` { other -> ka }
+        <- other == `Container` or other == `Structure` or other == `Class` or other == `Object` or other == `Enumerator`
+    }
     when ka == kb {
+        when ka == `Integer` {
+            let ba -> a[`bits`]
+            let bb -> b[`bits`]
+            let ua -> a[`unsigned`]
+            let ub -> b[`unsigned`]
+            when ba != Nothing and bb != Nothing {
+                when ba != bb or ua != ub {
+                    <- false
+                }
+            }
+            <- true
+        }
+        when ka == `Decimal` {
+            let ba -> a[`bits`]
+            let bb -> b[`bits`]
+            when ba != Nothing and bb != Nothing {
+                when ba != bb {
+                    <- false
+                }
+            }
+            <- true
+        }
+        when ka == `Vector` {
+            let la -> a[`length`]
+            let lb -> b[`length`]
+            when la != Nothing and lb != Nothing and la > 0 and lb > 0 and la != lb {
+                <- false
+            }
+            let ea -> a[`element`]
+            let eb -> b[`element`]
+            when ea == Nothing or eb == Nothing {
+                <- true
+            }
+            <- type_equal(ea, eb)
+        }
         when ka == `List` {
-            <- type_equal(a[`element`], b[`element`])
+            let ea -> a[`element`]
+            let eb -> b[`element`]
+            when ea == Nothing or eb == Nothing {
+                <- true
+            }
+            <- type_equal(ea, eb)
+        }
+        when ka == `Set` {
+            let ea -> a[`element`]
+            let eb -> b[`element`]
+            when ea == Nothing or eb == Nothing {
+                <- true
+            }
+            <- type_equal(ea, eb)
+        }
+        when ka == `Map` {
+            let ka_t -> a[`key`]
+            let kb_t -> b[`key`]
+            let va_t -> a[`value`]
+            let vb_t -> b[`value`]
+            let k_eq -> true
+            when ka_t != Nothing and kb_t != Nothing {
+                k_eq -> type_equal(ka_t, kb_t)
+            }
+            let v_eq -> true
+            when va_t != Nothing and vb_t != Nothing {
+                v_eq -> type_equal(va_t, vb_t)
+            }
+            <- k_eq and v_eq
+        }
+        when ka == `Tuple` {
+            let ea -> a[`elements`]
+            let eb -> b[`elements`]
+            when ea == Nothing or eb == Nothing or ea.length == 0 or eb.length == 0 {
+                <- true
+            }
+            when ea.length != eb.length {
+                <- false
+            }
+            let i -> 0
+            do while i < ea.length {
+                when not type_equal(ea[i], eb[i]) {
+                    <- false
+                }
+                i -> i + 1
+            }
+            <- true
+        }
+        when ka == `Option` {
+            let va -> a[`value`]
+            let vb -> b[`value`]
+            when va == Nothing or vb == Nothing {
+                <- true
+            }
+            <- type_equal(va, vb)
+        }
+        when ka == `Result` {
+            let oa -> a[`ok`]
+            let ob -> b[`ok`]
+            let ea -> a[`error`]
+            let eb -> b[`error`]
+            let ok_eq -> true
+            when oa != Nothing and ob != Nothing {
+                ok_eq -> type_equal(oa, ob)
+            }
+            let err_eq -> true
+            when ea != Nothing and eb != Nothing {
+                err_eq -> type_equal(ea, eb)
+            }
+            <- ok_eq and err_eq
+        }
+        when ka == `Task` {
+            let ra -> a[`result`]
+            let rb -> b[`result`]
+            when ra == Nothing or rb == Nothing {
+                <- true
+            }
+            <- type_equal(ra, rb)
         }
         when ka == `Structure` or ka == `Function` or ka == `Class` {
             <- type_name(a) == type_name(b)
         }
+        when ka == `TypeParam` {
+            <- a[`name`] == b[`name`]
+        }
+        when ka == `Generic` {
+            when a[`base`] != b[`base`] {
+                <- false
+            }
+            let pa -> a[`params`]
+            let pb -> b[`params`]
+            when pa == Nothing or pb == Nothing {
+                <- true
+            }
+            when pa.length != pb.length {
+                <- false
+            }
+            let idx -> 0
+            do while idx < pa.length {
+                when not type_equal(pa[idx], pb[idx]) {
+                    <- false
+                }
+                idx -> idx + 1
+            }
+            <- true
+        }
         <- true
     }
     <- false
+}
+
+function split_type_args(s) {
+    let args -> []
+    let current -> ``
+    let depth -> 0
+    let i -> 0
+    let n -> Str.length(s)
+    do while i < n {
+        let ch -> Str.substring(s, i, i + 1)
+        when ch == `[` or ch == `<` {
+            depth -> depth + 1
+            current -> current + ch
+        } or {
+            when ch == `]` or ch == `>` {
+                depth -> depth - 1
+                current -> current + ch
+            } or {
+                when ch == `,` and depth == 0 {
+                    args.append(Str.trim(current))
+                    current -> ``
+                } or {
+                    current -> current + ch
+                }
+            }
+        }
+        i -> i + 1
+    }
+    when Str.length(Str.trim(current)) > 0 {
+        args.append(Str.trim(current))
+    }
+    <- args
 }
 
 function type_from_name(name) {
@@ -123,17 +537,181 @@ function type_from_name(name) {
         <- t_variant()
     }
     let s -> Str.to_string(name)
-    when s == `Integer` or s == `int` {
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) {
+        let open_idx -> 0
+        let n -> Str.length(s)
+        do while open_idx < n and Str.substring(s, open_idx, open_idx + 1) != `[` {
+            open_idx -> open_idx + 1
+        }
+        let base -> Str.trim(Str.substring(s, 0, open_idx))
+        let inner -> Str.substring(s, open_idx + 1, n - 1)
+        let raw_args -> split_type_args(inner)
+        let parsed_args -> []
+        do for a in raw_args {
+            parsed_args.append(type_from_name(a))
+        }
+        when base == `List` {
+            let elem -> t_variant()
+            when parsed_args.length > 0 {
+                elem -> parsed_args[0]
+            }
+            <- t_list(elem)
+        }
+        when base == `Map` {
+            let k -> t_string()
+            let v -> t_variant()
+            when parsed_args.length > 0 {
+                k -> parsed_args[0]
+            }
+            when parsed_args.length > 1 {
+                v -> parsed_args[1]
+            }
+            <- t_map(k, v)
+        }
+        when base == `Set` {
+            let elem -> t_variant()
+            when parsed_args.length > 0 {
+                elem -> parsed_args[0]
+            }
+            <- t_set(elem)
+        }
+        when base == `Option` {
+            let val -> t_variant()
+            when parsed_args.length > 0 {
+                val -> parsed_args[0]
+            }
+            <- t_option(val)
+        }
+        when base == `Result` {
+            let ok_t -> t_variant()
+            let err_t -> t_variant()
+            when parsed_args.length > 0 {
+                ok_t -> parsed_args[0]
+            }
+            when parsed_args.length > 1 {
+                err_t -> parsed_args[1]
+            }
+            <- t_result(ok_t, err_t)
+        }
+        when base == `Task` {
+            let res_t -> t_variant()
+            when parsed_args.length > 0 {
+                res_t -> parsed_args[0]
+            }
+            <- t_task(res_t)
+        }
+        when base == `Integer` {
+            let b -> 64
+            when inner == `8` { b -> 8 }
+            when inner == `16` { b -> 16 }
+            when inner == `32` { b -> 32 }
+            when inner == `64` { b -> 64 }
+            <- t_integer_sized(b, false)
+        }
+        when base == `Decimal` {
+            let b -> 64
+            when inner == `32` { b -> 32 }
+            when inner == `64` { b -> 64 }
+            <- t_decimal_sized(b)
+        }
+        when base == `String` {
+            let b -> 8
+            when inner == `8` { b -> 8 }
+            when inner == `16` { b -> 16 }
+            when inner == `32` { b -> 32 }
+            when inner == `64` { b -> 64 }
+            <- {`kind` -> `String`, `name` -> `String[` + Str.to_string(b) + `]`, `bits` -> b}
+        }
+        when base == `Vector` {
+            let len -> 0
+            when Str.length(inner) > 0 and not Str.contains(inner, `,`) {
+                len -> inner <: Integer
+            }
+            let elem -> t_variant()
+            when parsed_args.length > 0 and len == 0 {
+                elem -> parsed_args[0]
+            }
+            <- t_vector(elem, len)
+        }
+        <- t_generic(base, parsed_args)
+    }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) {
+        let open_idx -> 0
+        let n -> Str.length(s)
+        do while open_idx < n and Str.substring(s, open_idx, open_idx + 1) != `<` {
+            open_idx -> open_idx + 1
+        }
+        let base_raw -> Str.trim(Str.substring(s, 0, open_idx))
+        let inner -> Str.substring(s, open_idx + 1, n - 1)
+        let base_t -> type_from_name(base_raw)
+        let raw_args -> split_type_args(inner)
+        let parsed_args -> []
+        do for a in raw_args {
+            parsed_args.append(type_from_name(a))
+        }
+        let elem_t -> t_variant()
+        when parsed_args.length > 0 {
+            elem_t -> parsed_args[0]
+        }
+        when Str.to_string(base_t[`kind`]) == `Vector` {
+            base_t[`element`] -> elem_t
+            base_t[`name`] -> type_name(base_t)
+            <- base_t
+        }
+        when Str.to_string(base_t[`kind`]) == `List` {
+            <- t_list(elem_t)
+        }
+        when Str.to_string(base_t[`kind`]) == `Set` {
+            <- t_set(elem_t)
+        }
+        when Str.to_string(base_t[`kind`]) == `Map` {
+            let k_t -> t_variant()
+            let v_t -> t_variant()
+            when parsed_args.length > 0 { k_t -> parsed_args[0] }
+            when parsed_args.length > 1 { v_t -> parsed_args[1] }
+            <- t_map(k_t, v_t)
+        }
+        when Str.to_string(base_t[`kind`]) == `Tuple` {
+            <- t_tuple(parsed_args)
+        }
+        when Str.to_string(base_t[`kind`]) == `Option` {
+            <- t_option(elem_t)
+        }
+        when Str.to_string(base_t[`kind`]) == `Result` {
+            let ok_t -> t_variant()
+            let err_t -> t_variant()
+            when parsed_args.length > 0 { ok_t -> parsed_args[0] }
+            when parsed_args.length > 1 { err_t -> parsed_args[1] }
+            <- t_result(ok_t, err_t)
+        }
+        <- t_generic(base_raw, parsed_args)
+    }
+    when s == `Integer` {
         <- t_integer()
     }
-    when s == `Decimal` or s == `Float` {
+    when s == `Byte` {
+        <- t_byte()
+    }
+    when s == `Bytes` {
+        <- t_list(t_integer_sized(8, false))
+    }
+    when s == `Decimal` {
         <- t_decimal()
+    }
+    when s == `Vector` {
+        <- t_vector(t_variant(), 0)
+    }
+    when s == `Tuple` {
+        <- {`kind` -> `Tuple`, `elements` -> []}
     }
     when s == `String` {
         <- t_string()
     }
-    when s == `Boolean` or s == `Bool` {
+    when s == `Boolean` {
         <- t_boolean()
+    }
+    when s == `Rune` {
+        <- t_rune()
     }
     when s == `Void` {
         <- t_void()
@@ -150,11 +728,95 @@ function type_from_name(name) {
     when s == `List` {
         <- t_list(t_variant())
     }
+    when s == `Map` {
+        <- t_map(t_variant(), t_variant())
+    }
+    when s == `Set` {
+        <- t_set(t_variant())
+    }
+    when s == `Option` {
+        <- t_option(t_variant())
+    }
+    when s == `Result` {
+        <- t_result(t_variant(), t_variant())
+    }
+    when s == `Task` {
+        <- t_task(t_variant())
+    }
+    when s == `Channel` {
+        <- {`kind` -> `Channel`, `name` -> `Channel`}
+    }
+    when s == `Number` {
+        <- t_number()
+    }
+    when s == `Text` {
+        <- t_text()
+    }
+    when s == `Collection` {
+        <- t_collection()
+    }
+    when s == `Container` {
+        <- t_container()
+    }
     when s == `Arena` or s == `Region` or s == `ZEN_ARENA` {
         <- t_arena()
     }
+    when G_TYPE_PARAMS != Nothing and G_TYPE_PARAMS.length > 0 {
+        let gi -> 0
+        let gn -> G_TYPE_PARAMS.length
+        do while gi < gn {
+            let tp -> Str.to_string(G_TYPE_PARAMS[gi])
+            when s == tp {
+                <- t_param(s)
+            }
+            gi -> gi + 1
+        }
+    }
+    when is_forbidden_type_name(s) {
+        <- {`kind` -> `Forbidden`, `name` -> s}
+    }
     // User / structure / class name
     <- {`kind` -> `Named`, `name` -> s}
+}
+
+let G_TYPE_PARAMS -> []
+
+export function set_active_type_params(params) {
+    let old -> G_TYPE_PARAMS
+    when params != Nothing {
+        G_TYPE_PARAMS -> params
+    } or {
+        G_TYPE_PARAMS -> []
+    }
+    <- old
+}
+
+export function reset_active_type_params(old) {
+    when old != Nothing {
+        G_TYPE_PARAMS -> old
+    } or {
+        G_TYPE_PARAMS -> []
+    }
+}
+
+export function is_forbidden_type_name(name_str) {
+    when G_TYPE_PARAMS != Nothing and G_TYPE_PARAMS.length > 0 {
+        let gi -> 0
+        let gn -> G_TYPE_PARAMS.length
+        do while gi < gn {
+            let tp -> Str.to_string(G_TYPE_PARAMS[gi])
+            when tp == name_str {
+                <- false
+            }
+            gi -> gi + 1
+        }
+    }
+    when name_str == `Int` or name_str == `Int64` or name_str == `Int32` or name_str == `Int16` or name_str == `Int8` or name_str == `UInt8` { <- true }
+    when name_str == `UInt16` or name_str == `UInt32` or name_str == `UInt64` { <- true }
+    when name_str == `Float` or name_str == `Float64` or name_str == `Float32` or name_str == `Double` { <- true }
+    when name_str == `Str` or name_str == `Bool` or name_str == `Char` or name_str == `Character` or name_str == `Glyph` or name_str == `Buffer` { <- true }
+    when name_str == `V` or name_str == `L` or name_str == `S` or name_str == `T` or name_str == `M` { <- true }
+    <- false
 }
 
 function type_ann_name(ann) {
@@ -204,6 +866,227 @@ function type_from_ann(ann) {
     <- t
 }
 
+function substitute_type(t, substs) {
+    when t == Nothing or substs == Nothing {
+        <- t
+    }
+    let k -> Str.to_string(t[`kind`])
+    when k == `TypeParam` or k == `Named` {
+        let pname -> Str.to_string(t[`name`])
+        when substs.has(pname) {
+            <- substs[pname]
+        }
+        <- t
+    }
+    when k == `List` {
+        let el -> substitute_type(t[`element`], substs)
+        <- t_list(el)
+    }
+    when k == `Set` {
+        let el -> substitute_type(t[`element`], substs)
+        <- t_set(el)
+    }
+    when k == `Map` {
+        let kt -> substitute_type(t[`key`], substs)
+        let vt -> substitute_type(t[`value`], substs)
+        <- t_map(kt, vt)
+    }
+    when k == `Vector` {
+        let el -> substitute_type(t[`element`], substs)
+        let len -> t[`length`]
+        when len == Nothing { len -> 0 }
+        <- t_vector(el, len)
+    }
+    when k == `Tuple` {
+        let els -> t[`elements`]
+        let new_els -> []
+        when els != Nothing {
+            do for e in els {
+                new_els.append(substitute_type(e, substs))
+            }
+        }
+        <- t_tuple(new_els)
+    }
+    when k == `Option` {
+        let vt -> substitute_type(t[`value`], substs)
+        <- t_option(vt)
+    }
+    when k == `Result` {
+        let ot -> substitute_type(t[`ok`], substs)
+        let et -> substitute_type(t[`error`], substs)
+        <- t_result(ot, et)
+    }
+    when k == `Task` {
+        let rt -> substitute_type(t[`result`], substs)
+        <- t_task(rt)
+    }
+    when k == `Generic` {
+        let ps -> t[`params`]
+        let new_ps -> []
+        when ps != Nothing {
+            do for p in ps {
+                new_ps.append(substitute_type(p, substs))
+            }
+        }
+        <- t_generic(t[`base`], new_ps)
+    }
+    when k == `Function` {
+        let ps -> t[`params`]
+        let new_ps -> []
+        when ps != Nothing {
+            do for p in ps {
+                new_ps.append(substitute_type(p, substs))
+            }
+        }
+        let ret -> substitute_type(t[`return`], substs)
+        let res -> t_function(t[`name`], new_ps, ret)
+        when t.has(`generics`) {
+            res[`generics`] -> t[`generics`]
+        }
+        <- res
+    }
+    when k == `Structure` {
+        let mems -> t[`members`]
+        let new_mems -> {}
+        when mems != Nothing {
+            let mkeys -> mems.keys()
+            do for mk in mkeys {
+                new_mems[mk] -> substitute_type(mems[mk], substs)
+            }
+        }
+        let res -> t_structure(t[`name`], new_mems)
+        when t.has(`generics`) {
+            res[`generics`] -> t[`generics`]
+        }
+        when t.has(`methods`) {
+            res[`methods`] -> t[`methods`]
+        }
+        <- res
+    }
+    when k == `Class` {
+        let mems -> t[`members`]
+        let new_mems -> {}
+        when mems != Nothing {
+            let mkeys -> mems.keys()
+            do for mk in mkeys {
+                new_mems[mk] -> substitute_type(mems[mk], substs)
+            }
+        }
+        let meths -> t[`methods`]
+        let new_meths -> {}
+        when meths != Nothing {
+            let mnames -> meths.keys()
+            do for mn in mnames {
+                new_meths[mn] -> substitute_type(meths[mn], substs)
+            }
+        }
+        let res -> t_class(t[`name`], new_mems, new_meths)
+        when t.has(`generics`) {
+            res[`generics`] -> t[`generics`]
+        }
+        <- res
+    }
+    <- t
+}
+
+function infer_type_substitutions(expected, actual, param_names, substs) {
+    when expected == Nothing or actual == Nothing {
+        <- Nothing
+    }
+    let ek -> Str.to_string(expected[`kind`])
+    let ak -> Str.to_string(actual[`kind`])
+    when ek == `TypeParam` or ek == `Named` {
+        let pname -> Str.to_string(expected[`name`])
+        when param_names == Nothing or (pname in param_names) {
+            when not substs.has(pname) {
+                substs[pname] -> actual
+            }
+        }
+        <- Nothing
+    }
+    when ek == `List` and ak == `List` {
+        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
+        <- Nothing
+    }
+    when ek == `Set` and ak == `Set` {
+        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
+        <- Nothing
+    }
+    when ek == `Map` and ak == `Map` {
+        infer_type_substitutions(expected[`key`], actual[`key`], param_names, substs)
+        infer_type_substitutions(expected[`value`], actual[`value`], param_names, substs)
+        <- Nothing
+    }
+    when ek == `Vector` and ak == `Vector` {
+        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
+        <- Nothing
+    }
+    when ek == `Tuple` and ak == `Tuple` {
+        let pa -> expected[`elements`]
+        let pb -> actual[`elements`]
+        when pa != Nothing and pb != Nothing {
+            let min_len -> pa.length
+            when pb.length < min_len { min_len -> pb.length }
+            let idx -> 0
+            do while idx < min_len {
+                infer_type_substitutions(pa[idx], pb[idx], param_names, substs)
+                idx -> idx + 1
+            }
+        }
+        <- Nothing
+    }
+    when ek == `Generic` and ak == `Generic` {
+        when expected[`base`] == actual[`base`] {
+            let pa -> expected[`params`]
+            let pb -> actual[`params`]
+            when pa != Nothing and pb != Nothing {
+                let min_len -> pa.length
+                when pb.length < min_len { min_len -> pb.length }
+                let idx -> 0
+                do while idx < min_len {
+                    infer_type_substitutions(pa[idx], pb[idx], param_names, substs)
+                    idx -> idx + 1
+                }
+            }
+        }
+        <- Nothing
+    }
+    <- Nothing
+}
+
+function instantiate_generic_symbol(t, type_spec_name) {
+    when t == Nothing or type_spec_name == Nothing {
+        <- t
+    }
+    let s -> Str.to_string(type_spec_name)
+    when not (Str.contains(s, `<`) and Str.ends_with(s, `>`)) {
+        <- t
+    }
+    let open_idx -> Str.index_of(s, `<`)
+    let inner -> Str.substring(s, open_idx + 1, Str.length(s) - 1)
+    let raw_args -> split_type_args(inner)
+    let parsed_args -> []
+    do for a in raw_args {
+        parsed_args.append(type_from_name(a))
+    }
+    let generics -> []
+    when t.has(`generics`) and t[`generics`] != Nothing {
+        generics -> t[`generics`]
+    }
+    let substs -> {}
+    let idx -> 0
+    let min_len -> generics.length
+    when parsed_args.length < min_len {
+        min_len -> parsed_args.length
+    }
+    do while idx < min_len {
+        let gname -> Str.to_string(generics[idx])
+        substs[gname] -> parsed_args[idx]
+        idx -> idx + 1
+    }
+    <- substitute_type(t, substs)
+}
+
 function is_arena_type(t) {
     when t == Nothing {
         <- false
@@ -251,6 +1134,24 @@ function copy_type_plain(t) {
     }
     when t.has(`element`) {
         out[`element`] -> t[`element`]
+    }
+    when t.has(`key`) {
+        out[`key`] -> t[`key`]
+    }
+    when t.has(`value`) {
+        out[`value`] -> t[`value`]
+    }
+    when t.has(`ok`) {
+        out[`ok`] -> t[`ok`]
+    }
+    when t.has(`error`) {
+        out[`error`] -> t[`error`]
+    }
+    when t.has(`result`) {
+        out[`result`] -> t[`result`]
+    }
+    when t.has(`base`) {
+        out[`base`] -> t[`base`]
     }
     when t.has(`params`) {
         out[`params`] -> t[`params`]

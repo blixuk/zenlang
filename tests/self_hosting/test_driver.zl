@@ -164,7 +164,7 @@ function test_compile_class_inherit() {
 function test_compile_multi_unit() {
     let entry -> `tests/self_hosting/fixtures/multi_main.zl`
     let outdir -> `output/test_multi_unit`
-    let r -> Driver.compile_file_multi(entry, outdir, false)
+    let r -> Driver.compile_file_multi(entry, outdir, false, false)
     let pass -> test.assert_equal(r[`ok`], true, `multi-unit ok`)
     let files -> r[`c_files`]
     pass -> pass and test.assert_equal(files != Nothing, true, `has c_files`)
@@ -189,6 +189,46 @@ function test_compile_multi_unit() {
     <- pass
 }
 
+function test_content_sig_and_incremental() {
+    let s1 -> Driver.compute_content_sig(`abcdef`)
+    let s2 -> Driver.compute_content_sig(`uvwxyz`)
+    let pass -> test.assert_equal(s1 != s2, true, `different content same length has different signature`)
+
+    let entry -> `tests/self_hosting/fixtures/multi_main.zl`
+    let outdir -> `output/test_multi_incremental`
+    let cache_file -> outdir + `/.cache.zd`
+    when __builtin_file.is_file(cache_file) {
+        __builtin_file.remove(cache_file)
+    }
+    let c1 -> outdir + `/multi_main.c`
+    let c2 -> outdir + `/multi_lib.c`
+    let c3 -> outdir + `/zen_host_main.c`
+    when __builtin_file.is_file(c1) { __builtin_file.remove(c1) }
+    when __builtin_file.is_file(c2) { __builtin_file.remove(c2) }
+    when __builtin_file.is_file(c3) { __builtin_file.remove(c3) }
+
+    let r1 -> Driver.compile_file_multi(entry, outdir, false, true)
+    pass -> pass and test.assert_equal(r1[`ok`], true, `cold compile ok`)
+    pass -> pass and test.assert_equal(r1[`compiled_units`] >= 2, true, `cold compile compiles units`)
+    pass -> pass and test.assert_equal(r1[`cached_units`], 0, `cold compile has 0 cached units`)
+
+    let r2 -> Driver.compile_file_multi(entry, outdir, false, true)
+    pass -> pass and test.assert_equal(r2[`ok`], true, `warm compile ok`)
+    pass -> pass and test.assert_equal(r2[`cached_units`] >= 2, true, `warm compile reuses cached units`)
+    pass -> pass and test.assert_equal(r2[`compiled_units`], 0, `warm compile skips unchanged units`)
+    <- pass
+}
+
+function test_arena_profiling_stats() {
+    let stats -> __builtin_memory.arena_stats(Nothing)
+    let pass -> test.assert_equal(stats != Nothing, true, `stats not nothing`)
+    pass -> pass and test.assert_equal(type(stats), `Map`, `stats is map`)
+    pass -> pass and test.assert_equal(stats.has(`allocated`), true, `has allocated`)
+    pass -> pass and test.assert_equal(stats.has(`capacity`), true, `has capacity`)
+    pass -> pass and test.assert_equal(stats.has(`chunks`), true, `has chunks`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Driver.compile_string`, `fn` -> test_compile_string_ok},
@@ -203,7 +243,9 @@ function run_tests() {
         {`name` -> `Driver.class_inherit`, `fn` -> test_compile_class_inherit},
         {`name` -> `Driver.enum_closure`, `fn` -> test_compile_enum_closure},
         {`name` -> `Driver.with_region`, `fn` -> test_compile_with_region},
-        {`name` -> `Driver.multi_unit`, `fn` -> test_compile_multi_unit}
+        {`name` -> `Driver.multi_unit`, `fn` -> test_compile_multi_unit},
+        {`name` -> `Driver.incremental_cache`, `fn` -> test_content_sig_and_incremental},
+        {`name` -> `Driver.arena_stats`, `fn` -> test_arena_profiling_stats}
     ]
     <- test.run_suite(`Selfhost Stage6 Driver`, tests)
 }

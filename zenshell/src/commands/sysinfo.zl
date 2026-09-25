@@ -1,0 +1,296 @@
+/!
+  zenshell - System & Hardware Information Dashboard (sysinfo / sys)
+  Pure Zen high-performance system resource inspection.
+!/
+
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.util.table as utbl
+import zen.data.zendata as zd
+import ui.theme as color
+import core.command as cmd_base
+
+function make_bar(pct, width) {
+    let p -> pct
+    when p < 0.0 { p -> 0.0 }
+    when p > 100.0 { p -> 100.0 }
+    let filled -> Integer((p / 100.0) * Decimal(width))
+    when filled > width { filled -> width }
+    let empty -> width - filled
+    let bar_str -> Str.repeat(`█`, filled) + Str.repeat(`░`, empty)
+    when p > 85.0 {
+        <- color.red(bar_str)
+    } or when p > 60.0 {
+        <- color.yellow(bar_str)
+    }
+    <- color.green(bar_str)
+}
+
+function extract_kb_number(line) {
+    let parts -> Str.split(line, `:`)
+    when parts.length < 2 { <- 0 }
+    let raw -> Str.trim(parts[1])
+    let sub -> Str.split(raw, ` `)
+    when sub.length > 0 {
+        let n -> Integer(sub[0])
+        when n != Nothing { <- n }
+    }
+    <- 0
+}
+
+function parse_meminfo() {
+    let res -> process.result(`cat /proc/meminfo 2>/dev/null`)
+    let content -> when (res != Nothing and res[`code`] == 0) { res[`stdout`] } or { `` }
+    when content == Nothing or content == `` {
+        <- {
+            `total_mb` -> 0,
+            `avail_mb` -> 0,
+            `used_mb` -> 0,
+            `total_gb` -> 0,
+            `used_gb` -> 0,
+            `avail_gb` -> 0,
+            `total_kb` -> 0,
+            `avail_kb` -> 0,
+            `used_kb` -> 0,
+            `usage_pct` -> 0.0
+        }
+    }
+
+    let lines -> Str.split(content, `\n`)
+    let total_kb -> 0
+    let avail_kb -> 0
+    let free_kb -> 0
+
+    do for line in lines {
+        when Str.starts_with(line, `MemTotal:`) {
+            total_kb -> extract_kb_number(line)
+        } or when Str.starts_with(line, `MemAvailable:`) {
+            avail_kb -> extract_kb_number(line)
+        } or when Str.starts_with(line, `MemFree:`) {
+            free_kb -> extract_kb_number(line)
+        }
+    }
+
+    when avail_kb == 0 { avail_kb -> free_kb }
+    let used_kb -> when (total_kb > avail_kb) { total_kb - avail_kb } or { 0 }
+    let total_mb -> Integer(total_kb / 1024)
+    let avail_mb -> Integer(avail_kb / 1024)
+    let used_mb -> Integer(used_kb / 1024)
+    let total_gb -> Integer(total_mb / 1024)
+    let used_gb -> Integer(used_mb / 1024)
+    let avail_gb -> Integer(avail_mb / 1024)
+    let pct -> when (total_kb > 0) { (Decimal(used_kb) / Decimal(total_kb)) * 100.0 } or { 0.0 }
+
+    <- {
+        `total_mb` -> total_mb,
+        `avail_mb` -> avail_mb,
+        `used_mb` -> used_mb,
+        `total_gb` -> total_gb,
+        `used_gb` -> used_gb,
+        `avail_gb` -> avail_gb,
+        `total_kb` -> total_kb,
+        `avail_kb` -> avail_kb,
+        `used_kb` -> used_kb,
+        `usage_pct` -> pct
+    }
+}
+
+function parse_cpuinfo() {
+    let res -> process.result(`cat /proc/cpuinfo 2>/dev/null`)
+    let content -> when (res != Nothing and res[`code`] == 0) { res[`stdout`] } or { `` }
+    let count -> 0
+    let model -> ``
+
+    when content != Nothing and content != `` {
+        let lines -> Str.split(content, `\n`)
+        do for line in lines {
+            when Str.starts_with(line, `processor`) {
+                count -> count + 1
+            } or when model == `` and Str.starts_with(line, `model name`) {
+                let parts -> Str.split(line, `:`)
+                when parts.length > 1 {
+                    model -> Str.trim(parts[1])
+                }
+            }
+        }
+    }
+
+    when count == 0 { count -> 1 }
+    when model == `` { model -> `Generic POSIX CPU` }
+    <- {`count` -> count, `model` -> model}
+}
+
+function get_sys_uname() {
+    let res -> process.result(`uname -srm 2>/dev/null`)
+    when res != Nothing and res[`code`] == 0 and Str.trim(res[`stdout`]) != `` {
+        <- Str.trim(res[`stdout`])
+    }
+    <- sys.platform()
+}
+
+function get_sys_uptime() {
+    let res -> process.result(`cat /proc/uptime 2>/dev/null`)
+    let content -> when (res != Nothing and res[`code`] == 0) { res[`stdout`] } or { `` }
+    when content != Nothing and content != `` {
+        let parts -> Str.split(content, ` `)
+        when parts.length > 0 {
+            let total_sec -> Integer(parts[0])
+            when total_sec != Nothing {
+                let days -> Integer(total_sec / 86400)
+                let rem -> total_sec - (days * 86400)
+                let hours -> Integer(rem / 3600)
+                let rem2 -> rem - (hours * 3600)
+                let mins -> Integer(rem2 / 60)
+
+                let s -> ``
+                when days > 0 { s -> s + Str.to_string(days) + `d ` }
+                when hours > 0 or days > 0 { s -> s + Str.to_string(hours) + `h ` }
+                s -> s + Str.to_string(mins) + `m`
+                <- s
+            }
+        }
+    }
+    <- `-`
+}
+
+function get_sys_hostname() {
+    let h -> sys.get_env(`HOSTNAME`)
+    when h != Nothing and h != `` {
+        <- h
+    }
+    let res -> process.result(`uname -n 2>/dev/null`)
+    when res != Nothing and res[`code`] == 0 and Str.trim(res[`stdout`]) != `` {
+        <- Str.trim(res[`stdout`])
+    }
+    <- `localhost`
+}
+
+function format_pct(num) {
+    let int_part -> Integer(num)
+    let dec_part -> Integer((num - Decimal(int_part)) * 10.0)
+    when dec_part < 0 { dec_part -> 0 }
+    <- Str.to_string(int_part) + `.` + Str.to_string(dec_part) + `%`
+}
+
+function handle_sysinfo_default(args, ctx) {
+    let uname -> get_sys_uname()
+    let uptime -> get_sys_uptime()
+    let hostname -> get_sys_hostname()
+    let user -> sys.get_env(`USER`)
+    when user == Nothing { user -> `user` }
+
+    let cpu_info -> parse_cpuinfo()
+    let cpu_count -> cpu_info[`count`]
+    let cpu_model -> cpu_info[`model`]
+
+    let mem_info -> parse_meminfo()
+    let total_mb -> mem_info[`total_mb`]
+    let used_mb -> mem_info[`used_mb`]
+    let avail_mb -> mem_info[`avail_mb`]
+    let pct -> mem_info[`usage_pct`]
+
+    let bar -> make_bar(pct, 18) + ` ` + format_pct(pct)
+
+    let rows -> [
+        [color.bold(color.cyan(`OS / Kernel`)), uname],
+        [color.bold(color.cyan(`Host & User`)), hostname + ` (` + user + `)`],
+        [color.bold(color.cyan(`Shell / Runtime`)), `zenshell v0.1.0 • Zen ` + sys.version()],
+        [color.bold(color.cyan(`System Uptime`)), uptime],
+        [color.bold(color.cyan(`CPU Hardware`)), Str.to_string(cpu_count) + ` cores • ` + cpu_model],
+        [color.bold(color.cyan(`Memory (RAM)`)), Str.to_string(used_mb) + ` MB / ` + Str.to_string(total_mb) + ` MB (` + format_pct(pct) + `)`],
+        [color.bold(color.cyan(`RAM Gauge`)), bar],
+        [color.bold(color.cyan(`Available RAM`)), Str.to_string(avail_mb) + ` MB free`]
+    ]
+
+    let headers -> [`System Resource`, `Status & Metrics`]
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_sysinfo_mem(args, ctx) {
+    let mem_info -> parse_meminfo()
+    let total_kb -> mem_info[`total_kb`]
+    let used_kb -> mem_info[`used_kb`]
+    let avail_kb -> mem_info[`avail_kb`]
+
+    let total_mb -> mem_info[`total_mb`]
+    let used_mb -> mem_info[`used_mb`]
+    let avail_mb -> mem_info[`avail_mb`]
+
+    let total_gb -> mem_info[`total_gb`]
+    let used_gb -> mem_info[`used_gb`]
+    let avail_gb -> mem_info[`avail_gb`]
+
+    let pct -> mem_info[`usage_pct`]
+    let bar -> make_bar(pct, 24) + ` ` + format_pct(pct)
+
+    let rows -> [
+        [`Total Physical RAM`, Str.to_string(total_kb) + ` kB`, Str.to_string(total_mb) + ` MB`, Str.to_string(total_gb) + ` GB`],
+        [`Used Physical RAM`, Str.to_string(used_kb) + ` kB`, Str.to_string(used_mb) + ` MB`, Str.to_string(used_gb) + ` GB`],
+        [`Available / Free RAM`, Str.to_string(avail_kb) + ` kB`, Str.to_string(avail_mb) + ` MB`, Str.to_string(avail_gb) + ` GB`]
+    ]
+
+    let headers -> [`Memory Property`, `Kilobytes (kB)`, `Megabytes (MB)`, `Gigabytes (GB)`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let bar_footer -> `\nRAM Utilization: ` + bar
+    <- tbl + bar_footer
+}
+
+function handle_sysinfo_cpu(args, ctx) {
+    let cpu_info -> parse_cpuinfo()
+    let cpu_count -> cpu_info[`count`]
+    let cpu_model -> cpu_info[`model`]
+
+    let rows -> [
+        [`Platform OS`, sys.platform()],
+        [`Kernel & Architecture`, get_sys_uname()],
+        [`CPU Model`, cpu_model],
+        [`CPU Thread Count`, Str.to_string(cpu_count)],
+        [`System Uptime`, get_sys_uptime()]
+    ]
+
+    let headers -> [`CPU & Architecture Property`, `Specification`]
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_sysinfo_data(args, ctx) {
+    let cpu_info -> parse_cpuinfo()
+    let mem_info -> parse_meminfo()
+
+    let data -> {
+        `platform` -> sys.platform(),
+        `uname` -> get_sys_uname(),
+        `uptime` -> get_sys_uptime(),
+        `zen_version` -> sys.version(),
+        `cpu` -> cpu_info,
+        `memory` -> mem_info
+    }
+    <- zd.stringify(data, 0)
+}
+
+let DOC_SYSINFO -> ```
+# sysinfo / sys — System & Hardware Monitor
+
+Displays live system hardware metrics, CPU topology, and RAM utilization.
+
+## Usage
+- `sysinfo` (or `sys`) — Live dashboard with CPU, RAM bar, and OS info.
+- `sysinfo mem` — Detailed memory breakdown in kB, MB, and GB.
+- `sysinfo cpu` — CPU model, threads, and platform specifications.
+- `sysinfo data` — Raw structured ZenData (.zd) output for pipelines.
+
+## Aliases
+- `sys` -> `sysinfo`
+```
+
+export function create_sysinfo_command(ctx) {
+    let cmd -> cmd_base.Command(`sysinfo`, `Live system monitor and RAM/CPU hardware dashboard (alias: sys)`)
+    cmd.set_default(handle_sysinfo_default)
+    cmd.add_subcommand(`mem`, `Display detailed RAM metrics table`, handle_sysinfo_mem)
+    cmd.add_subcommand(`memory`, `Display detailed RAM metrics table`, handle_sysinfo_mem)
+    cmd.add_subcommand(`cpu`, `Display CPU architecture and hardware metrics`, handle_sysinfo_cpu)
+    cmd.add_subcommand(`hardware`, `Display CPU architecture and hardware metrics`, handle_sysinfo_cpu)
+    cmd.add_subcommand(`data`, `Output raw structured ZenData metrics`, handle_sysinfo_data)
+    cmd.add_subcommand(`json`, `Output raw structured ZenData metrics`, handle_sysinfo_data)
+    <- cmd
+}

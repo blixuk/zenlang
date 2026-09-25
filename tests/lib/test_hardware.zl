@@ -1,0 +1,52 @@
+import zen.sys.hardware as hw
+import zen.test as test
+
+function test_cpu_counts() {
+    let conf -> hw.cpu_count()
+    let avail -> hw.available_cpu_count()
+    test.assert_true(conf >= 1, `cpu_count should be at least 1`)
+    test.assert_true(avail >= 1, `available_cpu_count should be at least 1`)
+    test.assert_true(avail <= conf, `available cores should not exceed configured cores`)
+    <- true
+}
+
+function test_page_info() {
+    let psize -> hw.page_size()
+    let total_pages -> hw.physical_pages()
+    let free_pages -> hw.available_pages()
+    test.assert_true(psize >= 1024, `page size should be at least 1024 bytes`)
+    test.assert_true(total_pages > 0, `physical pages should be positive`)
+    test.assert_true(free_pages >= 0, `available pages should be non-negative`)
+    test.assert_true(free_pages <= total_pages, `free pages should not exceed total pages`)
+    <- true
+}
+
+function test_summary() {
+    let s -> hw.hardware_summary()
+    test.assert_true(s.has(`cpu_count`), `summary should have cpu_count`)
+    test.assert_true(s.has(`available_cpu_count`), `summary should have available_cpu_count`)
+    test.assert_true(s.has(`page_size`), `summary should have page_size`)
+    test.assert_true(s.has(`physical_pages`), `summary should have physical_pages`)
+    test.assert_true(s.has(`available_pages`), `summary should have available_pages`)
+    test.assert_true(s.has(`clock_ticks`), `summary should have clock_ticks`)
+    test.assert_true(s[`clock_ticks`] > 0, `clock ticks should be positive`)
+    <- true
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Hardware.cpu_counts`, `fn` -> test_cpu_counts},
+        {`name` -> `Hardware.page_info`, `fn` -> test_page_info},
+        {`name` -> `Hardware.summary`, `fn` -> test_summary}
+    ]
+
+    <- test.run_suite(`Hardware Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

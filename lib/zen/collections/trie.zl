@@ -1,0 +1,455 @@
+/!
+  zen.collections.trie - Prefix Tree (Trie) Data Structure.
+  Provides high-performance prefix lookups, autocompletion queries,
+  longest-prefix matching, and dictionary storage in pure Zenlang.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _sort_keys(items) {
+    let n -> items.length
+    when (n <= 1) { <- items }
+    let mid -> Integer(n / 2)
+    let left -> []
+    let right -> []
+    let i -> 0
+    do while i < mid {
+        left.append(items[i])
+        i -> i + 1
+    }
+    do while i < n {
+        right.append(items[i])
+        i -> i + 1
+    }
+    let s_left -> _sort_keys(left)
+    let s_right -> _sort_keys(right)
+
+    let res -> []
+    let l_idx -> 0
+    let r_idx -> 0
+    let n_l -> s_left.length
+    let n_r -> s_right.length
+    do while l_idx < n_l and r_idx < n_r {
+        when s_left[l_idx] <= s_right[r_idx] {
+            res.append(s_left[l_idx])
+            l_idx -> l_idx + 1
+        } or {
+            res.append(s_right[r_idx])
+            r_idx -> r_idx + 1
+        }
+    }
+    do while l_idx < n_l {
+        res.append(s_left[l_idx])
+        l_idx -> l_idx + 1
+    }
+    do while r_idx < n_r {
+        res.append(s_right[r_idx])
+        r_idx -> r_idx + 1
+    }
+    <- res
+}
+
+function _make_node() {
+    <- {
+        `children` -> {},
+        `is_end` -> False,
+        `value` -> Nothing
+    }
+}
+
+/!
+  Creates and returns a new empty Trie.
+  @return A new Trie instance.
+!/
+export function create() {
+    <- {
+        `root` -> _make_node(),
+        `count` -> 0
+    }
+}
+
+/!
+  Returns the total number of words stored in the Trie.
+  @param trie The Trie instance.
+  @return Integer count of words.
+!/
+export function size(trie) {
+    when (trie == Nothing) { <- 0 }
+    <- trie[`count`]
+}
+
+/!
+  Checks if the Trie contains zero words.
+  @param trie The Trie instance.
+  @return True if empty, False otherwise.
+!/
+export function is_empty(trie) {
+    <- size(trie) == 0
+}
+
+/!
+  Inserts a word into the Trie with an optional value payload.
+  If value is Nothing or omitted, True is used as the default value.
+  @param trie The Trie instance.
+  @param word The string word to insert.
+  @param value Optional payload value associated with the word.
+  @return The Trie instance (fluent interface).
+!/
+export function insert(trie, word, value) {
+    when (trie == Nothing or word == Nothing) { <- trie }
+    let w -> Str.to_string(word)
+    let len -> Str.length(w)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(w, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            chs[ch] -> _make_node()
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    let is_new -> not curr[`is_end`]
+    curr[`is_end`] -> True
+    when (value != Nothing) {
+        curr[`value`] -> value
+    } or {
+        curr[`value`] -> True
+    }
+    when (is_new) {
+        trie[`count`] -> trie[`count`] + 1
+    }
+    <- trie
+}
+
+/!
+  Adds a word to the Trie with a default True value payload.
+  Convenient 2-argument form of insert.
+  @param trie The Trie instance.
+  @param word The string word to add.
+  @return The Trie instance.
+!/
+export function add(trie, word) {
+    <- insert(trie, word, True)
+}
+
+/!
+  Checks whether a complete word exists in the Trie.
+  @param trie The Trie instance.
+  @param word The string word to search for.
+  @return True if the word is found, False otherwise.
+!/
+export function has(trie, word) {
+    when (trie == Nothing or word == Nothing) { <- False }
+    let w -> Str.to_string(word)
+    let len -> Str.length(w)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(w, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- False
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    <- curr[`is_end`]
+}
+
+/!
+  Alias for has(trie, word).
+  @param trie The Trie instance.
+  @param word The string word to search for.
+  @return True if found, False otherwise.
+!/
+export function contains(trie, word) {
+    <- has(trie, word)
+}
+
+/!
+  Retrieves the payload value associated with a word in the Trie.
+  @param trie The Trie instance.
+  @param word The string word to look up.
+  @param default_val Fallback value if the word is not found.
+  @return The associated value, or default_val if missing.
+!/
+export function get(trie, word, default_val) {
+    when (trie == Nothing or word == Nothing) { <- default_val }
+    let w -> Str.to_string(word)
+    let len -> Str.length(w)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(w, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- default_val
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    when (curr[`is_end`]) {
+        <- curr[`value`]
+    }
+    <- default_val
+}
+
+/!
+  Checks if any word in the Trie begins with the specified prefix.
+  @param trie The Trie instance.
+  @param prefix The prefix string.
+  @return True if any word starts with prefix, False otherwise.
+!/
+export function starts_with(trie, prefix) {
+    when (trie == Nothing) { <- False }
+    let p -> when (prefix == Nothing) { `` } or { Str.to_string(prefix) }
+    let len -> Str.length(p)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(p, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- False
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    <- True
+}
+
+function _collect_words(node, current_word, results, limit) {
+    when (limit > 0 and results.length >= limit) {
+        <- results
+    }
+    when (node[`is_end`]) {
+        results.append(current_word)
+    }
+    let chs -> node[`children`]
+    let raw_keys -> __builtin_map.keys(chs)
+    let keys -> _sort_keys(raw_keys)
+    let i -> 0
+    let n -> keys.length
+    do while i < n {
+        when (limit > 0 and results.length >= limit) {
+            <- results
+        }
+        let ch -> keys[i]
+        let next_node -> chs[ch]
+        _collect_words(next_node, current_word + ch, results, limit)
+        i -> i + 1
+    }
+    <- results
+}
+
+/!
+  Finds all words in the Trie starting with prefix.
+  Results are returned in lexicographical order.
+  @param trie The Trie instance.
+  @param prefix The prefix string to match.
+  @param limit Maximum number of matches to return (or -1/Nothing for unlimited).
+  @return List of matching words.
+!/
+export function find_by_prefix(trie, prefix, limit) {
+    when (trie == Nothing) { <- [] }
+    let p -> when (prefix == Nothing) { `` } or { Str.to_string(prefix) }
+    let len -> Str.length(p)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(p, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- []
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    let results -> []
+    let max_lim -> when (limit != Nothing and limit > 0) { limit } or { -1 }
+    _collect_words(curr, p, results, max_lim)
+    <- results
+}
+
+/!
+  Finds all words starting with prefix (unlimited).
+  Convenient 2-argument form of find_by_prefix.
+  @param trie The Trie instance.
+  @param prefix The prefix string to match.
+  @return List of matching words in lexicographical order.
+!/
+export function find(trie, prefix) {
+    <- find_by_prefix(trie, prefix, -1)
+}
+
+function _collect_entries(node, current_word, results, limit) {
+    when (limit > 0 and results.length >= limit) {
+        <- results
+    }
+    when (node[`is_end`]) {
+        results.append({
+            `word` -> current_word,
+            `value` -> node[`value`]
+        })
+    }
+    let chs -> node[`children`]
+    let raw_keys -> __builtin_map.keys(chs)
+    let keys -> _sort_keys(raw_keys)
+    let i -> 0
+    let n -> keys.length
+    do while i < n {
+        when (limit > 0 and results.length >= limit) {
+            <- results
+        }
+        let ch -> keys[i]
+        let next_node -> chs[ch]
+        _collect_entries(next_node, current_word + ch, results, limit)
+        i -> i + 1
+    }
+    <- results
+}
+
+/!
+  Finds all entries (word and value map) starting with prefix.
+  @param trie The Trie instance.
+  @param prefix The prefix string to match.
+  @param limit Maximum number of entries to return (or -1/Nothing for unlimited).
+  @return List of maps: { "word": string, "value": any }.
+!/
+export function find_entries_by_prefix(trie, prefix, limit) {
+    when (trie == Nothing) { <- [] }
+    let p -> when (prefix == Nothing) { `` } or { Str.to_string(prefix) }
+    let len -> Str.length(p)
+    let curr -> trie[`root`]
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(p, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- []
+        }
+        curr -> chs[ch]
+        i -> i + 1
+    }
+    let results -> []
+    let max_lim -> when (limit != Nothing and limit > 0) { limit } or { -1 }
+    _collect_entries(curr, p, results, max_lim)
+    <- results
+}
+
+/!
+  Finds the longest word in the Trie that is a prefix of text.
+  Useful for tokenization, URL/path routing, and longest-match lookups.
+  @param trie The Trie instance.
+  @param text The input text string.
+  @return Longest matching prefix word, or empty string if none matches.
+!/
+export function longest_prefix_of(trie, text) {
+    when (trie == Nothing or text == Nothing) { <- `` }
+    let s -> Str.to_string(text)
+    let len -> Str.length(s)
+    let curr -> trie[`root`]
+    let longest -> ``
+    let current_matched -> ``
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(s, i)
+        let chs -> curr[`children`]
+        when (not (ch in chs)) {
+            <- longest
+        }
+        current_matched -> current_matched + ch
+        curr -> chs[ch]
+        when (curr[`is_end`]) {
+            longest -> current_matched
+        }
+        i -> i + 1
+    }
+    <- longest
+}
+
+function _remove_helper(node, word, depth) {
+    when (node == Nothing) { <- False }
+    let len -> Str.length(word)
+    when (depth == len) {
+        when (not node[`is_end`]) {
+            <- False
+        }
+        node[`is_end`] -> False
+        node[`value`] -> Nothing
+        <- True
+    }
+    let ch -> Str.at(word, depth)
+    let chs -> node[`children`]
+    when (not (ch in chs)) {
+        <- False
+    }
+    let child -> chs[ch]
+    let removed -> _remove_helper(child, word, depth + 1)
+    when (removed) {
+        let child_chs -> child[`children`]
+        let child_keys -> __builtin_map.keys(child_chs)
+        when (not child[`is_end`] and child_keys.length == 0) {
+            let pruned_chs -> {}
+            let all_keys -> __builtin_map.keys(chs)
+            do for k in all_keys {
+                when (k != ch) {
+                    pruned_chs[k] -> chs[k]
+                }
+            }
+            node[`children`] -> pruned_chs
+        }
+    }
+    <- removed
+}
+
+/!
+  Removes a word from the Trie and prunes unused branch nodes.
+  @param trie The Trie instance.
+  @param word The string word to delete.
+  @return True if deleted, False if the word was not found.
+!/
+export function remove(trie, word) {
+    when (trie == Nothing or word == Nothing) { <- False }
+    let w -> Str.to_string(word)
+    when (not has(trie, w)) { <- False }
+    let deleted -> _remove_helper(trie[`root`], w, 0)
+    when (deleted) {
+        trie[`count`] -> trie[`count`] - 1
+    }
+    <- deleted
+}
+
+/!
+  Returns all words in the Trie in lexicographical order.
+  @param trie The Trie instance.
+  @return List of strings.
+!/
+export function words(trie) {
+    <- find_by_prefix(trie, ``, -1)
+}
+
+/!
+  Alias for words(trie).
+  @param trie The Trie instance.
+  @return List of strings.
+!/
+export function to_list(trie) {
+    <- words(trie)
+}
+
+/!
+  Clears all words and resets the Trie to empty state.
+  @param trie The Trie instance.
+  @return The cleared Trie instance.
+!/
+export function clear(trie) {
+    when (trie != Nothing) {
+        trie[`root`] -> _make_node()
+        trie[`count`] -> 0
+    }
+    <- trie
+}

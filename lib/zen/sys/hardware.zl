@@ -1,0 +1,77 @@
+/!
+  zen.sys.hardware - System Hardware & Architecture Inspection.
+  Uses direct zero-wrapper POSIX & Linux system headers via extern use.
+!/
+
+extern use `<unistd.h>`
+extern use `<sys/sysinfo.h>`
+
+/! Total number of configured CPU cores in the system. !/
+export function cpu_count() {
+    let count -> get_nprocs_conf()
+    when count <= 0 {
+        count -> 1
+    }
+    <- count
+}
+
+/! Number of currently available/online CPU cores. !/
+export function available_cpu_count() {
+    let count -> get_nprocs()
+    when count <= 0 {
+        count -> 1
+    }
+    <- count
+}
+
+/! Memory page size in bytes (e.g. 4096). !/
+export function page_size() {
+    // _SC_PAGESIZE is 30 on POSIX Linux
+    let sz -> sysconf(30)
+    when sz <= 0 {
+        sz -> 4096
+    }
+    <- sz
+}
+
+/! Total number of physical RAM pages. !/
+export function physical_pages() {
+    // _SC_PHYS_PAGES is 85 on POSIX Linux
+    let pages -> sysconf(85)
+    when pages <= 0 {
+        pages -> 0
+    }
+    <- pages
+}
+
+/! Number of currently available/free RAM pages. !/
+export function available_pages() {
+    // _SC_AVPHYS_PAGES is 86 on POSIX Linux
+    let pages -> sysconf(86)
+    when pages <= 0 {
+        pages -> 0
+    }
+    <- pages
+}
+
+/! Number of clock ticks per second (typically 100 on Linux). !/
+export function clock_ticks() {
+    // _SC_CLK_TCK is 2 on POSIX Linux
+    let tck -> sysconf(2)
+    when tck <= 0 {
+        tck -> 100
+    }
+    <- tck
+}
+
+/! Comprehensive map of system hardware metrics. !/
+export function hardware_summary() {
+    <- {
+        `cpu_count` -> cpu_count(),
+        `available_cpu_count` -> available_cpu_count(),
+        `page_size` -> page_size(),
+        `physical_pages` -> physical_pages(),
+        `available_pages` -> available_pages(),
+        `clock_ticks` -> clock_ticks()
+    }
+}

@@ -22,7 +22,7 @@ class PatternParserMixin:
              return WildcardPattern(getattr(token, "line"), getattr(token, "column"))
 
         # Rest Pattern (...name)
-        if self.token_handler.match_type(TokenType.ELLIPSIS):
+        if self.token_handler.match_type(TokenType.ELLIPSIS) or self.token_handler.match_type(TokenType.RANGE_FULL_INCLUSIVE):
              name = "_"
              if self.token_handler.check_type(TokenType.IDENTIFIER):
                  name = self.token_handler.advance().value
@@ -36,6 +36,19 @@ class PatternParserMixin:
                 not self.token_handler.check_type(TokenType.LEFT_BRACE, 2):
                   self.token_handler.advance() # consume 'is'
                   type_name = self.token_handler.advance().value
+                  if self.token_handler.match_type(TokenType.LEFT_BRACKET):
+                      inner = self.token_handler.expect_type(TokenType.INTEGER, "Expected size").value
+                      self.token_handler.expect_type(TokenType.RIGHT_BRACKET, "Expected `]`")
+                      type_name = f"{type_name}[{inner}]"
+                  if self.token_handler.match_type(TokenType.LESS_THAN):
+                      subtypes = []
+                      while True:
+                          sub = self.token_handler.expect_types([TokenType.TYPE, TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected type name").value
+                          subtypes.append(sub)
+                          if not self.token_handler.match_type(TokenType.COMMA):
+                              break
+                      self.token_handler.expect_type(TokenType.GREATER_THAN, "Expected `>`")
+                      type_name = f"{type_name}<{', '.join(subtypes)}>"
                   return IsMatchPattern(getattr(token, "line"), getattr(token, "column"), type_name)
              else:
                   self.token_handler.advance() # consume 'is'
@@ -51,6 +64,20 @@ class PatternParserMixin:
                   # Fall through to identifier logic which handles namespaces
                   # We'll prepend the type_name
                   return self._parse_namespaced_pattern(type_token, type_name)
+
+             if self.token_handler.match_type(TokenType.LEFT_BRACKET):
+                 inner = self.token_handler.expect_type(TokenType.INTEGER, "Expected size").value
+                 self.token_handler.expect_type(TokenType.RIGHT_BRACKET, "Expected `]`")
+                 type_name = f"{type_name}[{inner}]"
+             if self.token_handler.match_type(TokenType.LESS_THAN):
+                 subtypes = []
+                 while True:
+                     sub = self.token_handler.expect_types([TokenType.TYPE, TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected type name").value
+                     subtypes.append(sub)
+                     if not self.token_handler.match_type(TokenType.COMMA):
+                         break
+                 self.token_handler.expect_type(TokenType.GREATER_THAN, "Expected `>`")
+                 type_name = f"{type_name}<{', '.join(subtypes)}>"
 
              is_destructure = False
              if self.token_handler.check_type(TokenType.LEFT_BRACE):

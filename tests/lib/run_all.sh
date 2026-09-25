@@ -53,6 +53,9 @@ TEST_FILES=(
   tests/lib/test_http.zl
   tests/lib/test_url.zl
   tests/lib/test_rainbow_brackets.zl
+  tests/lib/test_trie.zl
+  tests/lib/test_crypto_ciphers.zl
+  tests/lib/test_qrcode.zl
 )
 
 echo "===================================="

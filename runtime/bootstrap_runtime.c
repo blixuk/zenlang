@@ -13,6 +13,8 @@
 #include "core/zen_reflect.c"
 #include "core/zen_net.c"
 #include "core/zen_vm.c"
+#include "core/zen_ast.c"
+#include "core/zen_ffi.c"
 
 // Memory
 #include "memory/zen_memory.c"

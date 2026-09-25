@@ -23,10 +23,29 @@ function test_object_api() {
     <- test.assert_true(true, `memory object API should be callable`)
 }
 
+function test_introspection() {
+    let arena -> memory.create_arena(4096)
+    memory.push_arena(arena)
+    let stats -> memory.arena_stats(arena)
+    test.assert_true(stats.has(`allocated`), `stats should have allocated`)
+    test.assert_true(stats.has(`capacity`), `stats should have capacity`)
+    test.assert_true(stats.has(`chunks`), `stats should have chunks`)
+    let alloc -> memory.arena_allocated(arena)
+    let cap -> memory.arena_capacity(arena)
+    let chunks -> memory.arena_chunks(arena)
+    test.assert_true(cap >= 0, `capacity should be >= 0`)
+    test.assert_true(alloc >= 0, `allocated should be >= 0`)
+    test.assert_true(chunks >= 0, `chunks should be >= 0`)
+    memory.pop_arena()
+    memory.free_arena(arena)
+    <- true
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Memory.function_api`, `fn` -> test_function_api},
-        {`name` -> `Memory.object_api`, `fn` -> test_object_api}
+        {`name` -> `Memory.object_api`, `fn` -> test_object_api},
+        {`name` -> `Memory.introspection`, `fn` -> test_introspection}
     ]
 
     <- test.run_suite(`Memory Library`, tests)

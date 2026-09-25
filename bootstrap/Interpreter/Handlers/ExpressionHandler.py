@@ -217,19 +217,25 @@ class ExpressionHandler:
         reflectable = False
         try:
             definition = environment.get(node.name)
-            if isinstance(definition, StructureObject):
-                parent_obj = definition.parent
-                reflectable = bool(getattr(definition, "reflectable", False))
-                # Fill defaults from type template if missing
-                for k, meta in (definition.members or {}).items():
-                    if k not in members:
-                        members[k] = {
-                            "type": meta.get("type"),
-                            "value": meta.get("value"),
-                            "mutable": meta.get("mutable", True),
-                        }
         except RuntimeError:
-            pass
+            definition = None
+            if "<" in node.name and node.name.endswith(">"):
+                base_name = node.name[:node.name.index("<")]
+                try:
+                    definition = environment.get(base_name)
+                except RuntimeError:
+                    definition = None
+        if isinstance(definition, StructureObject):
+            parent_obj = definition.parent
+            reflectable = bool(getattr(definition, "reflectable", False))
+            # Fill defaults from type template if missing
+            for k, meta in (definition.members or {}).items():
+                if k not in members:
+                    members[k] = {
+                        "type": meta.get("type"),
+                        "value": meta.get("value"),
+                        "mutable": meta.get("mutable", True),
+                    }
 
         structure_object: StructureObject = StructureObject(
             name=node.name,
@@ -302,6 +308,9 @@ class ExpressionHandler:
             else:
                 return []
 
+        if hasattr(object, "get_member") and not isinstance(object, BaseObject):
+            return object.get_member(member_name)
+
         # --- 1. If it's a BaseObject (Structure, Class Instance, Module) ---
         if isinstance(object, BaseObject):
             # Use get_member to allow for inheritance / custom logic
@@ -358,6 +367,13 @@ class ExpressionHandler:
                     if k in object:
                         del object[k]
                 return _remove
+            
+            elif member_name in ["size", "length", "count", "len"] and member_name not in object:
+                val = len(object)
+                class CallableValue(type(val)):
+                    def __call__(self, *args, **kwargs):
+                        return self
+                return CallableValue(val)
             
             if member_name not in object:
                 raise RuntimeError(f"Object has no key '{member_name}'")
@@ -572,6 +588,13 @@ class ExpressionHandler:
         except RuntimeError:
             pass
 
+        if "<" in name and name.endswith(">"):
+            base_name = name[:name.index("<")]
+            try:
+                return environment.get(base_name)
+            except RuntimeError:
+                pass
+
         if environment.has("self"):
             self_object = environment.get("self")
             if hasattr(self_object, "members") and name in self_object.members:
@@ -579,6 +602,33 @@ class ExpressionHandler:
                 if isinstance(res, tuple):
                      return res[0]
                 return res
+
+        if getattr(self, "has_extern", False):
+            import ctypes
+            try:
+                fn = getattr(ctypes.CDLL(None), name)
+                def _c_wrap(*args):
+                    c_args = []
+                    for a in args:
+                        if isinstance(a, str):
+                            c_args.append(a.encode("utf-8"))
+                        elif isinstance(a, bool):
+                            c_args.append(int(a))
+                        elif isinstance(a, float):
+                            c_args.append(ctypes.c_double(a))
+                        else:
+                            c_args.append(a)
+                    if name in ("sqrt", "pow", "sin", "cos", "tan", "exp", "log"):
+                        fn.restype = ctypes.c_double
+                    elif name in ("getenv", "strerror"):
+                        fn.restype = ctypes.c_char_p
+                    res = fn(*c_args)
+                    if isinstance(res, bytes):
+                        return res.decode("utf-8")
+                    return res
+                return _c_wrap
+            except Exception:
+                pass
 
         raise RuntimeError(f"Undefined variable '{name}'")
 
@@ -640,22 +690,47 @@ class ExpressionHandler:
         raise RuntimeError(f"Cannot index object of type {type(object_val)}")
 
     def _eval_cast(self, val: Any, target_type: str) -> Any:
-        if target_type in ("Integer", "Int", "Int64", "Int32", "Int16", "Int8", "Byte"):
-            if isinstance(val, int): return val
-            if isinstance(val, float): return int(val)
-            if isinstance(val, bool): return 1 if val else 0
-            if val is None: return 0
-            if isinstance(val, str):
+        FORBIDDEN_TYPES = {
+            "Int", "Int64", "Int32", "Int16", "Int8", "UInt8", "UInt16", "UInt32", "UInt64",
+            "Float", "Float64", "Float32", "Double",
+            "Str", "Bool", "Char", "Character", "Glyph", "Buffer",
+            "V", "L", "S", "T", "M"
+        }
+        if target_type in FORBIDDEN_TYPES:
+            raise RuntimeError(
+                f"Type '{target_type}' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune')."
+            )
+        if target_type in ("Integer", "Integer[64]", "Integer[32]", "Integer[16]", "Integer[8]", "Byte") or (target_type.startswith("Integer[") and target_type.endswith("]")):
+            n = 0
+            if isinstance(val, int): n = val
+            elif isinstance(val, float): n = int(val)
+            elif isinstance(val, bool): n = 1 if val else 0
+            elif val is None: n = 0
+            elif isinstance(val, str):
                 s = val.strip()
-                if not s: return 0
-                if len(s) == 1 and not s.isdigit(): return ord(s[0])
-                try: return int(s, 0)
-                except ValueError:
-                    try: return int(float(s))
-                    except ValueError: return 0
-            if isinstance(val, (list, dict, set)): return len(val)
-            return 0
-        if target_type in ("Decimal", "Float", "Double"):
+                if not s: n = 0
+                elif len(s) == 1 and not s.isdigit(): n = ord(s[0])
+                else:
+                    try: n = int(s, 0)
+                    except ValueError:
+                        try: n = int(float(s))
+                        except ValueError: n = 0
+            elif isinstance(val, (list, dict, set)): n = len(val)
+            else: n = 0
+
+            if target_type in ("Byte", "Integer[8]"):
+                u = n % 256
+                if target_type == "Integer[8]":
+                    return u - 256 if u >= 128 else u
+                return u
+            if target_type == "Integer[16]":
+                u = n % 65536
+                return u - 65536 if u >= 32768 else u
+            if target_type == "Integer[32]":
+                u = n % 4294967296
+                return u - 4294967296 if u >= 2147483648 else u
+            return n
+        if target_type in ("Decimal", "Decimal[64]", "Decimal[32]") or (target_type.startswith("Decimal[") and target_type.endswith("]")):
             if isinstance(val, float): return val
             if isinstance(val, (int, bool)): return float(val)
             if val is None: return 0.0
@@ -663,54 +738,92 @@ class ExpressionHandler:
                 try: return float(val.strip())
                 except ValueError: return 0.0
             return 0.0
-        if target_type in ("String", "Str"):
-            if isinstance(val, str): return val
-            if isinstance(val, bool): return "True" if val else "False"
-            if val is None: return ""
-            if isinstance(val, list):
+        if target_type == "String" or (target_type.startswith("String[") and target_type.endswith("]")):
+            if isinstance(val, str): s = val
+            elif isinstance(val, bool): s = "True" if val else "False"
+            elif val is None: s = ""
+            elif isinstance(val, list):
                 if val and all(isinstance(x, int) for x in val):
-                    try: return bytes(val).decode("utf-8", errors="replace")
-                    except Exception: return str(val)
-            return str(val)
-        if target_type in ("Boolean", "Bool"):
+                    try: s = bytes(val).decode("utf-8", errors="replace")
+                    except Exception: s = str(val)
+                else: s = str(val)
+            else: s = str(val)
+            if target_type.startswith("String[") and target_type.endswith("]"):
+                try:
+                    max_len = int(target_type[7:-1])
+                    if max_len >= 0 and len(s) > max_len:
+                        s = s[:max_len]
+                except ValueError:
+                    pass
+            return s
+        if target_type == "Boolean":
             if isinstance(val, bool): return val
             if isinstance(val, (int, float)): return bool(val)
             if isinstance(val, str): return val in ("True", "true", "1")
             if isinstance(val, (list, dict, set)): return len(val) > 0
             if val is None: return False
             return True
-        if target_type in ("Rune", "Char", "Glyph"):
+        if target_type == "Rune":
             if isinstance(val, str): return val[0] if val else ""
             if isinstance(val, int):
                 try: return chr(val)
                 except Exception: return ""
             return ""
-        if target_type in ("Bytes", "Buffer"):
+        if target_type == "Bytes":
             if isinstance(val, str): return list(val.encode("utf-8"))
             if isinstance(val, list): return val
             if isinstance(val, int): return [val]
             return []
-        if target_type == "List":
+        if target_type.startswith("List<") or target_type.startswith("List[") or target_type.startswith("Vector<") or target_type.startswith("Vector[") or target_type.startswith("Tuple<") or target_type.startswith("Tuple[") or target_type in ("List", "Vector", "Tuple"):
             if isinstance(val, list): return val
             if isinstance(val, (set, dict)): return list(val)
             if isinstance(val, str): return list(val)
             return [val]
-        if target_type == "Set":
+        if target_type.startswith("Set<") or target_type.startswith("Set[") or target_type == "Set":
             if isinstance(val, list):
                 return set(val)
             if isinstance(val, str): return set(val)
             return set([val])
-        if target_type == "Map":
+        if target_type.startswith("Map<") or target_type.startswith("Map[") or target_type == "Map":
             if isinstance(val, dict): return val
             return {}
+        if target_type == "Number":
+            if isinstance(val, (int, float)) and not isinstance(val, bool): return val
+            if isinstance(val, bool): return 1 if val else 0
+            if isinstance(val, str):
+                s = val.strip()
+                if "." in s or "e" in s or "E" in s:
+                    return self._eval_cast(val, "Decimal")
+                return self._eval_cast(val, "Integer")
+            return self._eval_cast(val, "Integer")
+        if target_type == "Text":
+            return self._eval_cast(val, "String")
+        if target_type == "Collection":
+            if isinstance(val, (list, tuple, set, dict)): return val
+            return self._eval_cast(val, "List")
+        if target_type == "Container":
+            return val
         return val
 
     def _evaluate_call_expression(
         self, node: CallExpression, environment: Environment
     ) -> any:
-        if isinstance(node.callee, Identifier) and node.callee.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+        if isinstance(node.callee, IndexExpression) and isinstance(node.callee.object, Identifier) and node.callee.object.name in ("Integer", "Decimal", "String", "Vector"):
+            idx_val = getattr(node.callee.index, "value", str(node.callee.index))
+            type_name = f"{node.callee.object.name}[{idx_val}]"
             arguments = [self._evaluate(arg, environment) for arg in node.arguments]
-            return self._eval_cast(arguments[0] if arguments else None, node.callee.name)
+            return self._eval_cast(arguments[0] if arguments else None, type_name)
+
+        if isinstance(node.callee, Identifier):
+            c_name = node.callee.name
+            is_canonical_cast = (
+                c_name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Byte", "Vector", "Tuple", "Number", "Text", "Collection", "Container")
+                or c_name.startswith("Integer[") or c_name.startswith("Decimal[") or c_name.startswith("String[") or c_name.startswith("Vector[")
+                or (("<" in c_name and c_name.endswith(">")) and c_name[:c_name.index("<")] in ("List", "Set", "Map", "Vector", "Tuple", "Option", "Result", "Task"))
+            )
+            if is_canonical_cast:
+                arguments = [self._evaluate(arg, environment) for arg in node.arguments]
+                return self._eval_cast(arguments[0] if arguments else None, c_name)
 
         callee: Any = self._evaluate(node.callee, environment)
 
@@ -837,6 +950,11 @@ class ExpressionHandler:
 
         if op_str == "<:":
             target_type = getattr(node.right, "name", str(node.right))
+            if hasattr(node.right, "bits") and node.right.bits:
+                target_type = f"{target_type}[{node.right.bits}]"
+            if hasattr(node.right, "subtypes") and node.right.subtypes:
+                subs = [getattr(s, "name", str(s)) for s in node.right.subtypes]
+                target_type = f"{target_type}<{', '.join(subs)}>"
             return self._eval_cast(left, target_type)
 
         if op_str == "??":

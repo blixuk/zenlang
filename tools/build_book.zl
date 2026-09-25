@@ -75,9 +75,9 @@ function _book_chap_03() {
         zm.Table({
             `headers` -> [`Collection`, `Ordering`, `Size`, `Mutability`, `Literals`],
             `rows` -> [
-                [`List`, `Ordered`, `Dynamic`, `Mutable`, `[1, 2, 3], List{...}, L{...}`],
-                [`Set`, `Unordered`, `Dynamic`, `Mutable`, `Set{1, 2}, S{1, 2}`],
-                [`Vector`, `Ordered`, `Fixed`, `Immutable`, `Vector{10, 20}, V{10, 20}`],
+                [`List`, `Ordered`, `Dynamic`, `Mutable`, `[1, 2, 3], List{...}`],
+                [`Set`, `Unordered`, `Dynamic`, `Mutable`, `Set{1, 2}`],
+                [`Vector`, `Ordered`, `Fixed`, `Immutable`, `Vector{10, 20}`],
                 [`Tuple`, `Ordered`, `Fixed`, `Immutable`, `Tuple{1, 'a'}, (1, 'a')`],
                 [`Map`, `Unordered`, `Dynamic`, `Mutable`, `{ 'k' -> 'v' }, Map{...}`]
             ]

@@ -1,0 +1,113 @@
+/!
+  examples/trie_autocomplete.zl - Interactive Autocomplete & Prefix Routing via Trie.
+  Demonstrates zen.collections.trie for REPL completions, dictionary lookup,
+  and longest-prefix URL/path routing.
+!/
+
+use zen.collections.trie as Trie
+use zen.text.string as Str
+
+function build_command_trie() {
+    let t -> Trie.create()
+
+    // Zenlang toolchain commands & subcommands
+    Trie.insert(t, `compile`, `Compiles Zenlang source to C/native`)
+    Trie.insert(t, `check`, `Typechecks source files without code generation`)
+    Trie.insert(t, `clean`, `Cleans cache and generated artifacts`)
+    Trie.insert(t, `bench`, `Runs performance benchmarks`)
+    Trie.insert(t, `build`, `Builds the project manifest`)
+    Trie.insert(t, `repl`, `Interactive Read-Eval-Print Loop`)
+    Trie.insert(t, `run`, `Compiles and executes a script`)
+    Trie.insert(t, `release`, `Packages production standalone release`)
+    Trie.insert(t, `doc`, `Displays documentation and man pages`)
+    Trie.insert(t, `explain`, `Explains concepts, error codes, and keywords`)
+    Trie.insert(t, `playground`, `Interactive full-screen TUI playground`)
+    Trie.insert(t, `pkg`, `Manages Zenlang package dependencies`)
+    Trie.insert(t, `pkg install`, `Installs package dependencies`)
+    Trie.insert(t, `pkg update`, `Updates package dependencies`)
+
+    <- t
+}
+
+function build_router_trie() {
+    let r -> Trie.create()
+
+    Trie.insert(r, `/api/v1/users`, `UsersEndpointHandler`)
+    Trie.insert(r, `/api/v1/users/profile`, `UserProfileHandler`)
+    Trie.insert(r, `/api/v1/auth/login`, `AuthLoginHandler`)
+    Trie.insert(r, `/api/v1/auth/logout`, `AuthLogoutHandler`)
+    Trie.insert(r, `/api/v1/projects`, `ProjectsListHandler`)
+    Trie.insert(r, `/api/v2`, `V2BaseRouter`)
+    Trie.insert(r, `/health`, `HealthCheckHandler`)
+    Trie.insert(r, `/`, `RootIndexHandler`)
+
+    <- r
+}
+
+function demo_autocomplete(t, query) {
+    writeln(`\x1b[1;33mQuery: \x1b[1;37m"` + query + `"\x1b[0m`)
+    let matches -> Trie.find_entries_by_prefix(t, query, 5)
+    when matches.length == 0 {
+        writeln(`  \x1b[90m(no matches found)\x1b[0m`)
+    } or {
+        let i -> 0
+        let n -> matches.length
+        do while i < n {
+            let entry -> matches[i]
+            let word -> entry[`word`]
+            let desc -> entry[`value`]
+            let highlighted -> `\x1b[1;32m` + query + `\x1b[0;36m` + Str.substring(word, Str.length(query), Str.length(word)) + `\x1b[0m`
+            writeln(`  -> ` + highlighted + ` \x1b[90m— ` + desc + `\x1b[0m`)
+            i -> i + 1
+        }
+    }
+    writeln(``)
+}
+
+function demo_router(r, path) {
+    let match -> Trie.longest_prefix_of(r, path)
+    let handler -> Trie.get(r, match, `NotFoundHandler`)
+    writeln(`  Incoming: \x1b[1;37m` + path + `\x1b[0m`)
+    writeln(`  Matched:  \x1b[1;35m` + match + `\x1b[0m  => Handler: \x1b[1;32m` + handler + `\x1b[0m`)
+}
+
+function main() {
+    writeln(`\x1b[1;36m============================================================\x1b[0m`)
+    writeln(`\x1b[1;36m       Zenlang Trie Autocomplete & Router Demonstration     \x1b[0m`)
+    writeln(`\x1b[1;36m       Powered by pure zen.collections.trie (Stdlib)        \x1b[0m`)
+    writeln(`\x1b[1;36m============================================================\x1b[0m`)
+    writeln(``)
+
+    let t -> build_command_trie()
+    writeln(`\x1b[1;34m[1] CLI Command Autocompletion Queries (Total commands: ` + String(Trie.size(t)) + `)\x1b[0m`)
+    writeln(``)
+
+    demo_autocomplete(t, `c`)
+    demo_autocomplete(t, `p`)
+    demo_autocomplete(t, `re`)
+    demo_autocomplete(t, `pkg `)
+    demo_autocomplete(t, `xyz`)
+
+    writeln(`\x1b[1;34m[2] URL / Path Longest-Prefix Routing\x1b[0m`)
+    writeln(``)
+    let router -> build_router_trie()
+
+    demo_router(router, `/api/v1/users/profile/settings`)
+    demo_router(router, `/api/v1/users/42`)
+    demo_router(router, `/api/v1/auth/login?redirect=dash`)
+    demo_router(router, `/api/v2/telemetry`)
+    demo_router(router, `/health/ready`)
+    demo_router(router, `/unknown/route`)
+
+    writeln(``)
+    writeln(`\x1b[1;34m[3] Dynamic Insertion & Deletion Lifecycle\x1b[0m`)
+    writeln(`  Original size: ` + String(Trie.size(t)))
+    Trie.insert(t, `custom`, `User custom extension command`)
+    writeln(`  After inserting 'custom': size = ` + String(Trie.size(t)) + `, has = ` + String(Trie.has(t, `custom`)))
+    Trie.remove(t, `custom`)
+    writeln(`  After removing 'custom':  size = ` + String(Trie.size(t)) + `, has = ` + String(Trie.has(t, `custom`)))
+
+    writeln(``)
+    writeln(`\x1b[1;32m[✓] Demonstration completed successfully.\x1b[0m`)
+    <- 0
+}

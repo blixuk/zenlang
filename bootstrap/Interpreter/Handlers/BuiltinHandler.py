@@ -151,10 +151,12 @@ class BuiltinHandler:
                 if "kind" in v and v["kind"] is not None: return str(v["kind"])
                 if "__type__" in v and v["__type__"] is not None: return str(v["__type__"])
                 return "Map"
+            from Interpreter.Runtime import BaseObject
+            if isinstance(v, BaseObject) and v.name: return v.name
             if hasattr(v, "type_name"): return getattr(v, "type_name")
             if hasattr(v, "kind"): return str(getattr(v, "kind"))
-            if hasattr(v, "name") and getattr(v, "name"): return getattr(v, "name")
             if type(v).__name__ == "_DefaultSentinel" or str(v) == "Default": return "Default"
+            if callable(v): return "Function"
             return "Variant"
 
         self.global_environment.define("type", _zen_type, mutable=False, type="Function")
@@ -285,6 +287,7 @@ class BuiltinHandler:
             "to_upper": lambda s: s.upper(),
             "index_of": lambda s, sub: s.find(sub),
             "at": lambda s, i: s[i] if 0 <= i < len(s) else "",
+            "byte_at": lambda s, i: ord(s[i]) if 0 <= i < len(s) else -1,
             "to_string": lambda x: str(x),
             "to_number": lambda s: float(s) if '.' in s else int(s),
         })
@@ -301,8 +304,24 @@ class BuiltinHandler:
             "current": lambda: self.memory_manager.get_current_arena(),
             "using_arena": lambda: self.memory_manager.get_current_arena() is not None,
             "arena_depth": lambda: len(self.memory_manager.arena_stack),
+            "arena_allocated": lambda *args: 0,
+            "arena_capacity": lambda *args: 0,
+            "arena_chunks": lambda *args: 0,
+            "arena_stats": lambda *args: {"allocated": 0, "capacity": 0, "chunks": 0},
         })
         self.global_environment.define("__builtin_memory", memory_obj, mutable=False, type="MemoryCapability")
+        ast_obj = BuiltinCapability("ast", {
+            "token": lambda kind, start, length, line, col, el, ec: [kind, start, length, line, col, el, ec],
+            "create0": lambda k, l, c: [k, l, c],
+            "create1": lambda k, l, c, s0: [k, l, c, s0],
+            "create2": lambda k, l, c, s0, s1: [k, l, c, s0, s1],
+            "create3": lambda k, l, c, s0, s1, s2: [k, l, c, s0, s1, s2],
+            "create4": lambda k, l, c, s0, s1, s2, s3: [k, l, c, s0, s1, s2, s3],
+            "create5": lambda k, l, c, s0, s1, s2, s3, s4: [k, l, c, s0, s1, s2, s3, s4],
+            "create": lambda k, l, c, s0, s1, s2, s3, s4, s5: [k, l, c, s0, s1, s2, s3, s4, s5],
+        })
+        self.global_environment.define("__builtin_ast", ast_obj, mutable=False, type="BuiltinCapability")
+        self.global_environment.define("ast", ast_obj, mutable=False, type="BuiltinCapability")
         self.global_environment.define("string", string_obj, mutable=False, type="StringCapability")
  
         # Register 'file' capability
@@ -851,6 +870,93 @@ class BuiltinHandler:
         self.global_environment.define("__builtin_vm", vm_obj, mutable=False, type="VMCapability")
         self.global_environment.define("vm", vm_obj, mutable=False, type="VMCapability")
         self.global_environment.define("VM", vm_obj, mutable=False, type="VMCapability")
+
+        # Register FFI capability
+        import ctypes, ctypes.util
+        def _ffi_load(path):
+            raw = str(path).strip("<>\"'")
+            if raw.endswith(".h"): raw = raw[:-2]
+            if "/" in raw: raw = raw.split("/")[-1]
+            cdll = None
+            if "math" in raw:
+                try: cdll = ctypes.CDLL(ctypes.util.find_library("m") or "libm.so.6")
+                except Exception: pass
+            if not cdll:
+                try: cdll = ctypes.CDLL(None)
+                except Exception: pass
+            if not cdll:
+                try: cdll = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+                except Exception: pass
+            return {"__handle": cdll, "__path": path, "__is_extern_module": True}
+
+        def _ffi_symbol(handle_obj, name, ret_type=None):
+            cdll = handle_obj.get("__handle") if isinstance(handle_obj, dict) else None
+            fn = getattr(cdll, name, None) if cdll else None
+            if fn is None:
+                try: fn = getattr(ctypes.CDLL(None), name)
+                except Exception: pass
+            if fn is None: return None
+            def wrapper(*args):
+                c_args = []
+                for a in args:
+                    if isinstance(a, str): c_args.append(a.encode("utf-8"))
+                    elif isinstance(a, bool): c_args.append(int(a))
+                    elif isinstance(a, float): c_args.append(ctypes.c_double(a))
+                    else: c_args.append(a)
+                if name in ("sqrt", "pow", "sin", "cos", "tan", "exp", "log"):
+                    fn.restype = ctypes.c_double
+                elif name in ("getenv", "strerror"):
+                    fn.restype = ctypes.c_char_p
+                res = fn(*c_args)
+                if isinstance(res, bytes): return res.decode("utf-8")
+                return res
+            return wrapper
+
+        def _ffi_call(fn, args, ret_type=None):
+            if callable(fn):
+                return fn(*(args if isinstance(args, list) else [args]))
+            return None
+
+        def _ffi_close(handle_obj):
+            return 0
+
+        def _ffi_error():
+            return None
+
+        def _ffi_resolve(name):
+            try:
+                fn = getattr(ctypes.CDLL(None), name)
+            except Exception:
+                return None
+            def wrapper(*args):
+                c_args = []
+                for a in args:
+                    if isinstance(a, str): c_args.append(a.encode("utf-8"))
+                    elif isinstance(a, bool): c_args.append(int(a))
+                    elif isinstance(a, float): c_args.append(ctypes.c_double(a))
+                    else: c_args.append(a)
+                if name in ("sqrt", "pow", "sin", "cos", "tan", "exp", "log"):
+                    fn.restype = ctypes.c_double
+                elif name in ("getenv", "strerror"):
+                    fn.restype = ctypes.c_char_p
+                res = fn(*c_args)
+                if isinstance(res, bytes): return res.decode("utf-8")
+                return res
+            return wrapper
+
+        ffi_obj = BuiltinCapability("ffi", {
+            "load": _ffi_load,
+            "open": _ffi_load,
+            "symbol": _ffi_symbol,
+            "sym": _ffi_symbol,
+            "call": _ffi_call,
+            "close": _ffi_close,
+            "error": _ffi_error,
+            "resolve": _ffi_resolve,
+        })
+        self.global_environment.define("__builtin_ffi", ffi_obj, mutable=False, type="FFICapability")
+        self.global_environment.define("ffi", ffi_obj, mutable=False, type="FFICapability")
+        self.global_environment.define("FFI", ffi_obj, mutable=False, type="FFICapability")
 
         # Register 'term' capability
         def _term_color(fg=None, bg=None):

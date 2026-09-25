@@ -1,0 +1,56 @@
+import zen.sys.ffi as ffi
+import zen.test as test
+
+function test_load_and_close() {
+    let lib -> ffi.load(`libc.so.6`)
+    when lib == Nothing {
+        lib -> ffi.load(``)
+    }
+    test.assert_true(lib != Nothing, `libc should load successfully`)
+    let close_code -> ffi.close(lib)
+    test.assert_true(close_code == 0, `close should return 0`)
+    <- true
+}
+
+function test_resolve_and_call() {
+    let sym_pid -> ffi.resolve(`getpid`)
+    test.assert_true(sym_pid != Nothing, `getpid symbol should resolve`)
+    let pid -> ffi.call(sym_pid, [], `int`)
+    test.assert_true(pid > 0, `pid should be positive integer`)
+
+    let sym_uid -> ffi.resolve(`getuid`)
+    test.assert_true(sym_uid != Nothing, `getuid symbol should resolve`)
+    let uid -> ffi.call(sym_uid, [], `int`)
+    test.assert_true(uid >= 0, `uid should be non-negative`)
+    <- true
+}
+
+function test_symbol_from_lib() {
+    let lib -> ffi.load(`libc.so.6`)
+    when lib == Nothing {
+        lib -> ffi.load(``)
+    }
+    let sym -> ffi.symbol(lib, `getppid`, `int`)
+    test.assert_true(sym != Nothing, `getppid symbol should be found`)
+    let ppid -> ffi.call(sym, [], `int`)
+    test.assert_true(ppid > 0, `ppid should be positive`)
+    <- true
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `FFI.load_and_close`, `fn` -> test_load_and_close},
+        {`name` -> `FFI.resolve_and_call`, `fn` -> test_resolve_and_call},
+        {`name` -> `FFI.symbol_from_lib`, `fn` -> test_symbol_from_lib}
+    ]
+
+    <- test.run_suite(`FFI Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

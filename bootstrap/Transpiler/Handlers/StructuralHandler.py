@@ -61,8 +61,11 @@ class StructuralHandler:
         self.emit(f"ZenValue {name}_new({params_str}) {{")
         self.indent_level += 1
         bare = statement.name  # unmangled type name for .kind
-        n = len(statement.members) + 1  # + kind
-        args = [f'ZenValue_make_string("kind")', f'ZenValue_make_string("{bare}")']
+        n = len(statement.members) + 2  # + kind + __type__
+        args = [
+            f'ZenValue_make_string("kind")', f'ZenValue_make_string("{bare}")',
+            f'ZenValue_make_string("__type__")', f'ZenValue_make_string("{bare}")'
+        ]
         for member in statement.members:
             m_name = self.sanitize_name(member.name)
             args.append(f'ZenValue_make_string("{m_name}")')

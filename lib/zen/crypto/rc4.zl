@@ -1,0 +1,103 @@
+/!
+  zen.crypto.rc4 - RC4 / ARC4 Stream Cipher.
+  Lightweight symmetric stream cipher with arbitrary key lengths (1-256 bytes).
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.hex as Hex
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Encrypts or decrypts data using RC4 stream cipher.
+  Symmetric operation: encrypting twice with the same key recovers the original data.
+  @param key Key (string or byte list).
+  @param data Plaintext or ciphertext (string or byte list).
+  @return List of byte integers (0-255).
+!/
+export function crypt(key, data) {
+    let k_bytes -> _to_bytes(key)
+    let d_bytes -> _to_bytes(data)
+    let k_len -> k_bytes.length
+    let d_len -> d_bytes.length
+    when (k_len == 0 or d_len == 0) { <- d_bytes }
+
+    // Key-scheduling algorithm (KSA)
+    let s -> []
+    let i -> 0
+    do while i < 256 {
+        s.append(i)
+        i -> i + 1
+    }
+
+    let j -> 0
+    i -> 0
+    do while i < 256 {
+        j -> (j + s[i] + k_bytes[i % k_len]) & 255
+        let tmp -> s[i]
+        s[i] -> s[j]
+        s[j] -> tmp
+        i -> i + 1
+    }
+
+    // Pseudo-random generation algorithm (PRGA)
+    let out -> []
+    i -> 0
+    j -> 0
+    let idx -> 0
+    do while idx < d_len {
+        i -> (i + 1) & 255
+        j -> (j + s[i]) & 255
+        let tmp -> s[i]
+        s[i] -> s[j]
+        s[j] -> tmp
+
+        let k -> s[(s[i] + s[j]) & 255]
+        let enc_byte -> d_bytes[idx] ^^ k
+        out.append(enc_byte)
+        idx -> idx + 1
+    }
+    <- out
+}
+
+/!
+  Encrypts data with RC4 and returns a list of encrypted bytes.
+!/
+export function encrypt(key, data) {
+    <- crypt(key, data)
+}
+
+/!
+  Decrypts RC4 ciphertext bytes into original plaintext string.
+!/
+export function decrypt(key, data) {
+    let decrypted_bytes -> crypt(key, data)
+    <- __builtin.bytes_to_string(decrypted_bytes)
+}
+
+/!
+  Encrypts data with RC4 and returns a hexadecimal string.
+!/
+export function encrypt_hex(key, data) {
+    let cipher_bytes -> crypt(key, data)
+    <- Hex.encode(cipher_bytes)
+}
+
+/!
+  Decrypts a hex-encoded RC4 ciphertext string into plaintext string.
+!/
+export function decrypt_hex(key, hex_str) {
+    let cipher_bytes -> Hex.decode_bytes(hex_str)
+    <- decrypt(key, cipher_bytes)
+}

@@ -1,0 +1,68 @@
+/!
+  zenshell - ZenData Session Manager Command (session)
+!/
+
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+import core.session as sess_core
+
+function handle_session_default(args, c) {
+    let sess_names -> sess_core.list_sessions()
+    when sess_names.length == 0 {
+        <- color.dim(`No saved sessions. Use 'session save [name]' to create one.`)
+    }
+
+    let headers -> [`Session`, `Working Directory`, `Bookmarks`, `Aliases`]
+    let rows -> []
+    do for name in sess_names {
+        let info -> sess_core.get_session_info(name)
+        let cwd_str -> when (info != Nothing and info.has(`cwd`)) { info[`cwd`] } or { `-` }
+        let bm_count -> when (info != Nothing and info.has(`bookmarks`)) { Str.to_string(info[`bookmarks`].keys().length) } or { `0` }
+        let al_count -> when (info != Nothing and info.has(`aliases`)) { Str.to_string(info[`aliases`].keys().length) } or { `0` }
+        rows.append([color.cyan(name), color.green(cwd_str), bm_count, al_count])
+    }
+
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_session_save(args, c) {
+    let name -> when (args.length > 0) { args[0] } or { `main` }
+    let path -> sess_core.save_session(c, name)
+    <- color.green(`Saved session '` + name + `' -> ` + path)
+}
+
+function handle_session_load(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: session load <name>`)
+    }
+    let name -> args[0]
+    let ok -> sess_core.load_session(c, name)
+    when ok {
+        <- color.green(`Loaded session '` + name + `' (active cwd: ` + c.cwd + `)`)
+    }
+    <- color.red(`Error: Unable to load session '` + name + `' (file not found or invalid .zd)`)
+}
+
+function handle_session_remove(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: session remove <name>`)
+    }
+    let name -> args[0]
+    let ok -> sess_core.remove_session(name)
+    when ok {
+        <- color.green(`Removed session '` + name + `'`)
+    }
+    <- color.yellow(`Session '` + name + `' not found`)
+}
+
+export function create_session_command(ctx) {
+    let cmd -> cmd_base.Command(`session`, `Manage persistent ZenData shell sessions (save, load, list, remove)`)
+    cmd.set_default(handle_session_default)
+    cmd.add_subcommand(`list`, `List all saved sessions in a table`, handle_session_default)
+    cmd.add_subcommand(`save`, `Save active shell context to a named session: session save [name]`, handle_session_save)
+    cmd.add_subcommand(`load`, `Restore environment and jump to a saved session: session load <name>`, handle_session_load)
+    cmd.add_subcommand(`remove`, `Delete a saved session: session remove <name>`, handle_session_remove)
+    <- cmd
+}

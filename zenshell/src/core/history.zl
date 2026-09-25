@@ -1,0 +1,58 @@
+/!
+  zenshell - Persistent Command History Engine
+!/
+
+import zen.sys.sys as sys
+import zen.text.string as Str
+
+export function get_history_path() {
+    let home -> sys.get_env(`HOME`)
+    let dir -> when (home != Nothing and home != ``) { home + `/.config/zenshell` } or { `.zenshell` }
+    __builtin_file.mkdir_p(dir)
+    <- dir + `/history`
+}
+
+export function load_history_file(filepath) {
+    let p -> when (filepath != Nothing and filepath != ``) { filepath } or { get_history_path() }
+    when not __builtin_file.is_file(p) {
+        <- []
+    }
+    let content -> __builtin_file.read(p)
+    when content == Nothing or content == `` {
+        <- []
+    }
+    let raw -> Str.split(content, `\n`)
+    let result -> []
+    do for line in raw {
+        let trimmed -> Str.trim(line)
+        when trimmed != `` {
+            result.append(trimmed)
+        }
+    }
+    <- result
+}
+
+export function save_history_file(filepath, history_list, max_entries) {
+    let p -> when (filepath != Nothing and filepath != ``) { filepath } or { get_history_path() }
+    when history_list == Nothing { <- false }
+    
+    let max_len -> when (max_entries != Nothing and max_entries > 0) { max_entries } or { 1000 }
+    let n -> history_list.length
+    let start -> when (n > max_len) { n - max_len } or { 0 }
+    
+    let out -> ``
+    let i -> start
+    do while i < n {
+        out -> out + history_list[i] + `\n`
+        i -> i + 1
+    }
+    __builtin_file.write(p, out)
+    <- true
+}
+
+export function append_history_file(filepath, line) {
+    when line == Nothing or Str.trim(line) == `` { <- false }
+    let p -> when (filepath != Nothing and filepath != ``) { filepath } or { get_history_path() }
+    __builtin_file.append(p, Str.trim(line) + `\n`)
+    <- true
+}

@@ -24,7 +24,7 @@ Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports 
 | **memory** | `import zen.memory as memory` |
 | **time** | `import zen.time as time` |
 | **io** | `zen.io.io`, `zen.io.file`, `zen.io.path` |
-| **sys** | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.cli`, `zen.sys.env` |
+| **sys** | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.cli`, `zen.sys.env`, `zen.sys.ffi`, `zen.sys.hardware`, `zen.sys.meminfo`, `zen.sys.termposix`, `zen.sys.readline` |
 | **text** | `zen.text.string`, `zen.text.text`, `zen.text.regex`, `zen.text.markdown`, … |
 | **math** | `zen.math.math`, `zen.math.random`, `zen.math.range` |
 | **collections** | `zen.collections.list`, `.set`, `.stack`, `.queue` |
@@ -32,16 +32,16 @@ Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports 
 | **geometry** | `zen.geometry.point`, `.rectangle`, … |
 | **ui** | `zen.ui.canvas`, `.layout` (map flex), `.term`; widgets/geometry (legacy classes) |
 | **net** | `zen.net.http`, `zen.net.socket` |
-| **graphics** | `zen.graphics.bmp`, `.ppm` |
+| **graphics** | `zen.graphics.bmp`, `.ppm`, `.qrcode` |
 | **patterns** | `zen.patterns.ecs`, `.fsm` |
-| **crypto** | `zen.crypto.hash`, `.base64` |
+| **crypto** | `zen.crypto` (`.crypto`), `.hash`, `.sha256`, `.sha512`, `.sha1`, `.md5`, `.fnv`, `.base16`, `.base32`, `.base58`, `.base64`, `.base85`, `.hex`, `.chacha20`, `.rc4`, `.xor_cipher`, `.aes`, `.xtea`, `.pbkdf2`, `.poly1305`, `.aead`, `.dh`, `.classical`, `.crc32`, `.hmac`, `.jwt`, `.uuid`, `.merkle`, `.blockchain` |
 | **color** | `zen.color` (`.color`, `zen.ui.color`) |
 | **util** | `zen.util.awk` |
 | **reflect** | `zen.reflect` — `type_name`, `is_*`, `fields`/`call`/`apply`, map helpers |
 | **plugins** | `zen.plugins` — map plugin tables: `create`, `add`, `dispatch`, `merge` |
 
 **Compatibility aliases** (resolver only; prefer nested forms):  
-`zen.string`→`zen.text.string`, `zen.file`→`zen.io.file`, `zen.term`→`zen.sys.term`, `zen.process`→`zen.sys.process`, `zen.io`→`zen.io.io`, `zen.list`→`zen.collections.list`, `zen.json`→`zen.data.json`, `zen.random`→`zen.math.random`, `zen.path`→`zen.io.path`.
+`zen.string`→`zen.text.string`, `zen.file`→`zen.io.file`, `zen.term`→`zen.sys.term`, `zen.process`→`zen.sys.process`, `zen.io`→`zen.io.io`, `zen.list`→`zen.collections.list`, `zen.json`→`zen.data.json`, `zen.random`→`zen.math.random`, `zen.path`→`zen.io.path`, `zen.qrcode`→`zen.graphics.qrcode`, `zen.data.qrcode`→`zen.graphics.qrcode`.
 
 Package short form: `import zen.time` / `use zen.time` resolves to `lib/zen/time/time.zl` (and similarly for `core`, `test`, `error`, `log`, `memory`, `math`, `sys`, `reflect`, `plugins`, …).
 
@@ -630,6 +630,196 @@ Enable raw/cbreak-like input (no echo, no line buffering). Always pair enter wit
 ## Function: `write` / `flush` / `write_at` / `hide_cursor` / `show_cursor` / `clear_eol`
 
 Low-level draw helpers for editors (no trailing newline on `write`; call `flush` after a frame).
+
+---
+
+# Module: zen.sys.ffi
+
+> Dynamic Foreign Function Interface (FFI) Loader. Enables runtime dynamic loading of shared libraries (`.so` / `.dylib`) and invocation of C functions with automatic type marshalling across the Bytecode VM, Interpreter, and Native execution.
+
+---
+
+## Function: `load` / `open`
+
+Loads a shared library by file path or canonical system name. Returns an opaque library handle, or `Nothing` on failure.
+
+**Signature:** `load(path: String) -> Any`
+
+---
+
+## Function: `symbol`
+
+Resolves an exported function symbol pointer from an open library handle.
+
+**Signature:** `symbol(handle: Any, name: String, ret_type?: String) -> Any`
+
+---
+
+## Function: `call`
+
+Invokes a resolved native function pointer with argument values.
+
+**Signature:** `call(fn_ptr: Any, args?: List, ret_type?: String) -> Any`
+
+---
+
+## Function: `close`
+
+Closes a previously opened shared library handle.
+
+**Signature:** `close(handle: Any) -> Integer`
+
+---
+
+## Function: `error`
+
+Retrieves the last dynamic linker error message string, if any.
+
+**Signature:** `error() -> String`
+
+---
+
+## Function: `resolve`
+
+Resolves a global or libc symbol by name across the current host process without loading an external `.so`.
+
+**Signature:** `resolve(name: String) -> Any`
+
+---
+
+# Module: zen.sys.hardware
+
+> Host System Hardware & Architecture Inspection. Inspects CPU cores, memory page configurations, and clock ticks using direct zero-wrapper POSIX & Linux headers (`<unistd.h>`, `<sys/sysinfo.h>`).
+
+---
+
+## Function: `cpu_count`
+
+Total number of configured CPU cores in the system.
+
+**Signature:** `cpu_count() -> Integer`
+
+---
+
+## Function: `available_cpu_count`
+
+Number of currently available/online CPU cores.
+
+**Signature:** `available_cpu_count() -> Integer`
+
+---
+
+## Function: `page_size`
+
+System virtual memory page size in bytes (typically 4096).
+
+**Signature:** `page_size() -> Integer`
+
+---
+
+## Function: `physical_pages`
+
+Total number of physical RAM pages installed in the system.
+
+**Signature:** `physical_pages() -> Integer`
+
+---
+
+## Function: `available_pages`
+
+Number of currently available/free RAM pages in the system.
+
+**Signature:** `available_pages() -> Integer`
+
+---
+
+## Function: `clock_ticks`
+
+Number of system clock ticks per second (typically 100 on Linux).
+
+**Signature:** `clock_ticks() -> Integer`
+
+---
+
+## Function: `hardware_summary`
+
+Returns a structured map containing all system hardware metrics (`cpu_count`, `available_cpu_count`, `page_size`, `physical_pages`, `available_pages`, `clock_ticks`).
+
+**Signature:** `hardware_summary() -> Map`
+
+---
+
+# Module: zen.sys.meminfo
+
+> System Memory Statistics & Resource Footprint. Calculates total, available, and used physical RAM and usage percentage using direct POSIX page configurations with zero external process overhead.
+
+---
+
+## Function: `total_ram_bytes` / `total_ram_mb` / `total_ram_gb`
+
+Returns total installed physical RAM in bytes, megabytes, or gigabytes.
+
+---
+
+## Function: `available_ram_bytes` / `available_ram_mb` / `available_ram_gb`
+
+Returns available/free physical RAM in bytes, megabytes, or gigabytes.
+
+---
+
+## Function: `used_ram_bytes` / `used_ram_mb`
+
+Returns currently consumed physical RAM in bytes or megabytes.
+
+---
+
+## Function: `ram_usage_pct`
+
+Returns current RAM utilization percentage as a Decimal between `0.0` and `100.0`.
+
+---
+
+## Function: `memory_summary`
+
+Returns a structured summary map of memory metrics (`total_bytes`, `available_bytes`, `used_bytes`, `total_mb`, `available_mb`, `used_mb`, `total_gb`, `usage_pct`).
+
+---
+
+# Module: zen.sys.termposix
+
+> POSIX Terminal Attributes & Direct Stream Control. Direct C-level TTY detection and stream flushing using `<unistd.h>` and `<termios.h>`.
+
+---
+
+## Function: `is_stdin_tty` / `is_stdout_tty` / `is_stderr_tty`
+
+Returns `True` if standard input (fd 0), standard output (fd 1), or standard error (fd 2) is connected to an interactive terminal.
+
+---
+
+## Function: `is_tty_fd`
+
+Checks whether a specific integer file descriptor represents an interactive terminal.
+
+**Signature:** `is_tty_fd(fd: Integer) -> Boolean`
+
+---
+
+## Function: `flush_input` / `flush_output` / `flush_both`
+
+Flushes pending terminal input queue, output queue, or both using `tcflush`.
+
+---
+
+## Function: `terminal_summary`
+
+Returns a map of standard stream TTY states (`stdin_tty`, `stdout_tty`, `stderr_tty`).
+
+---
+
+# Module: zen.sys.readline
+
+> 100% Pure Zen Terminal Line Editor (`Readline`). Standalone interactive line navigation, command history management, 5-color rainbow delimiter depth cycling, and tab autocompletion.
 
 ---
 
@@ -3050,6 +3240,151 @@ Writes the BMP image to a file.
 
 ---
 
+# Module: zen.graphics.qrcode
+
+> Pure Zenlang ISO/IEC 18004 QR Code 2D Matrix Symbology Generator and Decoder. Zero external C dependencies. Full parity across Interpreter, Native AOT C, and Bytecode VM. Also accessible via `zen.data.qrcode` or `zen.qrcode`.
+
+---
+
+## Function: `encode`
+
+Encodes string text into a complete QR code matrix record with optimal mode selection, Reed-Solomon error correction, and ISO penalty-evaluated masking.
+
+**Parameters:**
+- `text`: String payload to encode.
+- `ec_level`: Error correction level: `'L'` (7%), `'M'` (15%, default), `'Q'` (25%), `'H'` (30%).
+- `ver`: Version number (1-10, size 21x21 to 57x57). When `Nothing`, automatically selects smallest fitting version.
+
+**Returns:** Map `{ version, size, ec_level, mask, matrix }`.
+
+---
+
+## Function: `to_terminal`
+
+Renders QR code matrix to crisp Unicode half-blocks (`▀`, `▄`, `█`, ` `) packing 2 vertical pixels per terminal cell row.
+
+**Parameters:**
+- `qr`: Matrix list or QR record map.
+- `margin`: Quiet zone border in modules (default: `2`).
+
+**Returns:** Multi-line Unicode string.
+
+---
+
+## Function: `to_ascii`
+
+Renders QR code matrix to double-width ASCII text blocks (`##` for dark, `  ` for light).
+
+**Parameters:**
+- `qr`: Matrix list or QR record map.
+- `margin`: Quiet zone border in modules (default: `2`).
+
+**Returns:** Multi-line ASCII string.
+
+---
+
+## Function: `to_svg`
+
+Renders QR code matrix to scalable vector XML markup string (`<svg>`).
+
+**Parameters:**
+- `qr`: Matrix list or QR record map.
+- `module_size`: Pixel size per module (default: `8`).
+- `margin`: Quiet zone border in modules (default: `4`).
+
+**Returns:** SVG XML markup string.
+
+---
+
+## Function: `to_bmp`
+
+Renders QR code matrix to standard 24-bit uncompressed RGB Bitmap (BMP) bytes.
+
+**Parameters:**
+- `qr`: Matrix list or QR record map.
+- `scale`: Pixel multiplier per module (default: `8`).
+- `margin`: Quiet zone border in modules (default: `4`).
+
+**Returns:** List of integer bytes representing BMP file.
+
+---
+
+## Function: `print`
+
+Encodes and immediately outputs a QR code directly to standard output in compact Unicode half-blocks.
+
+**Parameters:**
+- `text`: String payload.
+- `ec_level`: Optional error correction level (default: `'M'`).
+
+---
+
+## Function: `read_matrix`
+
+Decodes payload from a raw 2D boolean module matrix with format unmasking, de-interleaving, and Berlekamp-Massey + Forney Reed-Solomon error recovery.
+
+**Parameters:**
+- `matrix`: 2D list of booleans (`True` = dark, `False` = light).
+
+**Returns:** Decoded string payload, or `Nothing` if unrecoverable.
+
+---
+
+## Function: `read_terminal`
+
+Extracts matrix and decodes payload from terminal half-block string.
+
+**Parameters:**
+- `text`: Terminal string with half-blocks.
+
+**Returns:** Decoded string payload, or `Nothing`.
+
+---
+
+## Function: `read_ascii`
+
+Extracts matrix and decodes payload from double-width ASCII text string.
+
+**Parameters:**
+- `text`: ASCII string with `##` or `1` modules.
+
+**Returns:** Decoded string payload, or `Nothing`.
+
+---
+
+## Function: `read_svg`
+
+Extracts module coordinates from SVG XML `<rect>` elements and decodes payload.
+
+**Parameters:**
+- `svg_text`: SVG XML markup string.
+
+**Returns:** Decoded string payload, or `Nothing`.
+
+---
+
+## Function: `read_bmp`
+
+Parses 24-bit uncompressed BMP image bytes, performs module pitch detection, thresholding, and decodes payload.
+
+**Parameters:**
+- `bmp_bytes`: List of integer bytes of BMP image.
+
+**Returns:** Decoded string payload, or `Nothing`.
+
+---
+
+## Function: `read`
+
+Universal auto-dispatch reader: automatically inspects input type (2D Matrix, Unicode/ASCII string, SVG XML, or BMP byte list) and decodes payload.
+
+**Parameters:**
+- `input_data`: 2D Matrix, String, or BMP Byte List.
+
+**Returns:** Decoded string payload, or `Nothing`.
+
+---
+
 # Module: zen.crypto.hash
 
 > Cryptographic Hashing.
@@ -3915,14 +4250,106 @@ Creates an error literal.
 
 ---
 
+# Module: zen.crypto
+
+> Unified Cryptography & Security Suite. Import: `use zen.crypto as Crypto`.
+> Provides zero-dependency, pure Zenlang cryptographic primitives, ciphers, hashes, and binary-to-text encodings with bit-for-bit parity across interpreter and native AOT execution.
+
+| Member / Function | Type / Signature | Description |
+|---|---|---|
+| `sha256` | `sha256(data)` | Computes 256-bit SHA-256 digest (64 hex chars). |
+| `sha512` | `sha512(data)` | Computes 512-bit SHA-512 digest (128 hex chars). |
+| `sha384` | `sha384(data)` | Computes 384-bit SHA-384 digest (96 hex chars). |
+| `sha224` | `sha224(data)` | Computes 224-bit SHA-224 digest (56 hex chars). |
+| `sha1` | `sha1(data)` | Computes 160-bit SHA-1 digest (40 hex chars). |
+| `md5` | `md5(data)` | Computes 128-bit MD5 digest (32 hex chars). |
+| `fnv1a` | `fnv1a(data)` | Computes 32-bit FNV-1a digest (8 hex chars). |
+| `fnv1a64` | `fnv1a64(data)` | Computes 64-bit FNV-1a digest (16 hex chars). |
+| `crc32` | `crc32(data)` | Computes IEEE 802.3 32-bit CRC as unsigned integer. |
+| `crc32_hex` | `crc32_hex(data)` | Computes 8-char lowercase hex CRC-32 checksum. |
+| `uuid` | `uuid()` | Generates random RFC 4122 version 4 UUID string. |
+| `ChaCha20` | Scope | RFC 8439 256-bit symmetric stream cipher. |
+| `RC4` | Scope | ARC4 lightweight stream cipher. |
+| `XOR` | Scope | Repeating-key XOR and One-Time Pad (OTP) cipher. |
+| `AES` | Scope | FIPS 197 AES-128 block cipher (CBC/ECB). |
+| `XTEA` | Scope | 64-bit Feistel block cipher with 128-bit key. |
+| `PBKDF2` | Scope | RFC 2898 PBKDF2-HMAC-SHA256 key derivation. |
+| `Poly1305` | Scope | RFC 8439 128-bit One-Time Authenticator MAC. |
+| `AEAD` | Scope | RFC 8439 ChaCha20-Poly1305 Authenticated Encryption. |
+| `DH` | Scope | Diffie-Hellman discrete-logarithm key exchange. |
+| `Classical` | Scope | Caesar, ROT13, Vigenère, Atbash, Rail Fence ciphers. |
+| `CRC32` | Scope | CRC-32 and Adler-32 checksum functions. |
+| `Base16` | Scope | RFC 4648 §8 Base16 encoding and decoding. |
+| `Base32` | Scope | RFC 4648 §6 standard, §7 Base32Hex, and Crockford Base32. |
+| `Base58` | Scope | Bitcoin/IPFS Base58 and Base58Check with double-SHA256. |
+| `Base64` | Scope | Standard and URL-safe Base64 encoding/decoding. |
+| `Base85` | Scope | Adobe Ascii85 and ZeroMQ Z85 encodings. |
+| `Hex` | Scope | Hexadecimal encoding, decoding, and hexdumps. |
+| `HMAC` | Scope | RFC 2104 HMAC-SHA256 authentication. |
+| `JWT` | Scope | JSON Web Token (HS256) signing and verification. |
+| `Merkle` | Scope | Cryptographic Merkle tree computation, audit proof generation & verification. |
+| `Blockchain` | Scope | Proof-of-Work distributed blockchain ledger, transactions, mempool, mining & validation. |
+
+---
+
 # Module: zen.crypto.hash
 
-> Pure Zenlang cryptographic and non-cryptographic hashing. Import: `use zen.crypto.hash as hash`.
+> Unified aggregator and facade for cryptographic and non-cryptographic hash functions. Import: `use zen.crypto.hash as hash` or `use zen.crypto.sha256 as sha256`, etc.
 
 | Function | Signature | Description |
 |---|---|---|
-| `sha256` | `sha256(data)` | Computes standard 256-bit SHA-256 hex digest. |
-| `fnv1a` | `fnv1a(data)` | Computes fast 32-bit FNV-1a hex digest. |
+| `sha256` | `sha256(data)` | FIPS 180-4 256-bit SHA-256 digest. |
+| `sha224` | `sha224(data)` | FIPS 180-4 224-bit SHA-224 digest. |
+| `sha512` | `sha512(data)` | FIPS 180-4 512-bit SHA-512 digest (32-bit limb core). |
+| `sha384` | `sha384(data)` | FIPS 180-4 384-bit SHA-384 digest (32-bit limb core). |
+| `sha1` | `sha1(data)` | FIPS 180-1 160-bit SHA-1 digest. |
+| `md5` | `md5(data)` | RFC 1321 128-bit MD5 digest. |
+| `fnv1a` | `fnv1a(data)` | 32-bit Fowler-Noll-Vo hash. |
+| `fnv1a64` | `fnv1a64(data)` | 64-bit Fowler-Noll-Vo hash. |
+
+---
+
+# Module: zen.crypto.base16
+
+> RFC 4648 §8 Base16 encoding and decoding. Import: `use zen.crypto.base16 as base16`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encode` | `encode(data)` | Encodes string or byte list to uppercase Base16 string. |
+| `encode_lower` | `encode_lower(data)` | Encodes string or byte list to lowercase Base16 string. |
+| `decode` | `decode(hex_str)` | Decodes Base16 string to ASCII/UTF-8 string (ignores `0x`). |
+| `decode_bytes` | `decode_bytes(hex_str)` | Decodes Base16 string to byte list. |
+
+---
+
+# Module: zen.crypto.base32
+
+> RFC 4648 §6, §7 Base32Hex, and Douglas Crockford's Base32. Import: `use zen.crypto.base32 as base32`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encode` | `encode(data, pad=true)` | Encodes to standard RFC 4648 §6 Base32 string. |
+| `decode` | `decode(s)` | Decodes standard Base32 string to ASCII/UTF-8 string. |
+| `decode_bytes` | `decode_bytes(s)` | Decodes standard Base32 string to byte list. |
+| `encode_hex` | `encode_hex(data, pad=true)` | Encodes using RFC 4648 §7 Extended Hex alphabet (`0-9A-V`). |
+| `decode_hex` | `decode_hex(s)` | Decodes Extended Hex Base32 string. |
+| `encode_crockford` | `encode_crockford(data)` | Encodes using Crockford's Base32 alphabet. |
+| `decode_crockford` | `decode_crockford(s)` | Decodes Crockford's Base32 (normalizes `I`/`L` $\to$ `1`, `O` $\to$ `0`). |
+
+---
+
+# Module: zen.crypto.base58
+
+> Bitcoin / IPFS Base58 and Base58Check encoding. Import: `use zen.crypto.base58 as base58`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encode` | `encode(data)` | Arbitrary-length byte-buffer Base58 encoding preserving `'1'` zeros. |
+| `decode` | `decode(s)` | Decodes Base58 string to ASCII/UTF-8 string. |
+| `decode_bytes` | `decode_bytes(s)` | Decodes Base58 string to byte list. |
+| `encode_check` | `encode_check(data)` | Encodes payload with 4-byte double-SHA256 checksum suffix. |
+| `decode_check` | `decode_check(s)` | Validates checksum and decodes to ASCII/UTF-8 string. |
+| `decode_check_bytes` | `decode_check_bytes(s)` | Validates checksum and decodes to raw payload byte list. |
 
 ---
 
@@ -3936,6 +4363,144 @@ Creates an error literal.
 | `decode` | `decode(s)` | Decodes standard Base64 string to byte list. |
 | `encode_url` | `encode_url(data)` | URL-safe Base64 encoding (`-` and `_`, unpadded). |
 | `decode_url` | `decode_url(s)` | Decodes URL-safe Base64 string. |
+
+---
+
+# Module: zen.crypto.base85
+
+> Adobe Ascii85 and ZeroMQ Z85 encodings. Import: `use zen.crypto.base85 as base85`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encode` | `encode(data)` | Encodes to Adobe Ascii85 string with `'z'` zero-compression. |
+| `encode_wrapped` | `encode_wrapped(data)` | Encodes with `<~` prefix and `~>` suffix delimiters. |
+| `decode` | `decode(s)` | Decodes Ascii85 string to ASCII/UTF-8 string. |
+| `decode_bytes` | `decode_bytes(s)` | Decodes Ascii85 string to byte list. |
+| `encode_z85` | `encode_z85(data)` | Encodes 4-byte aligned data to ZeroMQ Z85 string. |
+| `decode_z85` | `decode_z85(s)` | Decodes Z85 string to ASCII/UTF-8 string. |
+| `decode_z85_bytes` | `decode_z85_bytes(s)` | Decodes Z85 string to byte list. |
+
+---
+
+# Module: zen.crypto.hex
+
+> Hexadecimal encoding, decoding, and Unix diagnostics. Import: `use zen.crypto.hex as hex`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encode` | `encode(data)` | Encodes to lowercase hexadecimal string. |
+| `decode` | `decode(hex_str)` | Decodes hexadecimal string to ASCII/UTF-8 string. |
+| `decode_bytes` | `decode_bytes(hex_str)` | Decodes hexadecimal string to byte list. |
+| `hexdump` | `hexdump(data)` | Formats data as classic 16-column Unix canonical hex dump. |
+
+---
+
+# Module: zen.crypto.chacha20
+
+> RFC 8439 256-bit symmetric stream cipher. Import: `use zen.crypto.chacha20 as chacha20`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encrypt` | `encrypt(key, nonce, plaintext, counter=1)` | Encrypts bytes/string using 20 rounds of quarter-round mixing. |
+| `decrypt` | `decrypt(key, nonce, ciphertext, counter=1)` | Decrypts stream ciphertext (symmetric to encryption). |
+| `encrypt_hex` | `encrypt_hex(key, nonce, plaintext, counter=1)` | Returns ciphertext as lowercase hex string. |
+| `decrypt_hex` | `decrypt_hex(key, nonce, hex_ct, counter=1)` | Decrypts hex-encoded ciphertext. |
+
+---
+
+# Module: zen.crypto.poly1305
+
+> RFC 8439 One-Time Authenticator MAC. Import: `use zen.crypto.poly1305 as poly1305`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `mac` | `mac(key, message)` | Computes 16-byte MAC using modulo $2^{130}-5$ arithmetic. |
+| `mac_hex` | `mac_hex(key, message)` | Computes 32-character lowercase hex MAC. |
+| `verify` | `verify(key, message, expected_mac)` | Constant-time verification preventing timing side-channels. |
+
+---
+
+# Module: zen.crypto.aead
+
+> RFC 8439 ChaCha20-Poly1305 Authenticated Encryption with Associated Data. Import: `use zen.crypto.aead as aead`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `encrypt` | `encrypt(key, nonce, plaintext, aad=``)` | Returns map `{ ciphertext, tag }` with authenticated MAC. |
+| `decrypt` | `decrypt(key, nonce, ciphertext, tag, aad=``)` | Verifies tag and decrypts; raises error on tamper/mismatch. |
+| `decrypt_to_string` | `decrypt_to_string(key, nonce, ct, tag, aad=``)` | Verifies tag and returns decrypted UTF-8 string. |
+
+---
+
+# Module: zen.crypto.aes
+
+> NIST FIPS 197 AES-128 block cipher with CBC/ECB modes. Import: `use zen.crypto.aes as aes`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `expand_key` | `expand_key(key)` | Computes 11 round keys (176 bytes) via Rijndael key schedule. |
+| `encrypt_block` | `encrypt_block(block, round_keys)` | Encrypts single 16-byte block across 10 rounds. |
+| `decrypt_block` | `decrypt_block(block, round_keys)` | Decrypts single 16-byte block with inverse MixColumns. |
+| `encrypt_cbc` | `encrypt_cbc(key, iv, plaintext)` | CBC mode encryption with PKCS#7 padding. |
+| `decrypt_cbc` | `decrypt_cbc(key, iv, ciphertext)` | CBC mode decryption with PKCS#7 unpadding. |
+| `encrypt_hex` | `encrypt_hex(key, iv, plaintext)` | Encrypts and returns hex-encoded ciphertext. |
+| `decrypt_hex` | `decrypt_hex(key, iv, hex_ciphertext)` | Decrypts hex-encoded ciphertext to UTF-8 string. |
+
+---
+
+# Module: zen.crypto.pbkdf2
+
+> RFC 2898 / PKCS #5 v2.0 Key Derivation Function 2. Import: `use zen.crypto.pbkdf2 as pbkdf2`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `derive_bytes` | `derive_bytes(password, salt, iterations, dklen=32)` | Derives arbitrary-length key bytes using HMAC-SHA256. |
+| `derive_hex` | `derive_hex(password, salt, iterations, dklen=32)` | Derives key and returns lowercase hex string. |
+| `derive_key` | `derive_key(password, salt, iterations, dklen=32)` | Derives key bytes for symmetric ciphers. |
+
+---
+
+# Module: zen.crypto.dh
+
+> Diffie-Hellman Asymmetric Key Exchange. Import: `use zen.crypto.dh as dh`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `mod_exp` | `mod_exp(base, exp, mod)` | Square-and-multiply modular exponentiation $b^e \bmod m$. |
+| `generate_public_key` | `generate_public_key(priv)` | Computes $g^{\text{priv}} \bmod p$ ($p = 2^{31}-1, g = 7$). |
+| `compute_shared_secret` | `compute_shared_secret(peer_pub, priv)` | Computes shared secret integer $(\text{peer\_pub})^{\text{priv}} \bmod p$. |
+| `derive_shared_key_bytes` | `derive_shared_key_bytes(peer_pub, priv)` | Derives 32-byte symmetric key via SHA-256 hash. |
+| `derive_shared_key_hex` | `derive_shared_key_hex(peer_pub, priv)` | Derives 64-char lowercase hex symmetric key. |
+
+---
+
+# Module: zen.crypto.classical
+
+> Historical & educational classical ciphers. Import: `use zen.crypto.classical as classical`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `caesar_encrypt` | `caesar_encrypt(text, shift)` | Shifts alphabetic characters by $N$ preserving case. |
+| `caesar_decrypt` | `caesar_decrypt(text, shift)` | Reverses Caesar shift. |
+| `rot13` | `rot13(text)` | Symmetric ROT13 rotation ($N = 13$). |
+| `vigenere_encrypt` | `vigenere_encrypt(text, key)` | Polyalphabetic substitution using keyword. |
+| `vigenere_decrypt` | `vigenere_decrypt(text, key)` | Decrypts Vigenère ciphertext. |
+| `atbash` | `atbash(text)` | Symmetric Hebrew substitution ($A \leftrightarrow Z, B \leftrightarrow Y$). |
+| `rail_fence_encrypt` | `rail_fence_encrypt(text, rails)` | Zig-zag rail fence transposition. |
+| `rail_fence_decrypt` | `rail_fence_decrypt(text, rails)` | Reconstructs zig-zag rail fence transposition. |
+
+---
+
+# Module: zen.crypto.crc32
+
+> IEEE 802.3 CRC-32 and RFC 1950 Adler-32 checksums. Import: `use zen.crypto.crc32 as crc32`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `crc32` | `crc32(data)` | Computes IEEE 802.3 CRC-32 as 32-bit unsigned integer. |
+| `crc32_hex` | `crc32_hex(data)` | Computes 8-character lowercase hex CRC-32 checksum. |
+| `adler32` | `adler32(data)` | Computes RFC 1950 Adler-32 checksum integer ($s_2 \times 65536 + s_1$). |
+| `adler32_hex` | `adler32_hex(data)` | Computes 8-character lowercase hex Adler-32 checksum. |
 
 ---
 
@@ -3959,6 +4524,48 @@ Creates an error literal.
 | `sign` | `sign(payload_map, secret)` | Creates signed `header.payload.signature` token. |
 | `decode` | `decode(token_str)` | Parses token without signature check (`{ header, payload }`). |
 | `verify` | `verify(token_str, secret)` | Verifies HMAC signature and extracts payload. |
+
+---
+
+# Module: zen.crypto.merkle
+
+> Cryptographic Merkle tree computation, audit proof generation, and verification. Import: `use zen.crypto.merkle as merkle` or `Crypto.Merkle`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `hash_leaf` | `hash_leaf(data)` | Computes leaf hash with domain separation prefix (`0x00`). |
+| `hash_pair` | `hash_pair(left, right)` | Computes internal node hash of pair with domain separation prefix (`0x01`). |
+| `compute_root` | `compute_root(leaves)` | Computes Merkle root hash for a list of leaf items (duplicates odd leaves). |
+| `create_tree` | `create_tree(leaves)` | Builds complete Merkle tree structure returning `{ leaves, layers, root, leaf_count }`. |
+| `get_proof` | `get_proof(tree, index)` | Generates inclusion audit path `[ { hash, position: "left" | "right" } ]` for leaf at index. |
+| `verify_proof` | `verify_proof(leaf, proof, root_hash)` | Verifies inclusion of leaf against root hash using audit path (returns boolean). |
+
+---
+
+# Module: zen.crypto.blockchain
+
+> Proof-of-Work distributed blockchain ledger, transactions, mempool, mining, and validation. Import: `use zen.crypto.blockchain as blockchain` or `Crypto.Blockchain`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `create_transaction` | `create_transaction(sender, recipient, amount, fee, data)` | Creates transaction map with timestamp. |
+| `hash_transaction` | `hash_transaction(tx)` | Computes deterministic SHA-256 transaction ID (`txid`). |
+| `is_valid_transaction` | `is_valid_transaction(tx)` | Validates transaction structure and non-negative amount. |
+| `create_block` | `create_block(index, prev_hash, transactions, difficulty, timestamp)` | Creates unmined block with Merkle root over transactions. |
+| `hash_block_header` | `hash_block_header(block)` | Computes deterministic SHA-256 header hash over block metadata. |
+| `mine_block` | `mine_block(block, difficulty, max_iterations)` | Mines block by finding nonce satisfying leading zero PoW difficulty target. |
+| `verify_pow` | `verify_pow(hash_str, difficulty)` | Checks whether hash string has required leading zeros. |
+| `create_genesis_block` | `create_genesis_block(difficulty, message)` | Creates and mines initial genesis block (`SYSTEM` coinbase). |
+| `create_blockchain` | `create_blockchain(difficulty, mining_reward, genesis_message)` | Initializes new blockchain with genesis block, mempool, difficulty, and mining reward. |
+| `get_latest_block` | `get_latest_block(chain)` | Returns the most recently appended block in the chain. |
+| `get_balance` | `get_balance(chain, address)` | Calculates net token balance for an address across all mined transactions. |
+| `get_transaction_history` | `get_transaction_history(chain, address)` | Returns all mined transactions involving address. |
+| `add_transaction` | `add_transaction(chain, tx)` | Validates and adds transaction to mempool if sender has sufficient balance. |
+| `mine_pending_transactions` | `mine_pending_transactions(chain, miner_address)` | Aggregates mempool, creates miner coinbase reward, mines block with PoW, appends to chain, and clears mempool. |
+| `is_chain_valid` | `is_chain_valid(chain)` | Validates entire chain integrity: genesis, previous hash links, block header hashes, PoW targets, individual transactions, and Merkle roots. |
+| `export_chain` | `export_chain(chain)` | Exports blockchain state to serializable map. |
+| `import_chain` | `import_chain(chain_map)` | Validates and restores blockchain from exported map. |
+| `generate_wallet_address` | `generate_wallet_address(label)` | Generates deterministic Base58Check wallet address (version prefix `0x00`). |
 
 ---
 

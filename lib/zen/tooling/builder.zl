@@ -177,7 +177,7 @@ export function build_project(proj, opts) {
                     ` -I ` + process.shell_quote(path.join(rt_dir, `io`)) +
                     ` -I ` + process.shell_quote(path.join(rt_dir, `memory`))
 
-    let link_flags -> `-lm -lpthread -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
+    let link_flags -> `-lm -lpthread -ldl -Wno-unused-variable -Wno-unused-value -Wno-unused-label -Wno-unused-function`
     when is_static == true {
         link_flags -> link_flags + ` -static`
     }

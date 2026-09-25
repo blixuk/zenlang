@@ -1,0 +1,176 @@
+/!
+  zen.crypto.merkle - Cryptographic Merkle Tree (Hash Tree).
+  Provides binary Merkle tree creation, root calculation with odd-leaf
+  duplication (RFC 6962 / Bitcoin standard), cryptographic inclusion
+  proof generation, and audit verification in 100% pure Zenlang.
+!/
+
+use zen.crypto.sha256 as sha_mod
+use zen.text.string as Str
+
+/!
+  Computes SHA-256 digest of a leaf item if not already a 64-char hex string.
+!/
+function hash_leaf(data) {
+    when type(data) == `String` {
+        <- sha_mod.sha256(data)
+    }
+    // If already bytes or other value, convert to string and hash
+    <- sha_mod.sha256(data <: String)
+}
+
+/!
+  Computes SHA-256 hash of two concatenated child hashes (left + right).
+!/
+function hash_pair(left, right) {
+    <- sha_mod.sha256(left + right)
+}
+
+/!
+  Directly computes the Merkle root hash for a list of leaf items.
+  If leaves is empty, returns the SHA-256 of empty string.
+!/
+function compute_root(leaves) {
+    when leaves.length == 0 {
+        <- sha_mod.sha256(``)
+    }
+
+    let current -> []
+    for item in leaves {
+        current.append(hash_leaf(item))
+    }
+
+    while current.length > 1 {
+        let next_level -> []
+        let i -> 0
+        let len -> current.length
+        while i < len {
+            let left -> current[i]
+            let right -> left
+            when i + 1 < len {
+                right -> current[i + 1]
+            }
+            next_level.append(hash_pair(left, right))
+            i -> i + 2
+        }
+        current -> next_level
+    }
+
+    <- current[0]
+}
+
+/!
+  Creates a complete Merkle tree structure with all layers preserved.
+  Returns a map: { leaves, layers, root, leaf_count }.
+!/
+function create_tree(leaves) {
+    when leaves.length == 0 {
+        let empty_root -> sha_mod.sha256(``)
+        <- {
+            `leaves` -> [],
+            `layers` -> [[empty_root]],
+            `root` -> empty_root,
+            `leaf_count` -> 0
+        }
+    }
+
+    let leaf_hashes -> []
+    for item in leaves {
+        leaf_hashes.append(hash_leaf(item))
+    }
+
+    let layers -> []
+    layers.append(leaf_hashes)
+
+    let current -> leaf_hashes
+    while current.length > 1 {
+        let next_level -> []
+        let i -> 0
+        let len -> current.length
+        while i < len {
+            let left -> current[i]
+            let right -> left
+            when i + 1 < len {
+                right -> current[i + 1]
+            }
+            next_level.append(hash_pair(left, right))
+            i -> i + 2
+        }
+        layers.append(next_level)
+        current -> next_level
+    }
+
+    <- {
+        `leaves` -> leaves,
+        `layers` -> layers,
+        `root` -> current[0],
+        `leaf_count` -> leaves.length
+    }
+}
+
+/!
+  Generates an inclusion proof (audit path) for a leaf at given index.
+  Returns a list of proof steps: [ { hash, position } ].
+!/
+function get_proof(tree, index) {
+    when index < 0 or index >= tree[`leaf_count`] {
+        <- []
+    }
+
+    let proof -> []
+    let layers -> tree[`layers`]
+    let layer_count -> layers.length
+    let current_idx -> index
+
+    let l -> 0
+    while l < layer_count - 1 {
+        let current_layer -> layers[l]
+        let layer_len -> current_layer.length
+        let rem -> current_idx % 2
+
+        when rem == 0 {
+            // Even index: sibling is on the right
+            let sibling_hash -> current_layer[current_idx]
+            when current_idx + 1 < layer_len {
+                sibling_hash -> current_layer[current_idx + 1]
+            }
+            proof.append({
+                `hash` -> sibling_hash,
+                `position` -> `right`
+            })
+        } or {
+            // Odd index: sibling is on the left
+            proof.append({
+                `hash` -> current_layer[current_idx - 1],
+                `position` -> `left`
+            })
+        }
+
+        // Parent index
+        current_idx -> (current_idx - rem) / 2
+        l -> l + 1
+    }
+
+    <- proof
+}
+
+/!
+  Verifies that a leaf belongs to a Merkle tree with root_hash using an inclusion proof.
+  Returns True if valid, False otherwise.
+!/
+function verify_proof(leaf, proof, root_hash) {
+    let current -> hash_leaf(leaf)
+
+    for step in proof {
+        let sibling -> step[`hash`]
+        let pos -> step[`position`]
+
+        when pos == `left` {
+            current -> hash_pair(sibling, current)
+        } or {
+            current -> hash_pair(current, sibling)
+        }
+    }
+
+    <- current == root_hash
+}

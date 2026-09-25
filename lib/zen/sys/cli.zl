@@ -31,7 +31,7 @@ class ArgSpec {
     let long: String
     let help: String
     let default_val: Variant
-    let is_flag: Bool
+    let is_flag: Boolean
 
     function init(short, long, help, default_val, is_flag) {
         self.short -> short

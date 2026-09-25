@@ -1,0 +1,134 @@
+/!
+  zenshell - Directory Stack & Bookmark Command (directory)
+!/
+
+import zen.sys.sys as sys
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function handle_directory_default(args, c) {
+    <- color.green(c.cwd)
+}
+
+function handle_directory_change(args, c) {
+    let dest_name -> when (args.length > 0) { args[0] } or { `~` }
+    
+    // Resolve shortcuts & bookmarks
+    let dest -> when (dest_name == `~`) {
+        sys.get_env(`HOME`)
+    } or when (dest_name == `...`) {
+        `../..`
+    } or when (dest_name == `.3`) {
+        `../../..`
+    } or when (dest_name == `.4`) {
+        `../../../..`
+    } or when (c.bookmarks.has(dest_name)) {
+        c.bookmarks[dest_name]
+    } or {
+        dest_name
+    }
+
+    let ok -> sys.chdir(dest)
+    when ok {
+        c.update_cwd(sys.get_cwd())
+        <- color.green(c.cwd)
+    }
+    <- color.red(`Error: Unable to change directory to '` + dest_name + `'`)
+}
+
+function handle_directory_push(args, c) {
+    c.dir_stack.append(c.cwd)
+    when args.length > 0 {
+        <- handle_directory_change(args, c)
+    }
+    <- color.green(`Pushed ` + c.cwd + ` (stack size: ` + Str.to_string(c.dir_stack.length) + `)`)
+}
+
+function handle_directory_pop(args, c) {
+    when args == Nothing or c.dir_stack.length > 1 {
+        let prev -> c.dir_stack.pop()
+        sys.chdir(prev)
+        c.update_cwd(sys.get_cwd())
+        <- color.green(`Popped to ` + c.cwd)
+    }
+    <- color.yellow(`Directory stack has only 1 entry`)
+}
+
+function handle_directory_stack(args, c) {
+    let out -> color.bold(`Directory Stack:\n`)
+    let i -> 0
+    let len -> c.dir_stack.length
+    do while i < len {
+        let entry -> c.dir_stack[i]
+        let marker -> when (entry == c.cwd) { `* ` } or { `  ` }
+        out -> out + marker + `[` + color.cyan(Str.to_string(i)) + `] ` + color.green(entry) + `\n`
+        i -> i + 1
+    }
+    <- out
+}
+
+function handle_directory_jump(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: directory jump <index_or_bookmark>`)
+    }
+    let dest_name -> args[0]
+    when c.bookmarks.has(dest_name) {
+        <- handle_directory_change([dest_name], c)
+    }
+
+    let idx -> Integer(dest_name)
+    when idx != Nothing and idx >= 0 and idx < c.dir_stack.length {
+        let dest -> c.dir_stack[idx]
+        sys.chdir(dest)
+        c.update_cwd(sys.get_cwd())
+        <- color.green(`Jumped to ` + c.cwd)
+    }
+
+    <- color.red(`Error: Invalid stack index or bookmark '` + dest_name + `'`)
+}
+
+function handle_directory_list(args, c) {
+    let out -> color.bold(`Saved Bookmarks:\n`)
+    do for name in c.bookmarks.keys() {
+        let b_path -> c.bookmarks[name]
+        out -> out + `  ` + color.cyan(name) + ` -> ` + color.green(b_path) + `\n`
+    }
+    <- out
+}
+
+function handle_directory_add(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: directory add <name> [path]`)
+    }
+    let name -> args[0]
+    let b_path -> when (args.length > 1) { args[1] } or { c.cwd }
+    c.bookmarks[name] -> b_path
+    <- color.green(`Bookmark '` + name + `' saved -> ` + b_path)
+}
+
+function handle_directory_remove(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: directory remove <name>`)
+    }
+    let name -> args[0]
+    when c.bookmarks.has(name) {
+        c.bookmarks.remove(name)
+        <- color.green(`Removed bookmark '` + name + `'`)
+    }
+    <- color.yellow(`Bookmark '` + name + `' not found`)
+}
+
+export function create_directory_command(ctx) {
+    let cmd -> cmd_base.Command(`directory`, `Manage directory navigation, bookmarks, and directory stack`)
+    cmd.set_default(handle_directory_default)
+    cmd.add_subcommand(`change`, `Change current working directory (supports shortcuts ... and bookmarks)`, handle_directory_change)
+    cmd.add_subcommand(`push`, `Push current directory to stack and change to destination`, handle_directory_push)
+    cmd.add_subcommand(`pop`, `Pop the top directory from stack and return to it`, handle_directory_pop)
+    cmd.add_subcommand(`stack`, `List all directories in the stack`, handle_directory_stack)
+    cmd.add_subcommand(`jump`, `Jump to directory by stack index or bookmark name`, handle_directory_jump)
+    cmd.add_subcommand(`list`, `List all saved directory bookmarks`, handle_directory_list)
+    cmd.add_subcommand(`add`, `Add a named bookmark for a path (defaults to current dir)`, handle_directory_add)
+    cmd.add_subcommand(`remove`, `Remove a saved bookmark`, handle_directory_remove)
+    <- cmd
+}

@@ -1,0 +1,55 @@
+/!
+  zenshell - Unicode Box Table Formatter Command (table)
+!/
+
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function handle_table_default(args, c) {
+    when args == Nothing or args.length == 0 {
+        // Demonstration table
+        let headers -> [`Command`, `Type`, `Status`]
+        let rows -> [
+            [`directory`, `Built-in`, `Active`],
+            [`zd`, `ZenData`, `Active`],
+            [`doc`, `ZenMark`, `Active`],
+            [`table`, `UI Formatter`, `Active`]
+        ]
+        let rendered -> utbl.render_table(headers, rows, { `border` -> `round` })
+        <- rendered
+    }
+
+    // If arguments provided: parse rows
+    let rows -> []
+    do for a in args {
+        rows.append(Str.split(a, `,`))
+    }
+    when rows.length > 0 {
+        let headers -> rows[0]
+        let data_rows -> when (rows.length > 1) { rows[1:] } or { [] }
+        let rendered -> utbl.render_table(headers, data_rows, { `border` -> `round` })
+        <- rendered
+    }
+
+    <- color.yellow(`Usage: table <col1,col2,...> [row1_data,...]`)
+}
+
+function handle_table_demo(args, c) {
+    let headers -> [`Property`, `Value`, `Unit`]
+    let rows -> [
+        [`Memory Used`, `420`, `MB`],
+        [`CPU Usage`, `1.4`, `%`],
+        [`Uptime`, `3.5`, `Hours`]
+    ]
+    let rendered -> utbl.render_table(headers, rows, { `border` -> `round` })
+    <- rendered
+}
+
+export function create_table_command(ctx) {
+    let cmd -> cmd_base.Command(`table`, `Format tabular data into Unicode box-drawing tables`)
+    cmd.set_default(handle_table_default)
+    cmd.add_subcommand(`demo`, `Display sample table with various border styles`, handle_table_demo)
+    <- cmd
+}

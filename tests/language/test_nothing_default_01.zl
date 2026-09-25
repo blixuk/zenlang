@@ -46,27 +46,27 @@ function test_cast_expressions() {
     let pass -> test.assert_equal(x1, 42, `x1 is 42`)
     let x2 -> Integer(`123`)
     pass -> pass and test.assert_equal(x2, 123, `x2 is 123`)
-    let x3 -> `456` <: Int
+    let x3 -> `456` <: Integer
     pass -> pass and test.assert_equal(x3, 456, `x3 is 456`)
 
-    // Float / Decimal
-    let f1 -> Float(`3.14`)
+    // Decimal
+    let f1 -> Decimal(`3.14`)
     pass -> pass and test.assert_true(f1 > 3.1 and f1 < 3.2, `f1 is 3.14`)
     let f2 -> 10 <: Decimal
     pass -> pass and test.assert_equal(f2, 10.0, `f2 is 10.0`)
 
-    // String / Str
+    // String
     let s1 -> 789 <: String
     pass -> pass and test.assert_equal(s1, `789`, `s1 is '789'`)
-    let s2 -> Str(true)
+    let s2 -> String(true)
     pass -> pass and test.assert_true(s2 == `true` or s2 == `True`, `s2 is 'true'`)
 
-    // Boolean / Bool
+    // Boolean
     let b1 -> 1 <: Boolean
     pass -> pass and test.assert_equal(b1, true, `b1 is true`)
-    let b2 -> Bool(0)
+    let b2 -> Boolean(0)
     pass -> pass and test.assert_equal(b2, false, `b2 is false`)
-    let b3 -> `true` <: Bool
+    let b3 -> `true` <: Boolean
     pass -> pass and test.assert_equal(b3, true, `b3 is true`)
     <- pass
 }

@@ -1,0 +1,49 @@
+import zen.io.io as io
+
+function test_canonical_collection_literals() {
+    let l -> List{10, 20, 30}
+    when l[0] != 10 or l[1] != 20 or l[2] != 30 {
+        io.writeln(`FAIL: List literal`)
+        <- false
+    }
+
+    let v -> Vector{1.5, 2.5, 3.5}
+    when v[0] != 1.5 or v[1] != 2.5 or v[2] != 3.5 {
+        io.writeln(`FAIL: Vector literal`)
+        <- false
+    }
+
+    let m -> Map{`first` -> 1, `second` -> 2}
+    when m[`first`] != 1 or m[`second`] != 2 {
+        io.writeln(`FAIL: Map literal`)
+        <- false
+    }
+
+    let s -> Set{100, 200, 300}
+    when not (100 in s) or not (200 in s) or not (300 in s) {
+        io.writeln(`FAIL: Set literal`)
+        <- false
+    }
+
+    let t -> Tuple{1, `ok`, True}
+    when t[0] != 1 or t[1] != `ok` or t[2] != True {
+        io.writeln(`FAIL: Tuple literal`)
+        <- false
+    }
+
+    let empty_l -> List{}
+    let empty_v -> Vector{}
+    let empty_m -> Map{}
+    let empty_s -> Set{}
+    let empty_t -> Tuple{}
+
+    <- true
+}
+
+function main() {
+    when test_canonical_collection_literals() {
+        io.writeln(`PASS: All canonical collection literals verified`)
+    } or {
+        io.writeln(`FAIL: Canonical collection literals failed`)
+    }
+}

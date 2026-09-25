@@ -1,0 +1,116 @@
+/!
+  zen.crypto.pbkdf2 - Password-Based Key Derivation Function 2 (PBKDF2).
+  Pure Zenlang implementation of RFC 2898 / PKCS #5 v2.0 with HMAC-SHA256.
+  Derives cryptographically strong symmetric keys from human passwords with salt and iterations.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.hmac as HMAC
+use zen.crypto.hex as Hex
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Derives a cryptographically strong key as a byte list using PBKDF2-HMAC-SHA256.
+  @param password Passphrase (string or byte list).
+  @param salt Salt (string or byte list).
+  @param iterations Number of iterations (recommended: >= 1000).
+  @param key_len Desired output key length in bytes (default: 32 for 256-bit key).
+  @return List of derived key byte integers (0-255).
+!/
+export function derive_bytes(password, salt, iterations, key_len) {
+    let p_bytes -> _to_bytes(password)
+    let s_bytes -> _to_bytes(salt)
+    let iters -> iterations
+    when (iters == Nothing or iters < 1) { iters -> 1000 }
+    let k_len -> key_len
+    when (k_len == Nothing or k_len < 1) { k_len -> 32 }
+
+    let derived -> []
+    let block_num -> 1
+
+    do while derived.length < k_len {
+        // Construct S || INT_32_BE(block_num)
+        let s_i -> []
+        let si_idx -> 0
+        let s_len -> s_bytes.length
+        do while si_idx < s_len {
+            s_i.append(s_bytes[si_idx])
+            si_idx -> si_idx + 1
+        }
+        s_i.append((block_num >> 24) & 255)
+        s_i.append((block_num >> 16) & 255)
+        s_i.append((block_num >> 8) & 255)
+        s_i.append(block_num & 255)
+
+        // U_1 = HMAC-SHA256(password, s_i)
+        let u_hex -> HMAC.sha256(p_bytes, s_i)
+        let u_bytes -> Hex.decode_bytes(u_hex)
+
+        // F = U_1
+        let f_bytes -> []
+        let b_idx -> 0
+        let u_len -> u_bytes.length
+        do while b_idx < u_len {
+            f_bytes.append(u_bytes[b_idx])
+            b_idx -> b_idx + 1
+        }
+
+        // Iterations 2 .. iters
+        let iter_idx -> 1
+        do while iter_idx < iters {
+            u_hex -> HMAC.sha256(p_bytes, u_bytes)
+            u_bytes -> Hex.decode_bytes(u_hex)
+
+            b_idx -> 0
+            do while b_idx < u_len {
+                f_bytes[b_idx] -> f_bytes[b_idx] ^^ u_bytes[b_idx]
+                b_idx -> b_idx + 1
+            }
+            iter_idx -> iter_idx + 1
+        }
+
+        // Append block bytes up to desired key length
+        b_idx -> 0
+        do while b_idx < u_len and derived.length < k_len {
+            derived.append(f_bytes[b_idx])
+            b_idx -> b_idx + 1
+        }
+
+        block_num -> block_num + 1
+    }
+
+    <- derived
+}
+
+/!
+  Derives a key using PBKDF2-HMAC-SHA256 and returns a lowercase hex string.
+  @param password Passphrase (string or byte list).
+  @param salt Salt (string or byte list).
+  @param iterations Number of iterations (recommended >= 1000).
+  @param key_len Desired output key length in bytes (default: 32).
+  @return Lowercase hexadecimal string.
+!/
+export function derive_hex(password, salt, iterations, key_len) {
+    let bytes -> derive_bytes(password, salt, iterations, key_len)
+    <- Hex.encode(bytes)
+}
+
+/!
+  Alias for derive_hex.
+!/
+export function derive_key(password, salt, iterations, key_len) {
+    <- derive_hex(password, salt, iterations, key_len)
+}

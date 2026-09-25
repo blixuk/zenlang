@@ -1,0 +1,85 @@
+/!
+  zen.sys.meminfo - Memory Statistics & Resource Footprint.
+  Provides memory inspection (physical RAM, available RAM, usage %)
+  using direct POSIX page configuration with zero process overhead.
+!/
+
+use zen.sys.hardware as hw
+
+/! Total physical RAM installed in bytes. !/
+export function total_ram_bytes() {
+    let pages -> hw.physical_pages()
+    let psize -> hw.page_size()
+    <- pages * psize
+}
+
+/! Available physical RAM in bytes. !/
+export function available_ram_bytes() {
+    let pages -> hw.available_pages()
+    let psize -> hw.page_size()
+    <- pages * psize
+}
+
+/! Alias for available_ram_bytes(). !/
+export function free_ram_bytes() {
+    <- available_ram_bytes()
+}
+
+/! Used physical RAM in bytes. !/
+export function used_ram_bytes() {
+    let total -> total_ram_bytes()
+    let avail -> available_ram_bytes()
+    when total <= avail {
+        <- 0
+    }
+    <- total - avail
+}
+
+/! Total physical RAM in megabytes (MB). !/
+export function total_ram_mb() {
+    <- total_ram_bytes() / (1024 * 1024)
+}
+
+/! Available physical RAM in megabytes (MB). !/
+export function available_ram_mb() {
+    <- available_ram_bytes() / (1024 * 1024)
+}
+
+/! Used physical RAM in megabytes (MB). !/
+export function used_ram_mb() {
+    <- used_ram_bytes() / (1024 * 1024)
+}
+
+/! Total physical RAM in gigabytes (GB). !/
+export function total_ram_gb() {
+    <- total_ram_bytes() / (1024 * 1024 * 1024)
+}
+
+/! Available physical RAM in gigabytes (GB). !/
+export function available_ram_gb() {
+    <- available_ram_bytes() / (1024 * 1024 * 1024)
+}
+
+/! Current RAM utilization percentage (0.0 to 100.0). !/
+export function ram_usage_pct() {
+    let total -> total_ram_bytes()
+    when total <= 0 {
+        <- 0.0
+    }
+    let used -> used_ram_bytes()
+    <- (Decimal(used) / Decimal(total)) * 100.0
+}
+
+/! Returns a structured summary map of memory statistics. !/
+export function memory_summary() {
+    <- {
+        `total_bytes` -> total_ram_bytes(),
+        `available_bytes` -> available_ram_bytes(),
+        `used_bytes` -> used_ram_bytes(),
+        `total_mb` -> total_ram_mb(),
+        `available_mb` -> available_ram_mb(),
+        `used_mb` -> used_ram_mb(),
+        `total_gb` -> total_ram_gb(),
+        `usage_pct` -> ram_usage_pct()
+    }
+}

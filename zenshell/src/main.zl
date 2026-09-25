@@ -1,0 +1,421 @@
+/!
+  zenshell (zsh) - Main CLI Entry Point & REPL Loop
+!/
+
+import zen.io.io as io
+import zen.sys.sys as sys
+import zen.sys.term as term
+import zen.text.string as Str
+import ui.theme as color
+
+import core.context as ctx_mod
+import core.config as cfg_mod
+import core.engine as eng_mod
+import commands.directory as directory_cmd
+import commands.data as data_cmd
+import commands.doc as doc_cmd
+import commands.table as table_cmd
+import commands.clear as clear_cmd
+import commands.echo as echo_cmd
+import commands.catsay as catsay_cmd
+import commands.alias as alias_cmd
+import commands.view as view_cmd
+import commands.list as list_cmd
+import commands.tag as tag_cmd
+import commands.open as open_cmd
+import commands.eval as eval_cmd
+import commands.run as run_cmd
+import commands.sysinfo as sysinfo_cmd
+import commands.calendar as cal_cmd
+import commands.greet as greet_cmd
+import commands.note as note_cmd
+import core.history as hist_core
+import commands.history as hist_cmd
+import commands.session as sess_cmd
+import ui.prompt as prompt_mod
+import ui.completer as comp_mod
+
+function join_path(p1, p2) {
+    when p1 == `` or p1 == Nothing { <- p2 }
+    when p2 == `` or p2 == Nothing { <- p1 }
+    when Str.ends_with(p1, `/`) { <- p1 + p2 }
+    <- p1 + `/` + p2
+}
+
+function print_banner() {
+    let title -> color.bold(color.cyan(`zenshell (zsh) v0.1.0`))
+    let sub -> color.dim(` • The Zen Trinity Shell (.zl, .zd, .zm) •`)
+    let info -> color.dim(`Type 'help' for commands, 'doc manual' for guide, 'exit' to quit.\n`)
+    io.writeln(title + sub)
+    io.writeln(info)
+}
+
+function run_test_suite(engine, ctx) {
+    io.writeln(color.bold(`[zenshell] Running headless verification suite...`))
+
+    // 1. Test directory command
+    let orig_cwd -> ctx.cwd
+    let res_dir -> engine.execute(`directory`)
+    when res_dir == Nothing {
+        io.writeln(color.red(`FAILED: directory command returned Nothing`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ directory command executed`))
+
+    // 2. Test directory push and pop
+    engine.execute(`directory push ..`)
+    engine.execute(`directory pop`)
+    when ctx.cwd != orig_cwd {
+        io.writeln(color.red(`FAILED: directory pop did not restore cwd`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ directory push & pop stack verified`))
+
+    // 3. Test directory bookmarks via alias
+    engine.execute(`dir add test_bookmark /tmp`)
+    let res_bm -> engine.execute(`dir list`)
+    when not Str.contains(res_bm, `test_bookmark`) {
+        io.writeln(color.red(`FAILED: bookmark not saved`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ directory bookmarks & dir alias verified`))
+
+    // 4. Test zd stringify
+    let res_zd -> engine.execute(`zd stringify Foo { bar -> 10 }`)
+    when res_zd == Nothing or not Str.contains(res_zd, `Foo`) {
+        io.writeln(color.red(`FAILED: zd stringify failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ zd ZenData inspector verified`))
+
+    // 5. Test table formatter
+    let res_tbl -> engine.execute(`table demo`)
+    when res_tbl == Nothing {
+        io.writeln(color.red(`FAILED: table formatter failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ table Unicode box formatter verified`))
+
+    // 6. Test doc manual
+    let res_doc -> engine.execute(`doc manual`)
+    when res_doc == Nothing or not Str.contains(res_doc, `zenshell`) {
+        io.writeln(color.red(`FAILED: doc manual failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ doc ZenMark manual viewer verified`))
+
+    // 7. Test catsay and echo
+    let res_cat -> engine.execute(`catsay test_purr`)
+    when not Str.contains(res_cat, `test_purr`) {
+        io.writeln(color.red(`FAILED: catsay failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ catsay ASCII command verified`))
+
+    // 8. Test history command
+    let res_hist -> engine.execute(`history list 5`)
+    when res_hist == Nothing {
+        io.writeln(color.red(`FAILED: history list failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ history command verified`))
+
+    // 9. Test session save, list, load, remove
+    engine.execute(`session save test_session`)
+    let res_sess -> engine.execute(`session list`)
+    when not Str.contains(res_sess, `test_session`) {
+        io.writeln(color.red(`FAILED: session save/list failed`))
+        <- 1
+    }
+    engine.execute(`session load test_session`)
+    engine.execute(`session remove test_session`)
+    io.writeln(color.green(`✓ session ZenData management verified`))
+
+    // 10. Test external command
+    let res_ext -> engine.execute(`echo zenshell_test_ok`)
+    when not Str.contains(res_ext, `zenshell_test_ok`) {
+        io.writeln(color.red(`FAILED: external process failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ external POSIX execution verified`))
+
+    // 11. Test list command and aliases
+    let res_list -> engine.execute(`list`)
+    when res_list == Nothing or not Str.contains(res_list, `Kind`) {
+        io.writeln(color.red(`FAILED: list command failed`))
+        <- 1
+    }
+    let res_ls -> engine.execute(`ls`)
+    when res_ls == Nothing {
+        io.writeln(color.red(`FAILED: ls alias failed`))
+        <- 1
+    }
+    let res_tree -> engine.execute(`list tree . 1`)
+    when res_tree == Nothing {
+        io.writeln(color.red(`FAILED: list tree failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ list tabular, detailed & tree directory viewer verified`))
+
+    // 12. Test tag command
+    engine.execute(`tag add test_tag Test tag workspace note`)
+    let res_tag -> engine.execute(`tag list`)
+    when not Str.contains(res_tag, `test_tag`) {
+        io.writeln(color.red(`FAILED: tag add/list failed`))
+        <- 1
+    }
+    engine.execute(`tag remove test_tag`)
+    let res_banner -> engine.execute(`tag banner TEST SECTION`)
+    when res_banner == Nothing or not Str.contains(res_banner, `TEST SECTION`) {
+        io.writeln(color.red(`FAILED: tag banner failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ tag place bookmarking & terminal banner verified`))
+
+    // 13. Test open command
+    let res_open -> engine.execute(`open`)
+    when res_open == Nothing or not Str.contains(res_open, `Usage: open`) {
+        io.writeln(color.red(`FAILED: open command validation failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ open desktop application launcher verified`))
+
+    // 14. Test in-line Zenlang expression evaluator (=)
+    let res_eval -> engine.execute(`= 2 * (10 + 5)`)
+    when res_eval == Nothing or not Str.contains(res_eval, `30`) {
+        io.writeln(color.red(`FAILED: in-line Zenlang evaluator failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ in-line Zenlang expression evaluator (=) verified`))
+
+    // 15. Test in-line variable assignment and usage
+    engine.execute(`= let score -> 42`)
+    let res_var -> engine.execute(`= score + 8`)
+    when res_var == Nothing or not Str.contains(res_var, `50`) {
+        io.writeln(color.red(`FAILED: session variable assignment/evaluation failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ session variable persistence in evaluator verified`))
+
+    // 16. Test sysinfo system monitor & memory statistics
+    let res_sys -> engine.execute(`sysinfo`)
+    when res_sys == Nothing or not Str.contains(res_sys, `Memory`) {
+        io.writeln(color.red(`FAILED: sysinfo dashboard failed`))
+        <- 1
+    }
+    let res_sys_alias -> engine.execute(`sys mem`)
+    when res_sys_alias == Nothing or not Str.contains(res_sys_alias, `Physical RAM`) {
+        io.writeln(color.red(`FAILED: sys mem failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ sysinfo system & memory dashboard (alias: sys) verified`))
+
+    // 17. Test calendar generator (cal)
+    let res_cal -> engine.execute(`calendar`)
+    when res_cal == Nothing or not Str.contains(res_cal, `Mo Tu We Th Fr`) {
+        io.writeln(color.red(`FAILED: calendar command failed`))
+        <- 1
+    }
+    let res_cal_alias -> engine.execute(`cal data`)
+    when res_cal_alias == Nothing or not Str.contains(res_cal_alias, `days_in_month`) {
+        io.writeln(color.red(`FAILED: cal data failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ calendar generator & metrics (alias: cal) verified`))
+
+    // 18. Test dynamic greeter (greet)
+    let res_greet -> engine.execute(`greet brief`)
+    when res_greet == Nothing or not Str.contains(res_greet, `Good `) {
+        io.writeln(color.red(`FAILED: greet brief failed`))
+        <- 1
+    }
+    let res_greet_full -> engine.execute(`greet`)
+    when res_greet_full == Nothing or not Str.contains(res_greet_full, `Mo Tu We Th Fr`) {
+        io.writeln(color.red(`FAILED: greet full dashboard failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ dynamic greeter & mini calendar (greet) verified`))
+
+    // 19. Test note & scratchpad (note / jot)
+    engine.execute(`note clear`)
+    let res_note_add -> engine.execute(`note add Architecture : Modular Zen Trinity Engine`)
+    when res_note_add == Nothing or not Str.contains(res_note_add, `Saved note #1`) {
+        io.writeln(color.red(`FAILED: note add failed`))
+        <- 1
+    }
+    let res_jot -> engine.execute(`jot Quick meeting notes`)
+    when res_jot == Nothing or not Str.contains(res_jot, `Saved note #2`) {
+        io.writeln(color.red(`FAILED: jot shortcut failed`))
+        <- 1
+    }
+    let res_note_list -> engine.execute(`note list`)
+    when res_note_list == Nothing or not Str.contains(res_note_list, `Architecture`) {
+        io.writeln(color.red(`FAILED: note list failed`))
+        <- 1
+    }
+    let res_note_view -> engine.execute(`note view 1`)
+    when res_note_view == Nothing or not Str.contains(res_note_view, `Modular Zen Trinity`) {
+        io.writeln(color.red(`FAILED: note view failed`))
+        <- 1
+    }
+    let res_note_search -> engine.execute(`note search meeting`)
+    when res_note_search == Nothing or not Str.contains(res_note_search, `Found 1 matching`) {
+        io.writeln(color.red(`FAILED: note search failed`))
+        <- 1
+    }
+    let res_note_rm -> engine.execute(`note rm 2`)
+    when res_note_rm == Nothing or not Str.contains(res_note_rm, `Removed note #2`) {
+        io.writeln(color.red(`FAILED: note rm failed`))
+        <- 1
+    }
+    io.writeln(color.green(`✓ in-terminal notes, view cards & search (alias: jot) verified`))
+
+    io.writeln(color.bold(color.green(`\n[zenshell] All verification checks passed successfully!`)))
+    <- 0
+}
+
+function main(args) {
+    let ctx -> ctx_mod.Context()
+    let engine -> eng_mod.Engine(ctx)
+
+    // Locate docs directory relative to current root
+    let root_cwd -> sys.get_cwd()
+    let docs_dir -> join_path(root_cwd, `zenshell/docs`)
+
+    // Load persistent history on startup
+    let saved_hist -> hist_core.load_history_file(Nothing)
+    do for h in saved_hist {
+        ctx.add_history(h)
+    }
+
+    // Register built-in commands
+    engine.register(directory_cmd.create_directory_command(ctx))
+    engine.register(data_cmd.create_data_command(ctx))
+    engine.register(doc_cmd.create_doc_command(ctx, docs_dir))
+    engine.register(table_cmd.create_table_command(ctx))
+    engine.register(clear_cmd.create_clear_command(ctx))
+    engine.register(echo_cmd.create_echo_command(ctx))
+    engine.register(catsay_cmd.create_catsay_command(ctx))
+    engine.register(alias_cmd.create_alias_command(ctx))
+    engine.register(view_cmd.create_view_command(ctx))
+    engine.register(hist_cmd.create_history_command(ctx))
+    engine.register(sess_cmd.create_session_command(ctx))
+    engine.register(list_cmd.create_list_command(ctx))
+    engine.register(tag_cmd.create_tag_command(ctx))
+    engine.register(open_cmd.create_open_command(ctx))
+    engine.register(eval_cmd.create_eval_command(ctx))
+    engine.register(run_cmd.create_run_command(ctx))
+    engine.register(sysinfo_cmd.create_sysinfo_command(ctx))
+    engine.register(cal_cmd.create_calendar_command(ctx))
+    engine.register(greet_cmd.create_greet_command(ctx))
+    engine.register(note_cmd.create_note_command(ctx))
+
+    // Register default aliases
+    ctx.aliases[`=`]   -> `eval`
+    ctx.aliases[`zen`] -> `eval`
+    ctx.aliases[`sys`] -> `sysinfo`
+    ctx.aliases[`cal`] -> `calendar`
+    ctx.aliases[`jot`] -> `note`
+    ctx.aliases[`dir`] -> `directory`
+    ctx.aliases[`ls`]  -> `list`
+    ctx.aliases[`l`]   -> `list`
+    ctx.aliases[`ll`]  -> `list detailed`
+    ctx.aliases[`la`]  -> `list -a`
+    ctx.aliases[`o`]   -> `open`
+
+    // Load configuration (.zd)
+    let fallback_cfg -> join_path(root_cwd, `zenshell/config/default_config.zd`)
+    let cfg -> cfg_mod.load_config(fallback_cfg)
+    when cfg != Nothing and cfg.has(`aliases`) {
+        let al_map -> cfg[`aliases`]
+        do for k in al_map.keys() {
+            let v -> al_map[k]
+            ctx.aliases[k] -> v
+        }
+    }
+
+    // Check CLI flags
+    let raw_args -> when (args != Nothing and args.length > 0) { args } or { sys.get_args() }
+    let cli_args -> []
+    when raw_args != Nothing and raw_args.length > 0 {
+        let first -> Str.to_string(raw_args[0])
+        when Str.ends_with(first, `zsh`) or Str.ends_with(first, `.zl`) or Str.contains(first, `/`) {
+            when raw_args.length > 1 {
+                cli_args -> raw_args[1:]
+            }
+        } or {
+            cli_args -> raw_args
+        }
+    }
+
+    let is_test -> false
+    when cli_args != Nothing {
+        do for a in cli_args {
+            when a == `test` or a == `--test` or a == `--selftest` {
+                is_test -> true
+            }
+        }
+    }
+    when is_test {
+        <- run_test_suite(engine, ctx)
+    }
+
+    when cli_args != Nothing and cli_args.length > 0 {
+        let flag -> cli_args[0]
+        when flag == `-c` and cli_args.length > 1 {
+            let cmd_str -> Str.join(cli_args[1:], ` `)
+            let out -> engine.execute(cmd_str)
+            when out != Nothing and out != `` {
+                io.writeln(out)
+            }
+            <- ctx.last_status
+        }
+        when flag == `--version` or flag == `-v` {
+            io.writeln(`zenshell (zsh) version 0.1.0 (Zenlang Trinity Shell)`)
+            <- 0
+        }
+        when flag == `--help` or flag == `-h` {
+            io.writeln(`Usage: zsh [options]`)
+            io.writeln(`Options:`)
+            io.writeln(`  --help, -h       Show this help`)
+            io.writeln(`  --version, -v    Show version`)
+            io.writeln(`  --test           Run verification test suite`)
+            io.writeln(`  -c <command>     Execute command and exit`)
+            <- 0
+        }
+    }
+
+    // Interactive REPL Mode
+    print_banner()
+
+    let prompt -> prompt_mod.Prompt(`❯`, true, true)
+    let completer_fn -> comp_mod.create_completer(engine.registry, ctx)
+    let rl -> term.create_readline(ctx.history, completer_fn)
+
+    do while ctx.running {
+        let header -> prompt.render_header(ctx)
+        when header != Nothing and header != `` {
+            io.writeln(header)
+        }
+        let carrot -> prompt.render_carrot(ctx)
+        let line -> rl.read_line(carrot)
+        when line == Nothing {
+            // EOF / Ctrl+D
+            break
+        }
+
+        when Str.trim(line) == `` {
+            continue
+        }
+
+        ctx.add_history(line)
+        hist_core.append_history_file(Nothing, line)
+        let out -> engine.execute(line)
+        when out != Nothing and out != `` {
+            io.writeln(out)
+        }
+    }
+
+    hist_core.save_history_file(Nothing, ctx.history, 1000)
+    <- 0
+}

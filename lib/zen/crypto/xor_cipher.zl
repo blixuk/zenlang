@@ -1,0 +1,114 @@
+/!
+  zen.crypto.xor_cipher - XOR Stream & One-Time Pad (OTP) Cipher.
+  Fundamental symmetric XOR encryption with repeating-key and OTP modes.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.hex as Hex
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Encrypts or decrypts data using repeating-key XOR stream cipher.
+  @param key Key (string or byte list).
+  @param data Plaintext or ciphertext (string or byte list).
+  @return List of byte integers (0-255).
+!/
+export function crypt(key, data) {
+    let k_bytes -> _to_bytes(key)
+    let d_bytes -> _to_bytes(data)
+    let k_len -> k_bytes.length
+    let d_len -> d_bytes.length
+    when (k_len == 0 or d_len == 0) { <- d_bytes }
+
+    let out -> []
+    let i -> 0
+    do while i < d_len {
+        let b -> d_bytes[i] ^^ k_bytes[i % k_len]
+        out.append(b)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Encrypts data using repeating-key XOR and returns byte list.
+!/
+export function encrypt(key, data) {
+    <- crypt(key, data)
+}
+
+/!
+  Decrypts XOR ciphertext bytes into plaintext string.
+!/
+export function decrypt(key, data) {
+    let decrypted_bytes -> crypt(key, data)
+    <- __builtin.bytes_to_string(decrypted_bytes)
+}
+
+/!
+  Encrypts data using XOR and returns a hexadecimal string.
+!/
+export function encrypt_hex(key, data) {
+    let cipher_bytes -> crypt(key, data)
+    <- Hex.encode(cipher_bytes)
+}
+
+/!
+  Decrypts a hex-encoded XOR ciphertext string into plaintext string.
+!/
+export function decrypt_hex(key, hex_str) {
+    let cipher_bytes -> Hex.decode_bytes(hex_str)
+    <- decrypt(key, cipher_bytes)
+}
+
+/!
+  Encrypts or decrypts data using a true One-Time Pad (OTP).
+  Requires pad length to be at least as long as data length.
+  @param pad Random one-time pad bytes/string.
+  @param data Plaintext or ciphertext.
+  @return List of byte integers (0-255).
+!/
+export function otp_crypt(pad, data) {
+    let p_bytes -> _to_bytes(pad)
+    let d_bytes -> _to_bytes(data)
+    let d_len -> d_bytes.length
+    when (p_bytes.length < d_len) {
+        raise `OneTimePadUnderflow: Pad must be at least as long as data`
+    }
+
+    let out -> []
+    let i -> 0
+    do while i < d_len {
+        let b -> d_bytes[i] ^^ p_bytes[i]
+        out.append(b)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Encrypts data using One-Time Pad and returns byte list.
+!/
+export function otp_encrypt(pad, data) {
+    <- otp_crypt(pad, data)
+}
+
+/!
+  Decrypts One-Time Pad ciphertext bytes into plaintext string.
+!/
+export function otp_decrypt(pad, data) {
+    let decrypted_bytes -> otp_crypt(pad, data)
+    <- __builtin.bytes_to_string(decrypted_bytes)
+}

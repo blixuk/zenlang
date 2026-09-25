@@ -1,0 +1,33 @@
+// ==========================================================
+// zenshell Default Configuration (ZenData format)
+// Location: ~/.config/zenshell/config.zd
+// ==========================================================
+
+Config {
+    `theme` -> `zen-dark`,
+    `prompt` -> PromptConfig {
+        `show_git`       -> true,
+        `show_time`      -> true,
+        `time_format`    -> `[%H:%M:%S]`,
+        `show_duration`  -> true,
+        `symbol`         -> `❯`
+    },
+    `directories` -> {
+        `home`           -> `~`,
+        `downloads`      -> `~/Downloads`,
+        `documents`      -> `~/Documents`,
+        `projects`       -> `~/projects`
+    },
+    `aliases` -> {
+        `ll`             -> `ls -lah`,
+        `la`             -> `ls -A`,
+        `g`              -> `git`,
+        `..`             -> `cd ..`,
+        `...`            -> `cd ../..`
+    },
+    `history` -> HistoryConfig {
+        `max_entries`    -> 1000,
+        `save_on_exit`   -> true,
+        `deduplicate`    -> true
+    }
+}

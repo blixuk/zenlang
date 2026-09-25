@@ -84,9 +84,16 @@ class LiteralHandler:
              item_node.resolved_type = t
              element_types.append(t)
              
-        # For now, return a generic list or infer type
-        # TODO: Homogenous check
-        expression.resolved_type = TypeList(None, [])
+        if not element_types:
+            expression.resolved_type = TypeList(None, [])
+            return expression.resolved_type
+
+        common_type = element_types[0]
+        for t in element_types[1:]:
+            common_type = self.unify(common_type, t, expression, variant_fallback=True)
+
+        from Checker.Type import TypeElement
+        expression.resolved_type = TypeList(None, [TypeElement(None, common_type)])
         return expression.resolved_type
 
     def check_vector_literal(self, expression: VectorLiteral) -> Type:

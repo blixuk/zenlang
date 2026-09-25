@@ -1,0 +1,133 @@
+/!
+    zen.crypto.base16 - RFC 4648 Section 8 Base16 (Hexadecimal) Encoding / Decoding.
+    Pure Zenlang implementation compatible with both interpreter and native backend.
+!/
+
+use zen.text.string as Str
+
+function _char_to_val(c) {
+    let lower -> Str.to_lower(c)
+    when lower == `0` { <- 0 }
+    when lower == `1` { <- 1 }
+    when lower == `2` { <- 2 }
+    when lower == `3` { <- 3 }
+    when lower == `4` { <- 4 }
+    when lower == `5` { <- 5 }
+    when lower == `6` { <- 6 }
+    when lower == `7` { <- 7 }
+    when lower == `8` { <- 8 }
+    when lower == `9` { <- 9 }
+    when lower == `a` { <- 10 }
+    when lower == `b` { <- 11 }
+    when lower == `c` { <- 12 }
+    when lower == `d` { <- 13 }
+    when lower == `e` { <- 14 }
+    when lower == `f` { <- 15 }
+    <- -1
+}
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind != Nothing {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+/!
+    Encodes binary data or string into RFC 4648 Base16 uppercase hexadecimal string.
+    @param data String or List of byte integers.
+    @return Uppercase hexadecimal string.
+!/
+export function encode(data) {
+    let bytes -> _to_byte_list(data)
+    let len -> bytes.length
+    when len == 0 { <- `` }
+
+    let digits -> `0123456789ABCDEF`
+    let out -> ``
+    let i -> 0
+    do while i < len {
+        let b -> bytes[i]
+        when b < 0 { b -> b + 256 }
+        let hi -> (b >> 4) & 15
+        let lo -> b & 15
+        out -> out + Str.at(digits, hi) + Str.at(digits, lo)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Encodes binary data or string into lowercase hexadecimal string.
+    @param data String or List of byte integers.
+    @return Lowercase hexadecimal string.
+!/
+export function encode_lower(data) {
+    let bytes -> _to_byte_list(data)
+    let len -> bytes.length
+    when len == 0 { <- `` }
+
+    let digits -> `0123456789abcdef`
+    let out -> ``
+    let i -> 0
+    do while i < len {
+        let b -> bytes[i]
+        when b < 0 { b -> b + 256 }
+        let hi -> (b >> 4) & 15
+        let lo -> b & 15
+        out -> out + Str.at(digits, hi) + Str.at(digits, lo)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Decodes an RFC 4648 Base16 / Hexadecimal string into a list of byte integers (0-255).
+    Case-insensitive, supports optional "0x" or "0X" prefix.
+    @param hex_str Hexadecimal string.
+    @return List of byte integers.
+!/
+export function decode_bytes(hex_str) {
+    let clean -> Str.trim(hex_str)
+    when Str.starts_with(clean, `0x`) or Str.starts_with(clean, `0X`) {
+        clean -> Str.substring(clean, 2, Str.length(clean))
+    }
+
+    let len -> Str.length(clean)
+    when (len % 2) != 0 {
+        raise `Base16 decode failed: Odd string length`
+    }
+
+    let bytes -> []
+    let i -> 0
+    do while i < len {
+        let c1 -> Str.at(clean, i)
+        let c2 -> Str.at(clean, i + 1)
+        let n1 -> _char_to_val(c1)
+        let n2 -> _char_to_val(c2)
+        when n1 == -1 or n2 == -1 {
+            raise `Base16 decode failed: Invalid character in "` + clean + `"`
+        }
+        let b -> (n1 * 16) + n2
+        bytes.append(b)
+        i -> i + 2
+    }
+
+    <- bytes
+}
+
+/!
+    Decodes an RFC 4648 Base16 string into the original text string.
+    @param hex_str Hexadecimal string.
+    @return Decoded string.
+!/
+export function decode(hex_str) {
+    let bytes -> decode_bytes(hex_str)
+    <- __builtin.bytes_to_string(bytes)
+}

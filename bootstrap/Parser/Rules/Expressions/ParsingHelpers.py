@@ -24,6 +24,18 @@ class ParsingHelpersMixin:
 
         token = self.token_handler.expect_types([TokenType.TYPE, TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected type name")
         name = getattr(token, "value")
+
+        FORBIDDEN_TYPES = {
+            "Int", "Int64", "Int32", "Int16", "Int8", "UInt8", "UInt16", "UInt32", "UInt64",
+            "Float", "Float64", "Float32", "Double",
+            "Str", "Bool", "Char", "Character", "Glyph", "Buffer",
+            "V", "L", "S", "T", "M"
+        }
+        if name in FORBIDDEN_TYPES and name not in getattr(self, "active_generic_params", set()):
+            raise self.logger.error(
+                f"Type '{name}' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune').",
+                token
+            )
         
         while self.token_handler.match_type(TokenType.DOT):
             member = self.token_handler.expect_types([TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected member name after `.`")

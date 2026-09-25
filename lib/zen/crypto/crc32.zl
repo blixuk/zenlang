@@ -1,0 +1,100 @@
+/!
+  zen.crypto.crc32 - Cyclic Redundancy Check (CRC-32) & Adler-32 Checksums.
+  Standard IEEE 802.3 CRC-32 (polynomial 0xEDB88320) and RFC 1950 Adler-32 checksums.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _to_hex_string(num, width) {
+    let digits -> `0123456789abcdef`
+    let out -> ``
+    let k -> 0
+    do while k < width {
+        let shift -> (width - 1 - k) * 4
+        let nibble -> (num >> shift) & 15
+        out -> out + Str.at(digits, nibble)
+        k -> k + 1
+    }
+    <- out
+}
+
+/!
+  Computes the 32-bit unsigned IEEE 802.3 CRC-32 checksum of input data.
+  @param data String or byte list.
+  @return 32-bit unsigned integer checksum.
+!/
+export function crc32(data) {
+    let bytes -> _to_bytes(data)
+    let len -> bytes.length
+    let crc -> 0xffffffff
+    let i -> 0
+    do while i < len {
+        let b -> bytes[i] & 255
+        crc -> crc ^^ b
+        let j -> 0
+        do while j < 8 {
+            let mask -> crc & 1
+            crc -> (crc >> 1) & 0x7fffffff
+            when mask != 0 {
+                crc -> crc ^^ 0xedb88320
+            }
+            j -> j + 1
+        }
+        i -> i + 1
+    }
+    <- (crc ^^ 0xffffffff) & 0xffffffff
+}
+
+/!
+  Computes the CRC-32 checksum and returns an 8-character lowercase hex string.
+  @param data String or byte list.
+  @return 8-character hex string (e.g. "cbf43926").
+!/
+export function crc32_hex(data) {
+    let val -> crc32(data)
+    <- _to_hex_string(val, 8)
+}
+
+/!
+  Computes the 32-bit unsigned Adler-32 checksum of input data (RFC 1950).
+  @param data String or byte list.
+  @return 32-bit unsigned integer checksum.
+!/
+export function adler32(data) {
+    let bytes -> _to_bytes(data)
+    let len -> bytes.length
+    let a -> 1
+    let b -> 0
+    let mod -> 65521
+    let i -> 0
+    do while i < len {
+        a -> (a + (bytes[i] & 255)) % mod
+        b -> (b + a) % mod
+        i -> i + 1
+    }
+    <- ((b << 16) | a) & 0xffffffff
+}
+
+/!
+  Computes the Adler-32 checksum and returns an 8-character lowercase hex string.
+  @param data String or byte list.
+  @return 8-character hex string.
+!/
+export function adler32_hex(data) {
+    let val -> adler32(data)
+    <- _to_hex_string(val, 8)
+}

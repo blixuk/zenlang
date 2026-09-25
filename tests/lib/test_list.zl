@@ -27,10 +27,32 @@ function test_find_contains() {
     <- pass
 }
 
+function test_sort() {
+    let nums -> [9, 3, 7, 1, 5, 2, 8, 4, 6]
+    let sorted_nums -> list.sort(nums)
+    let pass -> test.assert_equal(sorted_nums, [1, 2, 3, 4, 5, 6, 7, 8, 9], `sort should order numbers ascending`)
+
+    let words -> [`banana`, `apple`, `pear`, `orange`]
+    let sorted_words -> list.sort(words)
+    pass -> pass and test.assert_equal(sorted_words, [`apple`, `banana`, `orange`, `pear`], `sort should order strings alphabetically`)
+
+    let desc -> function(a, b) { <- a >= b }
+    let sorted_desc -> list.sort_by([3, 1, 4, 2], desc)
+    pass -> pass and test.assert_equal(sorted_desc, [4, 3, 2, 1], `sort_by should order elements with custom comparator`)
+
+    let empty -> list.sort([])
+    pass -> pass and test.assert_equal(empty, [], `sort on empty list should return empty list`)
+
+    let single -> list.sort([42])
+    pass -> pass and test.assert_equal(single, [42], `sort on single item should return single item`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `List.map_filter_reduce`, `fn` -> test_map_filter_reduce},
-        {`name` -> `List.find_contains`, `fn` -> test_find_contains}
+        {`name` -> `List.find_contains`, `fn` -> test_find_contains},
+        {`name` -> `List.sort`, `fn` -> test_sort}
     ]
 
     <- test.run_suite(`List Library`, tests)

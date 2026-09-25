@@ -1,0 +1,18 @@
+/!
+  zenshell - Clear Terminal Command (clear)
+!/
+
+import zen.sys.term as term
+import core.command as cmd_base
+
+function handle_clear_default(args, c) {
+    term.clear()
+    term.move(1, 1)
+    <- ``
+}
+
+export function create_clear_command(ctx) {
+    let cmd -> cmd_base.Command(`clear`, `Clear the terminal window and home the cursor`)
+    cmd.set_default(handle_clear_default)
+    <- cmd
+}

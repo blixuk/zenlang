@@ -142,7 +142,7 @@ class TypeHandler:
     def map_type(self, type: Union[Type, str]) -> str:
         if isinstance(type, str):
             name = type
-            if name in ("String", "Integer", "Boolean", "Variant", "Decimal", "List", "Map", "Rune", "Number", "Any", "Bool", "Int", "Float", "Str", "string"):
+            if name in ("String", "Integer", "Boolean", "Variant", "Decimal", "List", "Map", "Rune", "Byte", "Bytes", "Vector", "Tuple", "Number", "Text", "Collection", "Container", "Any", "string"):
                 return "ZenValue"
             if name == "Void": return "void"
             if not name: return "ZenValue"
@@ -161,7 +161,7 @@ class TypeHandler:
         if hasattr(type, "name"):
             name = str(type.name)
 
-        if name in ("String", "Integer", "Boolean", "Variant", "Decimal", "List", "Map", "Rune", "Number", "Any", "ZenValue", "ZenVariant", "int", "bool", "float", "double", "char*", "string", "Int", "Bool", "Float", "Double", "Str"):
+        if name in ("String", "Integer", "Boolean", "Variant", "Decimal", "List", "Map", "Rune", "Byte", "Bytes", "Vector", "Tuple", "Number", "Text", "Collection", "Container", "Any", "ZenValue", "ZenVariant", "int", "bool", "float", "double", "char*", "string"):
             return "ZenValue"
         if name in ("void", "Void"):
             return "void"

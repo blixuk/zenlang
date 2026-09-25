@@ -1,0 +1,75 @@
+/!
+  zenshell - Desktop Application Launcher (open)
+  Opens files, directories, and URLs using the system default desktop handler.
+!/
+
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function get_desktop_launcher() {
+    let plat -> sys.platform()
+    when plat == `darwin` {
+        <- `open`
+    }
+    <- `xdg-open`
+}
+
+function handle_open_default(args, c) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: open <file_path | directory | url>`)
+    }
+    let target -> args[0]
+    let launcher -> get_desktop_launcher()
+
+    // 1. Web URL
+    when Str.starts_with(target, `http://`) or Str.starts_with(target, `https://`) {
+        let cmd -> launcher + ` "` + target + `" >/dev/null 2>&1 &`
+        process.shell(cmd)
+        <- color.green(`✓ Opening URL '` + target + `' in default browser`)
+    }
+
+    // 2. Local File / Directory Path
+    let resolved -> when Str.starts_with(target, `/`) { target } or { path.join(c.cwd, target) }
+    when Str.starts_with(target, `~`) {
+        let home -> c.bookmarks[`home`]
+        when home == Nothing { home -> `/` }
+        resolved -> home + Str.substring(target, 1, Str.length(target))
+    }
+
+    let is_f -> __builtin_file.is_file(resolved)
+    let is_d -> __builtin_file.is_dir(resolved)
+
+    when not is_f and not is_d {
+        <- color.red(`Error: Target not found: ` + resolved)
+    }
+
+    let cmd -> launcher + ` "` + resolved + `" >/dev/null 2>&1 &`
+    process.shell(cmd)
+    let kind_label -> when is_d { `directory` } or { `file` }
+    <- color.green(`✓ Opening ` + kind_label + ` '` + path.basename(resolved) + `' in default application`)
+}
+
+let DOC_OPEN -> ```
+# open - Desktop Application Launcher
+
+Opens files, directories, or web URLs in the system's default desktop application
+via `xdg-open` (Linux) or `open` (macOS).
+
+## Usage
+- `open index.html` — Opens file in default browser or viewer.
+- `open .` — Opens current directory in graphical file manager.
+- `open https://zenlang.org` — Opens web URL in default web browser.
+
+## Aliases
+- `o` -> `open`
+```
+
+export function create_open_command(ctx) {
+    let cmd -> cmd_base.Command(`open`, `Open files, directories or URLs in default desktop applications (alias: o)`)
+    cmd.set_default(handle_open_default)
+    <- cmd
+}

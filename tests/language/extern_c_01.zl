@@ -1,0 +1,13 @@
+extern use `<sys/sysinfo.h>`
+extern use unistd
+extern from unistd use getuid
+
+function main() {
+    let pid -> unistd.getpid()
+    assert pid > 0
+    let cpus -> get_nprocs()
+    assert cpus > 0
+    let uid -> getuid()
+    assert uid >= 0
+    writeln(f`PID: {pid}, CPUs: {cpus}, UID: {uid}`)
+}

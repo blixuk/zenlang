@@ -1,0 +1,92 @@
+/!
+    zen.crypto.fnv - FNV-1a Non-Cryptographic Hash Functions (32-bit and 64-bit).
+    Pure Zenlang implementation with zero C dependencies.
+    Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_byte_list(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _pad_hex_byte(b) {
+    let digits -> `0123456789abcdef`
+    let val -> 0 + b
+    let hi -> (val >> 4) & 15
+    let lo -> val & 15
+    <- Str.at(digits, hi) + Str.at(digits, lo)
+}
+
+function _pad_hex32_be(num) {
+    let n -> 0 + num
+    let b3 -> (n >> 24) & 255
+    let b2 -> (n >> 16) & 255
+    let b1 -> (n >> 8) & 255
+    let b0 -> n & 255
+    <- _pad_hex_byte(b3) + _pad_hex_byte(b2) + _pad_hex_byte(b1) + _pad_hex_byte(b0)
+}
+
+/!
+    Fast 32-bit FNV-1a non-cryptographic hash.
+    @return 8-character lowercase hex string.
+!/
+export function fnv1a(data) {
+    when (data == Nothing) { <- `811c9dc5` }
+
+    let bytes -> _to_byte_list(data)
+    let len -> bytes.length
+    let hash_val -> 0x811c9dc5
+    let prime -> 0x01000193
+
+    let i -> 0
+    do while i < len {
+        let b -> bytes[i]
+        when (b < 0) { b -> b + 256 }
+        hash_val -> (hash_val ^^ b) & 0xffffffff
+        hash_val -> (hash_val * prime) & 0xffffffff
+        i -> i + 1
+    }
+
+    <- _pad_hex32_be(hash_val)
+}
+
+/!
+    Fast 64-bit FNV-1a non-cryptographic hash.
+    Uses 32-bit limbs with zero 64-bit signed integer overflow.
+    @return 16-character lowercase hex string.
+!/
+export function fnv1a64(data) {
+    let bytes -> _to_byte_list(data)
+    let len -> bytes.length
+    let h_hi -> 0xcbf29ce4
+    let h_lo -> 0x84222325
+
+    let i -> 0
+    do while i < len {
+        let b -> bytes[i]
+        when (b < 0) { b -> b + 256 }
+        h_lo -> h_lo ^^ b
+
+        // Multiply by FNV prime 0x100000001b3 = 2^40 + 0x1b3
+        let p_lo -> h_lo * 0x1b3
+        let carry -> p_lo >> 32
+        let p_hi -> ((h_hi * 0x1b3) + carry) & 0xffffffff
+        let shift_hi -> (h_lo << 8) & 0xffffffff
+
+        h_hi -> (p_hi + shift_hi) & 0xffffffff
+        h_lo -> p_lo & 0xffffffff
+        i -> i + 1
+    }
+
+    <- _pad_hex32_be(h_hi) + _pad_hex32_be(h_lo)
+}

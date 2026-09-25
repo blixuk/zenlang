@@ -57,6 +57,7 @@ export enumerator TokenType {
     CASE -> `CASE`,
     WITH -> `WITH`,
     TASK -> `TASK`,
+    CHANNEL -> `CHANNEL`,
     AWAIT -> `AWAIT`,
 
     LIST -> `LIST`,
@@ -156,6 +157,7 @@ export enumerator TokenType {
     IMPORT -> `IMPORT`,
     FROM -> `FROM`,
     AS -> `AS`,
+    EXTERN -> `EXTERN`,
 
     // Symbolic error/control punctuation
     CHECK_SYMBOL -> `CHECK_SYMBOL`,
@@ -170,7 +172,7 @@ export enumerator TokenType {
  THREE_LAYER phase 5.1: zero-copy integer span token representation.
  !/
 export function token(kind, start, length, line, column, end_line, end_column) {
-    <- [kind, start, length, line, column, end_line, end_column]
+    <- __builtin_ast.token(kind, start, length, line, column, end_line, end_column)
 }
 
 export function tok_kind(t) {
@@ -385,6 +387,8 @@ export function kind_id(kind) {
     when s == `BYTES` { <- 121 }
     when s == `COALESCE` { <- 122 }
     when s == `PIPELINE` { <- 123 }
+    when s == `EXTERN` { <- 124 }
+    when s == `CHANNEL` { <- 125 }
     // Already an integer id (native TokenType.X emit).
     when Str.contains(`0123456789`, Str.at(s, 0)) {
         <- kind

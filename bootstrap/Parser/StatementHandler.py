@@ -58,6 +58,7 @@ class StatementHandler(
             "import": self.import_statement,
             "use": self.import_statement,  # alias for import
             "from": self.from_import_statement,
+            "extern": self.extern_statement,
             "scope": self.scope_statement,
             "defer": self.defer_statement,
             "raise": self.raise_statement,
@@ -129,6 +130,8 @@ class StatementHandler(
             return self.check_statement()
         if self.token_handler.check_type(TokenType.ASSERT_SYMBOL):
             return self.assert_statement()
+        if self.token_handler.check_type(TokenType.EXTERN):
+            return self.extern_statement()
 
         # Keyword Statements
         if self.token_handler.check_type(TokenType.KEYWORD):

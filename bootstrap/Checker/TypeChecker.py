@@ -27,6 +27,11 @@ from Checker.Type import (
     TypeMap,
     TypeTuple,
     TypeElement,
+    TypeByte,
+    TypeNumber,
+    TypeText,
+    TypeCollection,
+    TypeContainer,
     PRIMITIVE_TYPES,
 )
 from Lexer.Token import COMPARATORS, OPERATORS
@@ -146,6 +151,7 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
 
         self.typevariable_counter: int = 0
 
+        self.has_extern: bool = False
         self._register_builtins()
 
         self.logger: TypeCheckerLogger = TypeCheckerLogger(source_path)
@@ -223,6 +229,8 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("__builtin_vm", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("vm", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("VM", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_ffi", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("ffi", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
 
         # Internal compiler structures
         self.scope.define(Symbol("__builtin_memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
@@ -244,6 +252,8 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
 
         self.scope.define(Symbol("__builtin_memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("Memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_ast", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("ast", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
 
     def print_ast(self, as_json: bool = False) -> None:
         Printer.print_data(self.AST, as_json, "TYPE CHECKER AST")
@@ -467,7 +477,6 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
             return self.check_class_statement(statement)
 
         elif isinstance(statement, StructureStatement):
-            print(f"DEBUG: Found StructureStatement {statement.name}")
             return self.check_structure_statement(statement)
 
         elif isinstance(statement, EnumeratorStatement):
@@ -763,6 +772,15 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
                 elif isinstance(b, TypeMap):
                     node_to_materialize.node_type = "MapLiteral"
                     node_to_materialize.elements = []
+                elif isinstance(b, TypeSet):
+                    node_to_materialize.node_type = "SetLiteral"
+                    node_to_materialize.elements = []
+                elif isinstance(b, TypeVector):
+                    node_to_materialize.node_type = "VectorLiteral"
+                    node_to_materialize.elements = []
+                elif isinstance(b, TypeTuple):
+                    node_to_materialize.node_type = "TupleLiteral"
+                    node_to_materialize.elements = []
                 
                 cls = self._get_literal_class_for_type(node_to_materialize.node_type)
                 if cls is not None:
@@ -810,6 +828,79 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         # Boolean unification (boolean-only)
         if isinstance(a, TypeBoolean) and isinstance(b, TypeBoolean):
             return TypeBoolean()
+
+        # Abstract Type unification
+        if isinstance(a, TypeNumber) or isinstance(b, TypeNumber):
+            target = b if isinstance(a, TypeNumber) else a
+            if isinstance(target, (TypeNumber, TypeInteger, TypeDecimal, TypeByte)):
+                return target
+            if variant_fallback:
+                return TypeVariant()
+            raise self.logger.error_type_unification(a, b, attachment)
+
+        if isinstance(a, TypeText) or isinstance(b, TypeText):
+            target = b if isinstance(a, TypeText) else a
+            if isinstance(target, (TypeText, TypeString, TypeRune)):
+                return target
+            if variant_fallback:
+                return TypeVariant()
+            raise self.logger.error_type_unification(a, b, attachment)
+
+        if isinstance(a, TypeCollection) or isinstance(b, TypeCollection):
+            target = b if isinstance(a, TypeCollection) else a
+            if isinstance(target, (TypeCollection, TypeList, TypeVector, TypeSet, TypeMap, TypeTuple)):
+                return target
+            if variant_fallback:
+                return TypeVariant()
+            raise self.logger.error_type_unification(a, b, attachment)
+
+        if isinstance(a, TypeContainer) or isinstance(b, TypeContainer):
+            target = b if isinstance(a, TypeContainer) else a
+            if isinstance(target, (TypeContainer, TypeStructure, TypeClass, TypeEnumerator, TypeEnum, TypeEnumVariant, TypeMap)):
+                return target
+            if variant_fallback:
+                return TypeVariant()
+            raise self.logger.error_type_unification(a, b, attachment)
+
+        # Parameterized Collection Unification
+        if isinstance(a, TypeList) and isinstance(b, TypeList):
+            if not a.elements and not b.elements:
+                return TypeList(None, [])
+            if not a.elements:
+                return b
+            if not b.elements:
+                return a
+            unified_elem = self.unify(a.elements[0].type, b.elements[0].type, attachment, variant_fallback=variant_fallback)
+            return TypeList(None, [TypeElement(None, unified_elem)])
+
+        if isinstance(a, TypeSet) and isinstance(b, TypeSet):
+            unified_elem = self.unify(a.element_type, b.element_type, attachment, variant_fallback=variant_fallback)
+            return TypeSet(None, unified_elem)
+
+        if isinstance(a, TypeMap) and isinstance(b, TypeMap):
+            unified_key = self.unify(a.key_type, b.key_type, attachment, variant_fallback=variant_fallback)
+            unified_val = self.unify(a.value_type, b.value_type, attachment, variant_fallback=variant_fallback)
+            return TypeMap(None, unified_key, unified_val)
+
+        if isinstance(a, TypeVector) and isinstance(b, TypeVector):
+            if a.size != 0 and b.size != 0 and a.size != b.size:
+                raise self.logger.error_type_unification(a, b, attachment)
+            size = a.size if a.size != 0 else b.size
+            unified_elem = self.unify(a.element_type, b.element_type, attachment, variant_fallback=variant_fallback)
+            return TypeVector(None, unified_elem, size)
+
+        if isinstance(a, TypeTuple) and isinstance(b, TypeTuple):
+            if not a.elements:
+                return b
+            if not b.elements:
+                return a
+            if len(a.elements) != len(b.elements):
+                raise self.logger.error_type_unification(a, b, attachment)
+            unified_elements = []
+            for ea, eb in zip(a.elements, b.elements):
+                u_type = self.unify(ea.type, eb.type, attachment, variant_fallback=variant_fallback)
+                unified_elements.append(TypeElement(ea.name or eb.name, u_type))
+            return TypeTuple(None, unified_elements)
 
         # Optional lenient fallback
         if variant_fallback:

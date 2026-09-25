@@ -1,0 +1,87 @@
+/!
+  zenshell - Native ZenScript File Runner (run)
+  Executes pure Zenlang (.zl) script files directly with arguments and ambient streams.
+!/
+
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function find_zen_binary(ctx) {
+    let p_res -> process.result(`which zen 2>/dev/null`)
+    when p_res != Nothing and p_res[`code`] == 0 and Str.trim(p_res[`stdout`]) != `` {
+        <- Str.trim(p_res[`stdout`])
+    }
+    let repo_bin -> `/home/blix/.grok/worktrees/2025-zen/zen/bin/zen`
+    when __builtin_file.is_file(repo_bin) {
+        <- repo_bin
+    }
+    let cand1 -> path.join(ctx.cwd, `bin/zen`)
+    when __builtin_file.is_file(cand1) {
+        <- cand1
+    }
+    let cand2 -> path.join(ctx.cwd, `../bin/zen`)
+    when __builtin_file.is_file(cand2) {
+        <- cand2
+    }
+    <- `zen`
+}
+
+function handle_run_default(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: run <script.zl> [args...]`)
+    }
+
+    let raw_script -> args[0]
+    let resolved -> when Str.starts_with(raw_script, `/`) { raw_script } or { path.join(ctx.cwd, raw_script) }
+    when Str.starts_with(raw_script, `~`) {
+        let home -> ctx.bookmarks[`home`]
+        when home == Nothing { home -> `/` }
+        resolved -> home + Str.substring(raw_script, 1, Str.length(raw_script))
+    }
+
+    when not __builtin_file.is_file(resolved) {
+        <- color.red(`Error: Script file not found: ` + resolved)
+    }
+
+    let zen_bin -> find_zen_binary(ctx)
+    let script_args -> when (args.length > 1) { ` ` + Str.join(args[1:], ` `) } or { `` }
+    let cmd -> zen_bin + ` ` + resolved + script_args
+
+    let proc_res -> process.result(cmd)
+    when proc_res == Nothing {
+        <- color.red(`Error: Failed to spawn process runner`)
+    }
+
+    ctx.last_status -> proc_res[`code`]
+    let stdout_text -> when (proc_res[`stdout`] != Nothing) { proc_res[`stdout`] } or { `` }
+    let stderr_text -> when (proc_res[`stderr`] != Nothing) { proc_res[`stderr`] } or { `` }
+
+    when proc_res[`code`] != 0 {
+        when Str.trim(stderr_text) != `` {
+            <- color.red(stderr_text)
+        }
+        <- color.red(stdout_text)
+    }
+
+    <- stdout_text
+}
+
+let DOC_RUN -> ```
+# run - ZenScript File Runner
+
+Executes pure Zenlang (.zl) scripts natively from the shell with ambient arguments and streams.
+
+## Usage
+- `run script.zl` — Executes script via standalone Zen runtime.
+- `run path/to/script.zl arg1 arg2` — Passes CLI arguments directly to the script.
+```
+
+export function create_run_command(ctx) {
+    let cmd -> cmd_base.Command(`run`, `Execute pure Zenlang (.zl) script files with arguments`)
+    cmd.set_default(handle_run_default)
+    <- cmd
+}

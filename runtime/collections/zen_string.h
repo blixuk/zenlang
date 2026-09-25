@@ -20,6 +20,7 @@ ZenValue ZenString_ends_with(ZenValue string, ZenValue suffix);
 ZenValue ZenString_find_index(ZenValue string, ZenValue substring);
 ZenValue ZenString_index_of(ZenValue string, ZenValue substring);
 ZenValue ZenString_at(ZenValue string, ZenValue index);
+ZenValue ZenString_byte_at(ZenValue string, ZenValue index);
 ZenValue ZenString_contains(ZenValue string, ZenValue substring);
 
 // Global unboxing/string conversion

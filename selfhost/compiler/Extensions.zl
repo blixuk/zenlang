@@ -405,7 +405,7 @@ export function ast_file(target_path) {
 export function compiler_info() {
     let out -> style_bold(`Zenlang Compiler & Environment Diagnostics\n`)
     out -> out + style_dim(`-----------------------------------------\n`)
-    out -> out + style_bold(`Version:        `) + style_cyan(`0.9.0-beta (Standalone Self-Hosted Native)\n`)
+    out -> out + style_bold(`Version:        `) + style_cyan(`1.0.0-beta.1 (Standalone Self-Hosted Native)\n`)
     out -> out + style_bold(`Architecture:   `) + `Three-Layer (ZenValue ABI + Native Compiler IR + Bytecode VM)\n`
     out -> out + style_bold(`Execution:      `) + `Dual-Path (Pure AOT Native C / Stack Bytecode VM)\n`
     out -> out + style_bold(`Bytecode Form:  `) + `ZENB v1 (.zbc standalone distribution)\n`

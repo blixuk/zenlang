@@ -50,12 +50,14 @@ Commands:
   pkg <cmd>         Package management (install, add, remove, list)
   bump <type>       Bump version (patch, minor, major)
   publish           Create release tarball package
+  release           Build & package standalone release tarball (zen-v1.0.0-beta.1-*)
   benchmark         Run benchmark suites in benches/
   profile [file.zl] Profile performance, hot spots & flame graph
   playground [file] Live interactive terminal playground & code lab
   fm [path]         Interactive terminal file manager & code explorer
   fmt [file.zl...]  Zenlang source code formatter
   view [file.zm]    Terminal reader & interactive pager for Zen Mark (.zm) docs
+  shell [args...]   Start the interactive Zen Trinity shell (zenshell / zsh)
   clean             Remove build/, output/, bin/zen* (not source)
 
 Handoff model:
@@ -164,6 +166,55 @@ cmd_run() {
   exec "$ROOT/bin/zen" "$@"
 }
 
+cmd_release() {
+  local version="v1.0.0-beta.1"
+  local arch
+  arch="$(uname -m)"
+  local os
+  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  local pkg_name="zen-${version}-${os}-${arch}"
+  local rel_dir="$ROOT/output/release/${pkg_name}"
+  local tar_path="$ROOT/output/release/${pkg_name}.tar.gz"
+
+  echo "Building Zenlang ${version} release for ${os}-${arch}..."
+  cmd_install_selfhost
+  cp -f "$BIN_DIR/zen-selfhost" "$BIN_DIR/zen"
+
+  rm -rf "$rel_dir"
+  mkdir -p "$rel_dir/bin" "$rel_dir/lib" "$rel_dir/doc" "$rel_dir/examples"
+
+  cp -f "$BIN_DIR/zen" "$rel_dir/bin/zen"
+  chmod +x "$rel_dir/bin/zen"
+  cp -rf "$ROOT/lib/zen" "$rel_dir/lib/"
+  cp -f "$ROOT/README.md" "$rel_dir/" 2>/dev/null || true
+  cp -f "$ROOT/LICENSE" "$rel_dir/" 2>/dev/null || true
+  cp -rf "$ROOT/examples"/* "$rel_dir/examples/" 2>/dev/null || true
+  cp -f "$ROOT/doc/Getting_Started.md" "$rel_dir/doc/" 2>/dev/null || true
+  cp -f "$ROOT/doc/SPECIFICATION.md" "$rel_dir/doc/" 2>/dev/null || true
+
+  tar -czf "$tar_path" -C "$ROOT/output/release" "$pkg_name"
+  local sha
+  if command -v sha256sum >/dev/null; then
+    sha="$(sha256sum "$tar_path" | cut -d' ' -f1)"
+  elif command -v shasum >/dev/null; then
+    sha="$(shasum -a 256 "$tar_path" | cut -d' ' -f1)"
+  else
+    sha="N/A"
+  fi
+
+  local preview
+  preview="$(tar -tzf "$tar_path")"
+  local count
+  count="$(echo "$preview" | wc -l)"
+  echo "=== Zenlang Release Package Created ==="
+  echo "Archive: $tar_path"
+  echo "Size:    $(ls -lh "$tar_path" | awk '{print $5}')"
+  echo "SHA256:  $sha"
+  echo "Contents (sample of ${count} entries):"
+  sed -n '1,15p' <<< "$preview"
+  echo "..."
+}
+
 cmd_clean() {
   rm -rf "$BUILD_DIR"/* "$ROOT/output"/* 2>/dev/null || true
   rm -f "$BIN_DIR/zen" "$BIN_DIR/zen-bootstrap" "$BIN_DIR/zen-selfhost"
@@ -181,6 +232,7 @@ case "$cmd" in
   install-selfhost) cmd_install_selfhost ;;
   install-selfhost-fast) ZEN_OPT=0 cmd_install_selfhost ;;
   install-handoff) cmd_install_handoff ;;
+  release) cmd_release ;;
   handoff-soak) bash "$ROOT/scripts/handoff_soak.sh" ;;
   selfhost-smoke) bash "$ROOT/scripts/selfhost_smoke.sh" ;;
   test-golden) bash "$ROOT/scripts/run_golden.sh" ;;
@@ -225,6 +277,11 @@ case "$cmd" in
     fi
     # shellcheck disable=SC2086
     exec "$ROOT/bin/zen" "$ROOT/tools/zenrepl.zl" "$@"
+    ;;
+  shell|zsh|zenshell)
+    export ZEN_PATH="$ROOT:$ROOT/zenshell/src:$ROOT/lib"
+    export PYTHONPATH="$ROOT/bootstrap"
+    exec python3 "$ROOT/bootstrap/Zen.py" "$ROOT/zenshell/src/main.zl" "$@"
     ;;
   init|new|watch|dash|dashboard|graph|todo|doc|pkg|bump|publish|benchmark|bench|profile)
     # shellcheck disable=SC2086

@@ -1,0 +1,542 @@
+import zen.test as test
+import zen.crypto as Crypto
+import zen.crypto.chacha20 as ChaCha20
+import zen.crypto.rc4 as RC4
+import zen.crypto.xor_cipher as XOR
+import zen.crypto.crc32 as CRC32
+import zen.crypto.pbkdf2 as PBKDF2
+import zen.crypto.poly1305 as Poly1305
+import zen.crypto.aead as AEAD
+import zen.crypto.xtea as XTEA
+import zen.crypto.aes as AES
+import zen.crypto.padding as Padding
+import zen.crypto.dh as DH
+import zen.crypto.classical as Classical
+import zen.crypto.hex as Hex
+import zen.crypto.hash as Hash
+import zen.crypto.sha256 as SHA256
+import zen.crypto.sha512 as SHA512
+import zen.crypto.sha1 as SHA1
+import zen.crypto.md5 as MD5
+import zen.crypto.fnv as FNV
+import zen.crypto.base16 as Base16
+import zen.crypto.base32 as Base32
+import zen.crypto.base58 as Base58
+import zen.crypto.base85 as Base85
+import zen.crypto.merkle as Merkle
+import zen.crypto.blockchain as Blockchain
+
+function test_chacha20() {
+    let key -> `secret-key-32-bytes-long-padding`
+    let nonce -> `nonce1234567`
+    let msg -> `Zenlang high-security ChaCha20 stream cipher verification!`
+
+    // Test byte-level roundtrip
+    let enc_bytes -> ChaCha20.encrypt(key, nonce, msg, 1)
+    let dec_msg -> ChaCha20.decrypt(key, nonce, enc_bytes, 1)
+    let pass -> test.assert_equal(dec_msg, msg, `ChaCha20 byte roundtrip`)
+
+    // Test hex-level roundtrip
+    let hex_cipher -> ChaCha20.encrypt_hex(key, nonce, msg, 1)
+    let dec_from_hex -> ChaCha20.decrypt_hex(key, nonce, hex_cipher, 1)
+    pass -> pass and test.assert_equal(dec_from_hex, msg, `ChaCha20 hex roundtrip`)
+
+    // Key sensitivity
+    let wrong_key -> `secret-key-32-bytes-wrong-paddng`
+    let bad_dec -> ChaCha20.decrypt_hex(wrong_key, nonce, hex_cipher, 1)
+    pass -> pass and test.assert_false(bad_dec == msg, `ChaCha20 wrong key should fail decryption`)
+
+    // Nonce sensitivity
+    let wrong_nonce -> `nonce9999999`
+    let bad_nonce_dec -> ChaCha20.decrypt_hex(key, wrong_nonce, hex_cipher, 1)
+    pass -> pass and test.assert_false(bad_nonce_dec == msg, `ChaCha20 wrong nonce should fail decryption`)
+
+    <- pass
+}
+
+function test_rc4() {
+    let key -> `my-rc4-streaming-key`
+    let msg -> `Fast lightweight RC4 stream encryption payload.`
+
+    // Test byte-level roundtrip
+    let enc_bytes -> RC4.encrypt(key, msg)
+    let dec_msg -> RC4.decrypt(key, enc_bytes)
+    let pass -> test.assert_equal(dec_msg, msg, `RC4 byte roundtrip`)
+
+    // Test hex-level roundtrip
+    let hex_cipher -> RC4.encrypt_hex(key, msg)
+    let dec_from_hex -> RC4.decrypt_hex(key, hex_cipher)
+    pass -> pass and test.assert_equal(dec_from_hex, msg, `RC4 hex roundtrip`)
+
+    // Key sensitivity
+    let wrong_key -> `different-key`
+    let bad_dec -> RC4.decrypt_hex(wrong_key, hex_cipher)
+    pass -> pass and test.assert_false(bad_dec == msg, `RC4 wrong key should fail decryption`)
+
+    <- pass
+}
+
+function test_xor_and_otp() {
+    let key -> `repeating-key`
+    let msg -> `Symmetric XOR Stream Cipher Testing!`
+
+    // Repeating key XOR roundtrip
+    let enc_bytes -> XOR.encrypt(key, msg)
+    let dec_msg -> XOR.decrypt(key, enc_bytes)
+    let pass -> test.assert_equal(dec_msg, msg, `XOR repeating key roundtrip`)
+
+    let hex_cipher -> XOR.encrypt_hex(key, msg)
+    let dec_from_hex -> XOR.decrypt_hex(key, hex_cipher)
+    pass -> pass and test.assert_equal(dec_from_hex, msg, `XOR hex roundtrip`)
+
+    // One-Time Pad (OTP)
+    let pad -> `0123456789012345678901234567890123456789`
+    let short_msg -> `Secure OTP message`
+    let otp_bytes -> XOR.otp_encrypt(pad, short_msg)
+    let otp_dec -> XOR.otp_decrypt(pad, otp_bytes)
+    pass -> pass and test.assert_equal(otp_dec, short_msg, `OTP roundtrip`)
+
+    <- pass
+}
+
+function test_crc32_and_adler32() {
+    // Known test vectors for "123456789"
+    let c1 -> CRC32.crc32(`123456789`)
+    let pass -> test.assert_equal(c1, 3421780262, `CRC-32 integer of 123456789`)
+
+    let h1 -> CRC32.crc32_hex(`123456789`)
+    pass -> pass and test.assert_equal(h1, `cbf43926`, `CRC-32 hex of 123456789`)
+
+    // Empty string CRC-32 is 0
+    let c0 -> CRC32.crc32(``)
+    pass -> pass and test.assert_equal(c0, 0, `CRC-32 of empty string`)
+    pass -> pass and test.assert_equal(CRC32.crc32_hex(``), `00000000`, `CRC-32 hex of empty string`)
+
+    // Adler-32 of "123456789" is 152961502
+    let a1 -> CRC32.adler32(`123456789`)
+    pass -> pass and test.assert_equal(a1, 152961502, `Adler-32 integer of 123456789`)
+
+    let ah1 -> CRC32.adler32_hex(`123456789`)
+    pass -> pass and test.assert_equal(ah1, `091e01de`, `Adler-32 hex of 123456789`)
+
+    <- pass
+}
+
+function test_pbkdf2() {
+    // PBKDF2-HMAC-SHA256 test vector (password="password", salt="salt", c=2, dkLen=20)
+    let dk_hex -> PBKDF2.derive_hex(`password`, `salt`, 2, 20)
+    let pass -> test.assert_equal(dk_hex, `ae4d0c95af6b46d32d0adff928f06dd02a303f8e`, `PBKDF2-HMAC-SHA256 vector match`)
+
+    // Key length test
+    let dk32 -> PBKDF2.derive_bytes(`my-passphrase`, `random-salt`, 10, 32)
+    pass -> pass and test.assert_equal(dk32.length, 32, `PBKDF2 32-byte key generation`)
+
+    <- pass
+}
+
+function test_poly1305() {
+    // RFC 8439 Section 2.5.2 Vector
+    let key_hex -> `85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b`
+    let key -> Hex.decode_bytes(key_hex)
+    let msg -> `Cryptographic Forum Research Group`
+    let tag_hex -> Poly1305.mac_hex(key, msg)
+    let expected_tag -> `a8061dc1305136c6c22b8baf0c0127a9`
+    let pass -> test.assert_equal(tag_hex, expected_tag, `Poly1305 RFC 8439 tag vector`)
+
+    // Verify helper
+    let valid -> Poly1305.verify(key, msg, expected_tag)
+    pass -> pass and test.assert_true(valid, `Poly1305 valid tag verification`)
+
+    let invalid -> Poly1305.verify(key, `Tampered message`, expected_tag)
+    pass -> pass and test.assert_false(invalid, `Poly1305 invalid message rejection`)
+
+    <- pass
+}
+
+function test_aead() {
+    // RFC 8439 Section 2.8.2 Vector
+    let key_hex -> `808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f`
+    let nonce_hex -> `070000004041424344454647`
+    let aad_hex -> `50515253c0c1c2c3c4c5c6c7`
+    let plaintext -> `Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.`
+
+    let key -> Hex.decode_bytes(key_hex)
+    let nonce -> Hex.decode_bytes(nonce_hex)
+    let aad -> Hex.decode_bytes(aad_hex)
+
+    let enc -> AEAD.encrypt(key, nonce, plaintext, aad)
+    let ct_hex -> enc[`ciphertext_hex`]
+    let tag_hex -> enc[`tag_hex`]
+
+    let exp_ct -> `d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116`
+    let exp_tag -> `1ae10b594f09e26a7e902ecbd0600691`
+
+    let pass -> test.assert_equal(ct_hex, exp_ct, `AEAD RFC 8439 ciphertext vector`)
+    pass -> pass and test.assert_equal(tag_hex, exp_tag, `AEAD RFC 8439 tag vector`)
+
+    // Decrypt round-trip
+    let dec_str -> AEAD.decrypt_to_string(key, nonce, enc[`ciphertext`], enc[`tag`], aad)
+    pass -> pass and test.assert_equal(dec_str, plaintext, `AEAD decryption roundtrip`)
+
+    // Tamper rejection
+    let ct_bytes -> enc[`ciphertext`]
+    let tampered -> []
+    let i -> 0
+    do while i < ct_bytes.length {
+        tampered.append(ct_bytes[i])
+        i -> i + 1
+    }
+    tampered[0] -> tampered[0] ^^ 1
+    let fail_res -> AEAD.decrypt(key, nonce, tampered, enc[`tag`], aad)
+    pass -> pass and test.assert_equal(fail_res, Nothing, `AEAD tamper rejection`)
+
+    <- pass
+}
+
+function test_xtea() {
+    let key -> `0123456789abcdef`
+    let iv  -> `12345678`
+    let msg -> `XTEA 64-bit block cipher test with PKCS#7 padding in CBC mode!`
+
+    let enc_hex -> XTEA.encrypt_hex(key, iv, msg)
+    let dec_msg -> XTEA.decrypt_hex(key, iv, enc_hex)
+    let pass -> test.assert_equal(dec_msg, msg, `XTEA CBC roundtrip`)
+
+    // Block level encrypt/decrypt
+    let blk -> `12345678`
+    let enc_blk -> XTEA.encrypt_block(key, blk)
+    let dec_blk -> XTEA.decrypt_block(key, enc_blk)
+    let dec_str -> __builtin.bytes_to_string(dec_blk)
+    pass -> pass and test.assert_equal(dec_str, blk, `XTEA block roundtrip`)
+
+    <- pass
+}
+
+function test_aes128() {
+    // NIST FIPS-197 AES-128 test vector
+    let key_hex -> `000102030405060708090a0b0c0d0e0f`
+    let pt_hex  -> `00112233445566778899aabbccddeeff`
+    let key -> Hex.decode_bytes(key_hex)
+    let pt  -> Hex.decode_bytes(pt_hex)
+
+    let rkeys -> AES.expand_key(key)
+    let ct -> AES.encrypt_block(rkeys, pt)
+    let ct_hex -> Hex.encode(ct)
+    let pass -> test.assert_equal(ct_hex, `69c4e0d86a7b0430d8cdb78070b4c55a`, `AES-128 NIST FIPS-197 block vector`)
+
+    let dec_block -> AES.decrypt_block(rkeys, ct)
+    let dec_hex -> Hex.encode(dec_block)
+    pass -> pass and test.assert_equal(dec_hex, pt_hex, `AES-128 NIST block decrypt`)
+
+    // CBC mode with PKCS#7 padding
+    let iv_hex -> `00000000000000000000000000000000`
+    let iv -> Hex.decode_bytes(iv_hex)
+    let msg -> `FIPS-197 AES-128 CBC mode verified in 100% pure Zenlang!`
+    let enc_hex -> AES.encrypt_hex(key, iv, msg)
+    let recovered -> AES.decrypt_hex(key, iv, enc_hex)
+    pass -> pass and test.assert_equal(recovered, msg, `AES-128 CBC roundtrip`)
+
+    <- pass
+}
+
+function test_diffie_hellman() {
+    let alice_priv -> 123456
+    let alice_pub -> DH.generate_public_key(Nothing, Nothing, alice_priv)
+
+    let bob_priv -> 654321
+    let bob_pub -> DH.generate_public_key(Nothing, Nothing, bob_priv)
+
+    let s_alice -> DH.compute_shared_secret(bob_pub, alice_priv, Nothing)
+    let s_bob -> DH.compute_shared_secret(alice_pub, bob_priv, Nothing)
+
+    let pass -> test.assert_equal(s_alice, s_bob, `Diffie-Hellman shared secret agreement`)
+
+    let key_alice -> DH.derive_shared_key_hex(s_alice)
+    let key_bob -> DH.derive_shared_key_hex(s_bob)
+    pass -> pass and test.assert_equal(key_alice, key_bob, `Diffie-Hellman symmetric key equivalence`)
+
+    <- pass
+}
+
+function test_classical_ciphers() {
+    let msg -> `The Quick Brown Fox Jumps Over The Lazy Dog!`
+
+    // Caesar & ROT13
+    let c_enc -> Classical.caesar_encrypt(msg, 5)
+    let c_dec -> Classical.caesar_decrypt(c_enc, 5)
+    let pass -> test.assert_equal(c_dec, msg, `Caesar cipher roundtrip`)
+
+    let rot_enc -> Classical.rot13(msg)
+    let rot_dec -> Classical.rot13(rot_enc)
+    pass -> pass and test.assert_equal(rot_dec, msg, `ROT13 roundtrip`)
+
+    // Vigenère
+    let v_enc -> Classical.vigenere_encrypt(msg, `CIPHERKEY`)
+    let v_dec -> Classical.vigenere_decrypt(v_enc, `CIPHERKEY`)
+    pass -> pass and test.assert_equal(v_dec, msg, `Vigenère roundtrip`)
+
+    // Atbash
+    let a_enc -> Classical.atbash(msg)
+    let a_dec -> Classical.atbash(a_enc)
+    pass -> pass and test.assert_equal(a_dec, msg, `Atbash roundtrip`)
+
+    // Rail Fence
+    let rf_enc -> Classical.rail_fence_encrypt(msg, 4)
+    let rf_dec -> Classical.rail_fence_decrypt(rf_enc, 4)
+    pass -> pass and test.assert_equal(rf_dec, msg, `Rail Fence roundtrip`)
+
+    <- pass
+}
+
+function test_unified_crypto_entry() {
+    let key -> `master-crypto-secret-key-32bytes`
+    let nonce -> `nonce-12byte`
+    let msg -> `Unified zen.crypto scope verification.`
+
+    let hex1 -> Crypto.ChaCha20.encrypt_hex(key, nonce, msg, 1)
+    let dec1 -> Crypto.ChaCha20.decrypt_hex(key, nonce, hex1, 1)
+    let pass -> test.assert_equal(dec1, msg, `Crypto.ChaCha20 scope roundtrip`)
+
+    let hex2 -> Crypto.RC4.encrypt_hex(key, msg)
+    let dec2 -> Crypto.RC4.decrypt_hex(key, hex2)
+    pass -> pass and test.assert_equal(dec2, msg, `Crypto.RC4 scope roundtrip`)
+
+    let hex3 -> Crypto.XOR.encrypt_hex(key, msg)
+    let dec3 -> Crypto.XOR.decrypt_hex(key, hex3)
+    pass -> pass and test.assert_equal(dec3, msg, `Crypto.XOR scope roundtrip`)
+
+    let crc -> Crypto.CRC32.crc32_hex(`123456789`)
+    pass -> pass and test.assert_equal(crc, `cbf43926`, `Crypto.CRC32 scope`)
+
+    let digest -> Crypto.sha256(``)
+    pass -> pass and test.assert_equal(digest, `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`, `Crypto.sha256 empty digest`)
+
+    let u -> Crypto.uuid()
+    pass -> pass and test.assert_true(Crypto.UUID.validate(u), `Crypto.uuid generation and validation`)
+
+    // New scopes in Crypto
+    let dk -> Crypto.PBKDF2.derive_hex(`pass`, `salt`, 2, 16)
+    pass -> pass and test.assert_equal(dk.length, 32, `Crypto.PBKDF2 scope hex length`)
+
+    let rot -> Crypto.Classical.rot13(`ABC`)
+    pass -> pass and test.assert_equal(rot, `NOP`, `Crypto.Classical scope`)
+
+    <- pass
+}
+
+function test_extended_hashes() {
+    let pass -> true
+
+    // MD5 verification (RFC 1321)
+    pass -> pass and test.assert_equal(Hash.md5(``), `d41d8cd98f00b204e9800998ecf8427e`, `MD5 empty`)
+    pass -> pass and test.assert_equal(Hash.md5(`hello`), `5d41402abc4b2a76b9719d911017c592`, `MD5 hello`)
+    pass -> pass and test.assert_equal(Hash.md5(`The quick brown fox jumps over the lazy dog`), `9e107d9d372bb6826bd81d3542a419d6`, `MD5 sentence`)
+    pass -> pass and test.assert_equal(Crypto.md5(`hello`), `5d41402abc4b2a76b9719d911017c592`, `Crypto.md5 helper`)
+    pass -> pass and test.assert_equal(Crypto.Hash.md5(`hello`), `5d41402abc4b2a76b9719d911017c592`, `Crypto.Hash.md5 scope`)
+
+    // SHA-1 verification (FIPS 180-1 / RFC 3174)
+    pass -> pass and test.assert_equal(Hash.sha1(``), `da39a3ee5e6b4b0d3255bfef95601890afd80709`, `SHA-1 empty`)
+    pass -> pass and test.assert_equal(Hash.sha1(`hello`), `aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d`, `SHA-1 hello`)
+    pass -> pass and test.assert_equal(Hash.sha1(`The quick brown fox jumps over the lazy dog`), `2fd4e1c67a2d28fced849ee1bb76e7391b93eb12`, `SHA-1 sentence`)
+    pass -> pass and test.assert_equal(Crypto.sha1(`hello`), `aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d`, `Crypto.sha1 helper`)
+    pass -> pass and test.assert_equal(Crypto.Hash.sha1(`hello`), `aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d`, `Crypto.Hash.sha1 scope`)
+
+    // SHA-224 verification (FIPS 180-4)
+    pass -> pass and test.assert_equal(Hash.sha224(``), `d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f`, `SHA-224 empty`)
+    pass -> pass and test.assert_equal(Hash.sha224(`hello`), `ea09ae9cc6768c50fcee903ed054556e5bfc8347907f12598aa24193`, `SHA-224 hello`)
+    pass -> pass and test.assert_equal(Crypto.sha224(`hello`), `ea09ae9cc6768c50fcee903ed054556e5bfc8347907f12598aa24193`, `Crypto.sha224 helper`)
+    pass -> pass and test.assert_equal(Crypto.Hash.sha224(`hello`), `ea09ae9cc6768c50fcee903ed054556e5bfc8347907f12598aa24193`, `Crypto.Hash.sha224 scope`)
+
+    // SHA-384 verification (FIPS 180-4)
+    pass -> pass and test.assert_equal(Hash.sha384(``), `38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b`, `SHA-384 empty`)
+    pass -> pass and test.assert_equal(Hash.sha384(`hello`), `59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f`, `SHA-384 hello`)
+    pass -> pass and test.assert_equal(Crypto.sha384(`hello`), `59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f`, `Crypto.sha384 helper`)
+    pass -> pass and test.assert_equal(Crypto.Hash.sha384(`hello`), `59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f`, `Crypto.Hash.sha384 scope`)
+
+    // SHA-512 verification (FIPS 180-4)
+    pass -> pass and test.assert_equal(Hash.sha512(``), `cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e`, `SHA-512 empty`)
+    pass -> pass and test.assert_equal(Hash.sha512(`hello`), `9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043`, `SHA-512 hello`)
+    pass -> pass and test.assert_equal(Crypto.sha512(`hello`), `9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043`, `Crypto.sha512 helper`)
+    pass -> pass and test.assert_equal(Crypto.Hash.sha512(`hello`), `9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043`, `Crypto.Hash.sha512 scope`)
+
+    // FNV-1a verification (32-bit & 64-bit)
+    pass -> pass and test.assert_equal(Hash.fnv1a(``), `811c9dc5`, `FNV-1a 32-bit empty`)
+    pass -> pass and test.assert_equal(Hash.fnv1a(`hello world`), `d58b3fa7`, `FNV-1a 32-bit hello world`)
+    pass -> pass and test.assert_equal(Hash.fnv1a64(``), `cbf29ce484222325`, `FNV-1a 64-bit empty`)
+    // Direct modular imports
+    pass -> pass and test.assert_equal(MD5.md5(`hello`), `5d41402abc4b2a76b9719d911017c592`, `Direct MD5.md5`)
+    pass -> pass and test.assert_equal(SHA1.sha1(`hello`), `aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d`, `Direct SHA1.sha1`)
+    pass -> pass and test.assert_equal(SHA256.sha256(`hello`), `2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824`, `Direct SHA256.sha256`)
+    pass -> pass and test.assert_equal(SHA256.sha224(`hello`), `ea09ae9cc6768c50fcee903ed054556e5bfc8347907f12598aa24193`, `Direct SHA256.sha224`)
+    pass -> pass and test.assert_equal(SHA512.sha512(`hello`), `9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043`, `Direct SHA512.sha512`)
+    pass -> pass and test.assert_equal(SHA512.sha384(`hello`), `59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f`, `Direct SHA512.sha384`)
+    pass -> pass and test.assert_equal(FNV.fnv1a(`hello world`), `d58b3fa7`, `Direct FNV.fnv1a`)
+    pass -> pass and test.assert_equal(FNV.fnv1a64(`hello world`), `779a65e7023cd2e7`, `Direct FNV.fnv1a64`)
+
+    <- pass
+}
+
+function test_all_bases() {
+    let pass -> true
+
+    // 1. Base16 (RFC 4648 §8)
+    pass -> pass and test.assert_equal(Base16.encode(``), ``, `Base16 empty`)
+    pass -> pass and test.assert_equal(Base16.encode(`hello`), `68656C6C6F`, `Base16 hello uppercase`)
+    pass -> pass and test.assert_equal(Base16.encode_lower(`hello`), `68656c6c6f`, `Base16 hello lowercase`)
+    pass -> pass and test.assert_equal(Base16.decode(`68656C6C6F`), `hello`, `Base16 decode`)
+    pass -> pass and test.assert_equal(Base16.decode(`0x68656c6c6f`), `hello`, `Base16 decode with 0x prefix`)
+    pass -> pass and test.assert_equal(Crypto.Base16.encode(`hello`), `68656C6C6F`, `Crypto.Base16 scope`)
+
+    // 2. Base32 (RFC 4648 §6, §7 & Crockford)
+    pass -> pass and test.assert_equal(Base32.encode(``), ``, `Base32 empty`)
+    pass -> pass and test.assert_equal(Base32.encode(`f`), `MY======`, `Base32 f`)
+    pass -> pass and test.assert_equal(Base32.encode(`foobar`), `MZXW6YTBOI======`, `Base32 foobar`)
+    pass -> pass and test.assert_equal(Base32.decode(`MZXW6YTBOI======`), `foobar`, `Base32 decode foobar`)
+    pass -> pass and test.assert_equal(Base32.decode(`mzxw6ytboi`), `foobar`, `Base32 decode lowercase without padding`)
+    pass -> pass and test.assert_equal(Base32.encode_hex(`foobar`), `CPNMUOJ1E8======`, `Base32Hex foobar`)
+    pass -> pass and test.assert_equal(Base32.decode_hex(`CPNMUOJ1E8======`), `foobar`, `Base32Hex decode foobar`)
+    pass -> pass and test.assert_equal(Base32.decode_crockford(Base32.encode_crockford(`foobar`)), `foobar`, `Crockford Base32 roundtrip`)
+    pass -> pass and test.assert_equal(Crypto.Base32.encode(`foobar`), `MZXW6YTBOI======`, `Crypto.Base32 scope`)
+
+    // 3. Base58 & Base58Check (Bitcoin / IPFS)
+    pass -> pass and test.assert_equal(Base58.encode(``), ``, `Base58 empty`)
+    pass -> pass and test.assert_equal(Base58.encode(`hello`), `Cn8eVZg`, `Base58 hello`)
+    pass -> pass and test.assert_equal(Base58.encode(`Hello World`), `JxF12TrwUP45BMd`, `Base58 Hello World`)
+    pass -> pass and test.assert_equal(Base58.decode(`JxF12TrwUP45BMd`), `Hello World`, `Base58 decode Hello World`)
+    pass -> pass and test.assert_equal(Base58.encode_check(`hello`), `2L5B5yqsVG8Vt`, `Base58Check hello`)
+    pass -> pass and test.assert_equal(Base58.decode_check(`2L5B5yqsVG8Vt`), `hello`, `Base58Check decode hello`)
+    pass -> pass and test.assert_equal(Crypto.Base58.encode(`Hello World`), `JxF12TrwUP45BMd`, `Crypto.Base58 scope`)
+    pass -> pass and test.assert_equal(Crypto.Base58.decode_check(`2L5B5yqsVG8Vt`), `hello`, `Crypto.Base58 decode_check`)
+
+    // 4. Base85 / Ascii85 (Adobe & ZeroMQ Z85)
+    pass -> pass and test.assert_equal(Base85.encode(``), ``, `Ascii85 empty`)
+    pass -> pass and test.assert_equal(Base85.encode(`foobar`), `AoDTs@<)`, `Ascii85 foobar`)
+    pass -> pass and test.assert_equal(Base85.decode(`AoDTs@<)`), `foobar`, `Ascii85 decode foobar`)
+    pass -> pass and test.assert_equal(Base85.decode(`<~AoDTs@<)~>`), `foobar`, `Ascii85 decode wrapped`)
+    pass -> pass and test.assert_equal(Base85.encode_z85([0x86, 0x4F, 0xD2, 0x6F, 0xB5, 0x59, 0xF7, 0x5B]), `HelloWorld`, `Z85 HelloWorld vector`)
+    let z_bytes -> Base85.decode_z85_bytes(`HelloWorld`)
+    pass -> pass and test.assert_equal(z_bytes[0], 0x86, `Z85 byte 0`)
+    pass -> pass and test.assert_equal(z_bytes[7], 0x5B, `Z85 byte 7`)
+    pass -> pass and test.assert_equal(Crypto.Base85.encode(`foobar`), `AoDTs@<)`, `Crypto.Base85 scope`)
+
+    <- pass
+}
+
+function test_merkle_tree() {
+    let leaves -> [`tx1`, `tx2`, `tx3`, `tx4`]
+    let root -> Merkle.compute_root(leaves)
+    let tree -> Merkle.create_tree(leaves)
+    let pass -> test.assert_equal(tree[`root`], root, `Merkle root match`)
+    pass -> pass and test.assert_equal(tree[`leaf_count`], 4, `Leaf count 4`)
+
+    // Inclusion proofs
+    let proof0 -> Merkle.get_proof(tree, 0)
+    let v0 -> Merkle.verify_proof(`tx1`, proof0, root)
+    pass -> pass and test.assert_true(v0, `Proof for leaf 0 valid`)
+
+    let proof2 -> Merkle.get_proof(tree, 2)
+    let v2 -> Merkle.verify_proof(`tx3`, proof2, root)
+    pass -> pass and test.assert_true(v2, `Proof for leaf 2 valid`)
+
+    // Tamper proof
+    let v_tamper -> Merkle.verify_proof(`tx_fake`, proof0, root)
+    pass -> pass and test.assert_false(v_tamper, `Tampered leaf invalid`)
+
+    // Odd number of leaves
+    let odd_leaves -> [`a`, `b`, `c`]
+    let odd_root -> Merkle.compute_root(odd_leaves)
+    let odd_tree -> Merkle.create_tree(odd_leaves)
+    pass -> pass and test.assert_equal(odd_tree[`root`], odd_root, `Odd Merkle root match`)
+    let odd_proof2 -> Merkle.get_proof(odd_tree, 2)
+    let odd_v2 -> Merkle.verify_proof(`c`, odd_proof2, odd_root)
+    pass -> pass and test.assert_true(odd_v2, `Odd leaf 2 proof valid`)
+
+    <- pass
+}
+
+function test_blockchain() {
+    let chain -> Blockchain.create_blockchain(1, 50, `Genesis Test`)
+    let pass -> test.assert_true(Blockchain.is_chain_valid(chain), `Genesis chain valid`)
+    pass -> pass and test.assert_equal(chain[`blocks`].length, 1, `1 block initially`)
+
+    // Generate wallet addresses
+    let alice -> Blockchain.generate_wallet_address(`alice`)
+    let bob -> Blockchain.generate_wallet_address(`bob`)
+    let miner -> Blockchain.generate_wallet_address(`miner`)
+
+    // Mine block 1 with reward to alice
+    let b1 -> Blockchain.mine_pending_transactions(chain, alice)
+    pass -> pass and test.assert_equal(chain[`blocks`].length, 2, `2 blocks after mine 1`)
+    pass -> pass and test.assert_true(Blockchain.is_chain_valid(chain), `Chain valid after mine 1`)
+    pass -> pass and test.assert_equal(Blockchain.get_balance(chain, alice), 50, `Alice has 50 after block 1`)
+
+    // Alice sends 20 to Bob with fee 1
+    let tx1 -> Blockchain.create_transaction(alice, bob, 20, 1, `Payment 1`)
+    let added -> Blockchain.add_transaction(chain, tx1)
+    pass -> pass and test.assert_true(added, `Tx1 added to mempool`)
+
+    // Mine block 2 with reward to miner
+    let b2 -> Blockchain.mine_pending_transactions(chain, miner)
+    pass -> pass and test.assert_equal(chain[`blocks`].length, 3, `3 blocks after mine 2`)
+    pass -> pass and test.assert_true(Blockchain.is_chain_valid(chain), `Chain valid after mine 2`)
+
+    // Check balances:
+    // Alice: 50 - 20 - 1 = 29
+    // Bob: 20
+    // Miner: 50 + 1 = 51
+    pass -> pass and test.assert_equal(Blockchain.get_balance(chain, alice), 29, `Alice balance 29`)
+    pass -> pass and test.assert_equal(Blockchain.get_balance(chain, bob), 20, `Bob balance 20`)
+    pass -> pass and test.assert_equal(Blockchain.get_balance(chain, miner), 51, `Miner balance 51`)
+
+    // Transaction history
+    let alice_history -> Blockchain.get_transaction_history(chain, alice)
+    pass -> pass and test.assert_equal(alice_history.length, 2, `Alice involved in 2 transactions`)
+
+    // Tamper test: tamper with transaction in block 2
+    let original_amount -> chain[`blocks`][2][`transactions`][1][`amount`]
+    chain[`blocks`][2][`transactions`][1][`amount`] -> 99999
+    let is_valid_after_tamper -> Blockchain.is_chain_valid(chain)
+    pass -> pass and test.assert_false(is_valid_after_tamper, `Tampered chain rejected by Merkle/hash checks`)
+
+    // Restore
+    chain[`blocks`][2][`transactions`][1][`amount`] -> original_amount
+    pass -> pass and test.assert_true(Blockchain.is_chain_valid(chain), `Chain restored to valid`)
+
+    // Unified entry Crypto.Blockchain & Crypto.Merkle
+    pass -> pass and test.assert_equal(Crypto.Merkle.compute_root([`x`]), Merkle.compute_root([`x`]), `Crypto.Merkle root`)
+    pass -> pass and test.assert_true(Crypto.Blockchain.verify_pow(`00abc`, 2), `Crypto.Blockchain verify_pow`)
+
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Crypto.ChaCha20`, `fn` -> test_chacha20},
+        {`name` -> `Crypto.RC4`, `fn` -> test_rc4},
+        {`name` -> `Crypto.XOR`, `fn` -> test_xor_and_otp},
+        {`name` -> `Crypto.CRC32`, `fn` -> test_crc32_and_adler32},
+        {`name` -> `Crypto.PBKDF2`, `fn` -> test_pbkdf2},
+        {`name` -> `Crypto.Poly1305`, `fn` -> test_poly1305},
+        {`name` -> `Crypto.AEAD`, `fn` -> test_aead},
+        {`name` -> `Crypto.XTEA`, `fn` -> test_xtea},
+        {`name` -> `Crypto.AES128`, `fn` -> test_aes128},
+        {`name` -> `Crypto.DiffieHellman`, `fn` -> test_diffie_hellman},
+        {`name` -> `Crypto.Classical`, `fn` -> test_classical_ciphers},
+        {`name` -> `Crypto.ExtendedHashes`, `fn` -> test_extended_hashes},
+        {`name` -> `Crypto.AllBases`, `fn` -> test_all_bases},
+        {`name` -> `Crypto.MerkleTree`, `fn` -> test_merkle_tree},
+        {`name` -> `Crypto.Blockchain`, `fn` -> test_blockchain},
+        {`name` -> `Crypto.UnifiedEntry`, `fn` -> test_unified_crypto_entry}
+    ]
+
+    <- test.run_suite(`Crypto Ciphers & Modern Security`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}
+

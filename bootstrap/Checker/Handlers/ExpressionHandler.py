@@ -15,6 +15,10 @@ from Checker.Type import (
     TypeVoid,
     TypeList,
     TypeElement,
+    TypeNumber,
+    TypeText,
+    TypeCollection,
+    TypeContainer,
     Symbol,
     SymbolKind,
 )
@@ -67,12 +71,24 @@ class ExpressionHandler:
              expression.resolved_type = TypeVariant()
              return TypeVariant()
         elif isinstance(callee_type, TypeFunction):
-             expression.resolved_type = callee_type.return_type
+             ret = callee_type.return_type
+             if getattr(callee_type, "generic_params", None) and expression.arguments:
+                 substs = {}
+                 for p, a in zip(getattr(callee_type, "parameters", []) or [], expression.arguments):
+                     p_type = getattr(p, "declared_type", None)
+                     a_type = getattr(a, "resolved_type", None)
+                     from Checker.Type import TypeParam
+                     if isinstance(p_type, TypeParam) and a_type:
+                         substs[p_type.name] = a_type
+                 from Checker.Type import TypeParam
+                 if isinstance(ret, TypeParam) and ret.name in substs:
+                     ret = substs[ret.name]
+             expression.resolved_type = ret
         elif isinstance(callee_type, TypeTask):
              expression.resolved_type = TypeTaskHandle(callee_type.return_type)
              return expression.resolved_type
-        elif isinstance(callee_type, TypeClass) or isinstance(callee_type, TypeStructure):
-             # Constructor call returns instance of the class/structure
+        elif isinstance(callee_type, TypeClass) or isinstance(callee_type, TypeStructure) or isinstance(callee_type, (TypeNumber, TypeText, TypeCollection, TypeContainer)):
+             # Constructor call returns instance of the class/structure or cast type
              expression.resolved_type = callee_type
              return callee_type
         else:
@@ -256,22 +272,30 @@ class ExpressionHandler:
         return TypeVariant()
 
     def map_type_from_str(self, name: str) -> Type:
-        if name in ("Integer", "Int", "Int64", "Int32", "Int16", "Int8", "Byte"):
+        if name in ("Integer", "Integer[64]", "Integer[32]", "Integer[16]", "Integer[8]", "Byte") or (name.startswith("Integer[") and name.endswith("]")):
             return TypeInteger()
-        if name in ("Decimal", "Float", "Double"):
+        if name in ("Decimal", "Decimal[64]", "Decimal[32]") or (name.startswith("Decimal[") and name.endswith("]")):
             return TypeDecimal()
-        if name in ("String", "Str"):
+        if name == "String" or (name.startswith("String[") and name.endswith("]")):
             return TypeString()
-        if name in ("Boolean", "Bool"):
+        if name == "Boolean":
             return TypeBoolean()
-        if name in ("Rune", "Char", "Glyph"):
+        if name == "Rune":
             return TypeRune()
-        if name in ("Bytes", "Buffer"):
+        if name == "Bytes":
             return TypeList(None, [TypeElement(None, TypeInteger())])
-        if name in ("List", "Set"):
+        if name.startswith("List<") or name.startswith("List[") or name in ("List", "Set", "Vector", "Tuple") or name.startswith("Set<") or name.startswith("Set[") or name.startswith("Vector<") or name.startswith("Vector[") or name.startswith("Tuple<") or name.startswith("Tuple["):
             return TypeList(None, [TypeElement(None, TypeVariant())])
-        if name == "Map":
+        if name.startswith("Map<") or name.startswith("Map[") or name == "Map":
             return TypeMap(None, TypeVariant(), TypeVariant())
+        if name == "Number":
+            return TypeNumber()
+        if name == "Text":
+            return TypeText()
+        if name == "Collection":
+            return TypeCollection()
+        if name == "Container":
+            return TypeContainer()
         return TypeVariant()
 
     def check_binary_operation(self, expression: BinaryOperation) -> Type:
@@ -280,7 +304,13 @@ class ExpressionHandler:
         operator: str = expression.operator
         if operator == "<:":
             left_type = self.check_expression(expression.left)
-            target_type_str = getattr(expression.right, "name", str(expression.right))
+            right = expression.right
+            target_type_str = getattr(right, "name", str(right))
+            if hasattr(right, "bits") and right.bits:
+                target_type_str = f"{target_type_str}[{right.bits}]"
+            if hasattr(right, "subtypes") and right.subtypes:
+                subs = [getattr(s, "name", str(s)) for s in right.subtypes]
+                target_type_str = f"{target_type_str}<{', '.join(subs)}>"
             res = self.map_type_from_str(target_type_str)
             expression.type = res
             expression.resolved_type = res
@@ -453,6 +483,9 @@ class ExpressionHandler:
         self.logger.debug("check_structure_expression", expression)
         # Check structure name
         symbol = self.scope.lookup(expression.name)
+        if not symbol and "<" in expression.name and expression.name.endswith(">"):
+            base_name = expression.name[:expression.name.index("<")]
+            symbol = self.scope.lookup(base_name)
         if not symbol:
              # If not found, maybe it's a dynamic variant?
              expression.resolved_type = TypeVariant()
@@ -576,8 +609,19 @@ class ExpressionHandler:
         symbol = self.scope.lookup(expression.name)
 
         if not symbol:
-            if expression.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+            if "<" in expression.name and expression.name.endswith(">"):
+                base_name = expression.name[:expression.name.index("<")]
+                base_sym = self.scope.lookup(base_name)
+                if base_sym:
+                    expression.symbol = base_sym
+                    expression.resolved_type = base_sym.type
+                    return base_sym.type
+            if expression.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Byte", "Vector", "Tuple", "Number", "Text", "Collection", "Container") or expression.name.startswith("Integer[") or expression.name.startswith("Decimal[") or expression.name.startswith("String[") or expression.name.startswith("Vector[") or expression.name.startswith("List<") or expression.name.startswith("Map<") or expression.name.startswith("Set<") or expression.name.startswith("Tuple<") or expression.name.startswith("Vector<"):
                 t = self.map_type_from_str(expression.name)
+                expression.resolved_type = t
+                return t
+            if getattr(self, "has_extern", False):
+                t = TypeVariant()
                 expression.resolved_type = t
                 return t
             raise self.logger.error_variable_undefined(expression)

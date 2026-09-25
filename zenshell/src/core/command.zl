@@ -1,0 +1,70 @@
+/!
+  zenshell - Modular Command Base Interface
+!/
+
+import ui.theme as color
+
+export class Command {
+    let name
+    let description
+    let subcommands
+    let default_handler
+
+    function init(name, description) {
+        self.name -> name
+        self.description -> description
+        self.subcommands -> {}
+        self.default_handler -> Nothing
+    }
+
+    function add_subcommand(sub_name, desc, handler) {
+        self.subcommands[sub_name] -> {
+            `desc` -> desc,
+            `handler` -> handler
+        }
+    }
+
+    function set_default(handler) {
+        self.default_handler -> handler
+    }
+
+    function dispatch(args, ctx) {
+        when args == Nothing or args.length == 0 {
+            when self.default_handler != Nothing {
+                let h -> self.default_handler
+                <- h([], ctx)
+            }
+            <- self.render_help()
+        }
+
+        let sub -> args[0]
+        when sub == `help` or sub == `--help` or sub == `-h` {
+            <- self.render_help()
+        }
+
+        when self.subcommands.has(sub) {
+            let entry -> self.subcommands[sub]
+            let h -> entry[`handler`]
+            let rest -> when (args.length > 1) { args[1:] } or { [] }
+            <- h(rest, ctx)
+        }
+
+        when self.default_handler != Nothing {
+            let h -> self.default_handler
+            <- h(args, ctx)
+        }
+
+        <- color.red(`Error: Unknown subcommand '` + sub + `' for '` + self.name + `'. Type '` + self.name + ` help' for usage.`)
+    }
+
+    function render_help() {
+        let out -> color.bold(color.cyan(self.name)) + ` - ` + self.description + `\n\n`
+        out -> out + color.bold(`Subcommands:\n`)
+        do for sub_name in self.subcommands.keys() {
+            let entry -> self.subcommands[sub_name]
+            let desc -> entry[`desc`]
+            out -> out + `  ` + color.green(sub_name) + `\t` + desc + `\n`
+        }
+        <- out
+    }
+}

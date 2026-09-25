@@ -40,7 +40,8 @@ let CG -> {
     `enums` -> {},
     `init_fn_name` -> `zen_module_init`,
     `out_path` -> ``,
-    `wrote` -> false
+    `wrote` -> false,
+    `var_types` -> {}
 }
 
 function codegen_reset() {
@@ -61,6 +62,11 @@ function codegen_reset() {
     CG[`init_fn_name`] -> `zen_module_init`
     CG[`out_path`] -> ``
     CG[`wrote`] -> false
+    CG[`var_types`] -> {}
+    CG[`extern_modules`] -> {}
+    CG[`extern_fns`] -> {}
+    CG[`has_open_extern`] -> false
+    CG[`emitted_includes`] -> {}
     <- `ok`
 }
 
@@ -85,6 +91,20 @@ function is_free_fn(name) {
         }
     }
     <- false
+}
+
+function is_extern_module(name) {
+    when name == Nothing { <- false }
+    let em -> CG[`extern_modules`]
+    when em == Nothing { <- false }
+    <- em.has(Str.to_string(name))
+}
+
+function is_extern_fn(name) {
+    when name == Nothing { <- false }
+    let ef -> CG[`extern_fns`]
+    when ef == Nothing { <- false }
+    <- ef.has(Str.to_string(name))
 }
 
 function register_enum(name) {
@@ -130,6 +150,29 @@ function is_registered_class(name) {
     }
     when c.has(name) {
         when c[name] == true {
+            <- true
+        }
+    }
+    <- false
+}
+
+function register_struct(name) {
+    let s -> CG[`structs`]
+    when s == Nothing {
+        s -> {}
+    }
+    s[name] -> true
+    CG[`structs`] -> s
+    <- true
+}
+
+function is_registered_struct(name) {
+    let s -> CG[`structs`]
+    when s == Nothing {
+        <- false
+    }
+    when s.has(name) {
+        when s[name] == true {
             <- true
         }
     }
@@ -333,10 +376,13 @@ function emit_builtin_method_default(m, obj, alist) {
         <- `ZenValue_get_at(` + obj + `, ` + alist + `)`
     }
     when m == `get` {
+        when alist == `` {
+            <- `ZenValue_get(` + obj + `, ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)`
+        }
         when Str.contains(alist, `,`) {
             <- `ZenValue_get(` + obj + `, ` + alist + `)`
         }
-        <- `ZenValue_get(` + obj + `, ` + alist + `, ZenValue_make_nothing())`
+        <- `ZenValue_get(` + obj + `, ` + alist + `, ZEN_NOTHING_VAL)`
     }
     when m == `set` or m == `set_at` {
         <- `ZenValue_set_at(` + obj + `, ` + alist + `)`
@@ -852,6 +898,109 @@ function transpile_unit_ex_to_file(prog, with_main, init_name, extern_block, pat
     <- `ok`
 }
 
+function header_default_alias(hdr) {
+    when hdr == Nothing or hdr == `` {
+        <- ``
+    }
+    let s -> Str.to_string(hdr)
+    when Str.starts_with(s, `<`) or Str.starts_with(s, `"`) or Str.starts_with(s, `'`) {
+        s -> Str.substring(s, 1, s.length - 1)
+    }
+    when Str.ends_with(s, `.h`) {
+        s -> Str.substring(s, 0, s.length - 2)
+    }
+    when Str.contains(s, `.`) {
+        let parts -> Str.split(s, `.`)
+        <- parts[parts.length - 1]
+    }
+    when Str.contains(s, `/`) {
+        let parts -> Str.split(s, `/`)
+        <- parts[parts.length - 1]
+    }
+    <- s
+}
+
+function emit_extern_includes(prog) {
+    let stmts -> AST.prog_stmts(prog)
+    when stmts == Nothing {
+        <- Nothing
+    }
+    walk_extern_includes(stmts)
+    <- Nothing
+}
+
+function walk_extern_includes(stmts) {
+    when stmts == Nothing {
+        <- Nothing
+    }
+    when AST.ast_kind(stmts) == AST.K_STMT_CHUNK {
+        let chunk -> stmts
+        do while chunk != Nothing and AST.ast_kind(chunk) == AST.K_STMT_CHUNK {
+            let slice -> AST.stmt_chunk_stmts(chunk)
+            when slice != Nothing {
+                do for s in slice {
+                    process_one_extern_include(s)
+                }
+            }
+            chunk -> AST.stmt_chunk_next(chunk)
+        }
+        <- Nothing
+    }
+    do for s in stmts {
+        process_one_extern_include(s)
+    }
+    <- Nothing
+}
+
+function process_one_extern_include(s) {
+    when s == Nothing {
+        <- Nothing
+    }
+    when AST.ast_kind(s) == AST.K_EXTERN_IMPORT {
+        let hdr -> Str.to_string(AST.extern_header(s))
+        let inc_stmt -> ``
+        when Str.starts_with(hdr, `<`) or Str.starts_with(hdr, `"`) {
+            inc_stmt -> `#include ` + hdr
+        } or when Str.contains(hdr, `.`) {
+            let inc_path -> Str.replace(hdr, `.`, `/`) + `.h`
+            inc_stmt -> `#include <` + inc_path + `>`
+        } or {
+            inc_stmt -> `#include <` + hdr + `.h>`
+        }
+        let emitted -> CG[`emitted_includes`]
+        when emitted == Nothing {
+            emitted -> {}
+        }
+        when not emitted.has(inc_stmt) {
+            cg_emit(inc_stmt)
+            emitted[inc_stmt] -> true
+            CG[`emitted_includes`] -> emitted
+        }
+
+        let alias -> AST.extern_alias(s)
+        let names -> AST.extern_names(s)
+        when alias == Nothing or alias == `` {
+            when names == Nothing {
+                alias -> header_default_alias(hdr)
+            }
+        }
+        when alias != Nothing and alias != `` {
+            let em -> CG[`extern_modules`]
+            em[alias] -> hdr
+            CG[`extern_modules`] -> em
+        }
+        when names != Nothing {
+            let ef -> CG[`extern_fns`]
+            do for nm in names {
+                ef[nm] -> true
+            }
+            CG[`extern_fns`] -> ef
+        } or {
+            CG[`has_open_extern`] -> true
+        }
+    }
+}
+
 function transpile_unit_ex(prog, with_main, init_name, extern_block) {
     let dest -> CG[`out_path`]
     let _r -> codegen_reset()
@@ -864,6 +1013,7 @@ function transpile_unit_ex(prog, with_main, init_name, extern_block) {
         iname -> `zen_module_init`
     }
     cg_emit(`#include "bootstrap_runtime.h"`)
+    emit_extern_includes(prog)
     cg_emit(``)
     cg_emit(`/* Generated by selfhost Codegen (multi-unit capable) */`)
     cg_emit(``)
@@ -1220,6 +1370,7 @@ function emit_structure_proto(s) {
     let raw -> Str.to_string(s[3])
     let fname -> c_ident(raw)
     register_free_fn(raw)
+    register_struct(raw)
     let members -> s[4]
     let sig -> ``
     when members != Nothing and members.length > 0 {
@@ -1284,7 +1435,7 @@ function emit_scope_init(s) {
     cg_emit(sname + ` = ZenMap_make_from_arguments(0);`)
     let body -> s[4]
     let stmts -> []
-    when body != Nothing and body is List {
+    when body != Nothing and (body is List) {
         when body.length > 3 and body[0] == 20 { // K_BLOCK
             stmts -> body[3]
         } or {
@@ -1313,6 +1464,9 @@ function emit_module_global_decl(node) {
 
 function type_name_of_ann(ann) {
     when ann == Nothing { <- `` }
+    when AST.ast_kind(ann) == AST.K_TYPE_ANN {
+        <- Str.to_string(ann[3])
+    }
     when (ann is List) and ann.length > 3 {
         <- Str.to_string(ann[3])
     }
@@ -1826,14 +1980,22 @@ function emit_func_body(fn) {
     let name -> c_fn_ident(AST.fn_name(fn))
     let params -> AST.fn_params(fn)
     let pmap -> {}
+    let vt -> {}
     when params != Nothing {
         let pi -> 0
         do while pi < params.length {
-            pmap[c_ident(AST.param_name(params[pi]))] -> true
+            let p -> params[pi]
+            let pname -> c_ident(AST.param_name(p))
+            pmap[pname] -> true
+            let pann -> AST.param_type(p)
+            when pann != Nothing {
+                vt[pname] -> type_name_of_ann(pann)
+            }
             pi -> pi + 1
         }
     }
     CG[`params`] -> pmap
+    CG[`var_types`] -> vt
     let sig -> param_sig(params)
     cg_emit(``)
     cg_emit(`ZenValue ` + name + `(` + sig + `) {`)
@@ -1847,6 +2009,7 @@ function emit_func_body(fn) {
     pop_indent()
     cg_emit(`}`)
     CG[`params`] -> {}
+    CG[`var_types`] -> {}
 }
 
 // ---------- Classes (map-backed instances + Type_method free fns) ----------
@@ -2227,6 +2390,9 @@ function emit_stmt(node) {
     when node == Nothing {
         <- Nothing
     }
+    when cg_is_kind(node, AST.K_EXTERN_IMPORT) {
+        <- Nothing
+    }
     when cg_is_kind(node, AST.K_WITH) {
         emit_with_statement(node)
         <- Nothing
@@ -2248,9 +2414,29 @@ function emit_stmt(node) {
         when AST.let_val(node) != Nothing {
             init -> emit_expr(AST.let_val(node))
             let ann -> AST.let_type(node)
-            when ann != Nothing and init == `ZEN_DEFAULT_VAL` {
+            when ann != Nothing {
                 let ty_str -> type_name_of_ann(ann)
-                init -> `ZenValue_default_for_type("` + ty_str + `")`
+                let vt -> CG[`var_types`]
+                when vt != Nothing {
+                    vt[name] -> ty_str
+                }
+                when init == `ZEN_DEFAULT_VAL` {
+                    init -> `ZenValue_default_for_type("` + ty_str + `")`
+                }
+            } or {
+                let vnode -> AST.let_val(node)
+                let vt -> CG[`var_types`]
+                when vt != Nothing {
+                    when is_int_expr(vnode) {
+                        vt[name] -> `Integer`
+                    } or when is_dec_expr(vnode) {
+                        vt[name] -> `Decimal`
+                    } or when is_bool_expr(vnode) {
+                        vt[name] -> `Boolean`
+                    } or when is_str_expr(vnode) {
+                        vt[name] -> `String`
+                    }
+                }
             }
         }
         let pm -> CG[`params`]
@@ -2437,6 +2623,10 @@ function emit_for(node) {
             cg_emit(`for (; ` + ti + `_i ` + cmp + ` ` + ti + `_end; ` + ti + `_i++) {`)
             push_indent()
             cg_emit(`ZenValue ` + var_name + ` = ZenValue_make_integer(` + ti + `_i);`)
+            let vt -> CG[`var_types`]
+            when vt != Nothing {
+                vt[var_name] -> `Integer`
+            }
             emit_stmt(body)
             pop_indent()
             cg_emit(`}`)
@@ -2450,6 +2640,7 @@ function emit_for(node) {
     let tn -> next_temp()
     let ti -> next_temp()
     cg_emit(`ZenValue ` + tit + ` = ` + it + `;`)
+    cg_emit(`if ((` + tit + `).type == ZEN_MAP) { ` + tit + ` = ZenMap_get_keys(` + tit + `); }`)
     cg_emit(`long long ` + tn + ` = 0;`)
     cg_emit(`if ((` + tit + `).type == ZEN_LIST && (` + tit + `).as.list) {`)
     push_indent()
@@ -2458,18 +2649,38 @@ function emit_for(node) {
     cg_emit(`}`)
     cg_emit(`for (long long ` + ti + ` = 0; ` + ti + ` < ` + tn + `; ` + ti + `++) {`)
     push_indent()
-    cg_emit(`ZenValue ` + var_name + ` = ZenList_get_value_at_index(` + tit + `, ZenValue_make_integer(` + ti + `));`)
+    cg_emit(`ZenValue ` + var_name + ` = (` + tit + `).as.list->items[` + ti + `];`)
     emit_stmt(body)
     pop_indent()
     cg_emit(`}`)
     <- Nothing
 }
 
+function is_terminating_stmt(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_RETURN) { <- true }
+    when cg_is_kind(node, AST.K_RAISE) { <- true }
+    when cg_is_kind(node, AST.K_EXPR_STMT) {
+        let e -> AST.expr_stmt_expr(node)
+        when cg_is_kind(e, AST.K_LITERAL) {
+            let lv -> Str.to_string(AST.lit_val(e))
+            <- lv == `break` or lv == `continue`
+        }
+        <- false
+    }
+    <- false
+}
+
 function walk_block(stmts, i) {
     when i >= stmts.length {
         <- Nothing
     }
-    emit_stmt(stmts[i])
+    let s -> stmts[i]
+    emit_stmt(s)
+    when is_terminating_stmt(s) {
+        // Dead code elimination: prune statements after return/raise/break/continue
+        <- Nothing
+    }
     walk_block(stmts, i + 1)
 }
 
@@ -2523,14 +2734,14 @@ function is_bind_pattern_is(node) {
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
         let name -> Str.to_string(AST.var_name(pat))
-        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+        when is_type_name_str(name) or is_registered_class(name) or is_registered_struct(name) or is_enum_name(name) {
             <- false
         }
         <- true
     }
     when cg_is_kind(pat, AST.K_LITERAL) {
         let name -> Str.to_string(AST.lit_val(pat))
-        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+        when is_type_name_str(name) or is_registered_class(name) or is_registered_struct(name) or is_enum_name(name) {
             <- false
         }
         <- false
@@ -2629,14 +2840,14 @@ function bind_pattern_guard(pat, t) {
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
         let name -> Str.to_string(AST.var_name(pat))
-        when is_type_name_str(name) or is_registered_class(name) or is_enum_name(name) {
+        when is_type_name_str(name) or is_registered_class(name) or is_registered_struct(name) or is_enum_name(name) {
             <- `ZenValue_is_type_name(` + t + `, "` + name + `")`
         }
         <- `ZenValue_make_boolean(true)`
     }
     when cg_is_kind(pat, AST.K_LITERAL) {
         let raw -> Str.to_string(AST.lit_val(pat))
-        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+        when is_type_name_str(raw) or is_registered_class(raw) or is_registered_struct(raw) or is_enum_name(raw) {
             <- `ZenValue_is_type_name(` + t + `, "` + raw + `")`
         }
         let lv -> emit_expr(pat)
@@ -2720,7 +2931,7 @@ function emit_pattern_binds(pat, t) {
         emit_list_binds(elems, t, 0, fixed_n)
         when has_rest {
             let rest_pat -> elems[last_idx]
-            let rest_name -> AST.var_name(rest_pat)
+            let rest_name -> AST.rest_name(rest_pat)
             when rest_name != Nothing and rest_name != `_` {
                 let nm -> c_ident(rest_name)
                 cg_emit(`ZenValue ` + nm + ` = ZenList_slice_from(` + t + `, ZenValue_make_integer(` + int_to_str(fixed_n) + `));`)
@@ -2906,9 +3117,19 @@ function emit_when_cases(cases, i, n) {
         <- Nothing
     }
     let c -> cases[i]
-    let has_cond -> AST.case_cond(c) != Nothing
-    when has_cond {
-        let cond -> emit_expr(AST.case_cond(c))
+    let cond_node -> AST.case_cond(c)
+    when cond_node != Nothing {
+        let cconst -> try_eval_const(cond_node)
+        when cconst != Nothing and cconst[`kind`] == `bool` {
+            when cconst[`val`] == true {
+                // Statically true: emit body and prune all remaining cases
+                emit_stmt(AST.case_body(c))
+                <- Nothing
+            }
+            // Statically false: dead branch, skip to next case without emitting condition
+            <- emit_when_cases(cases, i + 1, n)
+        }
+        let cond -> emit_expr(cond_node)
         cg_emit(`if ((` + cond + `).as.boolean) {`)
         push_indent()
         emit_stmt(AST.case_body(c))
@@ -2966,9 +3187,19 @@ function emit_when_expr_cases(cases, i, n, target_var) {
         <- Nothing
     }
     let c -> cases[i]
-    let has_cond -> AST.case_cond(c) != Nothing
-    when has_cond {
-        let cond -> emit_expr(AST.case_cond(c))
+    let cond_node -> AST.case_cond(c)
+    when cond_node != Nothing {
+        let cconst -> try_eval_const(cond_node)
+        when cconst != Nothing and cconst[`kind`] == `bool` {
+            when cconst[`val`] == true {
+                // Statically true: emit block into var and prune all remaining cases
+                emit_block_into_var(AST.case_body(c), target_var)
+                <- Nothing
+            }
+            // Statically false: dead branch, skip to next case without emitting condition
+            <- emit_when_expr_cases(cases, i + 1, n, target_var)
+        }
+        let cond -> emit_expr(cond_node)
         cg_emit(`if ((` + cond + `).as.boolean) {`)
         push_indent()
         emit_block_into_var(AST.case_body(c), target_var)
@@ -2994,6 +3225,10 @@ function emit_expr(node) {
     when node == Nothing {
         <- `ZEN_NOTHING_VAL`
     }
+    let folded -> try_eval_const(node)
+    when folded != Nothing {
+        <- emit_const_val(folded)
+    }
     when cg_is_kind(node, AST.K_WHEN) {
         let t -> next_temp()
         cg_emit(`ZenValue ` + t + ` = ZEN_NOTHING_VAL;`)
@@ -3016,30 +3251,61 @@ function emit_expr(node) {
     }
     when cg_is_kind(node, AST.K_VARIABLE) {
         let raw -> Str.to_string(AST.var_name(node))
-        when is_type_name_str(raw) {
-            <- `ZenValue_make_string("` + escape_c_string(raw) + `")`
+        let base_raw -> raw + ``
+        when Str.contains(raw, `<`) and Str.ends_with(raw, `>`) {
+            base_raw -> Str.substring(raw, 0, Str.index_of(raw, `<`))
         }
-        when is_free_fn(raw) and raw != `main` {
-            <- `ZenValue_from_function((ZenValue (*)(void))` + c_fn_ident(raw) + `)`
+        when is_local_or_param(raw) {
+            <- c_ident(raw)
+        }
+        when (is_free_fn(base_raw) or is_registered_struct(base_raw)) and not is_local_or_param(base_raw) and base_raw != `main` {
+            <- `ZenValue_from_function((ZenValue (*)(void))` + c_fn_ident(base_raw) + `)`
+        }
+        when is_builtin_cast_type_name(raw) {
+            <- `ZenValue_make_string("` + escape_c_string(raw) + `")`
         }
         <- c_ident(raw)
     }
     when cg_is_kind(node, AST.K_BINARY) {
-        let l -> emit_expr(AST.bin_left(node))
-        let r -> emit_expr(AST.bin_right(node))
+        let l_node -> AST.bin_left(node)
+        let r_node -> AST.bin_right(node)
+        let l -> emit_expr(l_node)
+        let r -> emit_expr(r_node)
         let op -> Str.to_string(AST.bin_op(node))
+        when is_int_expr(l_node) and is_int_expr(r_node) {
+            <- emit_binary_fast_int(op, l, r)
+        }
+        when is_dec_expr(l_node) and is_dec_expr(r_node) {
+            <- emit_binary_fast_dec(op, l, r)
+        }
+        when (op == `==` or op == `=` or op == `!=`) and is_bool_expr(l_node) and is_bool_expr(r_node) {
+            when op == `!=` {
+                <- `ZenValue_fast_neq_bool(` + l + `, ` + r + `)`
+            }
+            <- `ZenValue_fast_eq_bool(` + l + `, ` + r + `)`
+        }
         <- emit_binary(op, l, r)
     }
     when cg_is_kind(node, AST.K_UNARY) {
-        let r -> emit_expr(AST.un_right(node))
+        let r_node -> AST.un_right(node)
+        let r -> emit_expr(r_node)
         let op -> Str.to_string(AST.un_op(node))
         when op == `not` {
+            when is_bool_expr(r_node) {
+                <- `ZenValue_make_boolean(!((` + r + `).as.boolean))`
+            }
             <- `ZenValue_not(` + r + `)`
         }
         when op == `-` {
+            when is_int_expr(r_node) {
+                <- `ZenValue_make_integer(-((` + r + `).as.integer))`
+            }
             <- `ZenValue_negate(` + r + `)`
         }
         when op == `~` {
+            when is_int_expr(r_node) {
+                <- `ZenValue_make_integer(~((` + r + `).as.integer))`
+            }
             <- `ZenValue_bitwise_not(` + r + `)`
         }
         <- r
@@ -3170,7 +3436,7 @@ function emit_expr(node) {
             when Str.starts_with(fname, `K_`) {
                 <- c_ident(fname)
             }
-            when oname == `TokenType` {
+            when oname == `TokenType` or oname == `Token_TokenType` {
                 <- `ZenValue_make_integer(` + token_type_int_str(fname) + `LL)`
             }
             // Enum variant: Color.Red → z_Color_Red
@@ -3251,9 +3517,35 @@ function emit_list_literal(node) {
     when els == Nothing or els.length == 0 {
         <- `ZenList_make_from_arguments(0)`
     }
+    let has_rest -> false
+    let i -> 0
     let n -> els.length
-    let args -> emit_args(els)
-    <- `ZenList_make_from_arguments(` + int_to_str(n) + `, ` + args + `)`
+    do while i < n {
+        when cg_is_kind(els[i], AST.K_REST) {
+            has_rest -> true
+        }
+        i -> i + 1
+    }
+    when has_rest == false {
+        let args -> emit_args(els)
+        <- `ZenList_make_from_arguments(` + int_to_str(n) + `, ` + args + `)`
+    }
+    let t -> next_temp()
+    cg_emit(`ZenValue ` + t + ` = ZenList_make_from_arguments(0);`)
+    i -> 0
+    do while i < n {
+        let el -> els[i]
+        when cg_is_kind(el, AST.K_REST) {
+            let sub_expr -> AST.rest_expr(el)
+            let sub_val -> emit_expr(sub_expr)
+            cg_emit(t + ` = ZenList_concat(` + t + `, ` + sub_val + `);`)
+        } or {
+            let ev -> emit_expr(el)
+            cg_emit(`(void)ZenList_append_value(` + t + `, ` + ev + `);`)
+        }
+        i -> i + 1
+    }
+    <- t
 }
 
 function emit_map_literal(node) {
@@ -3289,9 +3581,15 @@ function emit_struct_fields(fields, i, map_tmp) {
         <- Nothing
     }
     let f -> fields[i]
-    let fname -> escape_c_string(Str.to_string(AST.struct_field_name(f)))
-    let v -> emit_expr(AST.struct_field_val(f))
-    cg_emit(`(void)ZenMap_set_value_at_key(` + map_tmp + `, ZenValue_make_string("` + fname + `"), ` + v + `);`)
+    when cg_is_kind(f, AST.K_REST) {
+        let sub_expr -> AST.rest_expr(f)
+        let sub_val -> emit_expr(sub_expr)
+        cg_emit(map_tmp + ` = ZenMap_merge(` + map_tmp + `, ` + sub_val + `);`)
+    } or {
+        let fname -> escape_c_string(Str.to_string(AST.struct_field_name(f)))
+        let v -> emit_expr(AST.struct_field_val(f))
+        cg_emit(`(void)ZenMap_set_value_at_key(` + map_tmp + `, ZenValue_make_string("` + fname + `"), ` + v + `);`)
+    }
     emit_struct_fields(fields, i + 1, map_tmp)
 }
 
@@ -3525,7 +3823,7 @@ function _cg_tab() {
 }
 
 function _cg_cr() {
-    <- _cg_nl()
+    <- Rune(13)
 }
 
 function _cg_esc() {
@@ -3562,6 +3860,501 @@ function escape_rec(s, i, n, acc) {
         <- escape_rec(s, i + 1, n, acc + `\\x1b`)
     }
     <- escape_rec(s, i + 1, n, acc + ch)
+}
+
+function parse_int_str(s) {
+    let clean -> strip_underscores(Str.to_string(s))
+    let len -> Str.length(clean)
+    when len == 0 { <- 0 }
+    let neg -> false
+    let start -> 0
+    when Str.at(clean, 0) == `-` {
+        neg -> true
+        start -> 1
+    }
+    when len > start + 2 and Str.at(clean, start) == `0` and (Str.at(clean, start + 1) == `x` or Str.at(clean, start + 1) == `X`) {
+        let hex_digits -> `0123456789abcdef`
+        let hex_upper -> `0123456789ABCDEF`
+        let acc -> 0
+        let hi -> start + 2
+        do while hi < len {
+            let ch -> Str.at(clean, hi)
+            let d -> Str.index_of(hex_digits, ch)
+            when d == -1 {
+                d -> Str.index_of(hex_upper, ch)
+            }
+            when d != -1 { acc -> (acc * 16) + d }
+            hi -> hi + 1
+        }
+        when neg { <- -acc }
+        <- acc
+    }
+    when len > start + 2 and Str.at(clean, start) == `0` and (Str.at(clean, start + 1) == `o` or Str.at(clean, start + 1) == `O`) {
+        let oct_digits -> `01234567`
+        let acc -> 0
+        let oi -> start + 2
+        do while oi < len {
+            let ch -> Str.at(clean, oi)
+            let d -> Str.index_of(oct_digits, ch)
+            when d != -1 { acc -> (acc * 8) + d }
+            oi -> oi + 1
+        }
+        when neg { <- -acc }
+        <- acc
+    }
+    when len > start + 2 and Str.at(clean, start) == `0` and (Str.at(clean, start + 1) == `b` or Str.at(clean, start + 1) == `B`) {
+        let acc -> 0
+        let bi -> start + 2
+        do while bi < len {
+            let ch -> Str.at(clean, bi)
+            when ch == `1` { acc -> (acc * 2) + 1 }
+            or when ch == `0` { acc -> acc * 2 }
+            bi -> bi + 1
+        }
+        when neg { <- -acc }
+        <- acc
+    }
+    let dot -> Str.index_of(clean, `.`)
+    when dot != -1 {
+        clean -> Str.substring(clean, 0, dot)
+        len -> Str.length(clean)
+    }
+    let dec_digits -> `0123456789`
+    let acc -> 0
+    let di -> start
+    do while di < len {
+        let ch -> Str.at(clean, di)
+        let d -> Str.index_of(dec_digits, ch)
+        when d != -1 { acc -> (acc * 10) + d }
+        di -> di + 1
+    }
+    when neg { <- -acc }
+    <- acc
+}
+
+function try_eval_const(node) {
+    when node == Nothing { <- Nothing }
+    when cg_is_kind(node, AST.K_LITERAL) {
+        let tid -> Tok.kind_id(AST.lit_tok_kind(node))
+        when tid == 24 or tid == 25 {
+            <- {`is_const` -> true, `kind` -> `str`, `val` -> Str.to_string(AST.lit_val(node))}
+        }
+        let raw -> AST.lit_val(node)
+        when raw == true or raw == `true` or raw == `True` {
+            <- {`is_const` -> true, `kind` -> `bool`, `val` -> true}
+        }
+        when raw == false or raw == `false` or raw == `False` {
+            <- {`is_const` -> true, `kind` -> `bool`, `val` -> false}
+        }
+        let s -> Str.to_string(raw)
+        when looks_int(s) {
+            <- {`is_const` -> true, `kind` -> `int`, `val` -> parse_int_str(s)}
+        }
+        <- Nothing
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- try_eval_const(AST.group_expr(node))
+    }
+    when cg_is_kind(node, AST.K_UNARY) {
+        let op -> Str.to_string(AST.un_op(node))
+        let r -> try_eval_const(AST.un_right(node))
+        when r == Nothing { <- Nothing }
+        when op == `not` and r[`kind`] == `bool` {
+            <- {`is_const` -> true, `kind` -> `bool`, `val` -> not r[`val`]}
+        }
+        when op == `-` and r[`kind`] == `int` {
+            <- {`is_const` -> true, `kind` -> `int`, `val` -> -r[`val`]}
+        }
+        when op == `~` and r[`kind`] == `int` {
+            <- {`is_const` -> true, `kind` -> `int`, `val` -> ~r[`val`]}
+        }
+        <- Nothing
+    }
+    when cg_is_kind(node, AST.K_BINARY) {
+        let op -> Str.to_string(AST.bin_op(node))
+        let l -> try_eval_const(AST.bin_left(node))
+        let r -> try_eval_const(AST.bin_right(node))
+        when l == Nothing or r == Nothing { <- Nothing }
+        when l[`kind`] == `int` and r[`kind`] == `int` {
+            let lv -> l[`val`]
+            let rv -> r[`val`]
+            when op == `+` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv + rv} }
+            when op == `-` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv - rv} }
+            when op == `*` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv * rv} }
+            when op == `/` {
+                when rv != 0 and lv % rv == 0 {
+                    <- {`is_const` -> true, `kind` -> `int`, `val` -> lv / rv}
+                }
+                <- Nothing
+            }
+            when op == `%` {
+                when rv != 0 {
+                    <- {`is_const` -> true, `kind` -> `int`, `val` -> lv % rv}
+                }
+                <- Nothing
+            }
+            when op == `==` or op == `=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv == rv} }
+            when op == `!=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv != rv} }
+            when op == `<` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv < rv} }
+            when op == `<=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv <= rv} }
+            when op == `>` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv > rv} }
+            when op == `>=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv >= rv} }
+            when op == `&` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv & rv} }
+            when op == `|` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv | rv} }
+            when op == `^` or op == `^^` { <- {`is_const` -> true, `kind` -> `int`, `val` -> lv ^^ rv} }
+            when op == `<<` {
+                when rv >= 0 and rv < 64 {
+                    <- {`is_const` -> true, `kind` -> `int`, `val` -> lv << rv}
+                }
+                <- Nothing
+            }
+            when op == `>>` {
+                when rv >= 0 and rv < 64 {
+                    <- {`is_const` -> true, `kind` -> `int`, `val` -> lv >> rv}
+                }
+                <- Nothing
+            }
+        }
+        when l[`kind`] == `bool` and r[`kind`] == `bool` {
+            let lv -> l[`val`]
+            let rv -> r[`val`]
+            when op == `==` or op == `=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv == rv} }
+            when op == `!=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv != rv} }
+        }
+        when l[`kind`] == `str` and r[`kind`] == `str` {
+            let lv -> l[`val`]
+            let rv -> r[`val`]
+            when op == `+` { <- {`is_const` -> true, `kind` -> `str`, `val` -> lv + rv} }
+            when op == `==` or op == `=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv == rv} }
+            when op == `!=` { <- {`is_const` -> true, `kind` -> `bool`, `val` -> lv != rv} }
+        }
+        <- Nothing
+    }
+    when cg_is_kind(node, AST.K_LOGICAL) {
+        let op -> Str.to_string(AST.bin_op(node))
+        let l -> try_eval_const(AST.bin_left(node))
+        when op == `and` {
+            when l != Nothing and l[`kind`] == `bool` and l[`val`] == false {
+                <- {`is_const` -> true, `kind` -> `bool`, `val` -> false}
+            }
+            let r -> try_eval_const(AST.bin_right(node))
+            when l != Nothing and r != Nothing and l[`kind`] == `bool` and r[`kind`] == `bool` {
+                <- {`is_const` -> true, `kind` -> `bool`, `val` -> l[`val`] and r[`val`]}
+            }
+            <- Nothing
+        }
+        when op == `or` {
+            when l != Nothing and l[`kind`] == `bool` and l[`val`] == true {
+                <- {`is_const` -> true, `kind` -> `bool`, `val` -> true}
+            }
+            let r -> try_eval_const(AST.bin_right(node))
+            when l != Nothing and r != Nothing and l[`kind`] == `bool` and r[`kind`] == `bool` {
+                <- {`is_const` -> true, `kind` -> `bool`, `val` -> l[`val`] or r[`val`]}
+            }
+            <- Nothing
+        }
+        <- Nothing
+    }
+    <- Nothing
+}
+
+function emit_const_val(c) {
+    when c[`kind`] == `int` {
+        <- `ZenValue_make_integer(` + Str.to_string(c[`val`]) + `LL)`
+    }
+    when c[`kind`] == `bool` {
+        when c[`val`] {
+            <- `ZenValue_make_boolean(1)`
+        }
+        <- `ZenValue_make_boolean(0)`
+    }
+    when c[`kind`] == `str` {
+        <- `ZenValue_make_string("` + escape_c_string(c[`val`]) + `")`
+    }
+    <- `ZEN_NOTHING_VAL`
+}
+
+function is_int_type_name(tname) {
+    when tname == Nothing { <- false }
+    when tname == `Integer` or tname == `Byte` {
+        <- true
+    }
+    when Str.starts_with(tname, `Integer[`) {
+        <- true
+    }
+    <- false
+}
+
+function is_dec_type_name(tname) {
+    when tname == Nothing { <- false }
+    when tname == `Decimal` {
+        <- true
+    }
+    when Str.starts_with(tname, `Decimal[`) {
+        <- true
+    }
+    <- false
+}
+
+function is_int_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_LITERAL) {
+        let tid -> Tok.kind_id(AST.lit_tok_kind(node))
+        when tid == 24 or tid == 25 { <- false }
+        let s -> Str.to_string(AST.lit_val(node))
+        <- looks_int(s)
+    }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            <- is_int_type_name(vt[nm])
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            <- is_int_type_name(tname)
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CALL) {
+        let callee -> AST.call_callee(node)
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            let cname -> Str.to_string(AST.var_name(callee))
+            <- is_int_type_name(cname)
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- is_int_expr(AST.group_expr(node))
+    }
+    when cg_is_kind(node, AST.K_UNARY) {
+        let op -> Str.to_string(AST.un_op(node))
+        when op == `-` or op == `~` {
+            <- is_int_expr(AST.un_right(node))
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_BINARY) {
+        let op -> Str.to_string(AST.bin_op(node))
+        when op == `+` or op == `-` or op == `*` or op == `%` or op == `&` or op == `|` or op == `^` or op == `<<` or op == `>>` {
+            <- is_int_expr(AST.bin_left(node)) and is_int_expr(AST.bin_right(node))
+        }
+        <- false
+    }
+    <- false
+}
+
+function is_dec_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_LITERAL) {
+        let tid -> Tok.kind_id(AST.lit_tok_kind(node))
+        when tid == 24 or tid == 25 { <- false }
+        let s -> Str.to_string(AST.lit_val(node))
+        <- looks_dec(s)
+    }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            <- is_dec_type_name(vt[nm])
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            <- is_dec_type_name(tname)
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CALL) {
+        let callee -> AST.call_callee(node)
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            let cname -> Str.to_string(AST.var_name(callee))
+            <- is_dec_type_name(cname)
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- is_dec_expr(AST.group_expr(node))
+    }
+    when cg_is_kind(node, AST.K_UNARY) {
+        let op -> Str.to_string(AST.un_op(node))
+        when op == `-` {
+            <- is_dec_expr(AST.un_right(node))
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_BINARY) {
+        let op -> Str.to_string(AST.bin_op(node))
+        when op == `+` or op == `-` or op == `*` or op == `/` {
+            <- (is_dec_expr(AST.bin_left(node)) and (is_dec_expr(AST.bin_right(node)) or is_int_expr(AST.bin_right(node)))) or (is_int_expr(AST.bin_left(node)) and is_dec_expr(AST.bin_right(node)))
+        }
+        <- false
+    }
+    <- false
+}
+
+function is_bool_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_LITERAL) {
+        let s -> Str.to_string(AST.lit_val(node))
+        <- s == `true` or s == `false` or s == `True` or s == `False`
+    }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            <- vt[nm] == `Boolean` or vt[nm] == `Bool`
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_UNARY) {
+        let op -> Str.to_string(AST.un_op(node))
+        <- op == `not`
+    }
+    when cg_is_kind(node, AST.K_LOGICAL) {
+        <- true
+    }
+    when cg_is_kind(node, AST.K_BINARY) {
+        let op -> Str.to_string(AST.bin_op(node))
+        <- op == `==` or op == `=` or op == `!=` or op == `<` or op == `>` or op == `<=` or op == `>=` or op == `in`
+    }
+    when cg_is_kind(node, AST.K_IS) {
+        <- true
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- is_bool_expr(AST.group_expr(node))
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            <- tname == `Boolean` or tname == `Bool`
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CALL) {
+        let callee -> AST.call_callee(node)
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            let cname -> Str.to_string(AST.var_name(callee))
+            <- cname == `Boolean` or cname == `Bool`
+        }
+        <- false
+    }
+    <- false
+}
+
+function emit_binary_fast_int(op, l, r) {
+    when op == `+` { <- `ZenValue_fast_add_int(` + l + `, ` + r + `)` }
+    when op == `-` { <- `ZenValue_fast_sub_int(` + l + `, ` + r + `)` }
+    when op == `*` { <- `ZenValue_fast_mul_int(` + l + `, ` + r + `)` }
+    when op == `/` { <- `ZenValue_fast_div_int(` + l + `, ` + r + `)` }
+    when op == `%` { <- `ZenValue_fast_mod_int(` + l + `, ` + r + `)` }
+    when op == `==` or op == `=` { <- `ZenValue_fast_eq_int(` + l + `, ` + r + `)` }
+    when op == `!=` { <- `ZenValue_fast_neq_int(` + l + `, ` + r + `)` }
+    when op == `<` { <- `ZenValue_fast_lt_int(` + l + `, ` + r + `)` }
+    when op == `>` { <- `ZenValue_fast_gt_int(` + l + `, ` + r + `)` }
+    when op == `<=` { <- `ZenValue_fast_lte_int(` + l + `, ` + r + `)` }
+    when op == `>=` { <- `ZenValue_fast_gte_int(` + l + `, ` + r + `)` }
+    when op == `&` { <- `ZenValue_fast_bitand_int(` + l + `, ` + r + `)` }
+    when op == `|` { <- `ZenValue_fast_bitor_int(` + l + `, ` + r + `)` }
+    when op == `^` or op == `^^` { <- `ZenValue_fast_bitxor_int(` + l + `, ` + r + `)` }
+    when op == `<<` { <- `ZenValue_fast_shl_int(` + l + `, ` + r + `)` }
+    when op == `>>` { <- `ZenValue_fast_shr_int(` + l + `, ` + r + `)` }
+    <- emit_binary(op, l, r)
+}
+
+function emit_binary_fast_dec(op, l, r) {
+    when op == `+` { <- `ZenValue_fast_add_dec(` + l + `, ` + r + `)` }
+    when op == `-` { <- `ZenValue_fast_sub_dec(` + l + `, ` + r + `)` }
+    when op == `*` { <- `ZenValue_fast_mul_dec(` + l + `, ` + r + `)` }
+    <- emit_binary(op, l, r)
+}
+
+function is_str_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_LITERAL) {
+        let tid -> Tok.kind_id(AST.lit_tok_kind(node))
+        when tid == 24 or tid == 25 { <- true }
+        let s -> Str.to_string(AST.lit_val(node))
+        when Str.starts_with(s, `"`) or Str.starts_with(s, "`") { <- true }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            <- vt[nm] == `String` or vt[nm] == `Str`
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            <- tname == `String` or tname == `Str`
+        }
+        <- false
+    }
+    <- false
+}
+
+function is_local_or_param(raw) {
+    let nm -> c_ident(raw)
+    let p -> CG[`params`]
+    when p != Nothing and p.has(nm) { <- true }
+    let vt -> CG[`var_types`]
+    when vt != Nothing and vt.has(nm) { <- true }
+    <- false
+}
+
+function emit_extern_args(args) {
+    when args == Nothing { <- `` }
+    let n -> args.length
+    when n == 0 { <- `` }
+    let res -> ``
+    let i -> 0
+    do while i < n {
+        let a -> args[i]
+        let s -> ``
+        when is_int_expr(a) {
+            s -> `(long long)(` + emit_expr(a) + `).as.integer`
+        } or when is_dec_expr(a) {
+            s -> `(double)(` + emit_expr(a) + `).as.decimal`
+        } or when is_bool_expr(a) {
+            s -> `(bool)(` + emit_expr(a) + `).as.boolean`
+        } or when is_str_expr(a) {
+            s -> `((const char*)(` + emit_expr(a) + `).as.string)`
+        } or when cg_is_kind(a, AST.K_LITERAL) {
+            let lv -> AST.lit_val(a)
+            when lv is String and (Str.starts_with(lv, `"`) or Str.starts_with(lv, "`")) {
+                s -> `((const char*)(` + emit_expr(a) + `).as.string)`
+            } or when looks_dec(Str.to_string(lv)) {
+                s -> `(double)(` + emit_expr(a) + `).as.decimal`
+            } or {
+                s -> `(long long)(` + emit_expr(a) + `).as.integer`
+            }
+        } or {
+            s -> `ZenValue_to_c_int(` + emit_expr(a) + `)`
+        }
+        when i > 0 {
+            res -> res + `, ` + s
+        } or {
+            res -> s
+        }
+        i -> i + 1
+    }
+    <- res
 }
 
 function emit_binary(op, l, r) {
@@ -3656,7 +4449,11 @@ function emit_is_expression(node) {
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
         let raw -> Str.to_string(AST.var_name(pat))
-        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+        let base_raw -> raw + ``
+        when Str.contains(raw, `<`) and Str.ends_with(raw, `>`) {
+            base_raw -> Str.substring(raw, 0, Str.index_of(raw, `<`))
+        }
+        when is_type_name_str(raw) or is_type_name_str(base_raw) or is_registered_class(base_raw) or is_registered_struct(base_raw) or is_enum_name(base_raw) {
             <- `ZenValue_is_type_name(` + v + `, "` + raw + `")`
         }
         let p -> emit_expr(pat)
@@ -3664,7 +4461,11 @@ function emit_is_expression(node) {
     }
     when cg_is_kind(pat, AST.K_LITERAL) {
         let raw -> Str.to_string(AST.lit_val(pat))
-        when is_type_name_str(raw) or is_registered_class(raw) or is_enum_name(raw) {
+        let base_raw -> raw + ``
+        when Str.contains(raw, `<`) and Str.ends_with(raw, `>`) {
+            base_raw -> Str.substring(raw, 0, Str.index_of(raw, `<`))
+        }
+        when is_type_name_str(raw) or is_type_name_str(base_raw) or is_registered_class(base_raw) or is_registered_struct(base_raw) or is_enum_name(base_raw) {
             <- `ZenValue_is_type_name(` + v + `, "` + raw + `")`
         }
         let p -> emit_expr(pat)
@@ -3674,15 +4475,40 @@ function emit_is_expression(node) {
     <- `ZenValue_equal(` + v + `, ` + p2 + `)`
 }
 
+function is_canonical_generic_type_name(base) {
+    when base == `List` or base == `Set` or base == `Map` or base == `Vector` or base == `Tuple` { <- true }
+    when base == `Option` or base == `Result` or base == `Task` { <- true }
+    when base == `Number` or base == `Text` or base == `Collection` or base == `Container` { <- true }
+    when base == `Integer` or base == `Decimal` or base == `String` or base == `Boolean` or base == `Byte` or base == `Bytes` or base == `Rune` { <- true }
+    <- false
+}
+
+function is_builtin_cast_type_name(s) {
+    when s == `` or s == Nothing { <- false }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.starts_with(s, `Integer[`) or Str.starts_with(s, `Decimal[`) or Str.starts_with(s, `String[`) or Str.starts_with(s, `Vector[`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) {
+        let base -> Str.substring(s, 0, Str.index_of(s, `<`))
+        <- is_canonical_generic_type_name(base)
+    }
+    <- false
+}
+
 function is_type_name_str(s) {
-    when s == `Integer` or s == `Int` or s == `Int64` or s == `Int32` or s == `Int16` or s == `Int8` or s == `Byte` { <- true }
-    when s == `Decimal` or s == `Float` or s == `Double` { <- true }
-    when s == `String` or s == `Str` { <- true }
-    when s == `Boolean` or s == `Bool` { <- true }
-    when s == `Rune` or s == `Char` or s == `Glyph` { <- true }
-    when s == `Bytes` or s == `Buffer` { <- true }
-    when s == `List` or s == `Set` or s == `Map` { <- true }
-    when s == `Error` or s == `Nothing` or s == `nothing` { <- true }
+    when s == `` or s == Nothing { <- false }
+    when s == `Integer` or s == `Decimal` or s == `String` or s == `Boolean` or s == `Byte` or s == `Bytes` or s == `Rune` { <- true }
+    when s == `List` or s == `Set` or s == `Map` or s == `Vector` or s == `Tuple` { <- true }
+    when s == `Structure` or s == `Object` or s == `Class` or s == `Enumerator` or s == `Function` or s == `Task` or s == `Channel` { <- true }
+    when s == `Variant` or s == `Void` or s == `Nothing` or s == `nothing` or s == `Default` or s == `Error` { <- true }
+    when s == `Number` or s == `Text` or s == `Collection` or s == `Container` { <- true }
+    when Str.contains(s, `[`) and Str.ends_with(s, `]`) { <- true }
+    when Str.contains(s, `<`) and Str.ends_with(s, `>`) { <- true }
+    let ch -> Str.substring(s, 0, 1)
+    when ch >= `A` and ch <= `Z` { <- true }
     <- false
 }
 
@@ -3690,22 +4516,47 @@ function emit_call(node) {
     let callee -> AST.call_callee(node)
     let args -> AST.call_args(node)
     // variable call: name(args) — or ClassName(args) → Class_new — or TypeName(val) → cast
-    when cg_is_kind(callee, AST.K_VARIABLE) or cg_is_kind(callee, AST.K_LITERAL) {
+    when cg_is_kind(callee, AST.K_VARIABLE) or cg_is_kind(callee, AST.K_LITERAL) or cg_is_kind(callee, AST.K_INDEX) {
         let raw -> ``
         when cg_is_kind(callee, AST.K_VARIABLE) {
             raw -> Str.to_string(AST.var_name(callee))
-        } or {
+        } or when cg_is_kind(callee, AST.K_LITERAL) {
             raw -> Str.to_string(AST.lit_val(callee))
+        } or when cg_is_kind(callee, AST.K_INDEX) {
+            let c_obj -> AST.idx_obj(callee)
+            let c_idx -> AST.idx_expr(callee)
+            when c_obj != Nothing and c_idx != Nothing {
+                let oname -> ``
+                when cg_is_kind(c_obj, AST.K_VARIABLE) { oname -> Str.to_string(AST.var_name(c_obj)) }
+                or when cg_is_kind(c_obj, AST.K_LITERAL) { oname -> Str.to_string(AST.lit_val(c_obj)) }
+                let iname -> ``
+                when cg_is_kind(c_idx, AST.K_LITERAL) { iname -> Str.to_string(AST.lit_val(c_idx)) }
+                or when cg_is_kind(c_idx, AST.K_VARIABLE) { iname -> Str.to_string(AST.var_name(c_idx)) }
+                when oname != `` and iname != `` {
+                    raw -> oname + `[` + iname + `]`
+                }
+            }
         }
         let alist -> emit_args(args)
-        when is_registered_class(raw) {
-            let ctor -> c_ident(class_method_c_name(raw, `new`))
+        let base_raw -> raw + ``
+        when Str.contains(raw, `<`) and Str.ends_with(raw, `>`) {
+            base_raw -> Str.substring(raw, 0, Str.index_of(raw, `<`))
+        }
+        when is_registered_class(base_raw) {
+            let ctor -> c_ident(class_method_c_name(base_raw, `new`))
             when alist == `` {
                 <- ctor + `()`
             }
             <- ctor + `(` + alist + `)`
         }
-        when is_type_name_str(raw) {
+        when cg_is_kind(callee, AST.K_VARIABLE) and (is_free_fn(base_raw) or is_registered_struct(base_raw)) {
+            let fname -> c_ident(base_raw)
+            when alist == `` {
+                <- fname + `()`
+            }
+            <- fname + `(` + alist + `)`
+        }
+        when is_builtin_cast_type_name(raw) {
             when args != Nothing and args.length >= 1 {
                 let v -> emit_expr(args[0])
                 <- `ZenValue_cast(` + v + `, "` + raw + `")`
@@ -3751,6 +4602,13 @@ function emit_call(node) {
                 }
                 <- `ZenValue_make_string("Nothing")`
             }
+            when is_extern_fn(raw) or (CG[`has_open_extern`] == true and not is_local_or_param(raw) and not is_registered_class(raw)) {
+                let c_args -> emit_extern_args(args)
+                when c_args == `` {
+                    <- `ZenValue_from_c(` + raw + `())`
+                }
+                <- `ZenValue_from_c(` + raw + `(` + c_args + `))`
+            }
             // Local/closure value → ZenValue_apply
             let fv -> c_ident(raw)
             let argc -> 0
@@ -3792,6 +4650,13 @@ function emit_call(node) {
             let bi -> emit_builtin_call(oname, m, alist)
             when bi != `` {
                 <- bi
+            }
+            when is_extern_module(oname) {
+                let c_args -> emit_extern_args(args)
+                when c_args == `` {
+                    <- `ZenValue_from_c(` + m + `())`
+                }
+                <- `ZenValue_from_c(` + m + `(` + c_args + `))`
             }
             // Check if m is a registered class constructor, e.g. cli.Parser("app", "desc") or bytes.Bytes(10)
             when is_registered_class(m) {
@@ -3940,6 +4805,12 @@ function emit_builtin_call(oname, m, alist) {
         when m == `arena_depth` {
             <- `ZenMemory_arena_depth()`
         }
+        when m == `arena_allocated` or m == `arena_capacity` or m == `arena_chunks` or m == `arena_stats` {
+            when alist == `` {
+                <- `ZenMemory_` + m + `(ZenValue_make_nothing())`
+            }
+            <- `ZenMemory_` + m + `(` + alist + `)`
+        }
         <- `ZenMemory_` + m + `(` + alist + `)`
     }
     // import zen.memory as memory → free namespaced memory_* after merge; map method form
@@ -3952,6 +4823,12 @@ function emit_builtin_call(oname, m, alist) {
         }
         when m == `pop_arena` or m == `using_arena` or m == `arena_depth` {
             <- c_ident(`memory_` + m) + `()`
+        }
+        when m == `arena_allocated` or m == `arena_capacity` or m == `arena_chunks` or m == `arena_stats` {
+            when alist == `` {
+                <- c_ident(`memory_` + m) + `(ZenValue_make_nothing())`
+            }
+            <- c_ident(`memory_` + m) + `(` + alist + `)`
         }
         when alist == `` {
             <- c_ident(`memory_` + m) + `()`
@@ -4323,6 +5200,35 @@ function emit_builtin_call(oname, m, alist) {
     when oname == `__builtin_vm` or oname == `vm` or oname == `VM` {
         when m == `run_file` or m == `run_bytecode` or m == `run` {
             <- `ZenValue_run_bytecode_file(` + alist + `)`
+        }
+    }
+    when oname == `__builtin_ast` or oname == `ast` or oname == `Ast` {
+        when m == `token` {
+            <- `ZenToken_make(` + alist + `)`
+        }
+        when Str.starts_with(m, `create`) {
+            <- `ZenAst_node_` + m + `(` + alist + `)`
+        }
+        <- `ZenAst_node_` + m + `(` + alist + `)`
+    }
+    when oname == `__builtin_ffi` or oname == `ffi` or oname == `FFI` {
+        when m == `load` or m == `open` {
+            <- `ZenFFI_builtin_load(` + alist + `)`
+        }
+        when m == `symbol` or m == `sym` {
+            <- `ZenFFI_builtin_symbol(` + alist + `)`
+        }
+        when m == `call` {
+            <- `ZenFFI_builtin_call(` + alist + `)`
+        }
+        when m == `close` {
+            <- `ZenFFI_builtin_close(` + alist + `)`
+        }
+        when m == `error` {
+            <- `ZenFFI_builtin_error()`
+        }
+        when m == `resolve` {
+            <- `ZenFFI_builtin_resolve(` + alist + `)`
         }
     }
     <- ``

@@ -1,0 +1,78 @@
+/!
+  zenshell - Command History Viewer & Manager (history)
+!/
+
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+import core.history as hist_core
+
+function handle_history_default(args, c) {
+    let limit -> 20
+    when args.length > 0 {
+        let parsed -> Integer(args[0])
+        when parsed != Nothing and parsed > 0 {
+            limit -> parsed
+        }
+    }
+
+    let h_list -> c.history
+    let n -> h_list.length
+    when n == 0 {
+        <- color.dim(`History is empty.`)
+    }
+
+    let start -> when (n > limit) { n - limit } or { 0 }
+    let rows -> []
+    let i -> start
+    do while i < n {
+        let num -> color.dim(Str.to_string(i + 1))
+        let cmd_str -> h_list[i]
+        rows.append([num, cmd_str])
+        i -> i + 1
+    }
+
+    let headers -> [`#`, `Command (` + Str.to_string(n - start) + ` of ` + Str.to_string(n) + `)`]
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_history_find(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: history find <query>`)
+    }
+    let query -> args[0]
+    let rows -> []
+    let i -> 0
+    let n -> c.history.length
+    do while i < n {
+        let cmd_str -> c.history[i]
+        when Str.contains(cmd_str, query) {
+            rows.append([color.dim(Str.to_string(i + 1)), cmd_str])
+        }
+        i -> i + 1
+    }
+
+    when rows.length == 0 {
+        <- color.yellow(`No history entries matching '` + query + `'`)
+    }
+
+    let headers -> [`#`, `Matching '` + query + `'`]
+    <- utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+}
+
+function handle_history_clear(args, c) {
+    c.history -> []
+    let p -> hist_core.get_history_path()
+    __builtin_file.write(p, ``)
+    <- color.green(`History cleared from memory and disk.`)
+}
+
+export function create_history_command(ctx) {
+    let cmd -> cmd_base.Command(`history`, `View, search, and manage command history`)
+    cmd.set_default(handle_history_default)
+    cmd.add_subcommand(`list`, `List last N history commands (default 20)`, handle_history_default)
+    cmd.add_subcommand(`find`, `Search command history for matching substring`, handle_history_find)
+    cmd.add_subcommand(`clear`, `Clear all command history in memory and on disk`, handle_history_clear)
+    <- cmd
+}

@@ -1,0 +1,68 @@
+/!
+  zenshell - ZenData Inspector & Pipeline Command (zd)
+!/
+
+import zen.data.zendata as zd
+import zen.io.file as file
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+
+function handle_parse(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: zd parse <file.zd>`)
+    }
+    let src_file -> args[0]
+    when not file.exists(src_file) {
+        <- color.red(`Error: File '` + src_file + `' not found`)
+    }
+    let content -> file.read(src_file)
+    let parsed -> zd.parse(content)
+    when parsed == Nothing {
+        <- color.red(`Error: Failed to parse ZenData in '` + src_file + `'`)
+    }
+    <- zd.stringify(parsed, 0)
+}
+
+function handle_keys(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: zd keys <file.zd>`)
+    }
+    let src_file -> args[0]
+    when not file.exists(src_file) {
+        <- color.red(`Error: File '` + src_file + `' not found`)
+    }
+    let parsed -> zd.parse(file.read(src_file))
+    when parsed == Nothing {
+        <- color.red(`Error: Unable to parse '` + src_file + `'`)
+    }
+    let out -> color.bold(`Keys in ` + src_file + `:\n`)
+    when parsed.is_map {
+        do for k in parsed.keys() {
+            out -> out + `  • ` + color.cyan(k) + `\n`
+        }
+    } or {
+        out -> out + `  (Root is not a map)\n`
+    }
+    <- out
+}
+
+function handle_stringify(args, c) {
+    when args.length == 0 {
+        <- color.yellow(`Usage: zd stringify <expression>`)
+    }
+    let raw -> Str.join(args, ` `)
+    let parsed -> zd.parse(raw)
+    when parsed != Nothing {
+        <- zd.stringify(parsed, 0)
+    }
+    <- raw
+}
+
+export function create_data_command(ctx) {
+    let cmd -> cmd_base.Command(`zd`, `Parse, query, and manipulate ZenData (.zd) structures`)
+    cmd.add_subcommand(`parse`, `Parse a .zd file and output in-memory representation`, handle_parse)
+    cmd.add_subcommand(`keys`, `List keys of a parsed .zd file or map`, handle_keys)
+    cmd.add_subcommand(`stringify`, `Format and pretty-print an input expression as ZenData`, handle_stringify)
+    <- cmd
+}

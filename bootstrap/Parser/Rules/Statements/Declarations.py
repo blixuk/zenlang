@@ -120,59 +120,65 @@ class DeclarationParserMixin:
 
         # Identifer
         identifer = self.handle_identifier()
+        generic_params = self._parse_generic_params()
+        prev_generics = getattr(self.expression_handler, "active_generic_params", set())
+        self.expression_handler.active_generic_params = prev_generics | set(generic_params)
 
-        # Parameters and Return Type (flexible order: `(params) : Type` or `: Type (params)`)
-        if self.token_handler.check_type(TokenType.TYPE_SET):
-            inferred_return_type, _ = self.handle_typing()
-            if self.token_handler.check_type(TokenType.LEFT_PAREN):
-                parameters = self.expression_handler.parse_parameters()
-        elif self.token_handler.check_type(TokenType.LEFT_PAREN):
-            parameters = self.expression_handler.parse_parameters()
+        try:
+            # Parameters and Return Type (flexible order: `(params) : Type` or `: Type (params)`)
             if self.token_handler.check_type(TokenType.TYPE_SET):
                 inferred_return_type, _ = self.handle_typing()
+                if self.token_handler.check_type(TokenType.LEFT_PAREN):
+                    parameters = self.expression_handler.parse_parameters()
+            elif self.token_handler.check_type(TokenType.LEFT_PAREN):
+                parameters = self.expression_handler.parse_parameters()
+                if self.token_handler.check_type(TokenType.TYPE_SET):
+                    inferred_return_type, _ = self.handle_typing()
 
-        # Block Scope or Concise Expression Return (<- expr or -> expr)
-        if self.token_handler.check_type(TokenType.LEFT_BRACE):
-            block = self.block_statement("function")
-        elif (
-            self.token_handler.match_type(TokenType.RETURN)
-            or self.token_handler.match_type(TokenType.ASSIGNMENT)
-            or self.token_handler.match_type_value(TokenType.KEYWORD, "return")
-        ):
-            expr = self.expression_handler.expression()
-            ret_stmt = ReturnStatement(
-                line=expr.line,
-                column=expr.column,
-                scope_level=self.scope_manager.get_current_scope_level(),
-                value=expr,
-                inferred_type=None,
+            # Block Scope or Concise Expression Return (<- expr or -> expr)
+            if self.token_handler.check_type(TokenType.LEFT_BRACE):
+                block = self.block_statement("function")
+            elif (
+                self.token_handler.match_type(TokenType.RETURN)
+                or self.token_handler.match_type(TokenType.ASSIGNMENT)
+                or self.token_handler.match_type_value(TokenType.KEYWORD, "return")
+            ):
+                expr = self.expression_handler.expression()
+                ret_stmt = ReturnStatement(
+                    line=expr.line,
+                    column=expr.column,
+                    scope_level=self.scope_manager.get_current_scope_level(),
+                    value=expr,
+                    inferred_type=None,
+                )
+                block = BlockStatement(
+                    line=expr.line,
+                    column=expr.column,
+                    scope_level=self.scope_manager.get_current_scope_level(),
+                    scope_type="function",
+                    statements=[ret_stmt],
+                )
+            else:
+                raise self.logger.error_expect_token(
+                    "Expected `{`, `<-`, or `->` after function declaration", self.token_handler.peek()
+                )
+
+            statement = FunctionStatement(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                self.scope_manager.get_current_scope_level(),
+                getattr(identifer, "value"),
+                parameters,
+                block,
+                inferred_return_type,
+                generic_params=generic_params,
             )
-            block = BlockStatement(
-                line=expr.line,
-                column=expr.column,
-                scope_level=self.scope_manager.get_current_scope_level(),
-                scope_type="function",
-                statements=[ret_stmt],
-            )
-        else:
-            raise self.logger.error_expect_token(
-                "Expected `{`, `<-`, or `->` after function declaration", self.token_handler.peek()
-            )
+            if self.filename: statement.filename = self.filename
 
-        statement = FunctionStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            self.scope_manager.get_current_scope_level(),
-            getattr(identifer, "value"),
-            parameters,
-            block,
-            inferred_return_type,
-        )
-        if self.filename: statement.filename = self.filename
-
-        self.logger.debug("function_statement", statement)
-
-        return statement
+            self.logger.debug("function_statement", statement)
+            return statement
+        finally:
+            self.expression_handler.active_generic_params = prev_generics
 
     def task_statement(self) -> TaskStatement:
         token: Token | None = None
@@ -182,52 +188,74 @@ class DeclarationParserMixin:
 
         # Identifier
         identifier = self.handle_identifier()
+        generic_params = self._parse_generic_params()
+        prev_generics = getattr(self.expression_handler, "active_generic_params", set())
+        self.expression_handler.active_generic_params = prev_generics | set(generic_params)
 
-        # Parameters
-        if self.token_handler.check_type(TokenType.LEFT_PAREN):
-            parameters = self.expression_handler.parse_parameters()
+        try:
+            # Parameters
+            if self.token_handler.check_type(TokenType.LEFT_PAREN):
+                parameters = self.expression_handler.parse_parameters()
 
-        # Return Type
-        inferred_return_type, _ = self.handle_typing()
-        if not inferred_return_type: inferred_return_type = TypeVoid()
+            # Return Type
+            inferred_return_type, _ = self.handle_typing()
+            if not inferred_return_type: inferred_return_type = TypeVoid()
 
-        # Block Scope or Concise Expression Return (<- expr)
-        if self.token_handler.check_type(TokenType.LEFT_BRACE):
-            block = self.block_statement("task")
-        elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
-            expr = self.expression_handler.expression()
-            ret_stmt = ReturnStatement(
-                line=expr.line,
-                column=expr.column,
-                scope_level=self.scope_manager.get_current_scope_level(),
-                value=expr,
-                inferred_type=None,
+            # Block Scope or Concise Expression Return (<- expr)
+            if self.token_handler.check_type(TokenType.LEFT_BRACE):
+                block = self.block_statement("task")
+            elif self.token_handler.match_type(TokenType.RETURN) or self.token_handler.match_type_value(TokenType.KEYWORD, "return"):
+                expr = self.expression_handler.expression()
+                ret_stmt = ReturnStatement(
+                    line=expr.line,
+                    column=expr.column,
+                    scope_level=self.scope_manager.get_current_scope_level(),
+                    value=expr,
+                    inferred_type=None,
+                )
+                block = BlockStatement(
+                    line=expr.line,
+                    column=expr.column,
+                    scope_level=self.scope_manager.get_current_scope_level(),
+                    scope_type="task",
+                    statements=[ret_stmt],
+                )
+            else:
+                raise self.logger.error_expect_token(
+                    "Expected `{` or `<-` after task identifier", self.token_handler.peek()
+                )
+
+            statement = TaskStatement(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                self.scope_manager.get_current_scope_level(),
+                getattr(identifier, "value"),
+                parameters,
+                block,
+                inferred_return_type,
+                generic_params=generic_params,
             )
-            block = BlockStatement(
-                line=expr.line,
-                column=expr.column,
-                scope_level=self.scope_manager.get_current_scope_level(),
-                scope_type="task",
-                statements=[ret_stmt],
-            )
-        else:
-            raise self.logger.error_expect_token(
-                "Expected `{` or `<-` after task identifier", self.token_handler.peek()
-            )
+            if self.filename: statement.filename = self.filename
 
-        statement = TaskStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            self.scope_manager.get_current_scope_level(),
-            getattr(identifier, "value"),
-            parameters,
-            block,
-            inferred_return_type,
-        )
-        if self.filename: statement.filename = self.filename
+            self.logger.debug("task_statement", statement)
+            return statement
+        finally:
+            self.expression_handler.active_generic_params = prev_generics
 
-        self.logger.debug("task_statement", statement)
-        return statement
+    def _parse_generic_params(self) -> list:
+        params = []
+        if self.token_handler.match_type(TokenType.LESS_THAN):
+            while not self.token_handler.check_type(TokenType.GREATER_THAN) and not self.token_handler.at_end():
+                tok = self.token_handler.expect_types(
+                    [TokenType.IDENTIFIER, TokenType.KEYWORD], "Expected generic type parameter name"
+                )
+                params.append(tok.value)
+                if not self.token_handler.match_type(TokenType.COMMA):
+                    break
+            self.token_handler.expect_type(
+                TokenType.GREATER_THAN, "Expected `>` after generic parameter list"
+            )
+        return params
 
     def _parse_is_traits(self) -> list:
         """Parse zero or more `is Trait` (optionally `is A, B`) after a type name."""
@@ -274,30 +302,37 @@ class DeclarationParserMixin:
 
         # Identifier
         identifier = self.handle_identifier()
+        generic_params = self._parse_generic_params()
+        prev_generics = getattr(self.expression_handler, "active_generic_params", set())
+        self.expression_handler.active_generic_params = prev_generics | set(generic_params)
 
-        traits = self._parse_is_traits()
-        reflectable = "reflectable" in traits
+        try:
+            traits = self._parse_is_traits()
+            reflectable = "reflectable" in traits
 
-        parent: Token | None = None
-        if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
-            parent = self.handle_identifier()
+            parent: Token | None = None
+            if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
+                parent = self.handle_identifier()
 
-        # Members
-        if self.token_handler.match_type(TokenType.LEFT_BRACE):
-            members = self.expression_handler.parse_members()
+            # Members
+            if self.token_handler.match_type(TokenType.LEFT_BRACE):
+                members = self.expression_handler.parse_members()
 
-        statement = StructureStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            self.scope_manager.get_current_scope_level(),
-            getattr(identifier, "value"),
-            members,
-            parent=getattr(parent, "value") if parent else None,
-            reflectable=reflectable,
-        )
+            statement = StructureStatement(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                self.scope_manager.get_current_scope_level(),
+                getattr(identifier, "value"),
+                members,
+                parent=getattr(parent, "value") if parent else None,
+                reflectable=reflectable,
+                generic_params=generic_params,
+            )
 
-        self.logger.debug("structure_statement", statement)
-        return statement
+            self.logger.debug("structure_statement", statement)
+            return statement
+        finally:
+            self.expression_handler.active_generic_params = prev_generics
 
     def object_statement(self) -> ObjectStatement:
         """
@@ -375,51 +410,59 @@ class DeclarationParserMixin:
     def class_statement(self) -> ClassStatement:
         token = self.handle_declaration("class")
         identifier = self.handle_identifier()
-        traits = self._parse_is_traits()
-        reflectable = "reflectable" in traits
-        parent_identifier: Token | None = None
+        generic_params = self._parse_generic_params()
+        prev_generics = getattr(self.expression_handler, "active_generic_params", set())
+        self.expression_handler.active_generic_params = prev_generics | set(generic_params)
 
-        if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
-            parent_identifier = self.handle_identifier()
+        try:
+            traits = self._parse_is_traits()
+            reflectable = "reflectable" in traits
+            parent_identifier: Token | None = None
 
-        self.token_handler.expect_type(TokenType.LEFT_BRACE, "Expected `{` after class name/parent")
-        self.scope_manager.enter("class")
-        members: list = []
-        methods: list = []
+            if self.token_handler.match_type_value(TokenType.KEYWORD, "extends"):
+                parent_identifier = self.handle_identifier()
 
-        while not self.token_handler.check_type(TokenType.RIGHT_BRACE) and not self.token_handler.at_end():
-            t = self.token_handler.peek()
-            from Logging.Trace import zen_trace
-            zen_trace(f"CLASS_MEMBER_PEEK: {t}")
-            if not t: break
-            if self.token_handler.check_types([TokenType.COMMENT, TokenType.DOC_COMMENT]):
-                token = self.token_handler.advance()
-                continue
-            if t.type == TokenType.KEYWORD:
-                if t.value in ["let", "set"]:
-                    members.append(self.assignment_statement())
+            self.token_handler.expect_type(TokenType.LEFT_BRACE, "Expected `{` after class name/parent")
+            self.scope_manager.enter("class")
+            members: list = []
+            methods: list = []
+
+            while not self.token_handler.check_type(TokenType.RIGHT_BRACE) and not self.token_handler.at_end():
+                t = self.token_handler.peek()
+                from Logging.Trace import zen_trace
+                zen_trace(f"CLASS_MEMBER_PEEK: {t}")
+                if not t: break
+                if self.token_handler.check_types([TokenType.COMMENT, TokenType.DOC_COMMENT]):
+                    token = self.token_handler.advance()
                     continue
-                if t.value == "function":
-                    methods.append(self.function_statement())
-                    continue
-            if self.token_handler.check_type(TokenType.IDENTIFIER) and self.token_handler.check_type(TokenType.ASSIGNMENT, 1):
-                 raise self.logger.error("Reassignment not allowed in class body. Use 'let' or 'set' for fields.", t)
-            raise self.logger.error(f"Unexpected token '{t.value}' in class body", t)
+                if t.type == TokenType.KEYWORD:
+                    if t.value in ["let", "set"]:
+                        members.append(self.assignment_statement())
+                        continue
+                    if t.value == "function":
+                        methods.append(self.function_statement())
+                        continue
+                if self.token_handler.check_type(TokenType.IDENTIFIER) and self.token_handler.check_type(TokenType.ASSIGNMENT, 1):
+                     raise self.logger.error("Reassignment not allowed in class body. Use 'let' or 'set' for fields.", t)
+                raise self.logger.error(f"Unexpected token '{t.value}' in class body", t)
 
-        self.scope_manager.exit("class")
-        self.token_handler.expect_type(TokenType.RIGHT_BRACE, "Expected `}` after class body")
-        statement = ClassStatement(
-            getattr(token, "line"),
-            getattr(token, "column"),
-            0,
-            getattr(identifier, "value"),
-            getattr(parent_identifier, "value") if parent_identifier else None,
-            members,
-            methods,
-            reflectable=reflectable,
-        )
-        if self.filename: statement.filename = self.filename
-        return statement
+            self.scope_manager.exit("class")
+            self.token_handler.expect_type(TokenType.RIGHT_BRACE, "Expected `}` after class body")
+            statement = ClassStatement(
+                getattr(token, "line"),
+                getattr(token, "column"),
+                0,
+                getattr(identifier, "value"),
+                getattr(parent_identifier, "value") if parent_identifier else None,
+                members,
+                methods,
+                reflectable=reflectable,
+                generic_params=generic_params,
+            )
+            if self.filename: statement.filename = self.filename
+            return statement
+        finally:
+            self.expression_handler.active_generic_params = prev_generics
 
     def handle_declaration(self, value: str) -> Token | None:
         return self.token_handler.expect_type_value(TokenType.KEYWORD, value, f"Expected `{value}` declaration")

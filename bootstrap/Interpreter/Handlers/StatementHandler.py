@@ -504,11 +504,125 @@ class StatementHandler:
         return result
 
     def _evaluate_import_statement(self, node: ImportStatement, environment: Environment) -> any:
+        if getattr(node, "is_extern", False):
+            self.has_extern = True
+            import ctypes, ctypes.util
+            raw_path = node.path.strip("<>\"'")
+            if raw_path.endswith(".h"): raw_path = raw_path[:-2]
+            if "/" in raw_path: raw_path = raw_path.split("/")[-1]
+            cdll = None
+            if "math" in raw_path:
+                cdll = ctypes.CDLL(ctypes.util.find_library("m") or "libm.so.6")
+            else:
+                try:
+                    cdll = ctypes.CDLL(None)
+                except Exception:
+                    pass
+                if not cdll:
+                    try:
+                        cdll = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+                    except Exception:
+                        pass
+            class ExternModule:
+                def __init__(self, cdll):
+                    self._cdll = cdll
+                def get_member(self, name):
+                    fn = getattr(self._cdll, name, None) if self._cdll else None
+                    if fn is None:
+                        try:
+                            fn = getattr(ctypes.CDLL(None), name)
+                        except Exception:
+                            pass
+                    if fn is None:
+                        raise RuntimeError(f"Extern symbol '{name}' not found")
+                    return self._wrap_fn(fn, name)
+                def _wrap_fn(self, fn, name):
+                    def wrapper(*args):
+                        c_args = []
+                        for a in args:
+                            if isinstance(a, str):
+                                c_args.append(a.encode("utf-8"))
+                            elif isinstance(a, bool):
+                                c_args.append(int(a))
+                            elif isinstance(a, float):
+                                c_args.append(ctypes.c_double(a))
+                            else:
+                                c_args.append(a)
+                        if name in ("sqrt", "pow", "sin", "cos", "tan", "exp", "log"):
+                            fn.restype = ctypes.c_double
+                        elif name in ("getenv", "strerror"):
+                            fn.restype = ctypes.c_char_p
+                        res = fn(*c_args)
+                        if isinstance(res, bytes):
+                            return res.decode("utf-8")
+                        return res
+                    return wrapper
+                def __getitem__(self, name):
+                    return self.get_member(name)
+            ext_mod = ExternModule(cdll)
+            alias = node.name or raw_path
+            environment.define(alias, ext_mod, False, "extern_module")
+            return ext_mod
+
         module_object = self._load_module(node.path, node.name, caller_path=environment.file_path)
         environment.define(node.name, module_object, False, "module")
         return module_object
 
     def _evaluate_from_import_statement(self, node: FromImportStatement, environment: Environment) -> any:
+        if getattr(node, "is_extern", False):
+            self.has_extern = True
+            import ctypes, ctypes.util
+            raw_path = node.path.strip("<>\"'")
+            if raw_path.endswith(".h"): raw_path = raw_path[:-2]
+            if "/" in raw_path: raw_path = raw_path.split("/")[-1]
+            cdll = None
+            if "math" in raw_path:
+                cdll = ctypes.CDLL(ctypes.util.find_library("m") or "libm.so.6")
+            else:
+                try:
+                    cdll = ctypes.CDLL(None)
+                except Exception:
+                    pass
+                if not cdll:
+                    try:
+                        cdll = ctypes.CDLL(ctypes.util.find_library("c") or "libc.so.6")
+                    except Exception:
+                        pass
+            def wrap_fn(fn, name):
+                def wrapper(*args):
+                    c_args = []
+                    for a in args:
+                        if isinstance(a, str):
+                            c_args.append(a.encode("utf-8"))
+                        elif isinstance(a, bool):
+                            c_args.append(int(a))
+                        elif isinstance(a, float):
+                            c_args.append(ctypes.c_double(a))
+                        else:
+                            c_args.append(a)
+                    if name in ("sqrt", "pow", "sin", "cos", "tan", "exp", "log"):
+                        fn.restype = ctypes.c_double
+                    elif name in ("getenv", "strerror"):
+                        fn.restype = ctypes.c_char_p
+                    res = fn(*c_args)
+                    if isinstance(res, bytes):
+                        return res.decode("utf-8")
+                    return res
+                return wrapper
+            for symbol_info in node.symbols:
+                name = symbol_info["name"]
+                alias = symbol_info.get("alias") or name
+                fn = getattr(cdll, name, None) if cdll else None
+                if fn is None:
+                    try:
+                        fn = getattr(ctypes.CDLL(None), name)
+                    except Exception:
+                        pass
+                if fn is None:
+                    raise RuntimeError(f"Extern symbol '{name}' not found")
+                environment.define(alias, wrap_fn(fn, name), False, "imported_symbol")
+            return None
+
         module_object = self._load_module(node.path, node.path, caller_path=environment.file_path)
         for symbol_info in node.symbols:
             name = symbol_info["name"]

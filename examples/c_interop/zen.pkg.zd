@@ -1,0 +1,14 @@
+// ==========================================================
+// Zenlang Package Manifest (zen.pkg.zd)
+// ==========================================================
+
+Package {
+    `name`         -> `c_interop`,
+    `version`      -> `1.0.0`,
+    `type`         -> `cli`,
+    `entry`        -> `src/main.zl`,
+    `target`       -> `build/c_interop`,
+    `description`  -> `Zero-wrapper POSIX and C header interop example built with .zbuild`,
+    `c_flags`      -> `-O2`,
+    `license`      -> `MIT`
+}

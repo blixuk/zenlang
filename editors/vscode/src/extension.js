@@ -367,9 +367,11 @@ function buildCompletions(document) {
     'self', 'parent', 'auto',
   ];
   const types = [
-    'Integer', 'Decimal', 'String', 'Boolean', 'List', 'Map', 'Dictionary',
-    'Tuple', 'Vector', 'Set', 'Void', 'Variant', 'Error', 'Task', 'Function',
-    'Structure', 'Class', 'Enumerator', 'Option', 'Result', 'Auto', 'Rune',
+    'Variant', 'Void', 'Nothing', 'Default', 'Boolean', 'Byte', 'Bytes', 'Rune',
+    'Integer', 'Decimal', 'String', 'List', 'Set', 'Vector', 'Tuple', 'Map',
+    'Structure', 'Object', 'Class', 'Enumerator', 'Function', 'Task', 'Channel',
+    'Number', 'Text', 'Collection', 'Container',
+    'Error', 'Option', 'Result',
   ];
   const modules = [
     'zen.io.io', 'zen.io.file', 'zen.io.path',

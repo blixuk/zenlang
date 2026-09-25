@@ -1,0 +1,41 @@
+import zen.sys.termposix as termp
+import zen.test as test
+
+function test_is_tty() {
+    let in_tty -> termp.is_stdin_tty()
+    let out_tty -> termp.is_stdout_tty()
+    let err_tty -> termp.is_stderr_tty()
+    // In headless or test runners, this can be true or false, but must be Boolean
+    test.assert_true(in_tty == true or in_tty == false, `stdin_tty should be boolean`)
+    test.assert_true(out_tty == true or out_tty == false, `stdout_tty should be boolean`)
+    test.assert_true(err_tty == true or err_tty == false, `stderr_tty should be boolean`)
+
+    let bad_fd -> termp.is_tty_fd(-1)
+    test.assert_true(bad_fd == false, `invalid fd should not be tty`)
+    <- true
+}
+
+function test_summary() {
+    let s -> termp.terminal_summary()
+    test.assert_true(s.has(`stdin_tty`), `summary should have stdin_tty`)
+    test.assert_true(s.has(`stdout_tty`), `summary should have stdout_tty`)
+    test.assert_true(s.has(`stderr_tty`), `summary should have stderr_tty`)
+    <- true
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `TermPOSIX.is_tty`, `fn` -> test_is_tty},
+        {`name` -> `TermPOSIX.summary`, `fn` -> test_summary}
+    ]
+
+    <- test.run_suite(`POSIX Terminal Library`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

@@ -47,6 +47,12 @@ class Resolver:
         "zen.zenmark": "zen.text.zenmark.zenmark",
         "lib/zen/zenmark": "lib/zen/text/zenmark/zenmark",
         "zen/zenmark": "lib/zen/text/zenmark/zenmark",
+        "zen.qrcode": "zen.graphics.qrcode",
+        "lib/zen/qrcode": "lib/zen/graphics/qrcode",
+        "zen/qrcode": "lib/zen/graphics/qrcode",
+        "zen.data.qrcode": "zen.graphics.qrcode",
+        "lib/zen/data/qrcode": "lib/zen/graphics/qrcode",
+        "zen/data/qrcode": "lib/zen/graphics/qrcode",
     }
 
     def resolve(self, import_path: str, base_dir: str = None) -> str:

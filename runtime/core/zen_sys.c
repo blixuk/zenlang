@@ -1039,6 +1039,72 @@ static void zen_apply_env_map(ZenValue env_map) {
     }
 }
 
+static void zen_read_pipes_all(int out_fd, char** out_buf, size_t* out_len,
+                               int err_fd, char** err_buf, size_t* err_len) {
+    size_t out_cap = 4096, out_sz = 0;
+    size_t err_cap = 4096, err_sz = 0;
+    char* obuf = (char*)malloc(out_cap);
+    char* ebuf = (err_fd >= 0) ? (char*)malloc(err_cap) : NULL;
+    if (obuf) obuf[0] = '\0';
+    if (ebuf) ebuf[0] = '\0';
+
+    struct pollfd pfds[2];
+    pfds[0].fd = out_fd;
+    pfds[0].events = POLLIN;
+    pfds[0].revents = 0;
+    pfds[1].fd = err_fd;
+    pfds[1].events = (err_fd >= 0) ? POLLIN : 0;
+    pfds[1].revents = 0;
+
+    int active = (err_fd >= 0) ? 2 : 1;
+    while (active > 0) {
+        int r = poll(pfds, 2, -1);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            break;
+        }
+        if (pfds[0].fd >= 0 && (pfds[0].revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (out_sz + 4096 >= out_cap) {
+                out_cap *= 2;
+                char* nb = (char*)realloc(obuf, out_cap);
+                if (nb) obuf = nb;
+            }
+            ssize_t n = read(pfds[0].fd, obuf ? obuf + out_sz : NULL, 4096);
+            if (n > 0) {
+                out_sz += (size_t)n;
+            } else {
+                close(pfds[0].fd);
+                pfds[0].fd = -1;
+                active--;
+            }
+        }
+        if (pfds[1].fd >= 0 && (pfds[1].revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (err_sz + 4096 >= err_cap) {
+                err_cap *= 2;
+                char* nb = (char*)realloc(ebuf, err_cap);
+                if (nb) ebuf = nb;
+            }
+            ssize_t n = read(pfds[1].fd, ebuf ? ebuf + err_sz : NULL, 4096);
+            if (n > 0) {
+                err_sz += (size_t)n;
+            } else {
+                close(pfds[1].fd);
+                pfds[1].fd = -1;
+                active--;
+            }
+        }
+    }
+    if (pfds[0].fd >= 0) close(pfds[0].fd);
+    if (pfds[1].fd >= 0) close(pfds[1].fd);
+
+    if (obuf) obuf[out_sz] = '\0';
+    if (ebuf) ebuf[err_sz] = '\0';
+    if (out_buf) *out_buf = obuf; else free(obuf);
+    if (out_len) *out_len = out_sz;
+    if (err_buf) *err_buf = ebuf; else free(ebuf);
+    if (err_len) *err_len = err_sz;
+}
+
 static ZenValue zen_shell_result_impl(const char* cmd, int capture_stderr_separate, const char* cwd, ZenValue env_map) {
     int out_pipe[2] = {-1, -1};
     int err_pipe[2] = {-1, -1};
@@ -1087,12 +1153,8 @@ static ZenValue zen_shell_result_impl(const char* cmd, int capture_stderr_separa
     char* out = NULL;
     char* err = NULL;
     size_t out_len = 0, err_len = 0;
-    zen_read_fd_all(out_pipe[0], &out, &out_len);
-    close(out_pipe[0]);
-    if (capture_stderr_separate) {
-        zen_read_fd_all(err_pipe[0], &err, &err_len);
-        close(err_pipe[0]);
-    }
+    zen_read_pipes_all(out_pipe[0], &out, &out_len,
+                       capture_stderr_separate ? err_pipe[0] : -1, &err, &err_len);
 
     int status = 0;
     waitpid(pid, &status, 0);

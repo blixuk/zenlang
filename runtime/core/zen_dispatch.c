@@ -80,6 +80,8 @@ ZenValue ZenValue_get_kind(ZenValue obj) {
         case ZEN_ARENA: return ZenValue_make_string("Arena");
         case ZEN_NOTHING: return ZenValue_make_string("Nothing");
         case ZEN_DEFAULT: return ZenValue_make_string("Default");
+        case ZEN_AST_NODE: return ZenValue_make_string("AstNode");
+        case ZEN_TOKEN: return ZenValue_make_string("Token");
         default: return ZenValue_make_string("Variant");
     }
 }
@@ -138,6 +140,8 @@ ZenValue ZenValue_get_length(ZenValue self) {
     if (self.type == ZEN_STRING) return ZenString_get_length(self);
     if (self.type == ZEN_MAP) return ZenMap_get_length(self);
     if (self.type == ZEN_SET) return ZenValue_make_integer(ZenSet_get_count(self));
+    if (self.type == ZEN_AST_NODE) return ZenValue_make_integer(ZenAst_node_length(self));
+    if (self.type == ZEN_TOKEN) return ZenValue_make_integer(7);
     return ZenValue_make_integer(0);
 }
 
@@ -145,6 +149,8 @@ ZenValue ZenValue_get_at(ZenValue self, ZenValue index) {
     if (self.type == ZEN_LIST) return ZenList_get_value_at_index(self, index);
     if (self.type == ZEN_STRING) return ZenString_get_character_at_index(self, index);
     if (self.type == ZEN_MAP) return ZenMap_get_value_at_key(self, index);
+    if (self.type == ZEN_AST_NODE) return ZenAst_node_get_at(self, index);
+    if (self.type == ZEN_TOKEN) return ZenToken_get_at(self, index);
     return ZenValue_make_nothing();
 }
 
@@ -160,12 +166,19 @@ ZenValue ZenValue_get(ZenValue self, ZenValue key, ZenValue default_val) {
         }
         return default_val;
     }
+    if (self.type == ZEN_AST_NODE || self.type == ZEN_TOKEN) {
+        ZenValue val = ZenValue_get_at(self, key);
+        if (val.type != ZEN_NOTHING) return val;
+        return default_val;
+    }
     return default_val;
 }
 
 ZenValue ZenValue_set_at(ZenValue self, ZenValue index, ZenValue value) {
     if (self.type == ZEN_LIST) return ZenList_set_value_at_index(self, index, value);
     if (self.type == ZEN_MAP) return ZenMap_set_value_at_key(self, index, value);
+    if (self.type == ZEN_AST_NODE) return ZenAst_node_set_at(self, index, value);
+    if (self.type == ZEN_TOKEN) return ZenToken_set_at(self, index, value);
     return ZenValue_make_nothing();
 }
 

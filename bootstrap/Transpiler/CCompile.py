@@ -112,8 +112,10 @@ class CCompiler:
         obj_dir.mkdir(parents=True, exist_ok=True)
         obj = obj_dir / "bootstrap_runtime.o"
         src = runtime_dir / "bootstrap_runtime.c"
-        if obj.is_file() and src.is_file() and obj.stat().st_mtime >= src.stat().st_mtime:
-            return obj
+        if obj.is_file() and src.is_file():
+            max_mtime = max((f.stat().st_mtime for f in runtime_dir.glob("**/*") if f.is_file()), default=0)
+            if obj.stat().st_mtime >= max_mtime:
+                return obj
         if not src.is_file():
             raise RuntimeError(f"missing runtime C: {src}")
         cmd = [

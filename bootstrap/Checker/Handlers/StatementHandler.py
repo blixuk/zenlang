@@ -14,6 +14,7 @@ from Checker.Type import (
     Symbol,
     SymbolKind,
     PRIMITIVE_TYPES,
+    ABSTRACT_TYPES,
     TypePrimitive,
 )
 from Parser.AST import (
@@ -52,6 +53,13 @@ from Parser.AST import (
     MapPattern,
 )
 
+FORBIDDEN_TYPES = {
+    "Int", "Int64", "Int32", "Int16", "Int8", "UInt8", "UInt16", "UInt32", "UInt64",
+    "Float", "Float64", "Float32", "Double",
+    "Str", "Bool", "Char", "Character", "Glyph", "Buffer",
+    "V", "L", "S", "T", "M"
+}
+
 class StatementHandler:
     def check_break_statement(self, statement: BreakStatement) -> Type:
         return PRIMITIVE_TYPES["Void"]()
@@ -86,15 +94,54 @@ class StatementHandler:
             else:
                 return TypeReference(inner_type)
 
+        sym = self.scope.lookup(name)
+        if sym and getattr(sym, "kind", None) == SymbolKind.TYPE:
+            return sym.type
+
+        if hasattr(self, "current_generic_params") and name in self.current_generic_params:
+            from Checker.Type import TypeParam
+            return TypeParam(name)
+
+        if name in FORBIDDEN_TYPES:
+            raise self.logger.error(
+                f"Type '{name}' is not supported in Zenlang. Use canonical types ('Integer', 'Decimal', 'String', 'Boolean', 'Byte', 'Rune').",
+                node
+            )
+
         if name in PRIMITIVE_TYPES:
             return PRIMITIVE_TYPES[name]()
 
+        if name in ABSTRACT_TYPES:
+            return ABSTRACT_TYPES[name]()
+
         if name == "List":
-            from Checker.Type import TypeList
+            from Checker.Type import TypeList, TypeElement
+            if subtypes:
+                elem_type = self.resolve_type_node(subtypes[0])
+                return TypeList(None, [TypeElement(None, elem_type)])
             return TypeList(None, [])
-        if name == "Map":
+
+        if name in ["Map", "Dictionary"]:
             from Checker.Type import TypeMap, TypeVariant
-            return TypeMap(None, TypeVariant(), TypeVariant())
+            key_type = self.resolve_type_node(subtypes[0]) if len(subtypes) > 0 else TypeVariant()
+            val_type = self.resolve_type_node(subtypes[1]) if len(subtypes) > 1 else TypeVariant()
+            return TypeMap(None, key_type, val_type)
+
+        if name == "Set":
+            from Checker.Type import TypeSet, TypeVariant
+            elem_type = self.resolve_type_node(subtypes[0]) if subtypes else TypeVariant()
+            return TypeSet(None, elem_type)
+
+        if name == "Vector":
+            from Checker.Type import TypeVector, TypeVariant
+            elem_type = self.resolve_type_node(subtypes[0]) if subtypes else TypeVariant()
+            size = getattr(node, "bits", 0) or 0
+            return TypeVector(None, elem_type, size)
+
+        if name == "Tuple":
+            from Checker.Type import TypeTuple, TypeElement
+            elements = [TypeElement(None, self.resolve_type_node(s)) for s in subtypes]
+            return TypeTuple(None, elements)
 
         symbol = self.scope.lookup(name)
         if symbol:
@@ -119,7 +166,8 @@ class StatementHandler:
         if declared_type is None:
             declared_type = value_type
 
-        resolved_type: Type = self.unify(declared_type, value_type, statement)
+        variant_fallback = False if statement.declared_type is not None else True
+        resolved_type: Type = self.unify(declared_type, value_type, statement, variant_fallback=variant_fallback)
 
         kind: SymbolKind = (
             SymbolKind.VARIABLE if statement.mutable else SymbolKind.CONSTANT
@@ -208,12 +256,14 @@ class StatementHandler:
             statement.symbol = symbol
 
     def check_function_statement(self, statement: FunctionStatement):
-        
+        generic_params = getattr(statement, "generic_params", []) or []
+        prev_gp = getattr(self, "current_generic_params", set())
+        self.current_generic_params = prev_gp | set(generic_params)
         return_type = self.resolve_type_node(statement.return_type)
 
         symbol: Symbol = Symbol(
             statement.name,
-            TypeFunction(statement.name, statement.parameters, return_type),
+            TypeFunction(statement.name, statement.parameters, return_type, generic_params=generic_params),
             None,
             True,
             SymbolKind.FUNCTION,
@@ -231,6 +281,10 @@ class StatementHandler:
                  raise e
 
         self.scope.push(region_id=f"func_{statement.name}")
+
+        from Checker.Type import TypeParam
+        for gp in generic_params:
+            self.scope.define(Symbol(gp, TypeParam(gp), None, False, SymbolKind.TYPE, statement.scope_level))
     
         # Define 'self' if in class context
         if self.current_class:
@@ -291,6 +345,7 @@ class StatementHandler:
                 )
             )
             self.scope.pop()
+            self.current_generic_params = prev_gp
             return return_type
 
         result_type: Type = self.check_block_statement(statement.body)
@@ -307,6 +362,7 @@ class StatementHandler:
         symbol.type = new_func_type
 
         statement.resolved_type = new_func_type
+        self.current_generic_params = prev_gp
         return new_func_type
 
     def check_task_statement(self, statement: TaskStatement):
@@ -315,6 +371,8 @@ class StatementHandler:
             rt_name = return_type.name
             if rt_name in PRIMITIVE_TYPES:
                 return_type = PRIMITIVE_TYPES[rt_name]()
+            elif rt_name in ABSTRACT_TYPES:
+                return_type = ABSTRACT_TYPES[rt_name]()
             else:
                 sym = self.scope.lookup(rt_name)
                 if sym:
@@ -351,6 +409,8 @@ class StatementHandler:
             if p_type_name:
                  if p_type_name in PRIMITIVE_TYPES:
                      parameter_type = PRIMITIVE_TYPES[p_type_name]()
+                 elif p_type_name in ABSTRACT_TYPES:
+                     parameter_type = ABSTRACT_TYPES[p_type_name]()
                  else:
                      sym = self.scope.lookup(p_type_name)
                      if sym:
@@ -489,6 +549,13 @@ class StatementHandler:
     def check_structure_statement(self, statement: StructureStatement):
         self.scope.push()
 
+        from Checker.Type import TypeParam
+        generic_params = getattr(statement, "generic_params", []) or []
+        prev_gp = getattr(self, "current_generic_params", set())
+        self.current_generic_params = prev_gp | set(generic_params)
+        for gp in generic_params:
+            self.scope.define(Symbol(gp, TypeParam(gp), None, False, SymbolKind.TYPE, statement.scope_level))
+
         parent_type = None
         if statement.parent:
             parent_symbol = self.scope.lookup(statement.parent)
@@ -510,6 +577,8 @@ class StatementHandler:
             if m_type_name:
                 if m_type_name in PRIMITIVE_TYPES:
                     declared_type = PRIMITIVE_TYPES[m_type_name]()
+                elif m_type_name in ABSTRACT_TYPES:
+                    declared_type = ABSTRACT_TYPES[m_type_name]()
                 else:
                     symbol = self.scope.lookup(m_type_name)
                     if symbol:
@@ -551,11 +620,12 @@ class StatementHandler:
             struct_type.filename = self.source_path
             symbol = existing
         else:
-            struct_type = TypeStructure(statement.name, member_types, parent_type, filename=getattr(statement, "filename", self.source_path))
+            struct_type = TypeStructure(statement.name, member_types, parent_type, filename=getattr(statement, "filename", self.source_path), generic_params=generic_params)
             symbol = Symbol(statement.name, struct_type, None, True, SymbolKind.STRUCTURE, statement.scope_level, filename=getattr(statement, "filename", self.source_path))
             self.scope.define(symbol)
 
         statement.resolved_type = struct_type
+        self.current_generic_params = prev_gp
         return struct_type
 
     def check_enumerator_statement(self, statement: EnumeratorStatement):
@@ -798,7 +868,9 @@ class StatementHandler:
         return TypeVoid()
 
     def check_import_statement(self, statement: ImportStatement):
-        
+        if getattr(statement, "is_extern", False):
+            self.has_extern = True
+
         symbol_name = statement.alias if statement.alias else statement.name
         symbol_path = getattr(statement, "resolved_path", None)
         if not symbol_path:
@@ -829,6 +901,9 @@ class StatementHandler:
         return TypeVariant()
 
     def check_from_import_statement(self, statement: FromImportStatement):
+        if getattr(statement, "is_extern", False):
+            self.has_extern = True
+
         for symbol_info in statement.symbols:
             name = symbol_info["name"]
             alias = symbol_info["alias"]
@@ -848,12 +923,14 @@ class StatementHandler:
                     filename=resolved_path
                 )
             else:
+                kind = SymbolKind.FUNCTION if getattr(statement, "is_extern", False) else SymbolKind.VARIABLE
+                t = TypeVariant() if getattr(statement, "is_extern", False) else TypeStructure(symbol_name, {}, filename=resolved_path)
                 symbol = Symbol(
                     symbol_name,
-                    TypeStructure(symbol_name, {}, filename=resolved_path),
+                    t,
                     None,
                     False,
-                    SymbolKind.VARIABLE,
+                    kind,
                     0,
                     filename=resolved_path
                 )
@@ -863,7 +940,9 @@ class StatementHandler:
         return TypeVariant()
 
     def check_class_statement(self, statement: ClassStatement):
-        
+        generic_params = getattr(statement, "generic_params", []) or []
+        prev_gp = getattr(self, "current_generic_params", set())
+        self.current_generic_params = prev_gp | set(generic_params)
         parent_type = None
         if statement.parent:
             parent_symbol = self.scope.lookup(statement.parent)
@@ -875,6 +954,7 @@ class StatementHandler:
         member_types: dict = {}
         method_types: dict = {}
         
+        generic_params = getattr(statement, "generic_params", []) or []
         existing = self.scope.lookup(statement.name, current_scope_only=True)
         if existing and isinstance(existing.type, (TypeClass, TypeStructure, TypeVariant)):
             existing.type.__class__ = TypeClass
@@ -884,6 +964,7 @@ class StatementHandler:
             class_type.methods = method_types
             class_type.parent = parent_type
             class_type.filename = self.source_path
+            class_type.generic_params = generic_params
             symbol = existing
         else:
             class_type = TypeClass(
@@ -891,7 +972,8 @@ class StatementHandler:
                 members=member_types,
                 methods=method_types,
                 parent=parent_type,
-                filename=getattr(statement, "filename", self.source_path)
+                filename=getattr(statement, "filename", self.source_path),
+                generic_params=generic_params
             )
             # Define symbol in parent scope so it can be looked up by methods
             symbol = Symbol(statement.name, class_type, None, False, SymbolKind.CLASS, self.scope.get_current_level(), filename=getattr(statement, "filename", self.source_path))
@@ -899,6 +981,10 @@ class StatementHandler:
             self.scope.define(symbol)
 
         self.scope.push()
+
+        from Checker.Type import TypeParam
+        for gp in generic_params:
+            self.scope.define(Symbol(gp, TypeParam(gp), None, False, SymbolKind.TYPE, self.scope.get_current_level()))
 
         previous_class = self.current_class
         self.current_class = class_type
@@ -915,6 +1001,7 @@ class StatementHandler:
         statement.resolved_type = class_type
         self.scope.pop()
         
+        self.current_generic_params = prev_gp
         return class_type
 
     def check_with_statement(self, statement: WithStatement):
@@ -966,6 +1053,8 @@ class StatementHandler:
             if m_type_name:
                 if m_type_name in PRIMITIVE_TYPES:
                     declared_type = PRIMITIVE_TYPES[m_type_name]()
+                elif m_type_name in ABSTRACT_TYPES:
+                    declared_type = ABSTRACT_TYPES[m_type_name]()
                 else:
                     symbol = self.scope.lookup(m_type_name)
                     if symbol:

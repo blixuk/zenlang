@@ -129,31 +129,46 @@ ZenValue ZenSet_new(void);
 
 ZenValue ZenValue_default_for_type(const char* type_name) {
     if (!type_name) return ZEN_DEFAULT_VAL;
-    if (strcmp(type_name, "Integer") == 0 || strcmp(type_name, "Int") == 0 ||
-        strcmp(type_name, "Int64") == 0 || strcmp(type_name, "Int32") == 0 ||
-        strcmp(type_name, "Int16") == 0 || strcmp(type_name, "Int8") == 0 ||
+    if (strcmp(type_name, "Integer") == 0 ||
+        strcmp(type_name, "Integer[64]") == 0 ||
+        strcmp(type_name, "Integer[32]") == 0 ||
+        strcmp(type_name, "Integer[16]") == 0 ||
+        strcmp(type_name, "Integer[8]") == 0 ||
         strcmp(type_name, "Byte") == 0) {
         return ZenValue_make_integer(0);
     }
-    if (strcmp(type_name, "Decimal") == 0 || strcmp(type_name, "Float") == 0 ||
-        strcmp(type_name, "Double") == 0) {
+    if (strcmp(type_name, "Decimal") == 0 ||
+        strcmp(type_name, "Decimal[64]") == 0 ||
+        strcmp(type_name, "Decimal[32]") == 0) {
         return ZenValue_make_decimal(0.0);
     }
-    if (strcmp(type_name, "Boolean") == 0 || strcmp(type_name, "Bool") == 0) {
+    if (strcmp(type_name, "Boolean") == 0) {
         return ZenValue_make_boolean(false);
     }
-    if (strcmp(type_name, "String") == 0 || strcmp(type_name, "Str") == 0 ||
-        strcmp(type_name, "Rune") == 0 || strcmp(type_name, "Char") == 0) {
+    if (strcmp(type_name, "String") == 0 || strncmp(type_name, "String[", 7) == 0 ||
+        strcmp(type_name, "Rune") == 0) {
         return ZenValue_make_string("");
     }
-    if (strcmp(type_name, "List") == 0) {
+    if (strcmp(type_name, "Bytes") == 0) {
         return ZenValue_from_list(ZenList_new());
     }
-    if (strcmp(type_name, "Map") == 0) {
+    if (strcmp(type_name, "List") == 0 || strncmp(type_name, "List<", 5) == 0) {
+        return ZenValue_from_list(ZenList_new());
+    }
+    if (strcmp(type_name, "Vector") == 0 || strncmp(type_name, "Vector[", 7) == 0 || strncmp(type_name, "Vector<", 7) == 0) {
+        return ZenValue_from_list(ZenList_new());
+    }
+    if (strcmp(type_name, "Tuple") == 0 || strncmp(type_name, "Tuple<", 6) == 0) {
+        return ZenValue_from_list(ZenList_new());
+    }
+    if (strcmp(type_name, "Map") == 0 || strncmp(type_name, "Map<", 4) == 0) {
         return ZenValue_from_map(ZenMap_new());
     }
-    if (strcmp(type_name, "Set") == 0) {
+    if (strcmp(type_name, "Set") == 0 || strncmp(type_name, "Set<", 4) == 0) {
         return ZenSet_new();
+    }
+    if (strcmp(type_name, "Nothing") == 0) {
+        return ZEN_NOTHING_VAL;
     }
     return ZEN_DEFAULT_VAL;
 }

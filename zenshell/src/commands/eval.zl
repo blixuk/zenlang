@@ -1,0 +1,179 @@
+/!
+  zenshell - In-Line Zenlang Expression & Statement Evaluator (eval / =)
+  Enables evaluating ad-hoc Zen calculations, expressions, and statements directly at the prompt.
+!/
+
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.util.table as utbl
+import ui.theme as color
+import core.command as cmd_base
+
+function find_zen_binary(ctx) {
+    let p_res -> process.result(`which zen 2>/dev/null`)
+    when p_res != Nothing and p_res[`code`] == 0 and Str.trim(p_res[`stdout`]) != `` {
+        <- Str.trim(p_res[`stdout`])
+    }
+    let repo_bin -> `/home/blix/.grok/worktrees/2025-zen/zen/bin/zen`
+    when __builtin_file.is_file(repo_bin) {
+        <- repo_bin
+    }
+    let cand1 -> path.join(ctx.cwd, `bin/zen`)
+    when __builtin_file.is_file(cand1) {
+        <- cand1
+    }
+    let cand2 -> path.join(ctx.cwd, `../bin/zen`)
+    when __builtin_file.is_file(cand2) {
+        <- cand2
+    }
+    <- `zen`
+}
+
+function evaluate_zen_code(src, ctx) {
+    let tmp_file -> `/tmp/zenshell_eval.zl`
+    __builtin_file.write(tmp_file, src)
+
+    let zen_bin -> find_zen_binary(ctx)
+    let cmd -> zen_bin + ` ` + tmp_file
+    let proc_res -> process.result(cmd)
+    __builtin_file.remove(tmp_file)
+
+    when proc_res == Nothing {
+        <- {`ok` -> false, `output` -> `Error: Execution process failed to start`}
+    }
+
+    let code -> proc_res[`code`]
+    let stdout_text -> when (proc_res[`stdout`] != Nothing) { proc_res[`stdout`] } or { `` }
+    let stderr_text -> when (proc_res[`stderr`] != Nothing) { proc_res[`stderr`] } or { `` }
+
+    when code != 0 {
+        let err_msg -> when (Str.trim(stderr_text) != ``) { stderr_text } or { stdout_text }
+        <- {`ok` -> false, `output` -> Str.trim(err_msg)}
+    }
+
+    <- {`ok` -> true, `output` -> Str.trim(stdout_text)}
+}
+
+function handle_eval_default(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: = <expression>   or   eval <expression>`)
+    }
+
+    let raw_input -> Str.join(args, ` `)
+    when Str.trim(raw_input) == `` {
+        <- color.yellow(`Usage: = <expression>   or   eval <expression>`)
+    }
+
+    // Check for variable declaration: let <name> -> <val>
+    when Str.starts_with(raw_input, `let `) {
+        let after_let -> Str.trim(Str.substring(raw_input, 4, Str.length(raw_input)))
+        let parts -> Str.split(after_let, `->`)
+        when parts.length >= 2 {
+            let var_name -> Str.trim(parts[0])
+            let val_expr -> Str.trim(parts[1])
+
+            // Build evaluation script
+            let script -> `import zen.sys.sys as sys\n` +
+                          `import zen.math.math as math\n` +
+                          `import zen.text.string as Str\n` +
+                          `import zen.io.path as path\n` +
+                          `import zen.data.zendata as zd\n`
+
+            // Inject existing session variables
+            do for vk in ctx.variables.keys() {
+                when vk != var_name {
+                    script -> script + `let ` + vk + ` -> ` + ctx.variables[vk] + `\n`
+                }
+            }
+
+            script -> script + `let ` + var_name + ` -> ` + val_expr + `\n`
+            script -> script + `writeln(` + var_name + `)\n`
+
+            let eval_res -> evaluate_zen_code(script, ctx)
+            when eval_res[`ok`] {
+                let out_val -> eval_res[`output`]
+                ctx.variables[var_name] -> out_val
+                <- color.green(`✓ ` + var_name + ` -> ` + out_val)
+            } or {
+                <- color.red(eval_res[`output`])
+            }
+        }
+    }
+
+    // Standard Expression Evaluation
+    let script -> `import zen.sys.sys as sys\n` +
+                  `import zen.math.math as math\n` +
+                  `import zen.text.string as Str\n` +
+                  `import zen.io.path as path\n` +
+                  `import zen.data.zendata as zd\n`
+
+    // Inject session variables
+    do for vk in ctx.variables.keys() {
+        script -> script + `let ` + vk + ` -> ` + ctx.variables[vk] + `\n`
+    }
+
+    // Check if user already provided statements or writeln
+    when Str.contains(raw_input, `writeln(`) {
+        script -> script + raw_input + `\n`
+    } or {
+        script -> script + `let __zen_eval_res -> (` + raw_input + `)\n`
+        script -> script + `writeln(__zen_eval_res)\n`
+    }
+
+    let eval_res -> evaluate_zen_code(script, ctx)
+    when eval_res[`ok`] {
+        let out -> eval_res[`output`]
+        when out == `` {
+            <- color.dim(`(no output)`)
+        }
+        <- color.bold(color.cyan(out))
+    } or {
+        <- color.red(eval_res[`output`])
+    }
+}
+
+function handle_eval_vars(args, ctx) {
+    let keys -> ctx.variables.keys()
+    when keys.length == 0 {
+        <- color.dim(`No active session variables. Define variables with '= let <name> -> <value>'.`)
+    }
+
+    let rows -> []
+    do for k in keys {
+        rows.append([color.bold(color.cyan(k)), ctx.variables[k]])
+    }
+
+    let headers -> [`Variable`, `Value`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let count_str -> color.dim(Str.to_string(rows.length) + ` active session variables`)
+    <- tbl + `\n` + count_str
+}
+
+function handle_eval_clear(args, ctx) {
+    ctx.variables -> {}
+    <- color.green(`✓ Cleared all in-line Zen session variables`)
+}
+
+let DOC_EVAL -> ```
+# eval / = — In-Line Zenlang Evaluator
+
+Evaluates ad-hoc Zenlang expressions, calculations, and statements directly at the shell prompt.
+
+## Usage
+- `= 2 * (10 + 5)` — Evaluates mathematical expression.
+- `= [1, 2, 3, 4].filter(function(x) -> x > 2)` — Evaluates collection pipelines.
+- `= let greeting -> "Hello Zen"` — Defines session variable.
+- `= greeting.upper()` — Uses defined session variables.
+- `eval vars` — Displays table of active session variables.
+- `eval clear` — Resets session variables.
+```
+
+export function create_eval_command(ctx) {
+    let cmd -> cmd_base.Command(`eval`, `In-line Zenlang expression evaluator (alias: =)`)
+    cmd.set_default(handle_eval_default)
+    cmd.add_subcommand(`vars`, `List active session variables in a table`, handle_eval_vars)
+    cmd.add_subcommand(`clear`, `Clear all session variables`, handle_eval_clear)
+    <- cmd
+}

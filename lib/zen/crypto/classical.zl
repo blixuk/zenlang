@@ -1,0 +1,344 @@
+/!
+  zen.crypto.classical - Classical and Historical Ciphers.
+  Educational and historical cipher algorithms in pure Zenlang.
+  Features Caesar, ROT13, Vigenere, Atbash, and Rail Fence transposition.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Encrypts text using Caesar cipher substitution.
+  @param text Input string.
+  @param shift Shift count (positive or negative integer).
+  @return Encrypted string.
+!/
+export function caesar_encrypt(text, shift) {
+    let bytes -> _to_bytes(text)
+    let s -> ((shift % 26) + 26) % 26
+    let out -> []
+    let i -> 0
+    let len -> bytes.length
+
+    do while i < len {
+        let b -> bytes[i]
+        when (b >= 65 and b <= 90) {
+            // Uppercase A-Z
+            let shifted -> (((b - 65) + s) % 26) + 65
+            out.append(shifted)
+        } or when (b >= 97 and b <= 122) {
+            // Lowercase a-z
+            let shifted -> (((b - 97) + s) % 26) + 97
+            out.append(shifted)
+        } or {
+            out.append(b)
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}
+
+/!
+  Decrypts text encrypted with Caesar cipher.
+  @param text Encrypted string.
+  @param shift Shift count.
+  @return Decrypted string.
+!/
+export function caesar_decrypt(text, shift) {
+    <- caesar_encrypt(text, 26 - (((shift % 26) + 26) % 26))
+}
+
+/!
+  Applies ROT13 substitution to text.
+  Symmetric: rot13(rot13(text)) == text.
+  @param text Input string.
+  @return Rotated string.
+!/
+export function rot13(text) {
+    <- caesar_encrypt(text, 13)
+}
+
+/!
+  Encrypts text using Vigenère polyalphabetic cipher.
+  @param text Plaintext string.
+  @param key Secret key word (letters).
+  @return Encrypted string.
+!/
+export function vigenere_encrypt(text, key) {
+    let text_bytes -> _to_bytes(text)
+    let key_bytes -> _to_bytes(key)
+    when (key_bytes.length == 0) { <- text }
+
+    let shifts -> []
+    let i -> 0
+    do while i < key_bytes.length {
+        let kb -> key_bytes[i]
+        when (kb >= 65 and kb <= 90) {
+            shifts.append(kb - 65)
+        } or when (kb >= 97 and kb <= 122) {
+            shifts.append(kb - 97)
+        }
+        i -> i + 1
+    }
+    when (shifts.length == 0) { <- text }
+
+    let out -> []
+    let key_idx -> 0
+    let num_shifts -> shifts.length
+    i -> 0
+    let len -> text_bytes.length
+
+    do while i < len {
+        let b -> text_bytes[i]
+        when (b >= 65 and b <= 90) {
+            let s -> shifts[key_idx % num_shifts]
+            out.append((((b - 65) + s) % 26) + 65)
+            key_idx -> key_idx + 1
+        } or when (b >= 97 and b <= 122) {
+            let s -> shifts[key_idx % num_shifts]
+            out.append((((b - 97) + s) % 26) + 97)
+            key_idx -> key_idx + 1
+        } or {
+            out.append(b)
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}
+
+/!
+  Decrypts Vigenère ciphertext.
+  @param text Ciphertext string.
+  @param key Secret key word.
+  @return Decrypted string.
+!/
+export function vigenere_decrypt(text, key) {
+    let text_bytes -> _to_bytes(text)
+    let key_bytes -> _to_bytes(key)
+    when (key_bytes.length == 0) { <- text }
+
+    let shifts -> []
+    let i -> 0
+    do while i < key_bytes.length {
+        let kb -> key_bytes[i]
+        when (kb >= 65 and kb <= 90) {
+            shifts.append((26 - (kb - 65)) % 26)
+        } or when (kb >= 97 and kb <= 122) {
+            shifts.append((26 - (kb - 97)) % 26)
+        }
+        i -> i + 1
+    }
+    when (shifts.length == 0) { <- text }
+
+    let out -> []
+    let key_idx -> 0
+    let num_shifts -> shifts.length
+    i -> 0
+    let len -> text_bytes.length
+
+    do while i < len {
+        let b -> text_bytes[i]
+        when (b >= 65 and b <= 90) {
+            let s -> shifts[key_idx % num_shifts]
+            out.append((((b - 65) + s) % 26) + 65)
+            key_idx -> key_idx + 1
+        } or when (b >= 97 and b <= 122) {
+            let s -> shifts[key_idx % num_shifts]
+            out.append((((b - 97) + s) % 26) + 97)
+            key_idx -> key_idx + 1
+        } or {
+            out.append(b)
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}
+
+/!
+  Applies Atbash cipher (reverses alphabet: A <-> Z, a <-> z).
+  Symmetric: atbash(atbash(text)) == text.
+  @param text Input string.
+  @return Encrypted or decrypted string.
+!/
+export function atbash(text) {
+    let bytes -> _to_bytes(text)
+    let out -> []
+    let i -> 0
+    let len -> bytes.length
+
+    do while i < len {
+        let b -> bytes[i]
+        when (b >= 65 and b <= 90) {
+            out.append(155 - b)
+        } or when (b >= 97 and b <= 122) {
+            out.append(219 - b)
+        } or {
+            out.append(b)
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}
+
+/!
+  Encrypts text using Rail Fence (zigzag) transposition cipher.
+  @param text Input string.
+  @param rails Number of rails (>= 2).
+  @return Transposed ciphertext string.
+!/
+export function rail_fence_encrypt(text, rails) {
+    let r -> rails
+    when (r == Nothing or r < 2) { <- text }
+    let bytes -> _to_bytes(text)
+    let len -> bytes.length
+    when (len <= r) { <- text }
+
+    // Create rows
+    let rows -> []
+    let i -> 0
+    do while i < r {
+        rows.append([])
+        i -> i + 1
+    }
+
+    let cur_row -> 0
+    let going_down -> true
+    i -> 0
+    do while i < len {
+        rows[cur_row].append(bytes[i])
+        when (cur_row == 0) {
+            going_down -> true
+        } or when (cur_row == r - 1) {
+            going_down -> false
+        }
+
+        when going_down {
+            cur_row -> cur_row + 1
+        } or {
+            cur_row -> cur_row - 1
+        }
+        i -> i + 1
+    }
+
+    let out -> []
+    i -> 0
+    do while i < r {
+        let row -> rows[i]
+        let j -> 0
+        do while j < row.length {
+            out.append(row[j])
+            j -> j + 1
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}
+
+/!
+  Decrypts text encrypted with Rail Fence cipher.
+  @param text Ciphertext string.
+  @param rails Number of rails (>= 2).
+  @return Original plaintext string.
+!/
+export function rail_fence_decrypt(text, rails) {
+    let r -> rails
+    when (r == Nothing or r < 2) { <- text }
+    let bytes -> _to_bytes(text)
+    let len -> bytes.length
+    when (len <= r) { <- text }
+
+    // Step 1: Mark zigzag positions
+    let row_counts -> []
+    let i -> 0
+    do while i < r {
+        row_counts.append(0)
+        i -> i + 1
+    }
+
+    let cur_row -> 0
+    let going_down -> true
+    i -> 0
+    do while i < len {
+        row_counts[cur_row] -> row_counts[cur_row] + 1
+        when (cur_row == 0) {
+            going_down -> true
+        } or when (cur_row == r - 1) {
+            going_down -> false
+        }
+
+        when going_down {
+            cur_row -> cur_row + 1
+        } or {
+            cur_row -> cur_row - 1
+        }
+        i -> i + 1
+    }
+
+    // Step 2: Slice input text into rows
+    let rows -> []
+    let text_idx -> 0
+    i -> 0
+    do while i < r {
+        let count -> row_counts[i]
+        let row -> []
+        let j -> 0
+        do while j < count {
+            row.append(bytes[text_idx])
+            text_idx -> text_idx + 1
+            j -> j + 1
+        }
+        rows.append(row)
+        i -> i + 1
+    }
+
+    // Step 3: Reconstruct by traversing zigzag and pulling from rows
+    let row_ptrs -> []
+    i -> 0
+    do while i < r {
+        row_ptrs.append(0)
+        i -> i + 1
+    }
+
+    let out -> []
+    cur_row -> 0
+    going_down -> true
+    i -> 0
+    do while i < len {
+        let ptr -> row_ptrs[cur_row]
+        out.append(rows[cur_row][ptr])
+        row_ptrs[cur_row] -> ptr + 1
+
+        when (cur_row == 0) {
+            going_down -> true
+        } or when (cur_row == r - 1) {
+            going_down -> false
+        }
+
+        when going_down {
+            cur_row -> cur_row + 1
+        } or {
+            cur_row -> cur_row - 1
+        }
+        i -> i + 1
+    }
+
+    <- __builtin.bytes_to_string(out)
+}

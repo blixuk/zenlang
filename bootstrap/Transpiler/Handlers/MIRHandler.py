@@ -472,6 +472,7 @@ class MIRHandler:
         elif callee_str in ("math_pow", "math_power"):
             callee_str = "ZenMath_power"
         if callee_str == "List_from_args": callee_str = "ZenList_make_from_arguments"
+        elif callee_str == "Set_from_list": callee_str = "ZenSet_from_list"
         elif callee_str == "Map_from_args": callee_str = "ZenMap_make_from_arguments"
         elif callee_str == "Value_get_index": callee_str = "ZenValue_get_at"
         elif callee_str == "Value_set_index": callee_str = "ZenValue_set_at"
@@ -528,7 +529,7 @@ class MIRHandler:
                      pass
             elif obj_name in self.global_enums and prop_name and prop_name[0].isupper():
                 callee_str = f"ZenVariant_{obj_name}_{prop_name}"
-            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net", "__builtin_vm", "vm", "VM"):
+            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_ast", "ast", "Ast", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net", "__builtin_vm", "vm", "VM", "__builtin_ffi", "ffi"):
                 if prop_name in ("create_arena", "__builtin_create_arena"):
                     callee_str = "ZenMemory_create_arena"
                     if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
@@ -557,6 +558,14 @@ class MIRHandler:
                     callee_str = "ZenMemory_arena_depth"
                     if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
                         call_args = call_args[1:]
+                elif prop_name in ("arena_allocated", "arena_capacity", "arena_chunks", "arena_stats",
+                                   "__builtin_arena_allocated", "__builtin_arena_capacity", "__builtin_arena_chunks", "__builtin_arena_stats"):
+                    fn_name = prop_name.replace("__builtin_", "")
+                    callee_str = f"ZenMemory_{fn_name}"
+                    if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
+                        call_args = call_args[1:]
+                    if not call_args:
+                        call_args = ["ZenValue_make_nothing()"]
                 elif obj_name == "__builtin_regex" or (
                     prop_name in ("match", "search", "replace", "split", "find_all")
                     and obj_name in ("__builtin_regex",)
@@ -575,11 +584,12 @@ class MIRHandler:
                         callee_str = "ZenValue_make_error_message"
                     if call_args and call_args[0] in ("__builtin", "ZenValue_make_nothing()"):
                         call_args = call_args[1:]
-                elif prop_name in ("write", "writeln", "write_line", "info", "warn", "error", "debug", "flush", "read", "append", "write_file", "read_file", "exists", "list_dir", "mkdir", "mkdir_p", "remove", "is_file", "is_dir", "open") and obj_name in (
+                elif (prop_name in ("write", "writeln", "write_line", "info", "warn", "error", "debug", "flush", "read", "append", "write_file", "read_file", "exists", "list_dir", "mkdir", "mkdir_p", "remove", "is_file", "is_dir", "open") and obj_name in (
                     "IO", "io", "__builtin_io", "__builtin_output", "__builtin_input",
-                ) or (
+                )) or (
                     prop_name in ("write", "writeln", "write_line", "info", "warn", "error", "debug", "append", "write_file", "read_file", "exists", "list_dir", "mkdir", "mkdir_p", "remove", "is_file", "is_dir", "open")
                     and obj_name.startswith("__builtin")
+                    and obj_name not in ("__builtin_ffi", "ffi", "FFI")
                 ):
                     # Parenthesize intent: IO/io aliases + builtins → free ZenIO_* funcs
                     if prop_name == "write":
@@ -708,6 +718,32 @@ class MIRHandler:
                          callee_str = f"ZenVM_{prop_name}"
                      if call_args and call_args[0] in ("__builtin_vm", "vm", "VM"):
                          call_args = call_args[1:]
+                elif obj_name in ("__builtin_ffi", "ffi", "FFI"):
+                     if prop_name in ("load", "open"):
+                         callee_str = "ZenFFI_builtin_load"
+                     elif prop_name in ("symbol", "sym"):
+                         callee_str = "ZenFFI_builtin_symbol"
+                     elif prop_name == "call":
+                         callee_str = "ZenFFI_builtin_call"
+                     elif prop_name == "close":
+                         callee_str = "ZenFFI_builtin_close"
+                     elif prop_name == "error":
+                         callee_str = "ZenFFI_builtin_error"
+                     elif prop_name == "resolve":
+                         callee_str = "ZenFFI_builtin_resolve"
+                     else:
+                         callee_str = f"ZenFFI_builtin_{prop_name}"
+                     if call_args and call_args[0] in ("__builtin_ffi", "ffi", "FFI"):
+                         call_args = call_args[1:]
+                elif obj_name in ("__builtin_ast", "ast", "Ast"):
+                     if prop_name == "token":
+                          callee_str = "ZenToken_make"
+                     elif prop_name.startswith("create"):
+                          callee_str = f"ZenAst_node_{prop_name}"
+                     else:
+                          callee_str = f"ZenAst_node_{prop_name}"
+                     if call_args and call_args[0] in ("__builtin_ast", "ast", "Ast"):
+                          call_args = call_args[1:]
                 else:
                     callee_str = f"Zen{obj_name}_{prop_name}"
             elif obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys":
@@ -780,6 +816,8 @@ class MIRHandler:
                         "substring": "ZenString_get_substring",
                         "slice": "ZenString_get_substring",
                         "contains": "ZenString_contains",
+                        "byte_at": "ZenString_byte_at",
+                        "at": "ZenString_at",
                     }
                     if prop_name in string_direct:
                         callee_str = string_direct[prop_name]
@@ -846,6 +884,10 @@ class MIRHandler:
                     "pop_arena": "ZenMemory_pop_arena",
                     "using_arena": "ZenMemory_using_arena",
                     "arena_depth": "ZenMemory_arena_depth",
+                    "arena_allocated": "ZenMemory_arena_allocated",
+                    "arena_capacity": "ZenMemory_arena_capacity",
+                    "arena_chunks": "ZenMemory_arena_chunks",
+                    "arena_stats": "ZenMemory_arena_stats",
                 }
                 if callee_str in math_map:
                     callee_str = math_map[callee_str]
@@ -867,6 +909,8 @@ class MIRHandler:
         if callee_str in ("ZenIO_write_line", "ZenIO_write_line_stderr") and len(call_args) == 0:
             call_args = ['ZenValue_make_string("")']
         elif callee_str in ("ZenIO_write_value", "ZenIO_write_stderr", "ZenIO_read_value") and len(call_args) == 0:
+            call_args = ['ZenValue_make_nothing()']
+        elif callee_str in ("ZenMemory_arena_allocated", "ZenMemory_arena_capacity", "ZenMemory_arena_chunks", "ZenMemory_arena_stats") and len(call_args) == 0:
             call_args = ['ZenValue_make_nothing()']
         
         args_str = ", ".join(call_args)

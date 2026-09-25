@@ -1,0 +1,150 @@
+function test_number_type() {
+    // Type testing with `is`
+    ! 42 is Number
+    ! 3.14 is Number
+    ! -100 is Number
+    ! not (`hello` is Number)
+    ! not (true is Number)
+    ! not ([1, 2] is Number)
+
+    // Type casting <: and Type(...)
+    let n1 -> `42` <: Number
+    ! n1 == 42
+    ! n1 is Number
+
+    let n2 -> `3.14` <: Number
+    ! n2 == 3.14
+    ! n2 is Number
+
+    let n3 -> Number(100)
+    ! n3 == 100
+    ! n3 is Number
+
+    let n4 -> Number(2.5)
+    ! n4 == 2.5
+    ! n4 is Number
+
+    let n5 -> true <: Number
+    ! n5 == 1
+
+    // Type annotations
+    let x : Number -> 50
+    ! x == 50
+    ! x is Number
+
+    let y : Number -> 9.99
+    ! y == 9.99
+    ! y is Number
+}
+
+function test_text_type() {
+    // Type testing with `is`
+    ! `hello` is Text
+    ! `` is Text
+    ! not (42 is Text)
+    ! not (true is Text)
+    ! not ([`a`, `b`] is Text)
+
+    // Type casting
+    let t1 -> 123 <: Text
+    ! t1 == `123`
+    ! t1 is Text
+
+    let t2 -> Text(456)
+    ! t2 == `456`
+    ! t2 is Text
+
+    let t3 -> true <: Text
+    ! t3 == `True`
+    ! t3 is Text
+
+    // Type annotations
+    let s : Text -> `zenlang`
+    ! s == `zenlang`
+    ! s is Text
+}
+
+function test_collection_type() {
+    // Type testing with `is`
+    let lst -> [1, 2, 3]
+    ! lst is Collection
+
+    let m -> {`a` -> 1, `b` -> 2}
+    ! m is Collection
+
+    let s -> Set{10, 20, 30}
+    ! s is Collection
+
+    let v -> Vector{1, 2, 3}
+    ! v is Collection
+
+    let tup -> Tuple{1, 2}
+    ! tup is Collection
+
+    ! not (42 is Collection)
+    ! not (`hello` is Collection)
+    ! not (true is Collection)
+
+    // Type casting
+    let c1 -> Collection([10, 20])
+    ! c1 is Collection
+    ! c1.length == 2
+
+    let c2 -> `xyz` <: Collection
+    ! c2 is Collection
+    ! c2.length == 3
+    ! c2[0] == `x`
+    ! c2[1] == `y`
+    ! c2[2] == `z`
+
+    // Type annotations
+    let coll : Collection -> [7, 8, 9]
+    ! coll is Collection
+    ! coll.length == 3
+}
+
+structure Point {
+    x
+    y
+}
+
+function test_container_type() {
+    let p -> Point { x -> 10, y -> 20 }
+    ! p is Container
+    ! not (42 is Container)
+    ! not (`abc` is Container)
+
+    let ct : Container -> p
+    ! ct is Container
+}
+
+function classify_value(val) {
+    when val is Number {
+        <- `numeric`
+    }
+    when val is Text {
+        <- `textual`
+    }
+    when val is Collection {
+        <- `composite`
+    }
+    <- `other`
+}
+
+function test_when_pattern_matching() {
+    ! classify_value(100) == `numeric`
+    ! classify_value(3.14) == `numeric`
+    ! classify_value(`zen`) == `textual`
+    ! classify_value([1, 2]) == `composite`
+    ! classify_value({`k` -> `v`}) == `composite`
+    ! classify_value(true) == `other`
+}
+
+function main() {
+    test_number_type()
+    test_text_type()
+    test_collection_type()
+    test_container_type()
+    test_when_pattern_matching()
+    writeln(`ALL_ABSTRACT_TYPES_TESTS_PASSED`)
+}

@@ -22,10 +22,12 @@ Owned by documentation maintainers. This is the source of truth for "what the pr
 
 - Every syntax example in docs must be 100% valid, runnable Zenlang conforming to `doc/SPECIFICATION.md`.
 - Sentinels must always be capitalized: `Nothing` and `Default`.
-- Visual data flow must be used consistently: `->` (assignment), `<-` (return).
-- Collections must use clean syntax: `[1, 2, 3]` (List), `{ key -> value }` (Map).
+- Visual data flow must be used consistently: `->` (assignment), `<-` (return), `|>` (pipeline), `??` (null coalescing).
+- Strings strictly use backticks (`` `...` `` and multiline ```` ```...``` ````); double quotes are forbidden.
+- Collections use modern syntax: lists `[1, 2, 3]`, maps `{ key -> value }`, directional comprehensions `[for x in list -> expr]`, and spreads `[...items]`.
+- Direct C interoperability uses `extern use '<header.h>'` or `extern use dotted.path`.
 - Module context / entry / reflect / plugins: no `@entry`/`@reflectable` — use `module.entry` and `is reflectable`.
-- Stdlib docs must use nested imports (`use zen.io`, `zen.sys.term`, …); keep the import map in Standard_Library_Reference.md current with `lib/zen/`.
+- Stdlib docs must use nested imports (`use zen.io`, `zen.sys.term`, `zen.sys.ffi`, …); keep the import map in Standard_Library_Reference.md current with `lib/zen/`.
 - Prefer direct, operational writing per the Style section in root AGENTS.md.
 
 # Verification

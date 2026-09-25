@@ -3,6 +3,8 @@
  Provides operations for dictionaries (maps) and sets.
  !/
 
+use zen.collections.trie as trie_mod
+
 /!
  Map utilities.
  !/
@@ -258,5 +260,78 @@ class Queue {
      !/
     function size() {
         <- self.items.length()
+    }
+}
+
+/!
+  Trie (Prefix Tree) utilities.
+!/
+scope Trie {
+    function create() {
+        <- trie_mod.create()
+    }
+
+    function insert(trie, word, value) {
+        <- trie_mod.insert(trie, word, value)
+    }
+
+    function add(trie, word) {
+        <- trie_mod.add(trie, word)
+    }
+
+    function has(trie, word) {
+        <- trie_mod.has(trie, word)
+    }
+
+    function contains(trie, word) {
+        <- trie_mod.contains(trie, word)
+    }
+
+    function get(trie, word, default_val) {
+        <- trie_mod.get(trie, word, default_val)
+    }
+
+    function starts_with(trie, prefix) {
+        <- trie_mod.starts_with(trie, prefix)
+    }
+
+    function find(trie, prefix) {
+        <- trie_mod.find(trie, prefix)
+    }
+
+    function find_by_prefix(trie, prefix, limit) {
+        <- trie_mod.find_by_prefix(trie, prefix, limit)
+    }
+
+    function find_entries_by_prefix(trie, prefix, limit) {
+        <- trie_mod.find_entries_by_prefix(trie, prefix, limit)
+    }
+
+    function longest_prefix_of(trie, text) {
+        <- trie_mod.longest_prefix_of(trie, text)
+    }
+
+    function remove(trie, word) {
+        <- trie_mod.remove(trie, word)
+    }
+
+    function words(trie) {
+        <- trie_mod.words(trie)
+    }
+
+    function to_list(trie) {
+        <- trie_mod.to_list(trie)
+    }
+
+    function size(trie) {
+        <- trie_mod.size(trie)
+    }
+
+    function is_empty(trie) {
+        <- trie_mod.is_empty(trie)
+    }
+
+    function clear(trie) {
+        <- trie_mod.clear(trie)
     }
 }

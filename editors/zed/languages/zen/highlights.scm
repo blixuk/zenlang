@@ -21,6 +21,7 @@
   "from"
   "as"
   "export"
+  "extern"
   "when"
   "or"
   "and"
@@ -56,6 +57,8 @@
   "<~"
   ":>"
   "<:"
+  "|>"
+  "??"
   ".."
   "..="
   "..+"
@@ -74,6 +77,10 @@
   "%"
   "!"
 ] @operator
+
+(spread_element "..." @operator)
+(list_comprehension variable: (identifier) @variable)
+(map_comprehension variable: (identifier) @variable)
 
 (function_declaration
   name: (identifier) @function)

@@ -89,7 +89,7 @@ function _ch_tab() {
 }
 
 function _ch_cr() {
-    <- _ch_nl()
+    <- Rune(13)
 }
 
 export function _ch_esc() {
@@ -105,8 +105,6 @@ function _is_ws(c) {
  !/
 function match_keyword(src, s, len) {
     when len == 1 {
-        let c0 -> Str.at(src, s)
-        when c0 == `V` or c0 == `L` or c0 == `S` or c0 == `T` or c0 == `M` { <- TokenType.TYPE }
         <- TokenType.IDENTIFIER
     }
     when len == 2 {
@@ -153,6 +151,8 @@ function match_keyword(src, s, len) {
         when c0 == `V` and c1 == `o` and c2 == `i` and c3 == `d` { <- TokenType.VOID }
         when c0 == `L` and c1 == `i` and c2 == `s` and c3 == `t` { <- TokenType.LIST }
         when (c0 == `B` or c0 == `b`) and c1 == `y` and c2 == `t` and c3 == `e` { <- TokenType.BYTE }
+        when c0 == `T` and c1 == `e` and c2 == `x` and c3 == `t` { <- TokenType.TYPE }
+        when c0 == `R` and c1 == `u` and c2 == `n` and c3 == `e` { <- TokenType.RUNE }
         <- TokenType.IDENTIFIER
     }
     when len == 5 {
@@ -187,10 +187,12 @@ function match_keyword(src, s, len) {
         let c3 -> Str.at(src, s + 3)
         let c4 -> Str.at(src, s + 4)
         let c5 -> Str.at(src, s + 5)
+        when c0 == `a` and c1 == `s` and c2 == `s` and c3 == `e` and c4 == `r` and c5 == `t` { <- TokenType.ASSERT }
         when c0 == `b` and c1 == `e` and c2 == `f` and c3 == `o` and c4 == `r` and c5 == `e` { <- TokenType.KEYWORD }
         when c0 == `r` and c1 == `e` and c2 == `t` and c3 == `u` and c4 == `r` and c5 == `n` { <- TokenType.KEYWORD }
         when c0 == `i` and c1 == `m` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.IMPORT }
         when c0 == `e` and c1 == `x` and c2 == `p` and c3 == `o` and c4 == `r` and c5 == `t` { <- TokenType.EXPORT }
+        when c0 == `e` and c1 == `x` and c2 == `t` and c3 == `e` and c4 == `r` and c5 == `n` { <- TokenType.EXTERN }
         when c0 == `e` and c1 == `x` and c2 == `t` and c3 == `e` and c4 == `n` and c5 == `d` { <- TokenType.EXTENDS }
         when c0 == `p` and c1 == `a` and c2 == `r` and c3 == `e` and c4 == `n` and c5 == `t` { <- TokenType.PARENT }
         when c0 == `s` and c1 == `e` and c2 == `l` and c3 == `f` and len == 4 { <- TokenType.SELF }
@@ -198,6 +200,7 @@ function match_keyword(src, s, len) {
         when c0 == `t` and c1 == `a` and c2 == `r` and c3 == `g` and c4 == `e` and c5 == `t` { <- TokenType.KEYWORD }
         when c0 == `S` and c1 == `t` and c2 == `r` and c3 == `i` and c4 == `n` and c5 == `g` { <- TokenType.STRING }
         when c0 == `V` and c1 == `e` and c2 == `c` and c3 == `t` and c4 == `o` and c5 == `r` { <- TokenType.VECTOR }
+        when c0 == `N` and c1 == `u` and c2 == `m` and c3 == `b` and c4 == `e` and c5 == `r` { <- TokenType.TYPE }
         when c0 == `O` and c1 == `p` and c2 == `t` and c3 == `i` and c4 == `o` and c5 == `n` { <- TokenType.TYPE }
         when c0 == `R` and c1 == `e` and c2 == `s` and c3 == `u` and c4 == `l` and c5 == `t` { <- TokenType.TYPE }
         when c0 == `o` and c1 == `b` and c2 == `j` and c3 == `e` and c4 == `c` and c5 == `t` { <- TokenType.KEYWORD }
@@ -218,6 +221,7 @@ function match_keyword(src, s, len) {
         when c0 == `D` and c1 == `e` and c2 == `c` and c3 == `i` and c4 == `m` and c5 == `a` and c6 == `l` { <- TokenType.DECIMAL }
         when c0 == `B` and c1 == `o` and c2 == `o` and c3 == `l` and c4 == `e` and c5 == `a` and c6 == `n` { <- TokenType.BOOLEAN }
         when c0 == `V` and c1 == `a` and c2 == `r` and c3 == `i` and c4 == `a` and c5 == `n` and c6 == `t` { <- TokenType.VARIANT }
+        when c0 == `C` and c1 == `h` and c2 == `a` and c3 == `n` and c4 == `n` and c5 == `e` and c6 == `l` { <- TokenType.CHANNEL }
         <- TokenType.IDENTIFIER
     }
     when len == 8 {
@@ -250,6 +254,7 @@ function match_keyword(src, s, len) {
         when c0 == `s` and c1 == `t` and c2 == `r` and c3 == `u` and c4 == `c` and c5 == `t` and c6 == `u` and c7 == `r` and c8 == `e` { <- TokenType.KEYWORD }
         when c0 == `S` and c1 == `t` and c2 == `r` and c3 == `u` and c4 == `c` and c5 == `t` and c6 == `u` and c7 == `r` and c8 == `e` { <- TokenType.STRUCTURE }
         when c0 == `C` and c1 == `h` and c2 == `a` and c3 == `r` and c4 == `a` and c5 == `c` and c6 == `t` and c7 == `e` and c8 == `r` { <- TokenType.RUNE }
+        when c0 == `C` and c1 == `o` and c2 == `n` and c3 == `t` and c4 == `a` and c5 == `i` and c6 == `n` and c7 == `e` and c8 == `r` { <- TokenType.TYPE }
         <- TokenType.IDENTIFIER
     }
     when len == 10 {
@@ -265,6 +270,7 @@ function match_keyword(src, s, len) {
         let c9 -> Str.at(src, s + 9)
         when c0 == `e` and c1 == `n` and c2 == `u` and c3 == `m` and c4 == `e` and c5 == `r` and c6 == `a` and c7 == `t` and c8 == `o` and c9 == `r` { <- TokenType.KEYWORD }
         when c0 == `E` and c1 == `n` and c2 == `u` and c3 == `m` and c4 == `e` and c5 == `r` and c6 == `a` and c7 == `t` and c8 == `o` and c9 == `r` { <- TokenType.ENUMERATOR }
+        when c0 == `C` and c1 == `o` and c2 == `l` and c3 == `l` and c4 == `e` and c5 == `c` and c6 == `t` and c7 == `i` and c8 == `o` and c9 == `n` { <- TokenType.TYPE }
         <- TokenType.IDENTIFIER
     }
     <- TokenType.IDENTIFIER

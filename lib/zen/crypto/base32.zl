@@ -1,0 +1,454 @@
+/!
+    zen.crypto.base32 - RFC 4648 Base32, Base32Hex, and Crockford Base32 Encoding / Decoding.
+    Pure Zenlang implementation compatible with both interpreter and native backend.
+!/
+
+use zen.text.string as Str
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind != Nothing {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+function _clean_string(s) {
+    let raw -> Str.to_string(s)
+    let len -> Str.length(raw)
+    let out -> ``
+    let i -> 0
+    do while i < len {
+        let ch -> Str.at(raw, i)
+        when ch != `=` and ch != ` ` and ch != `\n` and ch != `\r` and ch != `\t` {
+            out -> out + Str.to_upper(ch)
+        }
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+    Encodes binary data or string into standard RFC 4648 Base32 format with '=' padding.
+    @param data String or byte list.
+    @return Base32 encoded string.
+!/
+export function encode(data) {
+    let bytes -> _to_byte_list(data)
+    let length -> bytes.length
+    when length == 0 { <- `` }
+
+    let alpha -> `ABCDEFGHIJKLMNOPQRSTUVWXYZ234567`
+    let out -> ``
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let b0 -> bytes[i]
+        let b1 -> when rem > 1 { bytes[i + 1] } or { 0 }
+        let b2 -> when rem > 2 { bytes[i + 2] } or { 0 }
+        let b3 -> when rem > 3 { bytes[i + 3] } or { 0 }
+        let b4 -> when rem > 4 { bytes[i + 4] } or { 0 }
+
+        when b0 < 0 { b0 -> b0 + 256 }
+        when b1 < 0 { b1 -> b1 + 256 }
+        when b2 < 0 { b2 -> b2 + 256 }
+        when b3 < 0 { b3 -> b3 + 256 }
+        when b4 < 0 { b4 -> b4 + 256 }
+
+        let c0 -> (b0 >> 3) & 31
+        let c1 -> ((b0 & 7) << 2) | ((b1 >> 6) & 3)
+        let c2 -> (b1 >> 1) & 31
+        let c3 -> ((b1 & 1) << 4) | ((b2 >> 4) & 15)
+        let c4 -> ((b2 & 15) << 1) | ((b3 >> 7) & 1)
+        let c5 -> (b3 >> 2) & 31
+        let c6 -> ((b3 & 3) << 3) | ((b4 >> 5) & 7)
+        let c7 -> b4 & 31
+
+        when rem >= 5 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6) + Str.at(alpha, c7)
+        } or when rem == 1 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + `======`
+        } or when rem == 2 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + `====`
+        } or when rem == 3 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + `===`
+        } or when rem == 4 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6) + `=`
+        }
+
+        i -> i + 5
+    }
+
+    <- out
+}
+
+/!
+    Encodes binary data or string into RFC 4648 Extended Hex Base32 format.
+    @param data String or byte list.
+    @return Base32Hex encoded string.
+!/
+export function encode_hex(data) {
+    let bytes -> _to_byte_list(data)
+    let length -> bytes.length
+    when length == 0 { <- `` }
+
+    let alpha -> `0123456789ABCDEFGHIJKLMNOPQRSTUV`
+    let out -> ``
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let b0 -> bytes[i]
+        let b1 -> when rem > 1 { bytes[i + 1] } or { 0 }
+        let b2 -> when rem > 2 { bytes[i + 2] } or { 0 }
+        let b3 -> when rem > 3 { bytes[i + 3] } or { 0 }
+        let b4 -> when rem > 4 { bytes[i + 4] } or { 0 }
+
+        when b0 < 0 { b0 -> b0 + 256 }
+        when b1 < 0 { b1 -> b1 + 256 }
+        when b2 < 0 { b2 -> b2 + 256 }
+        when b3 < 0 { b3 -> b3 + 256 }
+        when b4 < 0 { b4 -> b4 + 256 }
+
+        let c0 -> (b0 >> 3) & 31
+        let c1 -> ((b0 & 7) << 2) | ((b1 >> 6) & 3)
+        let c2 -> (b1 >> 1) & 31
+        let c3 -> ((b1 & 1) << 4) | ((b2 >> 4) & 15)
+        let c4 -> ((b2 & 15) << 1) | ((b3 >> 7) & 1)
+        let c5 -> (b3 >> 2) & 31
+        let c6 -> ((b3 & 3) << 3) | ((b4 >> 5) & 7)
+        let c7 -> b4 & 31
+
+        when rem >= 5 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6) + Str.at(alpha, c7)
+        } or when rem == 1 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + `======`
+        } or when rem == 2 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + `====`
+        } or when rem == 3 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + `===`
+        } or when rem == 4 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6) + `=`
+        }
+
+        i -> i + 5
+    }
+
+    <- out
+}
+
+/!
+    Encodes binary data or string into Crockford's Base32 format (no padding).
+    @param data String or byte list.
+    @return Crockford Base32 string.
+!/
+export function encode_crockford(data) {
+    let bytes -> _to_byte_list(data)
+    let length -> bytes.length
+    when length == 0 { <- `` }
+
+    let alpha -> `0123456789ABCDEFGHJKMNPQRSTVWXYZ`
+    let out -> ``
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let b0 -> bytes[i]
+        let b1 -> when rem > 1 { bytes[i + 1] } or { 0 }
+        let b2 -> when rem > 2 { bytes[i + 2] } or { 0 }
+        let b3 -> when rem > 3 { bytes[i + 3] } or { 0 }
+        let b4 -> when rem > 4 { bytes[i + 4] } or { 0 }
+
+        when b0 < 0 { b0 -> b0 + 256 }
+        when b1 < 0 { b1 -> b1 + 256 }
+        when b2 < 0 { b2 -> b2 + 256 }
+        when b3 < 0 { b3 -> b3 + 256 }
+        when b4 < 0 { b4 -> b4 + 256 }
+
+        let c0 -> (b0 >> 3) & 31
+        let c1 -> ((b0 & 7) << 2) | ((b1 >> 6) & 3)
+        let c2 -> (b1 >> 1) & 31
+        let c3 -> ((b1 & 1) << 4) | ((b2 >> 4) & 15)
+        let c4 -> ((b2 & 15) << 1) | ((b3 >> 7) & 1)
+        let c5 -> (b3 >> 2) & 31
+        let c6 -> ((b3 & 3) << 3) | ((b4 >> 5) & 7)
+        let c7 -> b4 & 31
+
+        when rem >= 5 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6) + Str.at(alpha, c7)
+        } or when rem == 1 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1)
+        } or when rem == 2 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3)
+        } or when rem == 3 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4)
+        } or when rem == 4 {
+            out -> out + Str.at(alpha, c0) + Str.at(alpha, c1) + Str.at(alpha, c2) + Str.at(alpha, c3) + Str.at(alpha, c4) + Str.at(alpha, c5) + Str.at(alpha, c6)
+        }
+
+        i -> i + 5
+    }
+
+    <- out
+}
+
+/!
+    Decodes an RFC 4648 Base32 string into a list of byte integers (0-255).
+    Case-insensitive, ignores padding '=' and whitespace.
+    @param str Base32 string.
+    @return List of byte integers.
+!/
+export function decode_bytes(str) {
+    let clean -> _clean_string(str)
+    let length -> Str.length(clean)
+    when length == 0 { <- [] }
+
+    let alpha -> `ABCDEFGHIJKLMNOPQRSTUVWXYZ234567`
+    let bytes -> []
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let chunk_len -> when rem > 8 { 8 } or { rem }
+
+        let vals -> []
+        let j -> 0
+        do while j < chunk_len {
+            let ch -> Str.at(clean, i + j)
+            let idx -> Str.index_of(alpha, ch)
+            when idx == -1 {
+                raise `Base32 decode failed: Invalid character "` + ch + `"`
+            }
+            vals.append(idx)
+            j -> j + 1
+        }
+        do while vals.length < 8 {
+            vals.append(0)
+        }
+
+        let v0 -> vals[0]
+        let v1 -> vals[1]
+        let v2 -> vals[2]
+        let v3 -> vals[3]
+        let v4 -> vals[4]
+        let v5 -> vals[5]
+        let v6 -> vals[6]
+        let v7 -> vals[7]
+
+        let b0 -> ((v0 << 3) | (v1 >> 2)) & 255
+        let b1 -> ((v1 << 6) | (v2 << 1) | (v3 >> 4)) & 255
+        let b2 -> ((v3 << 4) | (v4 >> 1)) & 255
+        let b3 -> ((v4 << 7) | (v5 << 2) | (v6 >> 3)) & 255
+        let b4 -> ((v6 << 5) | v7) & 255
+
+        when chunk_len >= 8 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+            bytes.append(b4)
+        } or when chunk_len == 2 {
+            bytes.append(b0)
+        } or when chunk_len == 4 {
+            bytes.append(b0)
+            bytes.append(b1)
+        } or when chunk_len == 5 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+        } or when chunk_len == 7 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+        }
+
+        i -> i + 8
+    }
+
+    <- bytes
+}
+
+/!
+    Decodes an RFC 4648 Base32 string into the original text string.
+    @param str Base32 string.
+    @return Decoded string.
+!/
+export function decode(str) {
+    let bytes -> decode_bytes(str)
+    <- __builtin.bytes_to_string(bytes)
+}
+
+/!
+    Decodes an RFC 4648 Extended Hex Base32 string into the original text string.
+    @param str Base32Hex string.
+    @return Decoded string.
+!/
+export function decode_hex(str) {
+    let clean -> _clean_string(str)
+    let length -> Str.length(clean)
+    when length == 0 { <- `` }
+
+    let alpha -> `0123456789ABCDEFGHIJKLMNOPQRSTUV`
+    let bytes -> []
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let chunk_len -> when rem > 8 { 8 } or { rem }
+
+        let vals -> []
+        let j -> 0
+        do while j < chunk_len {
+            let ch -> Str.at(clean, i + j)
+            let idx -> Str.index_of(alpha, ch)
+            when idx == -1 {
+                raise `Base32Hex decode failed: Invalid character "` + ch + `"`
+            }
+            vals.append(idx)
+            j -> j + 1
+        }
+        do while vals.length < 8 {
+            vals.append(0)
+        }
+
+        let v0 -> vals[0]
+        let v1 -> vals[1]
+        let v2 -> vals[2]
+        let v3 -> vals[3]
+        let v4 -> vals[4]
+        let v5 -> vals[5]
+        let v6 -> vals[6]
+        let v7 -> vals[7]
+
+        let b0 -> ((v0 << 3) | (v1 >> 2)) & 255
+        let b1 -> ((v1 << 6) | (v2 << 1) | (v3 >> 4)) & 255
+        let b2 -> ((v3 << 4) | (v4 >> 1)) & 255
+        let b3 -> ((v4 << 7) | (v5 << 2) | (v6 >> 3)) & 255
+        let b4 -> ((v6 << 5) | v7) & 255
+
+        when chunk_len >= 8 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+            bytes.append(b4)
+        } or when chunk_len == 2 {
+            bytes.append(b0)
+        } or when chunk_len == 4 {
+            bytes.append(b0)
+            bytes.append(b1)
+        } or when chunk_len == 5 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+        } or when chunk_len == 7 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+        }
+
+        i -> i + 8
+    }
+
+    <- __builtin.bytes_to_string(bytes)
+}
+
+/!
+    Decodes a Crockford Base32 string into the original text string.
+    Maps 'I'/'L' to '1', and 'O' to '0'.
+    @param str Crockford Base32 string.
+    @return Decoded string.
+!/
+export function decode_crockford(str) {
+    let raw -> Str.to_string(str)
+    let raw_len -> Str.length(raw)
+    let clean -> ``
+    let k -> 0
+    do while k < raw_len {
+        let ch -> Str.to_upper(Str.at(raw, k))
+        when ch == `I` or ch == `L` {
+            clean -> clean + `1`
+        } or when ch == `O` {
+            clean -> clean + `0`
+        } or when ch != `-` and ch != ` ` and ch != `\n` and ch != `\r` and ch != `\t` {
+            clean -> clean + ch
+        }
+        k -> k + 1
+    }
+
+    let length -> Str.length(clean)
+    when length == 0 { <- `` }
+
+    let alpha -> `0123456789ABCDEFGHJKMNPQRSTVWXYZ`
+    let bytes -> []
+    let i -> 0
+
+    do while i < length {
+        let rem -> length - i
+        let chunk_len -> when rem > 8 { 8 } or { rem }
+
+        let vals -> []
+        let j -> 0
+        do while j < chunk_len {
+            let ch -> Str.at(clean, i + j)
+            let idx -> Str.index_of(alpha, ch)
+            when idx == -1 {
+                raise `Crockford Base32 decode failed: Invalid character "` + ch + `"`
+            }
+            vals.append(idx)
+            j -> j + 1
+        }
+        do while vals.length < 8 {
+            vals.append(0)
+        }
+
+        let v0 -> vals[0]
+        let v1 -> vals[1]
+        let v2 -> vals[2]
+        let v3 -> vals[3]
+        let v4 -> vals[4]
+        let v5 -> vals[5]
+        let v6 -> vals[6]
+        let v7 -> vals[7]
+
+        let b0 -> ((v0 << 3) | (v1 >> 2)) & 255
+        let b1 -> ((v1 << 6) | (v2 << 1) | (v3 >> 4)) & 255
+        let b2 -> ((v3 << 4) | (v4 >> 1)) & 255
+        let b3 -> ((v4 << 7) | (v5 << 2) | (v6 >> 3)) & 255
+        let b4 -> ((v6 << 5) | v7) & 255
+
+        when chunk_len >= 8 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+            bytes.append(b4)
+        } or when chunk_len == 2 {
+            bytes.append(b0)
+        } or when chunk_len == 4 {
+            bytes.append(b0)
+            bytes.append(b1)
+        } or when chunk_len == 5 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+        } or when chunk_len == 7 {
+            bytes.append(b0)
+            bytes.append(b1)
+            bytes.append(b2)
+            bytes.append(b3)
+        }
+
+        i -> i + 8
+    }
+
+    <- __builtin.bytes_to_string(bytes)
+}

@@ -1,0 +1,52 @@
+/!
+  Test suite for examples/c_interop.
+  Verifies direct C extern calls and numerical precision.
+!/
+
+extern use `<math.h>`
+extern use `<unistd.h>`
+extern use sys.sysinfo
+
+extern from math use sqrt, hypot, pow, sin, cos
+extern from unistd use getpid, getppid, getuid
+extern from sys.sysinfo use get_nprocs
+
+function test_posix_telemetry() {
+    let pid -> getpid()
+    assert pid > 0
+
+    let ppid -> getppid()
+    assert ppid > 0
+
+    let uid -> getuid()
+    assert uid >= 0
+
+    let cpus -> get_nprocs()
+    assert cpus > 0
+    writeln(`  [PASS] test_posix_telemetry`)
+}
+
+function test_math_functions() {
+    let h -> hypot(3.0, 4.0)
+    assert h == 5.0
+
+    let s -> sqrt(144.0)
+    assert s == 12.0
+
+    let p -> pow(2.0, 10.0)
+    assert p == 1024.0
+
+    let s0 -> sin(0.0)
+    assert s0 == 0.0
+
+    let c0 -> cos(0.0)
+    assert c0 == 1.0
+    writeln(`  [PASS] test_math_functions`)
+}
+
+function main() {
+    writeln(`--- Running Suite: c_interop tests ---`)
+    test_posix_telemetry()
+    test_math_functions()
+    writeln(`--- All c_interop tests passed! ---`)
+}

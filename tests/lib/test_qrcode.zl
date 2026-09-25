@@ -1,0 +1,212 @@
+import zen.test as test
+import zen.graphics.qrcode as QRCode
+import zen.data.qrcode as DataQRCode
+use zen.text.string as Str
+
+function test_gf_and_rs() {
+    // 1. GF(256) basic arithmetic
+    let pass -> test.assert_equal(QRCode.gf_mul(0, 50), 0, `gf_mul with 0`)
+    pass -> pass and test.assert_equal(QRCode.gf_mul(1, 42), 42, `gf_mul identity`)
+    pass -> pass and test.assert_equal(QRCode.gf_mul(2, 128), 29, `gf_mul reduction`)
+    pass -> pass and test.assert_equal(QRCode.gf_div(42, 1), 42, `gf_div identity`)
+    pass -> pass and test.assert_equal(QRCode.gf_mul(42, QRCode.gf_div(1, 42)), 1, `gf_mul with inverse`)
+
+    // 2. Reed-Solomon encode
+    let msg -> [32, 65, 205, 69, 41, 170, 236, 17, 236, 17, 236, 17, 236, 17, 236, 17]
+    let ec -> QRCode.rs_encode(msg, 10)
+    pass -> pass and test.assert_equal(ec.length, 10, `rs_encode 10 codewords`)
+
+    let block -> []
+    for b in msg { block.append(b) }
+    for b in ec { block.append(b) }
+
+    // 3. RS clean decode
+    let dec_clean -> QRCode.rs_decode(block, 16, 10)
+    pass -> pass and test.assert_true(dec_clean[`success`], `clean rs_decode success`)
+    pass -> pass and test.assert_equal(dec_clean[`errors`], 0, `clean rs_decode 0 errors`)
+    pass -> pass and test.assert_equal(dec_clean[`data`], msg, `clean rs_decode matches msg`)
+
+    // 4. RS corrupted decode (2 errors recovered)
+    let corrupted -> []
+    for b in block { corrupted.append(b) }
+    corrupted[1] -> corrupted[1] ^^ 0x37
+    corrupted[8] -> corrupted[8] ^^ 0x9B
+    let dec_corrupt -> QRCode.rs_decode(corrupted, 16, 10)
+    pass -> pass and test.assert_true(dec_corrupt[`success`], `corrupted rs_decode success`)
+    pass -> pass and test.assert_equal(dec_corrupt[`errors`], 2, `corrupted rs_decode 2 errors recovered`)
+    pass -> pass and test.assert_equal(dec_corrupt[`data`], msg, `corrupted rs_decode recovered data matches original`)
+
+    <- pass
+}
+
+function test_encodings() {
+    // Mode detection
+    let m1 -> QRCode.detect_mode(`1234567890`)
+    let pass -> test.assert_equal(m1, `NUMERIC`, `detect numeric`)
+
+    let m2 -> QRCode.detect_mode(`HELLO WORLD 2026 $%*`)
+    pass -> pass and test.assert_equal(m2, `ALPHANUMERIC`, `detect alphanumeric`)
+
+    let m3 -> QRCode.detect_mode(`https://zenlang.org/intro`)
+    pass -> pass and test.assert_equal(m3, `BYTE`, `detect byte mode`)
+
+    // Data codewords encoding
+    let cw_num -> QRCode.encode_data_codewords(`01234567`, 1, `M`)
+    pass -> pass and test.assert_equal(cw_num.length, 16, `V1-M numeric codewords length 16`)
+
+    let cw_alpha -> QRCode.encode_data_codewords(`HELLO WORLD`, 1, `M`)
+    pass -> pass and test.assert_equal(cw_alpha.length, 16, `V1-M alphanumeric codewords length 16`)
+
+    let cw_byte -> QRCode.encode_data_codewords(`Zenlang`, 1, `M`)
+    pass -> pass and test.assert_equal(cw_byte.length, 16, `V1-M byte mode codewords length 16`)
+
+    <- pass
+}
+
+function test_matrix_generation() {
+    let qr1 -> QRCode.encode(`Zenlang`, `M`, 1)
+    let pass -> test.assert_equal(qr1[`version`], 1, `Version 1 matrix`)
+    pass -> pass and test.assert_equal(qr1[`size`], 21, `Version 1 size 21x21`)
+    pass -> pass and test.assert_equal(qr1[`matrix`].length, 21, `Matrix rows 21`)
+    pass -> pass and test.assert_equal(qr1[`matrix`][0].length, 21, `Matrix cols 21`)
+    pass -> pass and test.assert_true(qr1[`mask`] >= 0 and qr1[`mask`] <= 7, `Valid mask pattern selected`)
+
+    // Check top-left finder pattern: (0,0) is black, (1,1) is white, (3,3) center is black
+    let m -> qr1[`matrix`]
+    pass -> pass and test.assert_true(m[0][0], `Finder (0,0) is dark`)
+    pass -> pass and test.assert_false(m[1][1], `Finder (1,1) is light`)
+    pass -> pass and test.assert_true(m[3][3], `Finder center (3,3) is dark`)
+
+    // Version 2 generation (25x25)
+    let qr2 -> QRCode.encode(`Zenlang Programming Language 2026`, `M`, 2)
+    pass -> pass and test.assert_equal(qr2[`version`], 2, `Version 2 matrix`)
+    pass -> pass and test.assert_equal(qr2[`size`], 25, `Version 2 size 25x25`)
+
+    <- pass
+}
+
+function test_renderers() {
+    let qr -> QRCode.encode(`Zenlang`, `M`, 1)
+
+    // Terminal half-blocks
+    let term -> QRCode.to_terminal(qr, 2)
+    let pass -> test.assert_true(Str.length(term) > 0, `to_terminal non-empty`)
+    pass -> pass and test.assert_true(Str.index_of(term, `▀`) >= 0 or Str.index_of(term, `█`) >= 0, `to_terminal has half-blocks`)
+
+    // ASCII double-blocks
+    let ascii -> QRCode.to_ascii(qr, 2)
+    pass -> pass and test.assert_true(Str.index_of(ascii, `##`) >= 0, `to_ascii has ## blocks`)
+
+    // SVG vector
+    let svg -> QRCode.to_svg(qr, 8, 4)
+    pass -> pass and test.assert_true(Str.index_of(svg, `<svg`) >= 0, `to_svg starts with svg tag`)
+    pass -> pass and test.assert_true(Str.index_of(svg, `</svg>`) >= 0, `to_svg ends with closing tag`)
+    pass -> pass and test.assert_true(Str.index_of(svg, `<rect`) >= 0, `to_svg contains rect elements`)
+
+    // BMP image bytes
+    let bmp -> QRCode.to_bmp(qr, 2, 2)
+    pass -> pass and test.assert_true(bmp.length > 54, `to_bmp bytes length > 54`)
+    pass -> pass and test.assert_equal(bmp[0], 0x42, `BMP magic 'B'`)
+    pass -> pass and test.assert_equal(bmp[1], 0x4D, `BMP magic 'M'`)
+
+    <- pass
+}
+
+function test_roundtrip_decoding() {
+    let text -> `Zenlang QR Code 2026`
+    let qr -> QRCode.encode(text, `M`, Nothing)
+
+    // 1. Matrix round-trip
+    let dec_mat -> QRCode.read_matrix(qr[`matrix`])
+    let pass -> test.assert_equal(dec_mat, text, `read_matrix round-trip`)
+
+    // 2. Terminal half-block round-trip
+    let term -> QRCode.to_terminal(qr, 2)
+    let dec_term -> QRCode.read_terminal(term)
+    pass -> pass and test.assert_equal(dec_term, text, `read_terminal round-trip`)
+
+    // 3. ASCII round-trip
+    let ascii -> QRCode.to_ascii(qr, 2)
+    let dec_ascii -> QRCode.read_ascii(ascii)
+    pass -> pass and test.assert_equal(dec_ascii, text, `read_ascii round-trip`)
+
+    // 4. SVG round-trip
+    let svg -> QRCode.to_svg(qr, 8, 4)
+    let dec_svg -> QRCode.read_svg(svg)
+    pass -> pass and test.assert_equal(dec_svg, text, `read_svg round-trip`)
+
+    // 5. BMP round-trip
+    let bmp -> QRCode.to_bmp(qr, 2, 2)
+    let dec_bmp -> QRCode.read_bmp(bmp)
+    pass -> pass and test.assert_equal(dec_bmp, text, `read_bmp round-trip`)
+
+    // 6. Universal read dispatcher
+    let dec_uni1 -> QRCode.read(qr[`matrix`])
+    let dec_uni2 -> QRCode.read(term)
+    let dec_uni3 -> QRCode.read(svg)
+    let dec_uni4 -> QRCode.read(bmp)
+    pass -> pass and test.assert_equal(dec_uni1, text, `read dispatcher matrix`)
+    pass -> pass and test.assert_equal(dec_uni2, text, `read dispatcher terminal`)
+    pass -> pass and test.assert_equal(dec_uni3, text, `read dispatcher svg`)
+    pass -> pass and test.assert_equal(dec_uni4, text, `read dispatcher bmp`)
+
+    <- pass
+}
+
+function test_real_world_payloads() {
+    // 1. URL payload
+    let url -> `https://zenlang.org`
+    let qr_url -> QRCode.encode(url, `M`, Nothing)
+    let dec_url -> QRCode.read_matrix(qr_url[`matrix`])
+    let pass -> test.assert_equal(dec_url, url, `URL payload decode`)
+
+    // 2. Numeric payload
+    let num_payload -> `987654321012345`
+    let qr_num -> QRCode.encode(num_payload, `M`, Nothing)
+    let dec_num -> QRCode.read_matrix(qr_num[`matrix`])
+    pass -> pass and test.assert_equal(dec_num, num_payload, `Numeric payload decode`)
+
+    // 3. Alphanumeric payload
+    let alpha_payload -> `WIFI:T:WPA;S:MY-NETWORK;P:SECRET123;;`
+    let qr_alpha -> QRCode.encode(alpha_payload, `M`, Nothing)
+    let dec_alpha -> QRCode.read_matrix(qr_alpha[`matrix`])
+    pass -> pass and test.assert_equal(dec_alpha, alpha_payload, `Alphanumeric Wi-Fi payload decode`)
+
+    // 4. Crypto wallet address payload
+    let btc_addr -> `1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa`
+    let qr_btc -> QRCode.encode(btc_addr, `M`, Nothing)
+    let dec_btc -> QRCode.read_matrix(qr_btc[`matrix`])
+    pass -> pass and test.assert_equal(dec_btc, btc_addr, `Bitcoin address payload decode`)
+
+    <- pass
+}
+
+function test_data_alias() {
+    let text -> `Zenlang Data Alias`
+    let qr -> DataQRCode.encode(text, `M`, Nothing)
+    let dec -> DataQRCode.read_matrix(qr[`matrix`])
+    let pass -> test.assert_equal(dec, text, `zen.data.qrcode alias encode/decode`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `QRCode.GaloisFieldAndReedSolomon`, `fn` -> test_gf_and_rs},
+        {`name` -> `QRCode.Encodings`, `fn` -> test_encodings},
+        {`name` -> `QRCode.MatrixGeneration`, `fn` -> test_matrix_generation},
+        {`name` -> `QRCode.Renderers`, `fn` -> test_renderers},
+        {`name` -> `QRCode.RoundTripDecoding`, `fn` -> test_roundtrip_decoding},
+        {`name` -> `QRCode.RealWorldPayloads`, `fn` -> test_real_world_payloads},
+        {`name` -> `QRCode.DataAlias`, `fn` -> test_data_alias}
+    ]
+
+    <- test.run_suite(`QRCode ISO 18004 Suite`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

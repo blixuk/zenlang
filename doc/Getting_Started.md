@@ -182,7 +182,45 @@ let tags -> Set{ `web`, `systems`, `terminal` }
 let entry -> Tuple{ `Attack`, 100, True }
 ```
 
-### 3.8 Functions & Arrow Bodies
+### 3.8 Directional Comprehensions, Spreads & Slicing
+```zl
+use zen.text.string as Str
+
+// 1. Directional List Comprehensions: [for x in iter [when cond] -> expr]
+let squares -> [for x in 1...5 -> x * x]               // [1, 4, 9, 16, 25]
+let evens   -> [for x in 1...10 when x % 2 == 0 -> x]  // [2, 4, 6, 8, 10]
+
+// 2. Directional Map Comprehensions: {for k, v in map [when cond] -> k: v}
+let scores -> { `Alice` -> 95, `Bob` -> 62, `Charlie` -> 88 }
+let honors -> {for name, score in scores when score >= 80 -> name: score}
+
+// 3. Collection Spreads: ...collection
+let base -> [1, 2, 3]
+let combined -> [...base, 4, 5]                       // [1, 2, 3, 4, 5]
+let cfg -> { `debug` -> False, `port` -> 8080 }
+let prod -> { ...cfg, `debug` -> True }
+
+// 4. Sequence Slicing & Negative Indexing: seq[start:end:step]
+let text -> `Zenlang`
+let lang -> text[3:]                                  // `lang`
+let rev  -> text[::-1]                                 // `gnalneZ`
+let last -> text[-1]                                  // 'g'
+```
+
+### 3.9 Flow Operators (`??` and `|>`)
+```zl
+use zen.text.string as Str
+
+// 1. Nullish / Sentinel Coalescing (??)
+let fallback_user -> Nothing ?? `Guest`               // `Guest`
+
+// 2. Directional Pipeline Operator (|>)
+let clean -> `  hello zen  `
+    |> Str.trim
+    |> Str.to_upper                                   // `HELLO ZEN`
+```
+
+### 3.10 Functions & Arrow Bodies
 ```zl
 use zen.io
 
@@ -198,7 +236,7 @@ function greet : String (name: String) -> `Hello, ` + name
 let square -> function(x) -> x * x
 ```
 
-### 3.9 The Three Container Tiers: Struct, Object & Class
+### 3.11 The Three Container Tiers: Struct, Object & Class
 ```zl
 use zen.io
 use zen.text.string as Str
@@ -231,7 +269,7 @@ class Monster extends Entity {
 }
 ```
 
-### 3.10 Error Handling: `check`, `raise`, and `assert`
+### 3.12 Error Handling: `check`, `raise`, and `assert`
 ```zl
 // Recover with fallback value:
 let safe -> check divide(10.0, 0.0) or 0.0
@@ -240,7 +278,7 @@ let safe -> check divide(10.0, 0.0) or 0.0
 assert safe >= 0.0 raise `NegativeResult`
 ```
 
-### 3.11 Concurrency: The Unified `task` Substrate
+### 3.13 Concurrency: The Unified `task` Substrate
 ```zl
 use zen.io
 use zen.text.string as Str
@@ -260,6 +298,22 @@ function run_concurrent() {
 }
 ```
 
+### 3.14 Direct C Interop (`extern use`) & Systems Modules
+```zl
+// Direct system header includes with zero glue code:
+extern use `<unistd.h>`
+extern from `<math.h>` use sqrt, pow
+
+use zen.sys.hardware as hw
+use zen.sys.meminfo as mem
+
+function show_system_specs() {
+    let cpus -> hw.cpu_count()
+    let ram_gb -> mem.total_ram_gb()
+    writeln(f`Host hardware: {cpus} CPUs, {ram_gb} GB RAM installed`)
+}
+```
+
 ---
 
 ## 4. Rosetta Stone: Zenlang for Python, JavaScript & Rust Developers
@@ -275,6 +329,10 @@ function run_concurrent() {
 | **Zero-State** | `0`, `""`, `[]` manual | `0`, `""`, `[]` manual | `Default::default()` | `Default` (capitalized) |
 | **Type Cast** | `int(x)` | `Number(x)` / `x as number` | `x as i64` | `x <: Integer` / `Integer(x)` |
 | **Ranges** | `range(0, 5)` | `[...Array(5).keys()]` | `0..5` / `0..=5` | `0...5` (inclusive), `0..-5` (exclusive) |
+| **Comprehensions** | `[x*2 for x in xs]` | `xs.map(x => x*2)` | `xs.iter().map(...)` | `[for x in xs -> x*2]` |
+| **Spreads** | `[*a, *b]` | `[...a, ...b]` | `a.extend(b)` | `[...a, ...b]` |
+| **Pipeline** | `f(g(x))` | `x.pipe(g).pipe(f)` | `x.pipe(...)` | `x \|> g \|> f` |
+| **Null Coalesce** | `a if a is not None else b` | `a ?? b` | `a.unwrap_or(b)` | `a ?? b` |
 | **Loops** | `for x in list:` | `for (const x of list)` | `for x in list` | `do for x in list` |
 | **Switch/Match** | `match x:` | `switch (x)` | `match x` | `check x { case ... }` |
 | **Concurrency** | `async def` / `await` | `async` / `await` | `async fn` / `.await` | `task` / `.spawn` / `.wait` |

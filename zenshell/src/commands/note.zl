@@ -1,0 +1,356 @@
+/!
+  zenshell - In-Terminal Notes, Scratchpad & Jotting (note / jot)
+  Persistent lightweight thought capture stored in ~/.config/zenshell/notes.zd.
+  Inspired by the prototype's jotting.py and Notes.md.
+!/
+
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.data.zendata as zd
+import zen.util.table as utbl
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+import commands.calendar as cal_cmd
+
+function pad02(val) {
+    let s -> Str.to_string(val)
+    when Str.length(s) < 2 { <- `0` + s }
+    <- s
+}
+
+function get_notes_file_path() {
+    let home -> sys.get_env(`HOME`)
+    when home == Nothing { home -> `/tmp` }
+    let dir -> path.join(home, `.config/zenshell`)
+    __builtin_file.mkdir_p(dir)
+    <- path.join(dir, `notes.zd`)
+}
+
+function load_notes() {
+    let p -> get_notes_file_path()
+    when not __builtin_file.is_file(p) {
+        <- []
+    }
+    let content -> __builtin_file.read(p)
+    when content == Nothing or Str.trim(content) == `` {
+        <- []
+    }
+    let parsed -> zd.parse(content)
+    when parsed != Nothing and parsed[`notes`] != Nothing {
+        <- parsed[`notes`]
+    }
+    <- []
+}
+
+function save_notes(notes_list) {
+    let p -> get_notes_file_path()
+    let payload -> {
+        `notes` -> notes_list
+    }
+    let serialized -> zd.stringify(payload, 0)
+    __builtin_file.write(p, serialized)
+}
+
+function get_next_id(notes_list) {
+    let max_id -> 0
+    let i -> 0
+    do while i < notes_list.length {
+        let n -> notes_list[i]
+        i -> i + 1
+        when n[`id`] != Nothing and n[`id`] > max_id {
+            max_id -> n[`id`]
+        }
+    }
+    <- max_id + 1
+}
+
+function extract_title_and_content(args) {
+    let full_text -> Str.join(args, ` `)
+    when Str.contains(full_text, ` : `) {
+        let colon_parts -> Str.split(full_text, ` : `)
+        let t -> Str.trim(colon_parts[0])
+        let c -> Str.trim(Str.join(colon_parts[1:], ` : `))
+        <- {`title` -> t, `content` -> c}
+    }
+
+    when args.length > 2 and args[0] == `-t` {
+        let t -> args[1]
+        let c -> Str.join(args[2:], ` `)
+        <- {`title` -> t, `content` -> c}
+    }
+
+    // Default: first 35 chars or first sentence
+    let t -> full_text
+    when Str.length(t) > 35 {
+        t -> Str.substring(t, 0, 32) + `...`
+    }
+    <- {`title` -> t, `content` -> full_text}
+}
+
+function make_preview(text, max_len) {
+    let clean -> Str.replace(text, `\n`, ` `)
+    when Str.length(clean) <= max_len { <- clean }
+    <- Str.substring(clean, 0, max_len - 3) + `...`
+}
+
+function handle_note_add(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: note add <text> | note add <title> : <content> | note <quick text>`)
+    }
+
+    let parsed -> extract_title_and_content(args)
+    let title -> parsed[`title`]
+    let content -> parsed[`content`]
+
+    let now -> cal_cmd.get_local_now()
+    let date_short -> Str.to_string(now[`year`]) + `-` + pad02(now[`month`]) + `-` + pad02(now[`day`]) + ` ` + pad02(now[`hour`]) + `:` + pad02(now[`minute`])
+    let date_long -> now[`weekday`] + `, ` + Str.to_string(now[`day`]) + ` ` + now[`month_name`] + ` ` + Str.to_string(now[`year`])
+    let time_str -> pad02(now[`hour`]) + `:` + pad02(now[`minute`]) + `:` + pad02(now[`second`])
+
+    let notes -> load_notes()
+    let new_id -> get_next_id(notes)
+
+    let record -> {
+        `id` -> new_id,
+        `title` -> title,
+        `content` -> content,
+        `date` -> date_short,
+        `date_long` -> date_long,
+        `time` -> time_str
+    }
+
+    notes.append(record)
+    save_notes(notes)
+
+    let out -> color.green(`✓ Saved note #` + Str.to_string(new_id) + `: `) + color.bold(title)
+    <- out
+}
+
+function handle_note_list(args, ctx) {
+    let notes -> load_notes()
+    when notes.length == 0 {
+        <- color.dim(`No notes saved yet. Use 'note add <text>' or 'jot <text>' to record your first thought.`)
+    }
+
+    let rows -> []
+    let i -> 0
+    do while i < notes.length {
+        let n -> notes[i]
+        i -> i + 1
+        let id_str -> Str.to_string(n[`id`])
+        let title_str -> color.bold(color.cyan(n[`title`]))
+        let prev -> make_preview(n[`content`], 38)
+        let dt -> color.dim(n[`date`])
+        rows.append([id_str, title_str, prev, dt])
+    }
+
+    let headers -> [`#`, `Title`, `Content Preview`, `Saved At`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let count_str -> color.dim(Str.to_string(notes.length) + ` notes saved in ~/.config/zenshell/notes.zd`)
+    <- tbl + `\n` + count_str
+}
+
+function handle_note_view(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: note view <id>`)
+    }
+
+    let target_id -> Integer(args[0])
+    when target_id == Nothing {
+        <- color.red(`Invalid note ID: `) + args[0]
+    }
+
+    let notes -> load_notes()
+    let found -> Nothing
+    let i -> 0
+    do while i < notes.length {
+        let n -> notes[i]
+        i -> i + 1
+        when n[`id`] == target_id {
+            found -> n
+        }
+    }
+
+    when found == Nothing {
+        <- color.red(`Note #` + Str.to_string(target_id) + ` not found. Run 'note list' to see all notes.`)
+    }
+
+    let t_id -> Str.to_string(found[`id`])
+    let title -> found[`title`]
+    let content -> found[`content`]
+    let d_long -> when (found[`date_long`] != Nothing) { found[`date_long`] } or { found[`date`] }
+    let t_str -> when (found[`time`] != Nothing) { found[`time`] } or { `` }
+
+    let width -> 62
+    let divider -> Str.repeat(`─`, width)
+
+    let out -> `\n`
+    out -> out + `╭` + divider + `╮\n`
+    out -> out + `│ ` + color.bold(color.cyan(`📝 Note #` + t_id + `: ` + title)) + `\n`
+    out -> out + `├` + divider + `┤\n`
+
+    let lines -> Str.split(content, `\n`)
+    do for l in lines {
+        out -> out + `│ ` + l + `\n`
+    }
+
+    out -> out + `├` + divider + `┤\n`
+    out -> out + `│ ` + color.dim(`📅 ` + d_long + ` • ` + t_str) + `\n`
+    out -> out + `╰` + divider + `╯\n`
+    <- out
+}
+
+function handle_note_remove(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: note remove <id>`)
+    }
+
+    let target_id -> Integer(args[0])
+    when target_id == Nothing {
+        <- color.red(`Invalid note ID: `) + args[0]
+    }
+
+    let notes -> load_notes()
+    let new_notes -> []
+    let removed_title -> Nothing
+    let i -> 0
+    do while i < notes.length {
+        let n -> notes[i]
+        i -> i + 1
+        when n[`id`] == target_id {
+            removed_title -> n[`title`]
+        } or {
+            new_notes.append(n)
+        }
+    }
+
+    when removed_title == Nothing {
+        <- color.red(`Note #` + Str.to_string(target_id) + ` not found.`)
+    }
+
+    save_notes(new_notes)
+    <- color.green(`✓ Removed note #` + Str.to_string(target_id) + ` (` + removed_title + `)`)
+}
+
+function handle_note_search(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- color.yellow(`Usage: note search <query>`)
+    }
+
+    let q -> Str.to_lower(Str.join(args, ` `))
+    let notes -> load_notes()
+    let matches -> []
+
+    let i -> 0
+    do while i < notes.length {
+        let n -> notes[i]
+        i -> i + 1
+        let t_low -> Str.to_lower(Str.to_string(n[`title`]))
+        let c_low -> Str.to_lower(Str.to_string(n[`content`]))
+        when Str.contains(t_low, q) or Str.contains(c_low, q) {
+            matches.append(n)
+        }
+    }
+
+    when matches.length == 0 {
+        <- color.dim(`No notes matched query: ` + q)
+    }
+
+    let rows -> []
+    let mi -> 0
+    do while mi < matches.length {
+        let n -> matches[mi]
+        mi -> mi + 1
+        let id_str -> Str.to_string(n[`id`])
+        let title_str -> color.bold(color.cyan(n[`title`]))
+        let prev -> make_preview(n[`content`], 38)
+        let dt -> color.dim(n[`date`])
+        rows.append([id_str, title_str, prev, dt])
+    }
+
+    let headers -> [`#`, `Title`, `Content Preview`, `Saved At`]
+    let tbl -> utbl.render_table(headers, rows, {`border_style` -> `rounded`})
+    let count_str -> color.green(`✓ Found ` + Str.to_string(matches.length) + ` matching notes for '` + q + `'`)
+    <- tbl + `\n` + count_str
+}
+
+function handle_note_clear(args, ctx) {
+    let p -> get_notes_file_path()
+    save_notes([])
+    <- color.yellow(`All notes have been cleared.`)
+}
+
+function handle_note_data(args, ctx) {
+    let notes -> load_notes()
+    <- zd.stringify({`notes` -> notes}, 0)
+}
+
+function handle_note_default(args, ctx) {
+    when args == Nothing or args.length == 0 {
+        <- handle_note_list(args, ctx)
+    }
+
+    let first -> args[0]
+    when first == `list` or first == `ls` {
+        <- handle_note_list(args[1:], ctx)
+    }
+    when first == `add` or first == `new` {
+        <- handle_note_add(args[1:], ctx)
+    }
+    when first == `view` or first == `show` {
+        <- handle_note_view(args[1:], ctx)
+    }
+    when first == `remove` or first == `rm` or first == `del` {
+        <- handle_note_remove(args[1:], ctx)
+    }
+    when first == `search` or first == `find` {
+        <- handle_note_search(args[1:], ctx)
+    }
+    when first == `clear` {
+        <- handle_note_clear(args[1:], ctx)
+    }
+    when first == `data` or first == `export` {
+        <- handle_note_data(args[1:], ctx)
+    }
+
+    // Direct jotting fallback: 'note Buy groceries' or 'jot Meeting at 3pm'
+    <- handle_note_add(args, ctx)
+}
+
+let DOC_NOTE -> ```
+# note / jot — In-Terminal Notes & Thought Scratchpad
+
+A persistent, lightweight thought capture tool storing notes in declarative ZenData (`~/.config/zenshell/notes.zd`).
+
+## Usage
+- `note` (or `jot`) — List all saved notes in a styled table.
+- `note add <text>` — Add a quick note (e.g. `jot Buy coffee`).
+- `note add <title> : <content>` — Add a note with explicit title and content.
+- `note <text>` — Ergonomic shorthand: adds a note directly without typing 'add'.
+- `note view <id>` (or `note show <id>`) — Display note in a formatted card box.
+- `note remove <id>` (or `note rm <id>`) — Delete note by ID.
+- `note search <query>` (or `note find <query>`) — Search notes by keyword.
+- `note clear` — Clear all saved notes.
+- `note data` — Export notes in raw ZenData (.zd) format.
+
+## Aliases
+- `jot` -> `note`
+```
+
+export function create_note_command(ctx) {
+    let cmd -> cmd_base.Command(`note`, `In-terminal notes & scratchpad manager (alias: jot)`)
+    cmd.set_default(handle_note_default)
+    cmd.add_subcommand(`list`, `List all saved notes`, handle_note_list)
+    cmd.add_subcommand(`add`, `Add a new note with timestamp`, handle_note_add)
+    cmd.add_subcommand(`view`, `Display full note in a styled card`, handle_note_view)
+    cmd.add_subcommand(`show`, `Display full note in a styled card`, handle_note_view)
+    cmd.add_subcommand(`remove`, `Delete note by ID`, handle_note_remove)
+    cmd.add_subcommand(`rm`, `Delete note by ID`, handle_note_remove)
+    cmd.add_subcommand(`del`, `Delete note by ID`, handle_note_remove)
+    cmd.add_subcommand(`search`, `Search notes by title or content`, handle_note_search)
+    cmd.add_subcommand(`find`, `Search notes by title or content`, handle_note_search)
+    cmd.add_subcommand(`clear`, `Clear all saved notes`, handle_note_clear)
+    cmd.add_subcommand(`data`, `Export notes as ZenData`, handle_note_data)
+    <- cmd
+}

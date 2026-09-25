@@ -57,6 +57,7 @@ class Interpreter(
         self._node_stack: list = []
         self.modules: dict[str, any] = {} # path -> ModuleObject
         self.memory_manager = MemoryManager()
+        self.has_extern = False
 
         self._build_dispatch_table()
         # Built-in `module` map for the entry file (overridden per import in _load_module)

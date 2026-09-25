@@ -1,0 +1,19 @@
+/!
+  zenshell - Echo Command (echo)
+!/
+
+import zen.text.string as Str
+import core.command as cmd_base
+
+function handle_echo_default(args, c) {
+    when args == Nothing or args.length == 0 {
+        <- ``
+    }
+    <- Str.join(args, ` `)
+}
+
+export function create_echo_command(ctx) {
+    let cmd -> cmd_base.Command(`echo`, `Print text arguments to standard output`)
+    cmd.set_default(handle_echo_default)
+    <- cmd
+}

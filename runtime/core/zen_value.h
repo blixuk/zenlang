@@ -24,12 +24,16 @@ typedef enum {
     ZEN_ERROR,
     ZEN_FUNCTION,
     ZEN_VARIANT,
-    ZEN_SET
+    ZEN_SET,
+    ZEN_AST_NODE,
+    ZEN_TOKEN
 } ZenType;
 
 typedef struct ZenValue ZenValue;
 typedef struct ZenArena ZenArena;
 typedef ZenValue ZenVariant;
+struct ZenAstNode;
+struct ZenToken;
 
 struct ZenValue {
     ZenType type;
@@ -45,6 +49,8 @@ struct ZenValue {
         struct ZenVariantObject* variant;
         struct ZenSet* set;
         ZenValue (*func)(void); // Simple function pointer
+        struct ZenAstNode* ast_node;
+        struct ZenToken* token;
     } as;
 };
 
@@ -55,6 +61,14 @@ struct ZenValue {
 #define ZenValue_make_integer(v) ((ZenValue){.type = ZEN_INTEGER, .as.integer = (long long)(v)})
 #define ZenValue_make_boolean(v) ((ZenValue){.type = ZEN_BOOLEAN, .as.boolean = (bool)(v)})
 #define ZenValue_make_decimal(v) ((ZenValue){.type = ZEN_DECIMAL, .as.decimal = (double)(v)})
+
+
+// C Interop Unboxers
+#define ZenValue_to_c_int(v) ((long long)((v).as.integer))
+#define ZenValue_to_c_dec(v) ((double)((v).as.decimal))
+#define ZenValue_to_c_str(v) ((const char*)((v).as.string))
+#define ZenValue_to_c_bool(v) ((bool)((v).as.boolean))
+#define ZenValue_to_c_ptr(v) ((void*)((v).as.object))
 
 ZenValue ZenValue_make_string(const char* s);
 ZenValue ZenValue_make_nothing(void);
@@ -95,6 +109,31 @@ static inline ZenValue __zen_box_long(long long v) { return ZenValue_make_intege
 static inline ZenValue __zen_box_double(double v) { return ZenValue_make_decimal(v); }
 static inline ZenValue __zen_box_str(const char* v) { return ZenValue_make_string(v); }
 static inline ZenValue __zen_box_obj(void* v) { return ZenValue_from_object(v); }
+static inline ZenValue __zen_box_uint(unsigned long long v) { return ZenValue_make_integer((long long)v); }
+static inline ZenValue __zen_box_float(float v) { return ZenValue_make_decimal((double)v); }
+
+// C11 Automatic Type Boxing for C Interop (extern use)
+#define ZenValue_from_c(expr) _Generic((expr), \
+    ZenValue:             __zen_box_val, \
+    bool:                 __zen_box_bool, \
+    char:                 __zen_box_int, \
+    signed char:          __zen_box_int, \
+    unsigned char:        __zen_box_uint, \
+    short:                __zen_box_int, \
+    unsigned short:       __zen_box_uint, \
+    int:                  __zen_box_int, \
+    unsigned int:         __zen_box_uint, \
+    long:                 __zen_box_long, \
+    unsigned long:        __zen_box_uint, \
+    long long:            __zen_box_long, \
+    unsigned long long:   __zen_box_uint, \
+    float:                __zen_box_float, \
+    double:               __zen_box_double, \
+    char*:                __zen_box_str, \
+    const char*:          __zen_box_str, \
+    void*:                __zen_box_obj, \
+    default:              __zen_box_obj \
+)(expr)
 
 static inline bool __zen_unbox_bool(ZenValue v) { return v.as.boolean; }
 static inline int __zen_unbox_int(ZenValue v) { return (int)v.as.integer; }

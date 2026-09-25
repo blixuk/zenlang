@@ -15,6 +15,9 @@ ZenValue ZenValue_op_append(ZenValue a, ZenValue b) {
     if (a.type == ZEN_LIST && b.type == ZEN_LIST) {
         return ZenList_concat(a, b);
     }
+    if (a.type == ZEN_MAP && b.type == ZEN_MAP) {
+        return ZenMap_merge(a, b);
+    }
     if (a.type == ZEN_LIST) {
         ZenValue res = ZenList_clone(a);
         ZenList_append_value(res, b);
@@ -62,6 +65,12 @@ ZenValue ZenValue_op_remove(ZenValue a, ZenValue b) {
 ZenValue ZenValue_add(ZenValue a, ZenValue b) {
     if (a.type == ZEN_STRING || b.type == ZEN_STRING) {
         return ZenString_concatenate(a, b);
+    }
+    if (a.type == ZEN_LIST && b.type == ZEN_LIST) {
+        return ZenList_concat(a, b);
+    }
+    if (a.type == ZEN_MAP && b.type == ZEN_MAP) {
+        return ZenMap_merge(a, b);
     }
     if (a.type == ZEN_INTEGER && b.type == ZEN_INTEGER) return ZenValue_make_integer(a.as.integer + b.as.integer);
     if (a.type == ZEN_DECIMAL || b.type == ZEN_DECIMAL) {
@@ -313,6 +322,14 @@ ZenValue ZenValue_equal(ZenValue a, ZenValue b) {
         }
         case ZEN_OBJECT: return ZenValue_make_boolean(a.as.object == b.as.object);
         case ZEN_ARENA: return ZenValue_make_boolean(a.as.arena == b.as.arena);
+        case ZEN_AST_NODE: return ZenValue_make_boolean(a.as.ast_node == b.as.ast_node);
+        case ZEN_TOKEN: {
+            if (a.as.token == b.as.token) return ZenValue_make_boolean(true);
+            if (!a.as.token || !b.as.token) return ZenValue_make_boolean(false);
+            return ZenValue_make_boolean(a.as.token->kind == b.as.token->kind &&
+                                         a.as.token->start == b.as.token->start &&
+                                         a.as.token->length == b.as.token->length);
+        }
         case ZEN_ERROR: return ZenValue_make_boolean(strcmp(a.as.string, b.as.string) == 0);
         case ZEN_VARIANT:
             if (a.as.variant == b.as.variant) return ZenValue_make_boolean(true);
@@ -333,69 +350,88 @@ ZenValue ZenValue_equal(ZenValue a, ZenValue b) {
 ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
     if (!target_type) return val;
     
-    /* 1. Target: Integer / Int */
-    if (strcmp(target_type, "Integer") == 0 || strcmp(target_type, "Int") == 0 ||
-        strcmp(target_type, "Int64") == 0 || strcmp(target_type, "Int32") == 0 ||
-        strcmp(target_type, "Int16") == 0 || strcmp(target_type, "Int8") == 0 ||
-        strcmp(target_type, "Byte") == 0) {
-        if (val.type == ZEN_INTEGER) return val;
-        if (val.type == ZEN_DECIMAL) return ZenValue_make_integer((long long)val.as.decimal);
-        if (val.type == ZEN_BOOLEAN) return ZenValue_make_integer(val.as.boolean ? 1 : 0);
-        if (val.type == ZEN_STRING) {
-            if (!val.as.string || val.as.string[0] == '\0') return ZenValue_make_integer(0);
-            const char* s = val.as.string;
-            while (*s == ' ' || *s == '\t') s++;
-            if (*s == '\0') return ZenValue_make_integer(0);
-            char* endptr = NULL;
-            long long res = strtoll(s, &endptr, 0);
-            if (endptr == s) {
-                /* Single character codepoint */
-                if (strlen(s) == 1) return ZenValue_make_integer((unsigned char)s[0]);
-                return ZenValue_make_integer(0);
+    /* 1. Target: Integer / Sized Integers / Byte */
+    if (strcmp(target_type, "Integer") == 0 || strcmp(target_type, "Integer[64]") == 0 ||
+        strcmp(target_type, "Integer[32]") == 0 || strcmp(target_type, "Integer[16]") == 0 ||
+        strcmp(target_type, "Integer[8]") == 0  || strcmp(target_type, "Byte") == 0) {
+        long long ival = 0;
+        if (val.type == ZEN_INTEGER) ival = val.as.integer;
+        else if (val.type == ZEN_DECIMAL) ival = (long long)val.as.decimal;
+        else if (val.type == ZEN_BOOLEAN) ival = val.as.boolean ? 1 : 0;
+        else if (val.type == ZEN_STRING) {
+            if (!val.as.string || val.as.string[0] == '\0') ival = 0;
+            else {
+                const char* s = val.as.string;
+                while (*s == ' ' || *s == '\t') s++;
+                if (*s == '\0') ival = 0;
+                else {
+                    char* endptr = NULL;
+                    long long res = strtoll(s, &endptr, 0);
+                    if (endptr == s) {
+                        /* Single character codepoint */
+                        if (strlen(s) == 1) ival = (unsigned char)s[0];
+                        else ival = 0;
+                    } else {
+                        ival = res;
+                    }
+                }
             }
-            return ZenValue_make_integer(res);
         }
-        if (val.type == ZEN_LIST) return ZenValue_make_integer(val.as.list ? val.as.list->count : 0);
-        if (val.type == ZEN_MAP) return ZenValue_make_integer(val.as.map ? val.as.map->count : 0);
-        if (val.type == ZEN_SET) return ZenValue_make_integer(ZenSet_get_count(val));
-        if (val.type == ZEN_NOTHING) return ZenValue_make_integer(0);
-        return ZenValue_make_integer(0);
+        else if (val.type == ZEN_LIST) ival = val.as.list ? val.as.list->count : 0;
+        else if (val.type == ZEN_MAP) ival = val.as.map ? val.as.map->count : 0;
+        else if (val.type == ZEN_SET) ival = ZenSet_get_count(val);
+        else ival = 0;
+
+        /* Bit width truncation and sign/zero extension */
+        if (strcmp(target_type, "Byte") == 0) {
+            ival = (long long)(unsigned char)ival;
+        } else if (strcmp(target_type, "Integer[8]") == 0) {
+            ival = (long long)(int8_t)ival;
+        } else if (strcmp(target_type, "Integer[16]") == 0) {
+            ival = (long long)(int16_t)ival;
+        } else if (strcmp(target_type, "Integer[32]") == 0) {
+            ival = (long long)(int32_t)ival;
+        }
+        return ZenValue_make_integer(ival);
     }
     
-    /* 2. Target: Decimal / Float / Double */
-    if (strcmp(target_type, "Decimal") == 0 || strcmp(target_type, "Float") == 0 ||
-        strcmp(target_type, "Double") == 0) {
-        if (val.type == ZEN_DECIMAL) return val;
-        if (val.type == ZEN_INTEGER) return ZenValue_make_decimal((double)val.as.integer);
-        if (val.type == ZEN_BOOLEAN) return ZenValue_make_decimal(val.as.boolean ? 1.0 : 0.0);
+    /* 2. Target: Decimal / Decimal[32] / Decimal[64] */
+    if (strcmp(target_type, "Decimal") == 0 ||
+        strcmp(target_type, "Decimal[64]") == 0 ||
+        strcmp(target_type, "Decimal[32]") == 0) {
+        double dval = 0.0;
+        if (val.type == ZEN_DECIMAL) dval = val.as.decimal;
+        else if (val.type == ZEN_INTEGER) dval = (double)val.as.integer;
+        else if (val.type == ZEN_BOOLEAN) dval = val.as.boolean ? 1.0 : 0.0;
+        else if (val.type == ZEN_STRING) {
+            if (val.as.string) dval = strtod(val.as.string, NULL);
+        }
+        else dval = 0.0;
+
+        if (strcmp(target_type, "Decimal[32]") == 0) {
+            dval = (double)(float)dval;
+        }
+        return ZenValue_make_decimal(dval);
+    }
+    
+    /* 3. Target: String / String[SIZE] */
+    if (strcmp(target_type, "String") == 0 || strncmp(target_type, "String[", 7) == 0) {
+        ZenValue res = ZenValue_make_string("");
         if (val.type == ZEN_STRING) {
-            if (!val.as.string) return ZenValue_make_decimal(0.0);
-            return ZenValue_make_decimal(strtod(val.as.string, NULL));
-        }
-        if (val.type == ZEN_NOTHING) return ZenValue_make_decimal(0.0);
-        return ZenValue_make_decimal(0.0);
-    }
-    
-    /* 3. Target: String / Str */
-    if (strcmp(target_type, "String") == 0 || strcmp(target_type, "Str") == 0) {
-        if (val.type == ZEN_STRING) return val;
-        if (val.type == ZEN_INTEGER) {
+            res = val;
+        } else if (val.type == ZEN_INTEGER) {
             char buf[64];
             snprintf(buf, sizeof(buf), "%lld", val.as.integer);
-            return ZenValue_make_string(buf);
-        }
-        if (val.type == ZEN_DECIMAL) {
+            res = ZenValue_make_string(buf);
+        } else if (val.type == ZEN_DECIMAL) {
             char buf[64];
             snprintf(buf, sizeof(buf), "%.6g", val.as.decimal);
-            return ZenValue_make_string(buf);
-        }
-        if (val.type == ZEN_BOOLEAN) {
-            return ZenValue_make_string(val.as.boolean ? "True" : "False");
-        }
-        if (val.type == ZEN_NOTHING) {
-            return ZenValue_make_string("");
-        }
-        if (val.type == ZEN_LIST) {
+            res = ZenValue_make_string(buf);
+        } else if (val.type == ZEN_BOOLEAN) {
+            res = ZenValue_make_string(val.as.boolean ? "True" : "False");
+        } else if (val.type == ZEN_NOTHING) {
+            res = ZenValue_make_string("");
+        } else if (val.type == ZEN_LIST) {
             if (val.as.list && val.as.list->count > 0) {
                 bool all_bytes = true;
                 for (int i = 0; i < val.as.list->count; i++) {
@@ -410,18 +446,32 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
                         buf[i] = (char)val.as.list->items[i].as.integer;
                     }
                     buf[val.as.list->count] = '\0';
-                    ZenValue res = ZenValue_make_string(buf);
+                    res = ZenValue_make_string(buf);
                     free(buf);
-                    return res;
+                } else {
+                    res = ZenValue_make_string("[]");
                 }
+            } else {
+                res = ZenValue_make_string("[]");
             }
-            return ZenValue_make_string("[]");
         }
-        return ZenValue_make_string("");
+
+        if (strncmp(target_type, "String[", 7) == 0) {
+            int max_len = atoi(target_type + 7);
+            if (max_len >= 0 && res.as.string && (int)strlen(res.as.string) > max_len) {
+                char* truncated = (char*)malloc(max_len + 1);
+                strncpy(truncated, res.as.string, max_len);
+                truncated[max_len] = '\0';
+                ZenValue final_res = ZenValue_make_string(truncated);
+                free(truncated);
+                return final_res;
+            }
+        }
+        return res;
     }
     
-    /* 4. Target: Boolean / Bool */
-    if (strcmp(target_type, "Boolean") == 0 || strcmp(target_type, "Bool") == 0) {
+    /* 4. Target: Boolean */
+    if (strcmp(target_type, "Boolean") == 0) {
         if (val.type == ZEN_BOOLEAN) return val;
         if (val.type == ZEN_INTEGER) return ZenValue_make_boolean(val.as.integer != 0);
         if (val.type == ZEN_DECIMAL) return ZenValue_make_boolean(val.as.decimal != 0.0);
@@ -440,9 +490,8 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
         return ZenValue_make_boolean(true);
     }
     
-    /* 5. Target: Rune / Char / Glyph */
-    if (strcmp(target_type, "Rune") == 0 || strcmp(target_type, "Char") == 0 ||
-        strcmp(target_type, "Glyph") == 0) {
+    /* 5. Target: Rune */
+    if (strcmp(target_type, "Rune") == 0) {
         if (val.type == ZEN_STRING) {
             if (!val.as.string || val.as.string[0] == '\0') return ZenValue_make_string("");
             char buf[2] = { val.as.string[0], '\0' };
@@ -468,8 +517,8 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
         return ZenValue_make_string("");
     }
     
-    /* 6. Target: Bytes / Buffer */
-    if (strcmp(target_type, "Bytes") == 0 || strcmp(target_type, "Buffer") == 0) {
+    /* 6. Target: Bytes */
+    if (strcmp(target_type, "Bytes") == 0) {
         if (val.type == ZEN_STRING) {
             ZenList* list = ZenList_new();
             if (val.as.string) {
@@ -489,8 +538,10 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
         return ZenValue_from_list(ZenList_new());
     }
     
-    /* 7. Target: List */
-    if (strcmp(target_type, "List") == 0) {
+    /* 7. Target: List, Vector, Tuple */
+    if (strcmp(target_type, "List") == 0 || strncmp(target_type, "List<", 5) == 0 || strncmp(target_type, "List[", 5) == 0 ||
+        strcmp(target_type, "Vector") == 0 || strncmp(target_type, "Vector<", 7) == 0 || strncmp(target_type, "Vector[", 7) == 0 ||
+        strcmp(target_type, "Tuple") == 0 || strncmp(target_type, "Tuple<", 6) == 0 || strncmp(target_type, "Tuple[", 6) == 0) {
         if (val.type == ZEN_LIST) return val;
         if (val.type == ZEN_SET) return ZenSet_to_list(val);
         if (val.type == ZEN_MAP) return ZenMap_get_keys(val);
@@ -511,7 +562,7 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
     }
     
     /* 8. Target: Set */
-    if (strcmp(target_type, "Set") == 0) {
+    if (strcmp(target_type, "Set") == 0 || strncmp(target_type, "Set<", 4) == 0 || strncmp(target_type, "Set[", 4) == 0) {
         if (val.type == ZEN_SET) return val;
         if (val.type == ZEN_LIST) return ZenSet_from_list(val);
         if (val.type == ZEN_STRING) {
@@ -524,9 +575,41 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
     }
     
     /* 9. Target: Map */
-    if (strcmp(target_type, "Map") == 0) {
+    if (strcmp(target_type, "Map") == 0 || strncmp(target_type, "Map<", 4) == 0 || strncmp(target_type, "Map[", 4) == 0) {
         if (val.type == ZEN_MAP) return val;
         return ZenValue_from_map(ZenMap_new());
+    }
+
+    /* Target: Number */
+    if (strcmp(target_type, "Number") == 0) {
+        if (val.type == ZEN_INTEGER || val.type == ZEN_DECIMAL) return val;
+        if (val.type == ZEN_BOOLEAN) return ZenValue_make_integer(val.as.boolean ? 1 : 0);
+        if (val.type == ZEN_STRING && val.as.string) {
+            const char* s = val.as.string;
+            while (*s == ' ' || *s == '\t') s++;
+            if (strchr(s, '.') != NULL || strchr(s, 'e') != NULL || strchr(s, 'E') != NULL) {
+                return ZenValue_cast(val, "Decimal");
+            }
+            return ZenValue_cast(val, "Integer");
+        }
+        return ZenValue_cast(val, "Integer");
+    }
+
+    /* Target: Text */
+    if (strcmp(target_type, "Text") == 0) {
+        if (val.type == ZEN_STRING) return val;
+        return ZenValue_cast(val, "String");
+    }
+
+    /* Target: Collection */
+    if (strcmp(target_type, "Collection") == 0) {
+        if (val.type == ZEN_LIST || val.type == ZEN_MAP || val.type == ZEN_SET || val.type == ZEN_AST_NODE || val.type == ZEN_TOKEN) return val;
+        return ZenValue_cast(val, "List");
+    }
+
+    /* Target: Container */
+    if (strcmp(target_type, "Container") == 0) {
+        return val;
     }
 
     /* 10. Target: Default */

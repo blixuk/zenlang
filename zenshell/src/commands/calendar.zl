@@ -1,0 +1,261 @@
+/!
+  zenshell - Modern Terminal Calendar (calendar / cal)
+  Pure Zen month & year calendar generator with weekday alignment & day standout.
+!/
+
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import zen.time.time as ztime
+import zen.data.zendata as zd
+import ui.theme as color
+import core.command as cmd_base
+
+let MONTH_NAMES -> [
+    ``, `January`, `February`, `March`, `April`, `May`, `June`,
+    `July`, `August`, `September`, `October`, `November`, `December`
+]
+
+let DAYS_OF_WEEK_SHORT -> [`Mo`, `Tu`, `We`, `Th`, `Fr`, `Sa`, `Su`]
+
+export function is_leap_year(year) {
+    <- (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+}
+
+export function days_in_month(year, month) {
+    when month == 2 {
+        <- when is_leap_year(year) { 29 } or { 28 }
+    }
+    when month == 4 or month == 6 or month == 9 or month == 11 {
+        <- 30
+    }
+    <- 31
+}
+
+/!
+  Returns day of week for day 1 of given year and month.
+  ISO convention: 0 = Monday, 1 = Tuesday, ..., 6 = Sunday.
+!/
+export function first_day_of_week(year, month) {
+    let t -> [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+    let y -> year
+    when month < 3 {
+        y -> y - 1
+    }
+    let dow -> (y + Integer(y / 4) - Integer(y / 100) + Integer(y / 400) + t[month - 1] + 1) % 7
+    <- (dow + 6) % 7
+}
+
+export function pad_left(val, width) {
+    let s -> Str.to_string(val)
+    let len -> Str.length(s)
+    when len >= width { <- s }
+    <- Str.repeat(` `, width - len) + s
+}
+
+export function pad_center(val, width) {
+    let s -> Str.to_string(val)
+    let len -> Str.length(s)
+    when len >= width { <- s }
+    let left -> Integer((width - len) / 2)
+    let right -> width - len - left
+    <- Str.repeat(` `, left) + s + Str.repeat(` `, right)
+}
+
+export function parse_clean_int(s) {
+    let raw -> Str.trim(Str.to_string(s))
+    do while Str.length(raw) > 1 and Str.starts_with(raw, `0`) {
+        raw -> raw[1:]
+    }
+    let n -> Integer(raw)
+    when n != Nothing { <- n }
+    <- 0
+}
+
+export function get_local_now() {
+    let res -> process.result(`date +"%Y %-m %-d %-H %-M %-S %A %B" 2>/dev/null`)
+    when res != Nothing and res[`code`] == 0 {
+        let parts -> Str.split(Str.trim(res[`stdout`]), ` `)
+        when parts.length >= 8 {
+            let m -> parse_clean_int(parts[1])
+            let m_name -> parts[7]
+            when m >= 1 and m <= 12 and (m_name == `` or m_name == Nothing) {
+                m_name -> MONTH_NAMES[m]
+            }
+            <- {
+                `year` -> parse_clean_int(parts[0]),
+                `month` -> m,
+                `day` -> parse_clean_int(parts[2]),
+                `hour` -> parse_clean_int(parts[3]),
+                `minute` -> parse_clean_int(parts[4]),
+                `second` -> parse_clean_int(parts[5]),
+                `weekday` -> parts[6],
+                `month_name` -> m_name
+            }
+        }
+    }
+
+    // Fallback using zen.time.time
+    let utc -> ztime.to_utc(ztime.now())
+    let m_idx -> utc[`month`]
+    let m_name -> when (m_idx >= 1 and m_idx <= 12) { MONTH_NAMES[m_idx] } or { `Month` }
+    <- {
+        `year` -> utc[`year`],
+        `month` -> m_idx,
+        `day` -> utc[`day`],
+        `hour` -> utc[`hour`],
+        `minute` -> utc[`minute`],
+        `second` -> utc[`second`],
+        `weekday` -> `Day`,
+        `month_name` -> m_name
+    }
+}
+
+/!
+  Renders a 20-character wide monthly calendar grid.
+  highlight_day is highlighted with standout color if non-zero.
+!/
+export function render_calendar_month(year, month, highlight_day) {
+    let m_idx -> month
+    when m_idx < 1 { m_idx -> 1 }
+    when m_idx > 12 { m_idx -> 12 }
+    let m_name -> MONTH_NAMES[m_idx]
+    let header_text -> m_name + ` ` + Str.to_string(year)
+    let header -> color.bold(color.cyan(pad_center(header_text, 20)))
+
+    let weekday_row -> color.dim(`Mo Tu We Th Fr `) + color.bold(color.yellow(`Sa Su`))
+
+    let total_days -> days_in_month(year, m_idx)
+    let start_col -> first_day_of_week(year, m_idx)
+
+    let out -> header + `\n` + weekday_row + `\n`
+    let col -> 0
+
+    // Leading padding before day 1
+    when start_col > 0 {
+        do for i in 0 ..- start_col {
+            out -> out + `   `
+            col -> col + 1
+        }
+    }
+
+    do for day in 1 ... total_days {
+        let day_str -> pad_left(day, 2)
+        when day == highlight_day {
+            // High-contrast standout for current day
+            day_str -> `\x1b[1;30;46m` + day_str + `\x1b[0m`
+        } or when col == 5 or col == 6 {
+            // Subtle tint for weekends
+            day_str -> color.yellow(day_str)
+        }
+
+        when col == 6 {
+            out -> out + day_str + `\n`
+            col -> 0
+        } or {
+            out -> out + day_str + ` `
+            col -> col + 1
+        }
+    }
+
+    when col > 0 {
+        out -> out + `\n`
+    }
+
+    <- out
+}
+
+function handle_calendar_default(args, ctx) {
+    let now -> get_local_now()
+    let cur_year -> now[`year`]
+    let cur_month -> now[`month`]
+    let cur_day -> now[`day`]
+
+    when args == Nothing or args.length == 0 {
+        <- render_calendar_month(cur_year, cur_month, cur_day)
+    }
+
+    let first_arg -> Integer(args[0])
+    when first_arg == Nothing {
+        <- color.red(`Invalid calendar argument: `) + args[0] + ` (expected month 1-12 or 4-digit year)`
+    }
+
+    // cal [year] (e.g. cal 2026) -> 12-month overview
+    when first_arg > 12 {
+        let yr -> first_arg
+        let title -> color.bold(color.cyan(pad_center(`=== Year ` + Str.to_string(yr) + ` ===`, 66)))
+        let yr_out -> title + `\n\n`
+        
+        do for m in 1 ... 12 {
+            let h_day -> when (yr == cur_year and m == cur_month) { cur_day } or { 0 }
+            let m_grid -> render_calendar_month(yr, m, h_day)
+            yr_out -> yr_out + m_grid + `\n`
+        }
+        <- yr_out
+    }
+
+    // cal [month] (e.g. cal 10)
+    let req_month -> first_arg
+    let req_year -> cur_year
+    when args.length > 1 {
+        let second_arg -> Integer(args[1])
+        when second_arg != Nothing {
+            req_year -> second_arg
+        }
+    }
+
+    let h_day -> when (req_year == cur_year and req_month == cur_month) { cur_day } or { 0 }
+    <- render_calendar_month(req_year, req_month, h_day)
+}
+
+function handle_calendar_data(args, ctx) {
+    let now -> get_local_now()
+    let cur_year -> now[`year`]
+    let cur_month -> now[`month`]
+    let cur_day -> now[`day`]
+
+    let yr -> cur_year
+    let mo -> cur_month
+    when args != Nothing and args.length > 0 {
+        let m -> Integer(args[0])
+        when m != Nothing and m >= 1 and m <= 12 { mo -> m }
+    }
+    when args != Nothing and args.length > 1 {
+        let y -> Integer(args[1])
+        when y != Nothing { yr -> y }
+    }
+
+    let data -> {
+        `year` -> yr,
+        `month` -> mo,
+        `month_name` -> MONTH_NAMES[mo],
+        `today` -> cur_day,
+        `days_in_month` -> days_in_month(yr, mo),
+        `first_weekday` -> first_day_of_week(yr, mo),
+        `is_leap_year` -> is_leap_year(yr)
+    }
+    <- zd.stringify(data, 0)
+}
+
+let DOC_CALENDAR -> ```
+# calendar / cal — Terminal Monthly & Yearly Calendar
+
+Renders formatted calendar grids with weekday alignment and current day highlight.
+
+## Usage
+- `calendar` (or `cal`) — Displays current month with today highlighted.
+- `calendar <month>` — Displays specified month (1-12) of current year.
+- `calendar <month> <year>` — Displays specified month and year (e.g. `cal 12 2025`).
+- `calendar <year>` — Displays all 12 months for the given year (e.g. `cal 2026`).
+- `calendar data` — Emits structured ZenData (.zd) calendar metrics.
+
+## Aliases
+- `cal` -> `calendar`
+```
+
+export function create_calendar_command(ctx) {
+    let cmd -> cmd_base.Command(`calendar`, `Terminal monthly and yearly calendar generator (alias: cal)`)
+    cmd.set_default(handle_calendar_default)
+    cmd.add_subcommand(`data`, `Export calendar metrics in ZenData format`, handle_calendar_data)
+    <- cmd
+}

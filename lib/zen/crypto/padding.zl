@@ -1,0 +1,97 @@
+/!
+  zen.crypto.padding - Cryptographic Padding Schemes.
+  Implements PKCS#7 block cipher padding and constant-time unpadding.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+/!
+  Applies PKCS#7 padding to data for a given block size.
+  Always adds between 1 and block_size padding bytes.
+  @param data Plaintext (string or byte list).
+  @param block_size Block size in bytes (typically 8 or 16).
+  @return List of byte integers with PKCS#7 padding applied.
+!/
+export function pad(data, block_size) {
+    let bytes -> _to_bytes(data)
+    let len -> bytes.length
+    let rem -> len % block_size
+    let pad_len -> block_size - rem
+
+    let out -> []
+    let i -> 0
+    do while i < len {
+        out.append(bytes[i])
+        i -> i + 1
+    }
+
+    i -> 0
+    do while i < pad_len {
+        out.append(pad_len)
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Validates and removes PKCS#7 padding from padded byte data.
+  @param padded_data Padded bytes (string or byte list).
+  @param block_size Block size in bytes.
+  @return Unpadded byte list, or Nothing if padding is invalid.
+!/
+export function unpad(padded_data, block_size) {
+    let bytes -> _to_bytes(padded_data)
+    let len -> bytes.length
+    when (len == 0 or (len % block_size) != 0) {
+        <- Nothing
+    }
+
+    let pad_len -> bytes[len - 1]
+    when (pad_len < 1 or pad_len > block_size or pad_len > len) {
+        <- Nothing
+    }
+
+    // Verify all padding bytes match pad_len
+    let i -> len - pad_len
+    do while i < len {
+        when (bytes[i] != pad_len) {
+            <- Nothing
+        }
+        i -> i + 1
+    }
+
+    let out -> []
+    let unpadded_len -> len - pad_len
+    i -> 0
+    do while i < unpadded_len {
+        out.append(bytes[i])
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Validates and removes PKCS#7 padding, returning a UTF-8 string.
+  @param padded_data Padded bytes.
+  @param block_size Block size in bytes.
+  @return Unpadded string, or Nothing if padding is invalid.
+!/
+export function unpad_to_string(padded_data, block_size) {
+    let bytes -> unpad(padded_data, block_size)
+    when (bytes == Nothing) { <- Nothing }
+    <- __builtin.bytes_to_string(bytes)
+}

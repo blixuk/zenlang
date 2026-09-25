@@ -10,7 +10,7 @@ from Parser.AST import (
     RestPattern,
     DestructurePattern
 )
-from Interpreter.Runtime import Environment, VariantObject
+from Interpreter.Runtime import Environment, VariantObject, BaseObject
 from Interpreter.Exceptions import RaiseException
 
 class PatternHandler:
@@ -27,6 +27,37 @@ class PatternHandler:
             return True
 
         if isinstance(pattern, IsMatchPattern):
+            tname = pattern.type_name
+            if tname == "Error":
+                 if isinstance(value, (RaiseException, Exception)):
+                     return True
+                 if isinstance(value, dict) and value.get("__type__") == "Error":
+                     return True
+            if tname == "Number":
+                return isinstance(value, (int, float)) and not isinstance(value, bool)
+            if tname == "Text":
+                return isinstance(value, str)
+            if tname == "Collection":
+                return isinstance(value, (list, tuple, set, dict))
+            if tname == "Container":
+                return isinstance(value, (dict, VariantObject, BaseObject)) or hasattr(value, "get_member")
+            if tname in ("Integer", "Integer[64]", "Integer[32]", "Integer[16]", "Integer[8]", "Byte"):
+                return isinstance(value, int) and not isinstance(value, bool)
+            if tname in ("Decimal", "Decimal[64]", "Decimal[32]"):
+                return isinstance(value, float)
+            if tname == "Rune":
+                return isinstance(value, str) and len(value) == 1
+            if tname.startswith("List<") or tname.startswith("List[") or tname.startswith("Vector<") or tname.startswith("Vector[") or tname.startswith("Tuple<") or tname.startswith("Tuple[") or tname in ("List", "Vector", "Tuple"):
+                return isinstance(value, (list, tuple))
+            if tname.startswith("Set<") or tname.startswith("Set[") or tname == "Set":
+                return isinstance(value, set)
+            if tname.startswith("Map<") or tname.startswith("Map[") or tname == "Map":
+                return isinstance(value, dict)
+            if tname == "Boolean":
+                return isinstance(value, bool)
+            if tname in ("Nothing", "nothing"):
+                return value is None
+
             val_type = type(value).__name__
             type_map = {
                 "int": "Integer",
@@ -37,13 +68,21 @@ class PatternHandler:
                 "dict": "Map",
                 "NoneType": "Nothing"
             }
-            if pattern.type_name == "Error":
-                 if isinstance(value, (RaiseException, Exception)):
-                     return True
-                 if isinstance(value, dict) and value.get("__type__") == "Error":
-                     return True
-            
-            return type_map.get(val_type) == pattern.type_name
+            val_type_name = None
+            if isinstance(value, dict):
+                val_type_name = value.get("__type__") or value.get("__type")
+            elif hasattr(value, "class_type") and hasattr(value.class_type, "name"):
+                val_type_name = value.class_type.name
+            elif hasattr(value, "name"):
+                val_type_name = value.name
+
+            if val_type_name:
+                base_val_type = val_type_name.split("<")[0].split("[")[0]
+                base_tname = tname.split("<")[0].split("[")[0]
+                if base_val_type == base_tname:
+                    return True
+
+            return type_map.get(val_type) == tname
 
         if isinstance(pattern, ListPattern):
             if not isinstance(value, list):
@@ -97,6 +136,25 @@ class PatternHandler:
             return True
 
         if isinstance(pattern, VariantPattern):
+            if pattern.name == "Error":
+                if isinstance(value, (RaiseException, Exception)):
+                    return True
+                if isinstance(value, dict) and value.get("__type__") == "Error":
+                    return True
+            val_type_name = None
+            if isinstance(value, dict):
+                val_type_name = value.get("__type__") or value.get("__type")
+            elif hasattr(value, "class_type") and hasattr(value.class_type, "name"):
+                val_type_name = value.class_type.name
+            elif hasattr(value, "name"):
+                val_type_name = value.name
+
+            if val_type_name:
+                base_val_type = val_type_name.split("<")[0].split("[")[0]
+                base_pat_name = pattern.name.split("<")[0].split("[")[0]
+                if base_val_type == base_pat_name:
+                    return True
+
             if not isinstance(value, VariantObject):
                 return False
             

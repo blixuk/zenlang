@@ -1,0 +1,749 @@
+/!
+  zen.crypto - Unified Cryptography, Ciphers & Security Module.
+  Comprehensive cryptographic platform in 100% pure Zenlang with zero C dependencies.
+  Provides:
+    - Symmetric Stream Ciphers: ChaCha20 (RFC 8439), RC4 / ARC4, XOR / One-Time Pad
+    - Block Ciphers: AES-128 (FIPS 197 Rijndael), XTEA (64-bit Feistel)
+    - Block Modes & Padding: CBC with IV, CTR (Counter Mode), PKCS#7 padding
+    - Key Derivation: PBKDF2-HMAC-SHA256 (RFC 2898 / PKCS #5)
+    - Authenticated Encryption: Poly1305 (RFC 8439) and ChaCha20-Poly1305 AEAD
+    - Asymmetric Key Exchange: Diffie-Hellman (DH) discrete logarithm key agreement
+    - Historical Ciphers: Caesar, ROT13, Vigenere, Atbash, Rail Fence
+    - Hashing & Integrity: SHA-256, SHA-224, SHA-512, SHA-384, SHA-1, MD5, FNV-1a (32/64), HMAC-SHA256, CRC-32, Adler-32
+    - Tokens & Identifiers: JWT (HS256 sign/verify), UUIDv4
+    - Binary Encodings: Base16 (Hex), Base32, Base58 (Base58Check), Base64 (Base64URL), Base85 (Ascii85/Z85), Unix hexdump
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.chacha20 as chacha_mod
+use zen.crypto.rc4 as rc4_mod
+use zen.crypto.xor_cipher as xor_mod
+use zen.crypto.crc32 as crc_mod
+use zen.crypto.hash as hash_mod
+use zen.crypto.hmac as hmac_mod
+use zen.crypto.jwt as jwt_mod
+use zen.crypto.uuid as uuid_mod
+use zen.crypto.base16 as b16_mod
+use zen.crypto.base32 as b32_mod
+use zen.crypto.base58 as b58_mod
+use zen.crypto.base64 as b64_mod
+use zen.crypto.base85 as b85_mod
+use zen.crypto.hex as hex_mod
+use zen.crypto.pbkdf2 as pbkdf2_mod
+use zen.crypto.poly1305 as poly_mod
+use zen.crypto.aead as aead_mod
+use zen.crypto.xtea as xtea_mod
+use zen.crypto.aes as aes_mod
+use zen.crypto.padding as pad_mod
+use zen.crypto.modes as modes_mod
+use zen.crypto.dh as dh_mod
+use zen.crypto.classical as classical_mod
+use zen.crypto.merkle as merkle_mod
+use zen.crypto.blockchain as blockchain_mod
+
+/!
+  ChaCha20 symmetric stream cipher (RFC 8439).
+!/
+scope ChaCha20 {
+    function encrypt(key, nonce, data, counter) {
+        <- chacha_mod.encrypt(key, nonce, data, counter)
+    }
+
+    function decrypt(key, nonce, data, counter) {
+        <- chacha_mod.decrypt(key, nonce, data, counter)
+    }
+
+    function encrypt_hex(key, nonce, data, counter) {
+        <- chacha_mod.encrypt_hex(key, nonce, data, counter)
+    }
+
+    function decrypt_hex(key, nonce, hex_str, counter) {
+        <- chacha_mod.decrypt_hex(key, nonce, hex_str, counter)
+    }
+
+    function crypt(key, nonce, data, counter) {
+        <- chacha_mod.crypt(key, nonce, data, counter)
+    }
+
+    function block(key, counter, nonce) {
+        <- chacha_mod.chacha20_block(key, counter, nonce)
+    }
+}
+
+/!
+  RC4 / ARC4 symmetric stream cipher.
+!/
+scope RC4 {
+    function encrypt(key, data) {
+        <- rc4_mod.encrypt(key, data)
+    }
+
+    function decrypt(key, data) {
+        <- rc4_mod.decrypt(key, data)
+    }
+
+    function encrypt_hex(key, data) {
+        <- rc4_mod.encrypt_hex(key, data)
+    }
+
+    function decrypt_hex(key, hex_str) {
+        <- rc4_mod.decrypt_hex(key, hex_str)
+    }
+
+    function crypt(key, data) {
+        <- rc4_mod.crypt(key, data)
+    }
+}
+
+/!
+  XOR stream and One-Time Pad (OTP) cipher.
+!/
+scope XOR {
+    function encrypt(key, data) {
+        <- xor_mod.encrypt(key, data)
+    }
+
+    function decrypt(key, data) {
+        <- xor_mod.decrypt(key, data)
+    }
+
+    function encrypt_hex(key, data) {
+        <- xor_mod.encrypt_hex(key, data)
+    }
+
+    function decrypt_hex(key, hex_str) {
+        <- xor_mod.decrypt_hex(key, hex_str)
+    }
+
+    function crypt(key, data) {
+        <- xor_mod.crypt(key, data)
+    }
+
+    function otp_encrypt(pad, data) {
+        <- xor_mod.otp_encrypt(pad, data)
+    }
+
+    function otp_decrypt(pad, data) {
+        <- xor_mod.otp_decrypt(pad, data)
+    }
+
+    function otp_crypt(pad, data) {
+        <- xor_mod.otp_crypt(pad, data)
+    }
+}
+
+/!
+  AES-128 (FIPS 197 Rijndael) Block Cipher.
+!/
+scope AES {
+    function expand_key(key) {
+        <- aes_mod.expand_key(key)
+    }
+
+    function encrypt_block(round_keys, block) {
+        <- aes_mod.encrypt_block(round_keys, block)
+    }
+
+    function decrypt_block(round_keys, block) {
+        <- aes_mod.decrypt_block(round_keys, block)
+    }
+
+    function encrypt_cbc(key, iv, data) {
+        <- aes_mod.encrypt_cbc(key, iv, data)
+    }
+
+    function decrypt_cbc(key, iv, ciphertext) {
+        <- aes_mod.decrypt_cbc(key, iv, ciphertext)
+    }
+
+    function encrypt_hex(key, iv, data) {
+        <- aes_mod.encrypt_hex(key, iv, data)
+    }
+
+    function decrypt_hex(key, iv, hex_str) {
+        <- aes_mod.decrypt_hex(key, iv, hex_str)
+    }
+}
+
+/!
+  XTEA 64-bit Feistel Block Cipher.
+!/
+scope XTEA {
+    function encrypt_block(key, block) {
+        <- xtea_mod.encrypt_block(key, block)
+    }
+
+    function decrypt_block(key, block) {
+        <- xtea_mod.decrypt_block(key, block)
+    }
+
+    function encrypt_cbc(key, iv, data) {
+        <- xtea_mod.encrypt_cbc(key, iv, data)
+    }
+
+    function decrypt_cbc(key, iv, ciphertext) {
+        <- xtea_mod.decrypt_cbc(key, iv, ciphertext)
+    }
+
+    function encrypt_hex(key, iv, data) {
+        <- xtea_mod.encrypt_hex(key, iv, data)
+    }
+
+    function decrypt_hex(key, iv, hex_str) {
+        <- xtea_mod.decrypt_hex(key, iv, hex_str)
+    }
+}
+
+/!
+  PKCS#7 Block Padding & Unpadding.
+!/
+scope Padding {
+    function pad(data, block_size) {
+        <- pad_mod.pad(data, block_size)
+    }
+
+    function unpad(padded_data, block_size) {
+        <- pad_mod.unpad(padded_data, block_size)
+    }
+
+    function unpad_to_string(padded_data, block_size) {
+        <- pad_mod.unpad_to_string(padded_data, block_size)
+    }
+}
+
+/!
+  Block Cipher Modes of Operation (CBC, CTR).
+!/
+scope Modes {
+    function cbc_encrypt(cipher_fn, block_size, iv, data) {
+        <- modes_mod.cbc_encrypt(cipher_fn, block_size, iv, data)
+    }
+
+    function cbc_decrypt(decipher_fn, block_size, iv, ciphertext) {
+        <- modes_mod.cbc_decrypt(decipher_fn, block_size, iv, ciphertext)
+    }
+
+    function ctr_crypt(cipher_fn, block_size, nonce, data) {
+        <- modes_mod.ctr_crypt(cipher_fn, block_size, nonce, data)
+    }
+}
+
+/!
+  Password-Based Key Derivation Function 2 (PBKDF2-HMAC-SHA256).
+!/
+scope PBKDF2 {
+    function derive_bytes(password, salt, iterations, key_len) {
+        <- pbkdf2_mod.derive_bytes(password, salt, iterations, key_len)
+    }
+
+    function derive_hex(password, salt, iterations, key_len) {
+        <- pbkdf2_mod.derive_hex(password, salt, iterations, key_len)
+    }
+
+    function derive_key(password, salt, iterations, key_len) {
+        <- pbkdf2_mod.derive_key(password, salt, iterations, key_len)
+    }
+}
+
+/!
+  Poly1305 One-Time Message Authenticator (RFC 8439).
+!/
+scope Poly1305 {
+    function mac(key, message) {
+        <- poly_mod.mac(key, message)
+    }
+
+    function mac_hex(key, message) {
+        <- poly_mod.mac_hex(key, message)
+    }
+
+    function verify(key, message, expected_tag) {
+        <- poly_mod.verify(key, message, expected_tag)
+    }
+}
+
+/!
+  ChaCha20-Poly1305 Authenticated Encryption with Associated Data (AEAD / RFC 8439).
+!/
+scope AEAD {
+    function encrypt(key, nonce, plaintext, aad) {
+        <- aead_mod.encrypt(key, nonce, plaintext, aad)
+    }
+
+    function decrypt(key, nonce, ciphertext, tag, aad) {
+        <- aead_mod.decrypt(key, nonce, ciphertext, tag, aad)
+    }
+
+    function decrypt_to_string(key, nonce, ciphertext, tag, aad) {
+        <- aead_mod.decrypt_to_string(key, nonce, ciphertext, tag, aad)
+    }
+}
+
+/!
+  Diffie-Hellman Key Exchange (DH).
+!/
+scope DH {
+    function mod_exp(base, exp, modulus) {
+        <- dh_mod.mod_exp(base, exp, modulus)
+    }
+
+    function generate_public_key(g, p, private_key) {
+        <- dh_mod.generate_public_key(g, p, private_key)
+    }
+
+    function compute_shared_secret(peer_public_key, private_key, p) {
+        <- dh_mod.compute_shared_secret(peer_public_key, private_key, p)
+    }
+
+    function derive_shared_key_bytes(shared_secret) {
+        <- dh_mod.derive_shared_key_bytes(shared_secret)
+    }
+
+    function derive_shared_key_hex(shared_secret) {
+        <- dh_mod.derive_shared_key_hex(shared_secret)
+    }
+}
+
+/!
+  Classical and Historical Ciphers.
+!/
+scope Classical {
+    function caesar_encrypt(text, shift) {
+        <- classical_mod.caesar_encrypt(text, shift)
+    }
+
+    function caesar_decrypt(text, shift) {
+        <- classical_mod.caesar_decrypt(text, shift)
+    }
+
+    function rot13(text) {
+        <- classical_mod.rot13(text)
+    }
+
+    function vigenere_encrypt(text, key) {
+        <- classical_mod.vigenere_encrypt(text, key)
+    }
+
+    function vigenere_decrypt(text, key) {
+        <- classical_mod.vigenere_decrypt(text, key)
+    }
+
+    function atbash(text) {
+        <- classical_mod.atbash(text)
+    }
+
+    function rail_fence_encrypt(text, rails) {
+        <- classical_mod.rail_fence_encrypt(text, rails)
+    }
+
+    function rail_fence_decrypt(text, rails) {
+        <- classical_mod.rail_fence_decrypt(text, rails)
+    }
+}
+
+/!
+  CRC-32 & Adler-32 checksums.
+!/
+scope CRC32 {
+    function crc32(data) {
+        <- crc_mod.crc32(data)
+    }
+
+    function crc32_hex(data) {
+        <- crc_mod.crc32_hex(data)
+    }
+
+    function adler32(data) {
+        <- crc_mod.adler32(data)
+    }
+
+    function adler32_hex(data) {
+        <- crc_mod.adler32_hex(data)
+    }
+}
+
+/!
+  Cryptographic & non-cryptographic hashing (SHA-256, SHA-224, SHA-512, SHA-384, SHA-1, MD5, FNV-1a).
+!/
+scope Hash {
+    function sha256(data) {
+        <- hash_mod.sha256(data)
+    }
+
+    function sha224(data) {
+        <- hash_mod.sha224(data)
+    }
+
+    function sha512(data) {
+        <- hash_mod.sha512(data)
+    }
+
+    function sha384(data) {
+        <- hash_mod.sha384(data)
+    }
+
+    function sha1(data) {
+        <- hash_mod.sha1(data)
+    }
+
+    function md5(data) {
+        <- hash_mod.md5(data)
+    }
+
+    function fnv1a(data) {
+        <- hash_mod.fnv1a(data)
+    }
+
+    function fnv1a64(data) {
+        <- hash_mod.fnv1a64(data)
+    }
+}
+
+/!
+  HMAC message authentication (RFC 2104).
+!/
+scope HMAC {
+    function sha256(key, data) {
+        <- hmac_mod.sha256(key, data)
+    }
+
+    function verify(mac1, mac2) {
+        <- hmac_mod.verify(mac1, mac2)
+    }
+}
+
+/!
+  JSON Web Token (JWT) handling (HS256).
+!/
+scope JWT {
+    function sign(payload, secret) {
+        <- jwt_mod.sign(payload, secret)
+    }
+
+    function decode(token) {
+        <- jwt_mod.decode(token)
+    }
+
+    function verify(token, secret) {
+        <- jwt_mod.verify(token, secret)
+    }
+}
+
+/!
+  Universally Unique Identifier (UUIDv4).
+!/
+scope UUID {
+    function v4() {
+        <- uuid_mod.v4()
+    }
+
+    function validate(uuid_str) {
+        <- uuid_mod.validate(uuid_str)
+    }
+}
+
+/!
+  Base64 & Base64URL encoding/decoding.
+!/
+scope Base64 {
+    function encode(data) {
+        <- b64_mod.encode(data)
+    }
+
+    function encode_url_safe(data) {
+        <- b64_mod.encode_url_safe(data)
+    }
+
+    function decode(encoded) {
+        <- b64_mod.decode(encoded)
+    }
+}
+
+/!
+  Hexadecimal encoding, decoding & formatting.
+!/
+scope Hex {
+    function encode(data) {
+        <- hex_mod.encode(data)
+    }
+
+    function decode(hex_str) {
+        <- hex_mod.decode(hex_str)
+    }
+
+    function decode_bytes(hex_str) {
+        <- hex_mod.decode_bytes(hex_str)
+    }
+
+    function hexdump(data) {
+        <- hex_mod.hexdump(data)
+    }
+}
+
+/!
+  RFC 4648 Section 8 Base16 encoding & decoding.
+!/
+scope Base16 {
+    function encode(data) {
+        <- b16_mod.encode(data)
+    }
+
+    function encode_lower(data) {
+        <- b16_mod.encode_lower(data)
+    }
+
+    function decode(hex_str) {
+        <- b16_mod.decode(hex_str)
+    }
+
+    function decode_bytes(hex_str) {
+        <- b16_mod.decode_bytes(hex_str)
+    }
+}
+
+/!
+  RFC 4648 Base32, Base32Hex & Crockford Base32 encoding/decoding.
+!/
+scope Base32 {
+    function encode(data) {
+        <- b32_mod.encode(data)
+    }
+
+    function encode_hex(data) {
+        <- b32_mod.encode_hex(data)
+    }
+
+    function encode_crockford(data) {
+        <- b32_mod.encode_crockford(data)
+    }
+
+    function decode(str) {
+        <- b32_mod.decode(str)
+    }
+
+    function decode_hex(str) {
+        <- b32_mod.decode_hex(str)
+    }
+
+    function decode_crockford(str) {
+        <- b32_mod.decode_crockford(str)
+    }
+
+    function decode_bytes(str) {
+        <- b32_mod.decode_bytes(str)
+    }
+}
+
+/!
+  Bitcoin / IPFS Base58 & Base58Check encoding/decoding.
+!/
+scope Base58 {
+    function encode(data) {
+        <- b58_mod.encode(data)
+    }
+
+    function decode(str) {
+        <- b58_mod.decode(str)
+    }
+
+    function decode_bytes(str) {
+        <- b58_mod.decode_bytes(str)
+    }
+
+    function encode_check(data) {
+        <- b58_mod.encode_check(data)
+    }
+
+    function decode_check(str) {
+        <- b58_mod.decode_check(str)
+    }
+
+    function decode_check_bytes(str) {
+        <- b58_mod.decode_check_bytes(str)
+    }
+}
+
+/!
+  Ascii85 (Adobe) & ZeroMQ Z85 (RFC 1924) encoding/decoding.
+!/
+scope Base85 {
+    function encode(data) {
+        <- b85_mod.encode(data)
+    }
+
+    function encode_wrapped(data) {
+        <- b85_mod.encode_wrapped(data)
+    }
+
+    function decode(str) {
+        <- b85_mod.decode(str)
+    }
+
+    function decode_bytes(str) {
+        <- b85_mod.decode_bytes(str)
+    }
+
+    function encode_z85(data) {
+        <- b85_mod.encode_z85(data)
+    }
+
+    function decode_z85(str) {
+        <- b85_mod.decode_z85(str)
+    }
+
+    function decode_z85_bytes(str) {
+        <- b85_mod.decode_z85_bytes(str)
+    }
+}
+
+/!
+  Cryptographic Merkle Tree (Hash Tree).
+!/
+scope Merkle {
+    function compute_root(leaves) {
+        <- merkle_mod.compute_root(leaves)
+    }
+
+    function create_tree(leaves) {
+        <- merkle_mod.create_tree(leaves)
+    }
+
+    function get_proof(tree, index) {
+        <- merkle_mod.get_proof(tree, index)
+    }
+
+    function verify_proof(leaf, proof, root_hash) {
+        <- merkle_mod.verify_proof(leaf, proof, root_hash)
+    }
+
+    function hash_leaf(data) {
+        <- merkle_mod.hash_leaf(data)
+    }
+
+    function hash_pair(left, right) {
+        <- merkle_mod.hash_pair(left, right)
+    }
+}
+
+/!
+  Blockchain Cryptographic Distributed Ledger & PoW Consensus.
+!/
+scope Blockchain {
+    function create_transaction(sender, recipient, amount, fee, data) {
+        <- blockchain_mod.create_transaction(sender, recipient, amount, fee, data)
+    }
+
+    function hash_transaction(tx) {
+        <- blockchain_mod.hash_transaction(tx)
+    }
+
+    function is_valid_transaction(tx) {
+        <- blockchain_mod.is_valid_transaction(tx)
+    }
+
+    function create_block(index, prev_hash, transactions, difficulty, timestamp) {
+        <- blockchain_mod.create_block(index, prev_hash, transactions, difficulty, timestamp)
+    }
+
+    function create_genesis_block(difficulty, message) {
+        <- blockchain_mod.create_genesis_block(difficulty, message)
+    }
+
+    function hash_block_header(block) {
+        <- blockchain_mod.hash_block_header(block)
+    }
+
+    function mine_block(block, difficulty, max_iterations) {
+        <- blockchain_mod.mine_block(block, difficulty, max_iterations)
+    }
+
+    function verify_pow(hash_str, difficulty) {
+        <- blockchain_mod.verify_pow(hash_str, difficulty)
+    }
+
+    function create_blockchain(difficulty, mining_reward, genesis_message) {
+        <- blockchain_mod.create_blockchain(difficulty, mining_reward, genesis_message)
+    }
+
+    function get_latest_block(chain) {
+        <- blockchain_mod.get_latest_block(chain)
+    }
+
+    function get_balance(chain, address) {
+        <- blockchain_mod.get_balance(chain, address)
+    }
+
+    function add_transaction(chain, tx) {
+        <- blockchain_mod.add_transaction(chain, tx)
+    }
+
+    function mine_pending_transactions(chain, miner_address) {
+        <- blockchain_mod.mine_pending_transactions(chain, miner_address)
+    }
+
+    function get_transaction_history(chain, address) {
+        <- blockchain_mod.get_transaction_history(chain, address)
+    }
+
+    function is_chain_valid(chain) {
+        <- blockchain_mod.is_chain_valid(chain)
+    }
+
+    function export_chain(chain) {
+        <- blockchain_mod.export_chain(chain)
+    }
+
+    function import_chain(chain_map) {
+        <- blockchain_mod.import_chain(chain_map)
+    }
+
+    function generate_wallet_address(label) {
+        <- blockchain_mod.generate_wallet_address(label)
+    }
+}
+
+/! Top-level convenience functions !/
+
+export function sha256(data) {
+    <- hash_mod.sha256(data)
+}
+
+export function sha512(data) {
+    <- hash_mod.sha512(data)
+}
+
+export function sha384(data) {
+    <- hash_mod.sha384(data)
+}
+
+export function sha224(data) {
+    <- hash_mod.sha224(data)
+}
+
+export function sha1(data) {
+    <- hash_mod.sha1(data)
+}
+
+export function md5(data) {
+    <- hash_mod.md5(data)
+}
+
+export function fnv1a(data) {
+    <- hash_mod.fnv1a(data)
+}
+
+export function fnv1a64(data) {
+    <- hash_mod.fnv1a64(data)
+}
+
+export function crc32(data) {
+    <- crc_mod.crc32(data)
+}
+
+export function crc32_hex(data) {
+    <- crc_mod.crc32_hex(data)
+}
+
+export function uuid() {
+    <- uuid_mod.v4()
+}

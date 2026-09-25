@@ -1,0 +1,167 @@
+/!
+  test_functional_programming.zl — Comprehensive Functional Programming Test Suite.
+  Verifies that Zenlang supports canonical functional programming paradigms across
+  both Interpreter/VM and Native AOT compilation.
+!/
+
+function assert_equal(actual, expected, msg) {
+    when actual != expected {
+        writeln(f`FAIL: {msg} - expected {expected}, got {actual}`)
+        <- 1
+    }
+    writeln(f`PASS: {msg}`)
+    <- 0
+}
+
+// 1. Higher-order function application
+function apply_twice(f, x) {
+    <- f(f(x))
+}
+
+// 2. Currying & partial application
+function curry2(f) {
+    <- function(a) {
+        let fn_captured -> f
+        <- function(b) {
+            <- fn_captured(a, b)
+        }
+    }
+}
+
+// 3. Function composition: (f . g)(x) = f(g(x))
+function compose(f, g) {
+    <- function(x) {
+        <- f(g(x))
+    }
+}
+
+// 4. Recursive pattern matching on head and tail
+function rec_sum(list) {
+    check list {
+        case [] {
+            <- 0
+        }
+        case [head, ...tail] {
+            <- head + rec_sum(tail)
+        }
+    } or {
+        <- 0
+    }
+}
+
+function rec_map(list, f) {
+    check list {
+        case [] {
+            <- []
+        }
+        case [head, ...tail] {
+            <- [f(head), ...rec_map(tail, f)]
+        }
+    } or {
+        <- []
+    }
+}
+
+function rec_filter(list, pred) {
+    check list {
+        case [] {
+            <- []
+        }
+        case [head, ...tail] when pred(head) {
+            <- [head, ...rec_filter(tail, pred)]
+        }
+        case [head, ...tail] {
+            <- rec_filter(tail, pred)
+        }
+    } or {
+        <- []
+    }
+}
+
+function inc(x) { <- x + 1 }
+function sq(x)  { <- x * x }
+
+function test_first_class_and_closures() {
+    let failures -> 0
+    let add_one -> function(x) { <- x + 1 }
+    failures -> failures + assert_equal(apply_twice(add_one, 5), 7, `apply_twice`)
+
+    let make_adder -> function(n) {
+        <- function(x) { <- x + n }
+    }
+    let add10 -> make_adder(10)
+    let add50 -> make_adder(50)
+    failures -> failures + assert_equal(add10(7), 17, `closure add10`)
+    failures -> failures + assert_equal(add50(7), 57, `closure add50`)
+    <- failures
+}
+
+function test_currying_and_composition() {
+    let failures -> 0
+    let multiply -> function(a, b) { <- a * b }
+    let curried_mult -> curry2(multiply)
+    let triple -> curried_mult(3)
+    failures -> failures + assert_equal(triple(9), 27, `curry2 multiply`)
+
+    let inc_then_sq -> compose(sq, inc)
+    failures -> failures + assert_equal(inc_then_sq(4), 25, `compose sq . inc`)
+    <- failures
+}
+
+function test_pipeline_and_combinators() {
+    let failures -> 0
+    let pipe_res -> 4 |> inc |> sq
+    failures -> failures + assert_equal(pipe_res, 25, `pipeline 4 |> inc |> sq`)
+
+    let numbers -> [1, 2, 3, 4, 5, 6]
+    let evens -> numbers.filter(function(x) { <- x % 2 == 0 })
+    let squared -> evens.map(function(x) { <- x * x })
+    let sum -> squared.reduce(0, function(acc, x) { <- acc + x })
+    failures -> failures + assert_equal(sum, 56, `filter-map-reduce chain`)
+
+    let comp -> [for x in numbers when x % 2 == 0 -> x * x]
+    failures -> failures + assert_equal(comp.length, 3, `comprehension length`)
+    failures -> failures + assert_equal(comp[0], 4, `comprehension item 0`)
+    failures -> failures + assert_equal(comp[1], 16, `comprehension item 1`)
+    failures -> failures + assert_equal(comp[2], 36, `comprehension item 2`)
+    <- failures
+}
+
+function test_recursive_patterns() {
+    let failures -> 0
+    let sum -> rec_sum([10, 20, 30, 40])
+    failures -> failures + assert_equal(sum, 100, `rec_sum [10,20,30,40]`)
+
+    let mapped -> rec_map([1, 2, 3], function(x) { <- x * 10 })
+    failures -> failures + assert_equal(mapped.length, 3, `rec_map length`)
+    failures -> failures + assert_equal(mapped[0], 10, `rec_map item 0`)
+    failures -> failures + assert_equal(mapped[1], 20, `rec_map item 1`)
+    failures -> failures + assert_equal(mapped[2], 30, `rec_map item 2`)
+
+    let filtered -> rec_filter([1, 2, 3, 4, 5], function(x) { <- x > 2 })
+    failures -> failures + assert_equal(filtered.length, 3, `rec_filter length`)
+    failures -> failures + assert_equal(filtered[0], 3, `rec_filter item 0`)
+    failures -> failures + assert_equal(filtered[1], 4, `rec_filter item 1`)
+    failures -> failures + assert_equal(filtered[2], 5, `rec_filter item 2`)
+
+    let maybe_val -> Nothing
+    let safe -> maybe_val ?? 42
+    failures -> failures + assert_equal(safe, 42, `null-coalescing ??`)
+    <- failures
+}
+
+function main() {
+    writeln(`=== Running Functional Programming Paradigm Tests ===`)
+    let total_failures -> 0
+    total_failures -> total_failures + test_first_class_and_closures()
+    total_failures -> total_failures + test_currying_and_composition()
+    total_failures -> total_failures + test_pipeline_and_combinators()
+    total_failures -> total_failures + test_recursive_patterns()
+
+    when total_failures > 0 {
+        writeln(f`=== {total_failures} test(s) failed ===`)
+        <- 1
+    }
+    writeln(`=== All Functional Programming Tests Passed ===`)
+    <- 0
+}

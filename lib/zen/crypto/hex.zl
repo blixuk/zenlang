@@ -82,11 +82,12 @@ function encode(data) {
 }
 
 /!
-    Decodes a hexadecimal string into the original text string.
-    @param hex_str Hexadecimal string (e.g. "48656c6c6f" or "0x4865").
-    @return Decoded string.
+    Decodes a hexadecimal string into a list of byte integers (0-255).
+    Suitable for binary data, ciphertexts, and hashes.
+    @param hex_str Hexadecimal string.
+    @return List of byte integers.
 !/
-function decode(hex_str) {
+export function decode_bytes(hex_str) {
     let clean -> Str.trim(hex_str)
     when Str.starts_with(clean, `0x`) or Str.starts_with(clean, `0X`) {
         clean -> Str.substring(clean, 2, Str.length(clean))
@@ -112,6 +113,16 @@ function decode(hex_str) {
         i -> i + 2
     }
 
+    <- bytes
+}
+
+/!
+    Decodes a hexadecimal string into the original text string.
+    @param hex_str Hexadecimal string (e.g. "48656c6c6f" or "0x4865").
+    @return Decoded string.
+!/
+export function decode(hex_str) {
+    let bytes -> decode_bytes(hex_str)
     <- __builtin.bytes_to_string(bytes)
 }
 

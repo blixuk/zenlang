@@ -1,0 +1,86 @@
+/!
+  zen.crypto.dh - Diffie-Hellman Key Exchange.
+  Provides discrete-logarithm key agreement over insecure channels.
+  Uses safe prime modular arithmetic with zero overflow on 64-bit systems.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.hash as Hash
+use zen.crypto.hex as Hex
+use zen.text.string as Str
+
+// Standard 31-bit Mersenne safe prime: 2^31 - 1
+let DEFAULT_PRIME -> 2147483647
+// Primitive root generator for 2147483647
+let DEFAULT_GENERATOR -> 7
+
+/!
+  Square-and-multiply modular exponentiation: (base^exp) % modulus.
+  Guaranteed safe against 64-bit signed overflow when modulus <= 2^31 - 1.
+  @param base Base integer.
+  @param exp Exponent integer.
+  @param modulus Modulus integer.
+  @return Computed (base^exp) % modulus.
+!/
+export function mod_exp(base, exp, modulus) {
+    when (modulus == 1) { <- 0 }
+    let res -> 1
+    let b -> base % modulus
+    let e -> exp
+    do while e > 0 {
+        when (e & 1) != 0 {
+            res -> (res * b) % modulus
+        }
+        b -> (b * b) % modulus
+        e -> e >> 1
+    }
+    <- res
+}
+
+/!
+  Generates a public key from a private key using generator g and prime p.
+  @param g Generator (defaults to 7).
+  @param p Prime modulus (defaults to 2147483647).
+  @param private_key Secret private exponent.
+  @return Public key integer.
+!/
+export function generate_public_key(g, p, private_key) {
+    let gen -> when (g != Nothing) { g } or { DEFAULT_GENERATOR }
+    let prime -> when (p != Nothing) { p } or { DEFAULT_PRIME }
+    <- mod_exp(gen, private_key, prime)
+}
+
+/!
+  Computes the shared secret from a peer's public key and your own private key.
+  Shared secret = (peer_public_key ^ private_key) % p.
+  @param peer_public_key Public key received from peer.
+  @param private_key Your secret private exponent.
+  @param p Prime modulus (defaults to 2147483647).
+  @return Shared secret integer.
+!/
+export function compute_shared_secret(peer_public_key, private_key, p) {
+    let prime -> when (p != Nothing) { p } or { DEFAULT_PRIME }
+    <- mod_exp(peer_public_key, private_key, prime)
+}
+
+/!
+  Derives a 32-byte symmetric encryption key from a shared secret integer.
+  Hashes the shared secret using SHA-256.
+  @param shared_secret Shared secret integer.
+  @return 32-byte list suitable as a key for ChaCha20 or AES-128.
+!/
+export function derive_shared_key_bytes(shared_secret) {
+    let s_str -> Str.to_string(shared_secret)
+    let hex_digest -> Hash.sha256(s_str)
+    <- Hex.decode_bytes(hex_digest)
+}
+
+/!
+  Derives a 64-character hex key string from a shared secret integer.
+  @param shared_secret Shared secret integer.
+  @return 64-character lowercase hex string.
+!/
+export function derive_shared_key_hex(shared_secret) {
+    let s_str -> Str.to_string(shared_secret)
+    <- Hash.sha256(s_str)
+}

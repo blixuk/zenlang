@@ -46,8 +46,11 @@ ZenValue ZenMemory_free_arena(ZenValue arena);
 ZenValue ZenMemory_reset_arena(ZenValue arena);
 ZenValue ZenMemory_push_arena(ZenValue arena);
 ZenValue ZenMemory_pop_arena(void);
-/* Introspection: automatic path depth==0; opt-in region when using_arena true. */
 ZenValue ZenMemory_arena_depth(void);
 ZenValue ZenMemory_using_arena(void);
+ZenValue ZenMemory_arena_allocated(ZenValue arena_value);
+ZenValue ZenMemory_arena_capacity(ZenValue arena_value);
+ZenValue ZenMemory_arena_chunks(ZenValue arena_value);
+ZenValue ZenMemory_arena_stats(ZenValue arena_value);
 
 #endif // ZEN_MEMORY_H

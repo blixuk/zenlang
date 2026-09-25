@@ -1,0 +1,95 @@
+// Test User-Defined Generic Types & Functions in Zenlang
+
+function identity<T>(x: T) : T {
+    <- x
+}
+
+function first<T>(items: List<T>) : T {
+    <- items[0]
+}
+
+function make_pair<A, B>(a: A, b: B) : Tuple<A, B> {
+    <- Tuple{a, b}
+}
+
+structure Box<T> {
+    value: T
+}
+
+structure Pair<A, B> {
+    first: A,
+    second: B
+}
+
+class Storage<T> {
+    let item: T
+
+    function init(val: T) {
+        self.item -> val
+    }
+
+    function get() : T {
+        <- self.item
+    }
+
+    function set_val(val: T) {
+        self.item -> val
+    }
+}
+
+function main() {
+    // 1. Explicit generic function call
+    let id_int -> identity<Integer>(42)
+    assert id_int == 42
+    writeln(f`id_int: {id_int}`)
+
+    let id_str -> identity<String>(`hello`)
+    assert id_str == `hello`
+    writeln(f`id_str: {id_str}`)
+
+    // 2. Inferred generic function call
+    let inf_int -> identity(100)
+    assert inf_int == 100
+    writeln(f`inf_int: {inf_int}`)
+
+    let inf_str -> identity(`inferred`)
+    assert inf_str == `inferred`
+    writeln(f`inf_str: {inf_str}`)
+
+    // 3. Generic collections and multiple parameters
+    let f -> first<Integer>([10, 20, 30])
+    assert f == 10
+    writeln(f`first: {f}`)
+
+    let pair -> make_pair<String, Integer>(`score`, 99)
+    assert pair[0] == `score`
+    assert pair[1] == 99
+    let p0 -> pair[0]
+    let p1 -> pair[1]
+    writeln(f`pair: {p0} -> {p1}`)
+
+    // 4. Generic structure instantiation
+    let b -> Box<Integer>{ value: 777 }
+    assert b.value == 777
+    assert b is Box
+    let bv -> b.value
+    writeln(f`box value: {bv}`)
+
+    let p -> Pair<String, Boolean>{ first: `active`, second: true }
+    assert p.first == `active`
+    assert p.second == true
+    assert p is Pair
+    let pf -> p.first
+    let ps -> p.second
+    writeln(f`pair struct: {pf} -> {ps}`)
+
+    // 5. Generic class instantiation
+    let st -> Storage<String>(`initial`)
+    assert st.get() == `initial`
+    st.set_val(`updated`)
+    let sg -> st.get()
+    assert sg == `updated`
+    writeln(f`storage item: {sg}`)
+
+    writeln(`ALL USER GENERICS TESTS PASSED`)
+}

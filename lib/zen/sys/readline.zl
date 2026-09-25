@@ -292,7 +292,8 @@ export class Readline {
         } or {
             buf
         }
-        io.write(`\r` + prompt + styled)
+        let cr -> Rune(13)
+        io.write(cr + `\x1b[1G` + prompt + styled)
         term.clear_eol()
         let shift_back -> Str.length(buf) - cursor
         when shift_back > 0 {

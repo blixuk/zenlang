@@ -1,0 +1,96 @@
+/!
+  QR Code Generator & Decoder Showcase for Zenlang.
+  Demonstrates:
+    - Pure Zenlang ISO/IEC 18004 2D matrix barcode generation.
+    - Multiple encoding modes (Numeric, Alphanumeric, Byte).
+    - Compact Unicode half-block terminal rendering (2 pixels per character row).
+    - Double-width ASCII block rendering (## and spaces).
+    - Scalable vector graphics (SVG) markup generation.
+    - Standard 24-bit uncompressed BMP image generation.
+    - Bidirectional reading & decoding from all render targets.
+    - Reed-Solomon error recovery on artificially corrupted barcodes.
+!/
+
+use zen.graphics.qrcode as QRCode
+use zen.text.string as Str
+use zen.io.file as file
+
+function main() {
+    writeln(`========================================================================`)
+    writeln(`           Zenlang Pure ISO/IEC 18004 QR Code Suite Showcase            `)
+    writeln(`========================================================================\n`)
+
+    let url -> `https://zenlang.org`
+    writeln(`[1] Generating QR Code for: ` + url)
+    let qr -> QRCode.encode(url, `M`, Nothing)
+    writeln(`    - Version: ` + String(qr[`version`]))
+    writeln(`    - Size:    ` + String(qr[`size`]) + `x` + String(qr[`size`]))
+    writeln(`    - EC Level: M (15% error recovery capacity)`)
+    writeln(`    - Optimal Mask Pattern: ` + String(qr[`mask`]) + `\n`)
+
+    writeln(`[2] Rendering Compact Unicode Half-Blocks (2 px/cell):\n`)
+    let term -> QRCode.to_terminal(qr, 2)
+    stdout.write(term)
+
+    writeln(`\n[3] Rendering Double-Width ASCII Blocks:\n`)
+    let ascii -> QRCode.to_ascii(qr, 1)
+    stdout.write(ascii)
+
+    writeln(`[4] Exporting to Scalable Vector Graphics (SVG)...`)
+    let svg -> QRCode.to_svg(qr, 8, 4)
+    file.write(`output/qrcode_showcase.svg`, svg)
+    writeln(`    -> Saved to output/qrcode_showcase.svg (` + String(Str.length(svg)) + ` bytes)`)
+
+    writeln(`\n[5] Exporting to 24-bit Uncompressed BMP Image...`)
+    let bmp -> QRCode.to_bmp(qr, 4, 4)
+    file.write_bytes(`output/qrcode_showcase.bmp`, bmp)
+    writeln(`    -> Saved to output/qrcode_showcase.bmp (` + String(bmp.length) + ` bytes)`)
+
+    writeln(`\n[6] Universal Bidirectional Reading & Decoding:`)
+    let dec_term -> QRCode.read(term)
+    writeln(`    - Decoded from Terminal text:  \"` + dec_term + `\"`)
+
+    let dec_ascii -> QRCode.read(ascii)
+    writeln(`    - Decoded from ASCII text:     \"` + dec_ascii + `\"`)
+
+    let dec_svg -> QRCode.read(svg)
+    writeln(`    - Decoded from SVG XML:        \"` + dec_svg + `\"`)
+
+    let dec_bmp -> QRCode.read(bmp)
+    writeln(`    - Decoded from BMP image:      \"` + dec_bmp + `\"`)
+
+    writeln(`\n[7] Reed-Solomon Error Correction Recovery Demo:`)
+    let secret -> `TOP SECRET: ZEN-BLOCKCHAIN-2026`
+    let qr_ec -> QRCode.encode(secret, `H`, 3) // Level H (30% recovery)
+    writeln(`    - Original Payload: \"` + secret + `\"`)
+    writeln(`    - Inverting 8 random modules in matrix to simulate physical damage...`)
+    let damaged_matrix -> []
+    for row in qr_ec[`matrix`] {
+        let r_copy -> []
+        for cell in row { r_copy.append(cell) }
+        damaged_matrix.append(r_copy)
+    }
+    // Flip 8 modules in data area
+    damaged_matrix[10][10] -> not damaged_matrix[10][10]
+    damaged_matrix[11][12] -> not damaged_matrix[11][12]
+    damaged_matrix[12][14] -> not damaged_matrix[12][14]
+    damaged_matrix[13][15] -> not damaged_matrix[13][15]
+    damaged_matrix[14][16] -> not damaged_matrix[14][16]
+    damaged_matrix[15][17] -> not damaged_matrix[15][17]
+    damaged_matrix[16][18] -> not damaged_matrix[16][18]
+    damaged_matrix[17][19] -> not damaged_matrix[17][19]
+
+    let recovered -> QRCode.read_matrix(damaged_matrix)
+    writeln(`    - Recovered with Berlekamp-Massey + Forney Algorithm:`)
+    writeln(`      \"` + recovered + `\"`)
+    when recovered == secret {
+        writeln(`      -> SUCCESS: 100% data recovery despite damage!`)
+    } or {
+        writeln(`      -> FAILED recovery!`)
+    }
+
+    writeln(`\n========================================================================`)
+    writeln(`                   Showcase Completed Successfully!                     `)
+    writeln(`========================================================================`)
+    <- 0
+}

@@ -66,8 +66,8 @@ function main() {
 
 function test_compare_ops() {
     let src -> `
-function main() {
-    <- 3 < 5
+function main(a, b) {
+    <- a < b
 }
 `
     let c -> Codegen.transpile_source(src)
@@ -125,7 +125,7 @@ function main() {
     let c -> Codegen.transpile_source(src)
     let pass -> test.assert_equal(Str.contains(c, `parse error`), false, `no parse error`)
     pass -> pass and test.assert_equal(Str.contains(c, `for (long long`), true, `C for loop`)
-    pass -> pass and test.assert_equal(Str.contains(c, `ZenList_get_value_at_index`), true, `list index`)
+    pass -> pass and test.assert_equal(Str.contains(c, `items[`) or Str.contains(c, `ZenList_get_value_at_index`), true, `list items direct access`)
     pass -> pass and test.assert_equal(Str.contains(c, `as.list->count`), true, `list count`)
     <- pass
 }
@@ -526,6 +526,94 @@ function main() {
     <- pass
 }
 
+function test_constant_folding() {
+    let src -> `
+function main() {
+    let a -> 1 + 2 * 3
+    let b -> 3 < 5
+    let c -> true and false
+    let d -> not false
+    <- a
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_make_integer(7LL)`), true, `folds 1+2*3 to 7`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_boolean(1)`), true, `folds 3<5 to true`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_make_boolean(0)`), true, `folds true and false to false`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_add`), false, `no dynamic ZenValue_add`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_less_than`), false, `no dynamic ZenValue_less_than`)
+    <- pass
+}
+
+function test_dead_branch_pruning() {
+    let src -> `
+function main() {
+    when false {
+        let dead1 -> 12345
+    }
+    when true {
+        let live -> 999
+    } or {
+        let dead2 -> 54321
+    }
+    <- 0
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `12345`), false, `prunes when false branch`)
+    pass -> pass and test.assert_equal(Str.contains(c, `54321`), false, `prunes dead else branch`)
+    pass -> pass and test.assert_equal(Str.contains(c, `999`), true, `keeps live branch`)
+    <- pass
+}
+
+function test_dead_code_elimination() {
+    let src -> `
+function main() {
+    <- 42
+    let dead_x -> 88888
+    <- dead_x
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `88888`), false, `prunes statements after return`)
+    <- pass
+}
+
+function test_fast_integer_arithmetic() {
+    let src -> `
+function main() {
+    let a : Integer -> 10
+    let b : Integer -> 20
+    let c -> a + b
+    let d -> a * b
+    let e -> a < b
+    <- c
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `ZenValue_fast_add_int`), true, `uses ZenValue_fast_add_int`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_fast_mul_int`), true, `uses ZenValue_fast_mul_int`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenValue_fast_lt_int`), true, `uses ZenValue_fast_lt_int`)
+    <- pass
+}
+
+function test_fast_list_iteration() {
+    let src -> `
+function main() {
+    let xs -> [10, 20, 30]
+    let total -> 0
+    do for item in xs {
+        total -> total + item
+    }
+    <- total
+}
+`
+    let c -> Codegen.transpile_source(src)
+    let pass -> test.assert_equal(Str.contains(c, `items[`), true, `direct list item access`)
+    pass -> pass and test.assert_equal(Str.contains(c, `ZenList_get_value_at_index`), false, `no ZenList_get_value_at_index call`)
+    <- pass
+}
+
 function run_tests() {
     let tests -> [
         {`name` -> `Codegen.add_main_shape`, `fn` -> test_add_main_shape},
@@ -551,7 +639,12 @@ function run_tests() {
         {`name` -> `Codegen.pattern_bind`, `fn` -> test_pattern_bind_shape},
         {`name` -> `Codegen.enum_payload`, `fn` -> test_enum_payload_shape},
         {`name` -> `Codegen.class_dispatch`, `fn` -> test_class_dispatch_shape},
-        {`name` -> `Codegen.nested_closure`, `fn` -> test_nested_closure_shape}
+        {`name` -> `Codegen.nested_closure`, `fn` -> test_nested_closure_shape},
+        {`name` -> `Codegen.constant_folding`, `fn` -> test_constant_folding},
+        {`name` -> `Codegen.dead_branch_pruning`, `fn` -> test_dead_branch_pruning},
+        {`name` -> `Codegen.dead_code_elimination`, `fn` -> test_dead_code_elimination},
+        {`name` -> `Codegen.fast_integer_arithmetic`, `fn` -> test_fast_integer_arithmetic},
+        {`name` -> `Codegen.fast_list_iteration`, `fn` -> test_fast_list_iteration}
     ]
     <- test.run_suite(`Selfhost Stage5 Codegen`, tests)
 }

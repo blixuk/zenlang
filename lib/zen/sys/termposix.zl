@@ -1,0 +1,54 @@
+/!
+  zen.sys.termposix - POSIX Terminal Attributes & Direct Stream Control.
+  Provides direct C-level TTY inspection and stream flushing using <unistd.h> and <termios.h>.
+!/
+
+extern use `<unistd.h>`
+extern use `<termios.h>`
+
+/! Check if standard input (fd 0) is connected to an interactive terminal. !/
+export function is_stdin_tty() {
+    <- isatty(0) == 1
+}
+
+/! Check if standard output (fd 1) is connected to an interactive terminal. !/
+export function is_stdout_tty() {
+    <- isatty(1) == 1
+}
+
+/! Check if standard error (fd 2) is connected to an interactive terminal. !/
+export function is_stderr_tty() {
+    <- isatty(2) == 1
+}
+
+/! Check if the specified file descriptor is a TTY. !/
+export function is_tty_fd(fd) {
+    when fd == Nothing {
+        <- false
+    }
+    <- isatty(Integer(fd)) == 1
+}
+
+/! Flush pending terminal input queue (TCIFLUSH = 0 on POSIX). !/
+export function flush_input() {
+    <- tcflush(0, 0) == 0
+}
+
+/! Flush pending terminal output queue (TCOFLUSH = 1 on POSIX). !/
+export function flush_output() {
+    <- tcflush(1, 1) == 0
+}
+
+/! Flush both pending terminal input and output (TCIOFLUSH = 2 on POSIX). !/
+export function flush_both() {
+    <- tcflush(0, 2) == 0
+}
+
+/! Returns a map of terminal stream states. !/
+export function terminal_summary() {
+    <- {
+        `stdin_tty` -> is_stdin_tty(),
+        `stdout_tty` -> is_stdout_tty(),
+        `stderr_tty` -> is_stderr_tty()
+    }
+}

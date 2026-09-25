@@ -11,7 +11,9 @@ module.exports = grammar({
     $.block_comment,
   ],
 
-  conflicts: $ => [],
+  conflicts: $ => [
+    [$.assignment_statement, $.map_entry],
+  ],
 
   word: $ => $.identifier,
 
@@ -29,6 +31,7 @@ module.exports = grammar({
       $.task_declaration,
       $.let_statement,
       $.set_statement,
+      $.assignment_statement,
       $.when_statement,
       $.do_statement,
       $.return_statement,
@@ -48,12 +51,22 @@ module.exports = grammar({
     // Block comment: /* ... */
     block_comment: _ => token(/\/\*[\s\S]*?\*\//),
 
-    import_statement: $ => seq(
-      optional('from'),
-      choice('import', 'use'),
-      choice($.module_path, $.string),
-      optional(seq('as', $.identifier)),
-      optional(';'),
+    import_statement: $ => choice(
+      seq(
+        optional('extern'),
+        'from',
+        choice($.module_path, $.string),
+        choice('import', 'use'),
+        seq($.identifier, repeat(seq(',', $.identifier))),
+        optional(';'),
+      ),
+      seq(
+        optional('extern'),
+        choice('import', 'use'),
+        choice($.module_path, $.string),
+        optional(seq('as', $.identifier)),
+        optional(';'),
+      ),
     ),
 
     export_statement: $ => seq(
@@ -208,8 +221,14 @@ module.exports = grammar({
       ']',
     )),
 
+    assignment_statement: $ => seq(
+      field('left', choice($.identifier, $.member_expression, $.index_expression)),
+      field('operator', choice('->', ':>', '<~')),
+      field('right', $._expression),
+      optional(';'),
+    ),
+
     _expression: $ => choice(
-      $.assignment_expression,
       $.binary_expression,
       $.unary_expression,
       $.call_expression,
@@ -218,17 +237,13 @@ module.exports = grammar({
       $.primary,
     ),
 
-    assignment_expression: $ => prec.right(1, seq(
-      field('left', choice($.identifier, $.member_expression, $.index_expression)),
-      field('operator', choice('->', ':>', '<~')),
-      field('right', $._expression),
-    )),
-
     binary_expression: $ => {
       const table = [
+        ['|>', 2],
+        ['??', 2],
         ['or', 2],
         ['and', 3],
-        ['==', 4], ['!=', 4], ['<', 4], ['<=', 4], ['>', 4], ['>=', 4], ['is', 4], ['<:', 4],
+        ['==', 4], ['!=', 4], ['<', 4], ['<=', 4], ['>', 4], ['>=', 4], ['is', 4], ['<:', 4], ['in', 4],
         ['..', 5], ['..=', 5], ['...', 5], ['..+', 5], ['..-', 5],
         ['+', 6], ['-', 6],
         ['*', 7], ['/', 7], ['%', 7],
@@ -281,7 +296,9 @@ module.exports = grammar({
       $.string,
       $.boolean,
       $.nothing,
+      $.list_comprehension,
       $.list_literal,
+      $.map_comprehension,
       $.map_literal,
       $.lambda,
       $.structure_literal,
@@ -300,7 +317,7 @@ module.exports = grammar({
     )),
 
     structure_literal: $ => prec(2, seq(
-      field('name', $.identifier),
+      field('name', $.type_identifier),
       '{',
       optional(seq(
         $.field_initializer,
@@ -316,21 +333,58 @@ module.exports = grammar({
       field('value', $._expression),
     ),
 
+    spread_element: $ => seq(
+      '...',
+      field('value', $._expression),
+    ),
+
+    list_comprehension: $ => prec(3, seq(
+      '[',
+      'for',
+      field('variable', choice(
+        $.identifier,
+        seq($.identifier, ',', $.identifier),
+      )),
+      'in',
+      field('iterable', $._expression),
+      optional(seq('when', field('condition', $._expression))),
+      '->',
+      field('body', $._expression),
+      ']',
+    )),
+
     list_literal: $ => seq(
       '[',
       optional(seq(
-        $._expression,
-        repeat(seq(',', $._expression)),
+        choice($._expression, $.spread_element),
+        repeat(seq(',', choice($._expression, $.spread_element))),
         optional(','),
       )),
       ']',
     ),
 
+    map_comprehension: $ => prec(3, seq(
+      '{',
+      'for',
+      field('variable', choice(
+        $.identifier,
+        seq($.identifier, ',', $.identifier),
+      )),
+      'in',
+      field('iterable', $._expression),
+      optional(seq('when', field('condition', $._expression))),
+      '->',
+      field('key', $._expression),
+      choice(':', '->'),
+      field('value', $._expression),
+      '}',
+    )),
+
     map_literal: $ => prec(2, seq(
       '{',
       optional(seq(
-        $.map_entry,
-        repeat(seq(',', $.map_entry)),
+        choice($.map_entry, $.spread_element),
+        repeat(seq(',', choice($.map_entry, $.spread_element))),
         optional(','),
       )),
       '}',
@@ -372,6 +426,7 @@ module.exports = grammar({
       ),
     )),
 
+    type_identifier: $ => token(/[A-Z][a-zA-Z0-9_]*/),
     identifier: $ => /[a-zA-Z_][a-zA-Z0-9_]*/,
   },
 });

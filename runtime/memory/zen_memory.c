@@ -274,3 +274,59 @@ ZenValue ZenMemory_arena_depth(void) {
 ZenValue ZenMemory_using_arena(void) {
     return ZenValue_make_boolean(ZenUser_sp > 0);
 }
+
+static ZenArena* resolve_target_arena(ZenValue arena_value) {
+    if (arena_value.type == ZEN_ARENA && arena_value.as.arena) {
+        return arena_value.as.arena;
+    }
+    return ZenArena_current();
+}
+
+ZenValue ZenMemory_arena_allocated(ZenValue arena_value) {
+    ZenArena* a = resolve_target_arena(arena_value);
+    if (!a) return ZenValue_make_integer(0LL);
+    size_t total = 0;
+    for (ZenArenaChunk* ch = a->head; ch; ch = ch->next) {
+        total += ch->offset;
+    }
+    return ZenValue_make_integer((long long)total);
+}
+
+ZenValue ZenMemory_arena_capacity(ZenValue arena_value) {
+    ZenArena* a = resolve_target_arena(arena_value);
+    if (!a) return ZenValue_make_integer(0LL);
+    size_t total = 0;
+    for (ZenArenaChunk* ch = a->head; ch; ch = ch->next) {
+        total += ch->size;
+    }
+    return ZenValue_make_integer((long long)total);
+}
+
+ZenValue ZenMemory_arena_chunks(ZenValue arena_value) {
+    ZenArena* a = resolve_target_arena(arena_value);
+    if (!a) return ZenValue_make_integer(0LL);
+    int count = 0;
+    for (ZenArenaChunk* ch = a->head; ch; ch = ch->next) {
+        count++;
+    }
+    return ZenValue_make_integer((long long)count);
+}
+
+ZenValue ZenMemory_arena_stats(ZenValue arena_value) {
+    ZenArena* a = resolve_target_arena(arena_value);
+    size_t allocated = 0;
+    size_t capacity = 0;
+    int chunks = 0;
+    if (a) {
+        for (ZenArenaChunk* ch = a->head; ch; ch = ch->next) {
+            allocated += ch->offset;
+            capacity += ch->size;
+            chunks++;
+        }
+    }
+    ZenValue map = ZenMap_make_from_arguments(0);
+    ZenMap_set_value_at_key(map, ZenValue_make_string("allocated"), ZenValue_make_integer((long long)allocated));
+    ZenMap_set_value_at_key(map, ZenValue_make_string("capacity"), ZenValue_make_integer((long long)capacity));
+    ZenMap_set_value_at_key(map, ZenValue_make_string("chunks"), ZenValue_make_integer((long long)chunks));
+    return map;
+}

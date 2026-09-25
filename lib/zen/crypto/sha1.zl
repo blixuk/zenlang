@@ -1,0 +1,149 @@
+/!
+    zen.crypto.sha1 - SHA-1 Hash Function (FIPS 180-1 / RFC 3174).
+    Pure Zenlang implementation with zero C dependencies.
+    Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_byte_list(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _pad_hex_byte(b) {
+    let digits -> `0123456789abcdef`
+    let val -> 0 + b
+    let hi -> (val >> 4) & 15
+    let lo -> val & 15
+    <- Str.at(digits, hi) + Str.at(digits, lo)
+}
+
+function _pad_hex32_be(num) {
+    let n -> 0 + num
+    let b3 -> (n >> 24) & 255
+    let b2 -> (n >> 16) & 255
+    let b1 -> (n >> 8) & 255
+    let b0 -> n & 255
+    <- _pad_hex_byte(b3) + _pad_hex_byte(b2) + _pad_hex_byte(b1) + _pad_hex_byte(b0)
+}
+
+function _rotl32(x, n) {
+    let u -> x & 0xffffffff
+    let left -> (u << n) & 0xffffffff
+    let right -> (u >> (32 - n)) & 0xffffffff
+    <- (left | right) & 0xffffffff
+}
+
+/!
+    Computes SHA-1 digest of input string or byte list (FIPS 180-1 / RFC 3174).
+    @return 40-character lowercase hex string.
+!/
+export function sha1(data) {
+    when (data == Nothing) { <- `da39a3ee5e6b4b0d3255bfef95601890afd80709` }
+
+    let bytes -> _to_byte_list(data)
+    let orig_len -> bytes.length
+
+    let padded -> []
+    let i -> 0
+    do while i < orig_len {
+        let b -> bytes[i]
+        when (b < 0) { b -> b + 256 }
+        padded.append(b)
+        i -> i + 1
+    }
+
+    padded.append(128)
+    do while ((padded.length % 64) != 56) {
+        padded.append(0)
+    }
+
+    let bit_len -> orig_len * 8
+    padded.append(0)
+    padded.append(0)
+    padded.append(0)
+    padded.append(0)
+    padded.append((bit_len >> 24) & 255)
+    padded.append((bit_len >> 16) & 255)
+    padded.append((bit_len >> 8) & 255)
+    padded.append(bit_len & 255)
+
+    let h0 -> 0x67452301
+    let h1 -> 0xefcdab89
+    let h2 -> 0x98badcfe
+    let h3 -> 0x10325476
+    let h4 -> 0xc3d2e1f0
+
+    let chunk_count -> padded.length / 64
+    let chunk_idx -> 0
+
+    do while chunk_idx < chunk_count {
+        let offset -> chunk_idx * 64
+        let w -> []
+        let t -> 0
+        do while t < 16 {
+            let o -> offset + (t * 4)
+            let word -> ((padded[o] << 24) | (padded[o + 1] << 16) | (padded[o + 2] << 8) | padded[o + 3]) & 0xffffffff
+            w.append(word)
+            t -> t + 1
+        }
+
+        do while t < 80 {
+            let word -> _rotl32(w[t - 3] ^^ w[t - 8] ^^ w[t - 14] ^^ w[t - 16], 1)
+            w.append(word)
+            t -> t + 1
+        }
+
+        let a -> h0
+        let b -> h1
+        let c -> h2
+        let d -> h3
+        let e -> h4
+
+        t -> 0
+        do while t < 80 {
+            let f -> 0
+            let k -> 0
+            when t < 20 {
+                f -> (b & c) | ((b ^^ 0xffffffff) & d)
+                k -> 0x5a827999
+            } or when t < 40 {
+                f -> b ^^ c ^^ d
+                k -> 0x6ed9eba1
+            } or when t < 60 {
+                f -> (b & c) | (b & d) | (c & d)
+                k -> 0x8f1bbcdc
+            } or {
+                f -> b ^^ c ^^ d
+                k -> 0xca62c1d6
+            }
+
+            let temp -> (_rotl32(a, 5) + f + e + k + w[t]) & 0xffffffff
+            e -> d
+            d -> c
+            c -> _rotl32(b, 30)
+            b -> a
+            a -> temp
+            t -> t + 1
+        }
+
+        h0 -> (h0 + a) & 0xffffffff
+        h1 -> (h1 + b) & 0xffffffff
+        h2 -> (h2 + c) & 0xffffffff
+        h3 -> (h3 + d) & 0xffffffff
+        h4 -> (h4 + e) & 0xffffffff
+
+        chunk_idx -> chunk_idx + 1
+    }
+
+    <- _pad_hex32_be(h0) + _pad_hex32_be(h1) + _pad_hex32_be(h2) + _pad_hex32_be(h3) + _pad_hex32_be(h4)
+}

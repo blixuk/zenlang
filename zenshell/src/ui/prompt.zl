@@ -1,0 +1,88 @@
+/!
+  zenshell - Dynamic Two-Line Responsive Prompt
+!/
+
+import zen.sys.term as term
+import zen.text.string as Str
+import zen.sys.sys as sys
+import ui.theme as color
+
+export class Prompt {
+    let symbol
+    let show_time
+    let show_duration
+
+    function init(symbol, show_time, show_duration) {
+        self.symbol -> when (symbol != Nothing) { symbol } or { `❯` }
+        self.show_time -> when (show_time != Nothing) { show_time } or { true }
+        self.show_duration -> when (show_duration != Nothing) { show_duration } or { true }
+    }
+
+    function format_path(cwd) {
+        let home -> sys.get_env(`HOME`)
+        when home != Nothing and Str.starts_with(cwd, home) {
+            let rel -> Str.substring(cwd, Str.length(home), Str.length(cwd))
+            <- `~` + rel
+        }
+        <- cwd
+    }
+
+    function render_header(ctx) {
+        let size -> term.get_size()
+        let width -> when (size != Nothing and size.has(`width`)) { size[`width`] } or { 80 }
+
+        // 1. Left side: current path
+        let display_path -> self.format_path(ctx.cwd)
+        let left_text -> color.bold(color.cyan(display_path))
+        let left_len -> Str.length(display_path)
+
+        // 2. Right side: status indicator + duration
+        let right_raw -> ``
+        let right_display_len -> 0
+        when ctx.last_status == 0 {
+            right_raw -> `✓`
+            right_display_len -> 1
+        } or {
+            let err_code -> Str.to_string(ctx.last_status)
+            right_raw -> `✗ ` + err_code
+            right_display_len -> 2 + Str.length(err_code)
+        }
+
+        when self.show_duration and ctx.last_duration_ms > 50.0 {
+            let dur_str -> ` (` + Str.to_string(Integer(ctx.last_duration_ms)) + `ms)`
+            right_raw -> right_raw + dur_str
+            right_display_len -> right_display_len + Str.length(dur_str)
+        }
+
+        let right_styled -> when (ctx.last_status == 0) {
+            color.green(right_raw)
+        } or {
+            color.red(right_raw)
+        }
+
+        // 3. Spacing between left and right (safety margin of 3 cols)
+        let total_text_len -> left_len + right_display_len
+        let spaces_count -> width - total_text_len - 3
+        when spaces_count < 1 {
+            spaces_count -> 1
+        }
+        let space_pad -> Str.repeat(` `, spaces_count)
+
+        <- left_text + space_pad + right_styled
+    }
+
+    function render_carrot(ctx) {
+        let col_symbol -> when (ctx.last_status == 0) {
+            color.bold(color.cyan(self.symbol))
+        } or {
+            color.bold(color.red(self.symbol))
+        }
+        <- col_symbol + ` `
+    }
+
+    function render(ctx) {
+        let h -> self.render_header(ctx)
+        let c -> self.render_carrot(ctx)
+        <- h + `\n` + c
+    }
+}

@@ -37,7 +37,9 @@ void ZenIO_internal_print_value_to(FILE* f, ZenValue value) {
         case ZEN_LIST:
         case ZEN_MAP:
         case ZEN_VARIANT:
-        case ZEN_SET: {
+        case ZEN_SET:
+        case ZEN_AST_NODE:
+        case ZEN_TOKEN: {
             ZenValue s = ZenValue_to_string(value);
             if (s.type == ZEN_STRING && s.as.string) {
                 fprintf(f, "%s", s.as.string);

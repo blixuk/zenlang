@@ -36,6 +36,8 @@ TOKEN_TYPE_IDS = {
     "PARENT": 106, "SELF": 107, "IMPORT": 108, "FROM": 109, "AS": 110,
     "CHECK_SYMBOL": 111, "RAISE_SYMBOL": 112, "ASSERT_SYMBOL": 113,
     "TYPE_CAST": 114, "EOF": 115,
+    "RANGE_INCL_END": 116, "RANGE_EXCL_END": 117, "RANGE_FULL_INCL": 118,
+    "YIELD_ARROW": 119, "BYTE": 120, "BYTES": 121, "COALESCE": 122, "PIPELINE": 123,
 }
 
 class ExpressionHandler:
@@ -100,6 +102,11 @@ class ExpressionHandler:
             if op == "<:":
                 left = self._visit_expression(node.left, target_region=target_region)
                 target_type = getattr(node.right, "name", str(node.right))
+                if hasattr(node.right, "bits") and node.right.bits:
+                    target_type = f"{target_type}[{node.right.bits}]"
+                if hasattr(node.right, "subtypes") and node.right.subtypes:
+                    subs = [getattr(s, "name", str(s)) for s in node.right.subtypes]
+                    target_type = f"{target_type}<{', '.join(subs)}>"
                 tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
                 self._emit(Call(target=tmp, callee="ZenValue_cast", args=[left, f'"{target_type}"'], region=current_reg), node)
                 return tmp
@@ -126,8 +133,16 @@ class ExpressionHandler:
                 self._emit(Compute(target=tmp, op=op, left="", right=right), node)
             return tmp
         elif isinstance(node, CallExpression):
+            if isinstance(node.callee, IndexExpression) and isinstance(node.callee.object, Identifier) and node.callee.object.name in ("Integer", "Decimal", "String", "Vector"):
+                idx_val = getattr(node.callee.index, "value", str(node.callee.index))
+                target_type = f"{node.callee.object.name}[{idx_val}]"
+                args = [self._visit_expression(arg, target_region=target_region) for arg in node.arguments]
+                val = args[0] if args else "ZEN_NOTHING_VAL"
+                tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
+                self._emit(Call(target=tmp, callee="ZenValue_cast", args=[val, f'"{target_type}"'], region=current_reg), node)
+                return tmp
             args = [self._visit_expression(arg, target_region=target_region) for arg in node.arguments]
-            if isinstance(node.callee, Identifier) and node.callee.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Int", "Str", "Float", "Bool", "Char"):
+            if isinstance(node.callee, Identifier) and (node.callee.name in ("Integer", "String", "Decimal", "Boolean", "Rune", "Bytes", "Set", "List", "Map", "Byte", "Vector", "Tuple", "Number", "Text", "Collection", "Container") or node.callee.name.startswith("Integer[") or node.callee.name.startswith("Decimal[") or node.callee.name.startswith("String[") or node.callee.name.startswith("Vector[") or node.callee.name.startswith("List<") or node.callee.name.startswith("Map<") or node.callee.name.startswith("Set<") or node.callee.name.startswith("Tuple<") or node.callee.name.startswith("Vector<")):
                 target_type = node.callee.name
                 val = args[0] if args else "ZEN_NOTHING_VAL"
                 tmp = self._alloc_temp(self.new_label("tmp_cast"), node, region=current_reg)
@@ -186,6 +201,7 @@ class ExpressionHandler:
 
                 if mapped_obj in (
                     "__builtin",
+                    "__builtin_ast",
                     "__builtin_list",
                     "__builtin_map",
                     "__builtin_set",
@@ -421,6 +437,20 @@ class ExpressionHandler:
                 ),
                 node,
             )
+            if isinstance(node, SetLiteral):
+                set_tmp = self._alloc_temp(
+                    self.new_label("tmp_set_val"), node, region=current_reg
+                )
+                self._emit(
+                    Call(
+                        target=set_tmp,
+                        callee="Set_from_list",
+                        args=[tmp],
+                        region=current_reg,
+                    ),
+                    node,
+                )
+                return set_tmp
             return tmp
         elif isinstance(node, MapLiteral):
              elements = []
@@ -490,6 +520,8 @@ class ExpressionHandler:
             mangled_name = self.get_mangled_type_name(rt)
         if not mangled_name or mangled_name in ("ZenValue", "ZenObject", "Variant"):
             raw = node.name
+            if isinstance(raw, str) and "<" in raw and raw.endswith(">"):
+                raw = raw[:raw.index("<")]
             # Qualified "mod.Type" or bare "Type"
             if isinstance(raw, str) and "." in raw and not raw.startswith("MemberExpression"):
                 parts = raw.split(".")

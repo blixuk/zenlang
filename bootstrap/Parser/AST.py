@@ -142,6 +142,7 @@ class FunctionStatement(ASTNode):
     body: Any
     return_type: Optional[Type] = None
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "FunctionStatement"
 
 
@@ -156,6 +157,7 @@ class StructureStatement(ASTNode):
     reflectable: bool = False
     declared_type: str = "Structure"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "StructureStatement"
 
 
@@ -170,6 +172,7 @@ class ObjectStatement(ASTNode):
     reflectable: bool = False
     declared_type: str = "Object"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "ObjectStatement"
 
 
@@ -206,6 +209,7 @@ class ClassStatement(ASTNode):
     reflectable: bool = False
     declared_type: str = "Class"
     resolved_type: Optional[Type] = None
+    generic_params: Optional[list] = None
     node_type: Optional[str] = "ClassStatement"
 
 

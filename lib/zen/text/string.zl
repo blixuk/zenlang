@@ -132,6 +132,16 @@ function at(s, i) {
 }
 
 /!
+ Returns the ASCII / byte code at the specified index, or -1 if out of bounds.
+ @param s The string.
+ @param i The index.
+ @return The integer byte value.
+!/
+function byte_at(s, i) {
+    <- __builtin_string.byte_at(s, i)
+}
+
+/!
  Converts a value to its string representation.
  @param x The value to convert.
  @return The string representation of x.

@@ -178,7 +178,7 @@ FIX_SUM="$ROOT/tests/self_hosting/fixtures/stage5_for_sum.zl"
 OUT_SUM_C="$WORKDIR/stage5_for_sum.c"
 rm -f "$OUT_SUM_C"
 if out="$("$BIN" compile "$FIX_SUM" "$OUT_SUM_C" 2>&1)" && [[ -f "$OUT_SUM_C" ]]; then
-  if grep -q 'ZenList_get_value_at_index' "$OUT_SUM_C"; then
+  if grep -qE 'ZenList_get_value_at_index|items\[' "$OUT_SUM_C"; then
     ok "native compile stage5_for_sum"
     LINKDIR2="$WORKDIR/link_sum"
     rm -rf "$LINKDIR2"

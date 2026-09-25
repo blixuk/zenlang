@@ -11,12 +11,12 @@ variables:
   control_flow: 'do|while|until|for|in|when|or|and|not|xor|break|continue|return|check|case|match|default|spawn|await|task|yield|before|after'
   logic: 'and|or|not|xor|in|with|is|reflectable'
   errors: 'raise|assert|defer|check'
-  dependencies: 'use|import|from|as|extend|extends|export'
+  dependencies: 'use|import|from|as|extend|extends|export|extern'
   declarations: 'let|set|function|class|struct|structure|enum|enumerator|type|scope|auto'
   constants: 'Nothing|nothing|Default|default|Void'
   booleans: 'True|False|true|false'
   builtins: 'self|parent|module|entry|stdin|stdout|stderr|args|env|write|writeln|read|readln'
-  types: 'Void|Variant|Integer|Int|Decimal|Float|Boolean|Bool|Rune|Char|Byte|Bytes|Buffer|String|Str|Dictionary|Dict|Tuple|List|Vector|Map|Set|Error|Task|Function|Class|Structure|Struct|Enumerator|Enum|Object'
+  types: 'Void|Nothing|Default|Variant|Boolean|Byte|Bytes|Rune|Integer|Decimal|String|List|Set|Vector|Tuple|Map|Structure|Object|Class|Enumerator|Function|Task|Channel|Error|Number|Text|Collection|Container'
 
 contexts:
   main:
@@ -107,7 +107,7 @@ contexts:
       scope: storage.type.zenlang
 
     # Data Flow & Range Operators
-    - match: '->|<-|<~|:>|=>|<:|\.\.\.|\.\.\+|\.\.\-|\.\.=|\.\.'
+    - match: '\?\?|\|>|->|<-|<~|:>|=>|<:|\.\.\.|\.\.\+|\.\.\-|\.\.=|\.\.'
       scope: keyword.operator.flow.zenlang
 
     # Comparison, Arithmetic & Logic Operators

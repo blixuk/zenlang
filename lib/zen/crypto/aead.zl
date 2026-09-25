@@ -1,0 +1,217 @@
+/!
+  zen.crypto.aead - ChaCha20-Poly1305 Authenticated Encryption (RFC 8439).
+  Provides authenticated encryption with associated data (AEAD).
+  Guarantees both confidentiality and message integrity.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.crypto.chacha20 as ChaCha
+use zen.crypto.poly1305 as Poly
+use zen.crypto.hex as Hex
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _pad16_zeros(bytes_list) {
+    let rem -> bytes_list.length % 16
+    when (rem == 0) { <- [] }
+    let pad_len -> 16 - rem
+    let zeros -> []
+    let i -> 0
+    do while i < pad_len {
+        zeros.append(0)
+        i -> i + 1
+    }
+    <- zeros
+}
+
+function _u64_le_bytes(val) {
+    let out -> []
+    let v -> val
+    let i -> 0
+    do while i < 8 {
+        out.append(v & 255)
+        v -> v >> 8
+        i -> i + 1
+    }
+    <- out
+}
+
+function _build_mac_data(aad_bytes, ct_bytes) {
+    let mac_data -> []
+    let i -> 0
+    let aad_len -> aad_bytes.length
+    do while i < aad_len {
+        mac_data.append(aad_bytes[i])
+        i -> i + 1
+    }
+
+    let pad_aad -> _pad16_zeros(aad_bytes)
+    i -> 0
+    do while i < pad_aad.length {
+        mac_data.append(pad_aad[i])
+        i -> i + 1
+    }
+
+    let ct_len -> ct_bytes.length
+    i -> 0
+    do while i < ct_len {
+        mac_data.append(ct_bytes[i])
+        i -> i + 1
+    }
+
+    let pad_ct -> _pad16_zeros(ct_bytes)
+    i -> 0
+    do while i < pad_ct.length {
+        mac_data.append(pad_ct[i])
+        i -> i + 1
+    }
+
+    let aad_len_bytes -> _u64_le_bytes(aad_len)
+    i -> 0
+    do while i < 8 {
+        mac_data.append(aad_len_bytes[i])
+        i -> i + 1
+    }
+
+    let ct_len_bytes -> _u64_le_bytes(ct_len)
+    i -> 0
+    do while i < 8 {
+        mac_data.append(ct_len_bytes[i])
+        i -> i + 1
+    }
+
+    <- mac_data
+}
+
+function _get_poly_key(key_bytes, nonce_bytes) {
+    // Normalize key to 32 bytes
+    let key32 -> []
+    let i -> 0
+    do while i < 32 {
+        when i < key_bytes.length {
+            key32.append(key_bytes[i])
+        } or {
+            key32.append(0)
+        }
+        i -> i + 1
+    }
+
+    // Normalize nonce to 12 bytes
+    let nonce12 -> []
+    i -> 0
+    do while i < 12 {
+        when i < nonce_bytes.length {
+            nonce12.append(nonce_bytes[i])
+        } or {
+            nonce12.append(0)
+        }
+        i -> i + 1
+    }
+
+    let block0 -> ChaCha.chacha20_block(key32, 0, nonce12)
+    let poly_key -> []
+    i -> 0
+    do while i < 32 {
+        poly_key.append(block0[i])
+        i -> i + 1
+    }
+    <- poly_key
+}
+
+/!
+  Encrypts plaintext and generates a Poly1305 authentication tag (RFC 8439 AEAD).
+  @param key 32-byte secret key (string or byte list).
+  @param nonce 12-byte initialization vector (string or byte list).
+  @param plaintext Plaintext to encrypt (string or byte list).
+  @param aad Associated Authenticated Data (string or byte list, optional).
+  @return Map containing ciphertext (byte list), tag (16-byte list), ciphertext_hex, and tag_hex.
+!/
+export function encrypt(key, nonce, plaintext, aad) {
+    let k_bytes -> _to_bytes(key)
+    let n_bytes -> _to_bytes(nonce)
+    let pt_bytes -> _to_bytes(plaintext)
+    let aad_bytes -> _to_bytes(aad)
+
+    let poly_key -> _get_poly_key(k_bytes, n_bytes)
+    let ct_bytes -> ChaCha.crypt(k_bytes, n_bytes, pt_bytes, 1)
+
+    let mac_data -> _build_mac_data(aad_bytes, ct_bytes)
+    let tag_bytes -> Poly.mac(poly_key, mac_data)
+
+    let ct_hex -> Hex.encode(ct_bytes)
+    let tag_hex -> Hex.encode(tag_bytes)
+
+    let result -> {
+        `ciphertext` -> ct_bytes,
+        `tag` -> tag_bytes,
+        `ciphertext_hex` -> ct_hex,
+        `tag_hex` -> tag_hex
+    }
+    <- result
+
+
+}
+
+/!
+  Decrypts ciphertext and verifies the Poly1305 authentication tag (RFC 8439 AEAD).
+  @param key 32-byte secret key.
+  @param nonce 12-byte initialization vector.
+  @param ciphertext Encrypted ciphertext (byte list or hex string).
+  @param tag 16-byte authentication tag (byte list or hex string).
+  @param aad Associated Authenticated Data (optional).
+  @return Decrypted byte list, or Nothing if authentication verification fails.
+!/
+export function decrypt(key, nonce, ciphertext, tag, aad) {
+    let k_bytes -> _to_bytes(key)
+    let n_bytes -> _to_bytes(nonce)
+    let ct_bytes -> _to_bytes(ciphertext)
+    let aad_bytes -> _to_bytes(aad)
+
+    let tag_bytes -> []
+    when (tag.kind == `String`) {
+        tag_bytes -> Hex.decode_bytes(tag)
+    } or {
+        tag_bytes -> tag
+    }
+
+    let poly_key -> _get_poly_key(k_bytes, n_bytes)
+    let mac_data -> _build_mac_data(aad_bytes, ct_bytes)
+    let expected_tag -> Poly.mac(poly_key, mac_data)
+
+    // Constant-time tag check
+    when (tag_bytes.length != expected_tag.length) { <- Nothing }
+    let diff -> 0
+    let i -> 0
+    let t_len -> tag_bytes.length
+    do while i < t_len {
+        diff -> diff | (tag_bytes[i] ^^ expected_tag[i])
+        i -> i + 1
+    }
+    when (diff != 0) {
+        <- Nothing
+    }
+
+    // Tag verified; decrypt ciphertext
+    <- ChaCha.crypt(k_bytes, n_bytes, ct_bytes, 1)
+}
+
+/!
+  Convenience decrypt returning a UTF-8 string on success, or Nothing on failure.
+!/
+export function decrypt_to_string(key, nonce, ciphertext, tag, aad) {
+    let pt_bytes -> decrypt(key, nonce, ciphertext, tag, aad)
+    when (pt_bytes == Nothing) { <- Nothing }
+    <- __builtin.bytes_to_string(pt_bytes)
+}

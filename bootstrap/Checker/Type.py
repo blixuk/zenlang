@@ -94,6 +94,18 @@ class TypeString(Type):
 
 
 @dataclass(frozen=True)
+class TypeByte(Type):
+    name: str = "Byte"
+    bits: Optional[int] = 8
+    signed: Optional[bool] = False
+
+
+@dataclass(frozen=True)
+class TypeBytes(Type):
+    name: str = "Bytes"
+
+
+@dataclass(frozen=True)
 class TypeRune(Type):
     name: str = "Rune"
     bits: Optional[int] = 32
@@ -105,8 +117,9 @@ PRIMITIVE_TYPES: Dict = {
     "Default": TypeDefault,
     "Variant": TypeVariant,
     "Integer": TypeInteger,
-    "Float": TypeDecimal,
     "Decimal": TypeDecimal,
+    "Byte": TypeByte,
+    "Bytes": TypeBytes,
     "String": TypeString,
     "Rune": TypeRune,
     "Boolean": TypeBoolean,
@@ -231,10 +244,16 @@ COLLECTION_TYPES: Dict = {
 
 
 @dataclass(frozen=True)
+class TypeParam(Type):
+    name: str
+
+
+@dataclass(frozen=True)
 class TypeFunction(Type):
     name: str
     parameters: Optional[List[TypeParameter]]
     return_type: Type
+    generic_params: Optional[List[str]] = None
 
 
 @dataclass(frozen=True)
@@ -242,6 +261,7 @@ class TypeTask(Type):
     name: str
     parameters: Optional[List[TypeParameter]]
     return_type: Type
+    generic_params: Optional[List[str]] = None
 
 
 @dataclass(frozen=True)
@@ -257,6 +277,7 @@ class TypeStructure(Type):
     parent: Optional['TypeStructure'] = None
     filename: Optional[str] = None
     methods: Optional[Any] = None # Dict[str, TypeFunction]
+    generic_params: Optional[List[str]] = None
 
 
 @dataclass
@@ -266,6 +287,7 @@ class TypeClass(Type):
     methods: Any # Dict[str, TypeFunction]
     parent: Optional['TypeClass'] = None
     filename: Optional[str] = None
+    generic_params: Optional[List[str]] = None
 
 
 

@@ -1,0 +1,52 @@
+/!
+  zenshell - Dynamic Command and Subcommand Autocompleter
+!/
+
+import zen.text.string as Str
+import zen.io.path as path
+
+export function create_completer(registry, ctx) {
+    <- function(buf, cursor) {
+        when buf == Nothing { <- [] }
+        
+        let prefix -> Str.substring(buf, 0, cursor)
+        let parts -> Str.split(prefix, ` `)
+        let candidates -> []
+
+        when parts.length <= 1 {
+            // Completing command name
+            let token -> when parts.length == 1 { parts[0] } or { `` }
+            do for name in registry.keys() {
+                when Str.starts_with(name, token) {
+                    candidates.append(name)
+                }
+            }
+            do for al in ctx.aliases.keys() {
+                when Str.starts_with(al, token) {
+                    candidates.append(al)
+                }
+            }
+            <- candidates
+        }
+
+        when parts.length == 2 {
+            // Completing subcommand
+            let cmd_name -> parts[0]
+            let sub_token -> parts[1]
+            when registry.has(cmd_name) {
+                let cmd -> registry[cmd_name]
+                do for sub_name in cmd.subcommands.keys() {
+                    when Str.starts_with(sub_name, sub_token) {
+                        candidates.append(sub_name)
+                    }
+                }
+                when Str.starts_with(`help`, sub_token) {
+                    candidates.append(`help`)
+                }
+            }
+            <- candidates
+        }
+
+        <- []
+    }
+}

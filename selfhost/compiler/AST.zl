@@ -56,6 +56,7 @@ export let K_TYPE_ANN -> 45
 export let K_STMT_CHUNK -> 46
 export let K_CAST -> 47
 export let K_SLICE -> 48
+export let K_EXTERN_IMPORT -> 49
 export let K_REASSIGN -> 9
 export let K_REASSIGNMENT -> 9
 
@@ -75,230 +76,293 @@ export function ast_col(n) {
     <- n[2]
 }
 
+export function is_node(n) {
+    when n == Nothing { <- false }
+    when n is List { <- n.length >= 3 }
+    let k -> n.kind
+    when k == `AstNode` { <- true }
+    <- false
+}
+
 // --- Constructors ---
+
+function make_node0(kind, line, column) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create0(kind, line, column)
+}
+
+function make_node1(kind, line, column, s0) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create1(kind, line, column, s0)
+}
+
+function make_node2(kind, line, column, s0, s1) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create2(kind, line, column, s0, s1)
+}
+
+function make_node3(kind, line, column, s0, s1, s2) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create3(kind, line, column, s0, s1, s2)
+}
+
+function make_node4(kind, line, column, s0, s1, s2, s3) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create4(kind, line, column, s0, s1, s2, s3)
+}
+
+function make_node5(kind, line, column, s0, s1, s2, s3, s4) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create5(kind, line, column, s0, s1, s2, s3, s4)
+}
+
+function make_node6(kind, line, column, s0, s1, s2, s3, s4, s5) {
+    when line == Nothing { line -> 0 }
+    when column == Nothing { column -> 0 }
+    <- __builtin_ast.create(kind, line, column, s0, s1, s2, s3, s4, s5)
+}
 
 export function lit(value, line, column) {
     <- lit_tok(value, ``, line, column)
 }
 
 export function lit_tok(value, token_kind, line, column) {
-    <- [K_LITERAL, line, column, value, token_kind]
+    <- make_node2(K_LITERAL, line, column, value, token_kind)
 }
 
 export function variable(name, line, column) {
-    <- [K_VARIABLE, line, column, name]
+    <- make_node1(K_VARIABLE, line, column, name)
 }
 
 export function binary(left, op, right, line, column) {
-    <- [K_BINARY, line, column, left, op, right]
+    <- make_node3(K_BINARY, line, column, left, op, right)
 }
 
 export function unary(op, right, line, column) {
-    <- [K_UNARY, line, column, op, right]
+    <- make_node2(K_UNARY, line, column, op, right)
 }
 
 export function logical(left, op, right, line, column) {
-    <- [K_LOGICAL, line, column, left, op, right]
+    <- make_node3(K_LOGICAL, line, column, left, op, right)
 }
 
 export function grouping(expr, line, column) {
-    <- [K_GROUPING, line, column, expr]
+    <- make_node1(K_GROUPING, line, column, expr)
 }
 
 export function call(callee, args, line, column) {
-    <- [K_CALL, line, column, callee, args]
+    <- make_node2(K_CALL, line, column, callee, args)
 }
 
 export function get(obj, name, line, column) {
-    <- [K_GET, line, column, obj, name]
+    <- make_node2(K_GET, line, column, obj, name)
 }
 
 export function make_index(obj, index_expr, line, column) {
-    <- [K_INDEX, line, column, obj, index_expr]
+    <- make_node2(K_INDEX, line, column, obj, index_expr)
 }
 
 export function make_slice(obj, start_expr, end_expr, step_expr, line, column) {
-    <- [K_SLICE, line, column, obj, start_expr, end_expr, step_expr]
+    <- make_node4(K_SLICE, line, column, obj, start_expr, end_expr, step_expr)
 }
 
 export function index_assign(obj, index_expr, value, line, column) {
-    <- [K_INDEX_ASSIGN, line, column, obj, index_expr, value]
+    <- make_node3(K_INDEX_ASSIGN, line, column, obj, index_expr, value)
 }
 
 export function assign(name, value, line, column) {
-    <- [K_ASSIGN, line, column, name, value]
+    <- make_node2(K_ASSIGN, line, column, name, value)
 }
 
 export function set_expr(obj, name, value, line, column) {
-    <- [K_SET, line, column, obj, name, value]
+    <- make_node3(K_SET, line, column, obj, name, value)
 }
 
 export function list_lit(elements, line, column) {
-    <- [K_LIST, line, column, elements]
+    <- make_node1(K_LIST, line, column, elements)
 }
 
 export function map_lit(entries, line, column) {
-    <- [K_MAP, line, column, entries]
+    <- make_node1(K_MAP, line, column, entries)
 }
 
 export function expr_stmt(expression, line, column) {
-    <- [K_EXPR_STMT, line, column, expression]
+    <- make_node1(K_EXPR_STMT, line, column, expression)
 }
 
 export function let_stmt(name, value, type_ann, mutable, line, column) {
-    <- [K_LET, line, column, name, value, type_ann, mutable]
+    <- make_node4(K_LET, line, column, name, value, type_ann, mutable)
 }
 
 export function block(statements, line, column) {
-    <- [K_BLOCK, line, column, statements]
+    <- make_node1(K_BLOCK, line, column, statements)
 }
 
-export function function_stmt(name, params, body, return_type, line, column) {
-    <- [K_FUNCTION, line, column, name, params, body, return_type]
+export function function_stmt(name, params, body, return_type, line, column, generic_params) {
+    when generic_params == Nothing {
+        generic_params -> []
+    }
+    <- make_node5(K_FUNCTION, line, column, name, params, body, return_type, generic_params)
 }
 
 export function param(name, type_ann, line, column) {
-    <- [K_PARAM, line, column, name, type_ann]
+    <- make_node2(K_PARAM, line, column, name, type_ann)
 }
 
 export function return_stmt(value, line, column) {
-    <- [K_RETURN, line, column, value]
+    <- make_node1(K_RETURN, line, column, value)
 }
 
 export function when_stmt(cases, line, column) {
-    <- [K_WHEN, line, column, cases]
+    <- make_node1(K_WHEN, line, column, cases)
 }
 
 export function check_statement(expression, cases, or_block, raise_expr, line, column) {
-    <- [K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr]
+    <- make_node4(K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr)
 }
 
 export function raise_stmt(expr, line, column) {
-    <- [K_RAISE, line, column, expr]
+    <- make_node1(K_RAISE, line, column, expr)
 }
 
 export function raise_expr(n) { <- n[3] }
 export function set_raise_expr(n, e) { n[3] -> e }
 
 export function ast_check_expr(expression, line, column) {
-    <- [K_CHECK, line, column, expression]
+    <- make_node1(K_CHECK, line, column, expression)
 }
 
 export function case_clause(condition, body, line, column) {
-    <- [K_CASE, line, column, condition, body, Nothing]
+    <- make_node3(K_CASE, line, column, condition, body, Nothing)
 }
 
 export function case_clause_guard(condition, body, guard, line, column) {
-    <- [K_CASE, line, column, condition, body, guard]
+    <- make_node3(K_CASE, line, column, condition, body, guard)
 }
 
 export function rest_pattern(name, line, column) {
-    <- [K_REST, line, column, name]
+    <- make_node1(K_REST, line, column, name)
 }
 
 export function while_stmt(condition, body, line, column) {
-    <- [K_WHILE, line, column, condition, body]
+    <- make_node2(K_WHILE, line, column, condition, body)
 }
 
 export function do_while_stmt(body, condition, line, column, test_first) {
     when test_first == Nothing {
         test_first -> true
     }
-    <- [K_DO_WHILE, line, column, body, condition, test_first]
+    <- make_node3(K_DO_WHILE, line, column, body, condition, test_first)
 }
 
 export function for_stmt(variable, iterable, body, line, column) {
-    <- [K_FOR, line, column, variable, iterable, body]
+    <- make_node3(K_FOR, line, column, variable, iterable, body)
 }
 
 export function assert_stmt(expression, line, column) {
-    <- [K_ASSERT, line, column, expression]
+    <- make_node1(K_ASSERT, line, column, expression)
 }
 
 export function defer_stmt(body, line, column) {
-    <- [K_DEFER, line, column, body]
+    <- make_node1(K_DEFER, line, column, body)
 }
 
-export function structure_stmt(name, members, line, column, traits) {
+export function structure_stmt(name, members, line, column, traits, generic_params) {
     when traits == Nothing {
         traits -> []
     }
-    <- [K_STRUCTURE, line, column, name, members, traits]
+    when generic_params == Nothing {
+        generic_params -> []
+    }
+    <- make_node4(K_STRUCTURE, line, column, name, members, traits, generic_params)
 }
 
-export function class_stmt(name, base_name, members, methods, line, column, traits) {
+export function class_stmt(name, base_name, members, methods, line, column, traits, generic_params) {
     when traits == Nothing {
         traits -> []
     }
-    <- [K_CLASS, line, column, name, base_name, members, methods, traits]
+    when generic_params == Nothing {
+        generic_params -> []
+    }
+    <- make_node6(K_CLASS, line, column, name, base_name, members, methods, traits, generic_params)
 }
 
 export function enumerator_stmt(name, members, line, column) {
-    <- [K_ENUMERATOR, line, column, name, members]
+    <- make_node2(K_ENUMERATOR, line, column, name, members)
 }
 
 export function enum_member(name, value, line, column) {
-    <- [K_ENUM_MEMBER, line, column, name, value]
+    <- make_node2(K_ENUM_MEMBER, line, column, name, value)
 }
 
 export function function_expr(params, body, line, column) {
-    <- [K_FUNC_EXPR, line, column, params, body]
+    <- make_node2(K_FUNC_EXPR, line, column, params, body)
 }
 
 export function is_expr(value, pattern, line, column) {
-    <- [K_IS, line, column, value, pattern]
+    <- make_node2(K_IS, line, column, value, pattern)
 }
 
 export function with_stmt(expression, alias, body, line, column) {
-    <- [K_WITH, line, column, expression, alias, body]
+    <- make_node3(K_WITH, line, column, expression, alias, body)
 }
 
 export function struct_member(name, type_ann, line, column) {
-    <- [K_STRUCT_MEMBER, line, column, name, type_ann]
+    <- make_node2(K_STRUCT_MEMBER, line, column, name, type_ann)
 }
 
 export function cast(expr, target_type, line, column) {
-    <- [K_CAST, line, column, expr, target_type]
+    <- make_node2(K_CAST, line, column, expr, target_type)
 }
 
 export function struct_init(name, fields, line, column) {
-    <- [K_STRUCT_INIT, line, column, name, fields]
+    <- make_node2(K_STRUCT_INIT, line, column, name, fields)
 }
 
 export function struct_init_field(name, value, line, column) {
-    <- [K_STRUCT_FIELD, line, column, name, value]
+    <- make_node2(K_STRUCT_FIELD, line, column, name, value)
 }
 
 export function scope_stmt(name, body, line, column) {
-    <- [K_SCOPE, line, column, name, body]
+    <- make_node2(K_SCOPE, line, column, name, body)
 }
 
 export function import_stmt(path, alias, line, column) {
-    <- [K_IMPORT, line, column, path, alias]
+    <- make_node2(K_IMPORT, line, column, path, alias)
 }
 
 export function from_import_stmt(module_path, names, line, column) {
-    <- [K_FROM_IMPORT, line, column, module_path, names]
+    <- make_node2(K_FROM_IMPORT, line, column, module_path, names)
+}
+
+export function extern_import_stmt(header, alias, names, line, column) {
+    <- make_node3(K_EXTERN_IMPORT, line, column, header, alias, names)
 }
 
 export function type_ann(name, qual) {
-    <- [K_TYPE_ANN, 0, 0, name, qual]
+    <- make_node2(K_TYPE_ANN, 0, 0, name, qual)
 }
 
 export function type_ann_node(name, qual, line, column) {
-    <- [K_TYPE_ANN, line, column, name, qual]
+    <- make_node2(K_TYPE_ANN, line, column, name, qual)
 }
 
 export function program(statements) {
-    <- [K_PROGRAM, 0, 0, statements, Nothing]
+    <- make_node2(K_PROGRAM, 0, 0, statements, Nothing)
 }
 
 export function program_error(error) {
-    <- [K_PROGRAM, 0, 0, [], error]
+    <- make_node2(K_PROGRAM, 0, 0, [], error)
 }
 
 export function program_node(statements, error, line, column) {
-    <- [K_PROGRAM, line, column, statements, error]
+    <- make_node2(K_PROGRAM, line, column, statements, error)
 }
 
 // --- Specific Node Field Accessors ---
@@ -340,6 +404,8 @@ export function set_val(n) { <- n[5] }
 
 export function idx_obj(n) { <- n[3] }
 export function idx_expr(n) { <- n[4] }
+export function index_obj(n) { <- n[3] }
+export function index_key(n) { <- n[4] }
 
 export function slice_obj(n) { <- n[3] }
 export function slice_start(n) { <- n[4] }
@@ -389,6 +455,12 @@ export function fn_body(n) {
     <- n[5]
 }
 export function fn_ret(n) { <- n[6] }
+export function fn_generics(n) {
+    when n.length > 7 {
+        <- n[7]
+    }
+    <- []
+}
 
 export function func_expr_params(n) { <- n[3] }
 export function func_expr_body(n) { <- n[4] }
@@ -411,7 +483,14 @@ export function case_cond(n) { <- n[3] }
 export function case_body(n) { <- n[4] }
 export function case_guard(n) { <- n[5] }
 
-export function rest_name(n) { <- n[3] }
+export function rest_name(n) {
+    let payload -> n[3]
+    when is_node(payload) and ast_kind(payload) == K_VARIABLE {
+        <- var_name(payload)
+    }
+    <- payload
+}
+export function rest_expr(n) { <- n[3] }
 
 export function while_cond(n) { <- n[3] }
 export function while_body(n) { <- n[4] }
@@ -435,6 +514,12 @@ export function struct_traits(n) {
     }
     <- []
 }
+export function struct_generics(n) {
+    when n.length > 6 {
+        <- n[6]
+    }
+    <- []
+}
 
 export function struct_member_name(n) { <- n[3] }
 export function struct_member_type(n) { <- n[4] }
@@ -452,6 +537,12 @@ export function class_methods(n) { <- n[6] }
 export function class_traits(n) {
     when n.length > 7 {
         <- n[7]
+    }
+    <- []
+}
+export function class_generics(n) {
+    when n.length > 8 {
+        <- n[8]
     }
     <- []
 }
@@ -484,6 +575,10 @@ export function import_alias(n) { <- n[4] }
 export function from_import_mod(n) { <- n[3] }
 export function from_import_names(n) { <- n[4] }
 
+export function extern_header(n) { <- n[3] }
+export function extern_alias(n) { <- n[4] }
+export function extern_names(n) { <- n[5] }
+
 export function is_type_ann(n) {
     when n == Nothing {
         <- false
@@ -500,9 +595,8 @@ export function type_ann_qual(n) { <- n[4] }
 export function prog_stmts(n) { <- n[3] }
 export function prog_err(n) { <- n[4] }
 
-// --- Statement Chunk (Zero-Copy Arena Chaining) ---
 export function stmt_chunk(statements, next_chunk) {
-    <- [K_STMT_CHUNK, 0, 0, statements, next_chunk]
+    <- make_node2(K_STMT_CHUNK, 0, 0, statements, next_chunk)
 }
 
 export function stmt_chunk_stmts(n) {

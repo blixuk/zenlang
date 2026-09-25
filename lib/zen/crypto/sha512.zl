@@ -1,0 +1,381 @@
+/!
+  zen.crypto.sha512 - SHA-512 and SHA-384 Cryptographic Hash Functions (FIPS 180-4).
+  High-security 64-bit word hash family.
+  Implemented using 32-bit limbs with zero 64-bit signed integer overflow.
+  Fully compatible with both the AST interpreter and native AOT compiler (-g).
+!/
+
+use zen.text.string as Str
+
+function _to_bytes(data) {
+    when (data == Nothing) { <- [] }
+    when (data.kind == `String`) {
+        <- __builtin.string_to_bytes(data)
+    }
+    when (data.kind != Nothing) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when (b.length > 0) { <- b }
+    <- data
+}
+
+function _pad_hex_byte(b) {
+    let digits -> `0123456789abcdef`
+    let val -> 0 + b
+    let hi -> (val >> 4) & 15
+    let lo -> val & 15
+    <- Str.at(digits, hi) + Str.at(digits, lo)
+}
+
+function _pad_hex32(num) {
+    let n -> 0 + num
+    let b3 -> (n >> 24) & 255
+    let b2 -> (n >> 16) & 255
+    let b1 -> (n >> 8) & 255
+    let b0 -> n & 255
+    <- _pad_hex_byte(b3) + _pad_hex_byte(b2) + _pad_hex_byte(b1) + _pad_hex_byte(b0)
+}
+
+function _rotr_hi(hi, lo, n) {
+    when n < 32 {
+        <- (((hi >> n) | (lo << (32 - n))) & 0xffffffff)
+    } or when n == 32 {
+        <- lo
+    } or {
+        let m -> n - 32
+        <- (((lo >> m) | (hi << (32 - m))) & 0xffffffff)
+    }
+}
+
+function _rotr_lo(hi, lo, n) {
+    when n < 32 {
+        <- (((lo >> n) | (hi << (32 - n))) & 0xffffffff)
+    } or when n == 32 {
+        <- hi
+    } or {
+        let m -> n - 32
+        <- (((hi >> m) | (lo << (32 - m))) & 0xffffffff)
+    }
+}
+
+function _shr_hi(hi, lo, n) {
+    when n < 32 {
+        <- ((hi >> n) & 0xffffffff)
+    } or {
+        <- 0
+    }
+}
+
+function _shr_lo(hi, lo, n) {
+    when n < 32 {
+        <- (((lo >> n) | (hi << (32 - n))) & 0xffffffff)
+    } or {
+        <- ((hi >> (n - 32)) & 0xffffffff)
+    }
+}
+
+function _add_lo(a_lo, b_lo) {
+    <- (a_lo + b_lo) & 0xffffffff
+}
+
+function _add_hi(a_hi, a_lo, b_hi, b_lo) {
+    let carry -> (a_lo + b_lo) >> 32
+    <- (a_hi + b_hi + carry) & 0xffffffff
+}
+
+function _get_k_hi() {
+    <- [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+        0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+        0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+        0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0xca273ece, 0xd186b8c7, 0xeada7dd6, 0xf57d4f7f,
+        0x06f067aa, 0x0a637dc5, 0x113f9804, 0x1b710b35,
+        0x28db77f5, 0x32caab7b, 0x3c9ebe0a, 0x431d67c4,
+        0x4cc5d4be, 0x597f299c, 0x5fcb6fab, 0x6c44198c
+    ]
+}
+
+function _get_k_lo() {
+    <- [
+        0xd728ae22, 0x23ef65cd, 0xec4d3b2f, 0x8189dbbc,
+        0xf348b538, 0xb605d019, 0xaf194f9b, 0xda6d8118,
+        0xa3030242, 0x45706fbe, 0x4ee4b28c, 0xd5ffb4e2,
+        0xf27b896f, 0x3b1696b1, 0x25c71235, 0xcf692694,
+        0x9ef14ad2, 0x384f25e3, 0x8b8cd5b5, 0x77ac9c65,
+        0x592b0275, 0x6ea6e483, 0xbd41fbd4, 0x831153b5,
+        0xee66dfab, 0x2db43210, 0x98fb213f, 0xbeef0ee4,
+        0x3da88fc2, 0x930aa725, 0xe003826f, 0x0a0e6e70,
+        0x46d22ffc, 0x5c26c926, 0x5ac42aed, 0x9d95b3df,
+        0x8baf63de, 0x3c77b2a8, 0x47edaee6, 0x1482353b,
+        0x4cf10364, 0xbc423001, 0xd0f89791, 0x0654be30,
+        0xd6ef5218, 0x5565a910, 0x5771202a, 0x32bbd1b8,
+        0xb8d2d0c8, 0x5141ab53, 0xdf8eeb99, 0xe19b48a8,
+        0xc5c95a63, 0xe3418acb, 0x7763e373, 0xd6b2b8a3,
+        0x5defb2fc, 0x43172f60, 0xa1f0ab72, 0x1a6439ec,
+        0x23631e28, 0xde82bde9, 0xb2c67915, 0xe372532b,
+        0xea26619c, 0x21c0c207, 0xcde0eb1e, 0xee6ed178,
+        0x72176fba, 0xa2c898a6, 0xbef90dae, 0x131c471b,
+        0x23047d84, 0x40c72493, 0x15c9bebc, 0x9c100d4c,
+        0xcb3e42b6, 0xfc657e2a, 0x3ad6faec, 0x4a475817
+    ]
+}
+
+function _sha512_internal(data, init_h_hi, init_h_lo, num_words_out) {
+    let bytes -> _to_bytes(data)
+    let orig_len -> bytes.length
+
+    let padded -> []
+    let i -> 0
+    do while i < orig_len {
+        let b -> bytes[i]
+        when (b < 0) { b -> b + 256 }
+        padded.append(b)
+        i -> i + 1
+    }
+
+    padded.append(128)
+    do while ((padded.length % 128) != 112) {
+        padded.append(0)
+    }
+
+    let bit_len -> orig_len * 8
+    // Append 128-bit length (16 bytes big-endian)
+    i -> 0
+    do while i < 8 {
+        padded.append(0)
+        i -> i + 1
+    }
+    padded.append(0)
+    padded.append(0)
+    padded.append(0)
+    padded.append(0)
+    padded.append((bit_len >> 24) & 255)
+    padded.append((bit_len >> 16) & 255)
+    padded.append((bit_len >> 8) & 255)
+    padded.append(bit_len & 255)
+
+    let K_hi -> _get_k_hi()
+    let K_lo -> _get_k_lo()
+
+    let H_hi -> []
+    let H_lo -> []
+    i -> 0
+    do while i < 8 {
+        H_hi.append(init_h_hi[i])
+        H_lo.append(init_h_lo[i])
+        i -> i + 1
+    }
+
+    let chunk_count -> padded.length / 128
+    let chunk_idx -> 0
+
+    do while chunk_idx < chunk_count {
+        let offset -> chunk_idx * 128
+        let w_hi -> []
+        let w_lo -> []
+
+        let t -> 0
+        do while t < 16 {
+            let o -> offset + (t * 8)
+            let hi_val -> ((padded[o] << 24) | (padded[o + 1] << 16) | (padded[o + 2] << 8) | padded[o + 3]) & 0xffffffff
+            let lo_val -> ((padded[o + 4] << 24) | (padded[o + 5] << 16) | (padded[o + 6] << 8) | padded[o + 7]) & 0xffffffff
+            w_hi.append(hi_val)
+            w_lo.append(lo_val)
+            t -> t + 1
+        }
+
+        do while t < 80 {
+            // s0 = rotr(1) ^ rotr(8) ^ shr(7)
+            let t15_hi -> w_hi[t - 15]
+            let t15_lo -> w_lo[t - 15]
+            let s0_hi -> _rotr_hi(t15_hi, t15_lo, 1) ^^ _rotr_hi(t15_hi, t15_lo, 8) ^^ _shr_hi(t15_hi, t15_lo, 7)
+            let s0_lo -> _rotr_lo(t15_hi, t15_lo, 1) ^^ _rotr_lo(t15_hi, t15_lo, 8) ^^ _shr_lo(t15_hi, t15_lo, 7)
+
+            // s1 = rotr(19) ^ rotr(61) ^ shr(6)
+            let t2_hi -> w_hi[t - 2]
+            let t2_lo -> w_lo[t - 2]
+            let s1_hi -> _rotr_hi(t2_hi, t2_lo, 19) ^^ _rotr_hi(t2_hi, t2_lo, 61) ^^ _shr_hi(t2_hi, t2_lo, 6)
+            let s1_lo -> _rotr_lo(t2_hi, t2_lo, 19) ^^ _rotr_lo(t2_hi, t2_lo, 61) ^^ _shr_lo(t2_hi, t2_lo, 6)
+
+            // w[t] = w[t-16] + s0 + w[t-7] + s1
+            let t16_hi -> w_hi[t - 16]
+            let t16_lo -> w_lo[t - 16]
+            let t7_hi -> w_hi[t - 7]
+            let t7_lo -> w_lo[t - 7]
+
+            let sum_lo -> t16_lo + s0_lo + t7_lo + s1_lo
+            let carry -> sum_lo >> 32
+            let sum_hi -> (t16_hi + s0_hi + t7_hi + s1_hi + carry) & 0xffffffff
+            w_hi.append(sum_hi)
+            w_lo.append(sum_lo & 0xffffffff)
+
+            t -> t + 1
+        }
+
+        let a_hi -> H_hi[0]
+        let a_lo -> H_lo[0]
+        let b_hi -> H_hi[1]
+        let b_lo -> H_lo[1]
+        let c_hi -> H_hi[2]
+        let c_lo -> H_lo[2]
+        let d_hi -> H_hi[3]
+        let d_lo -> H_lo[3]
+        let e_hi -> H_hi[4]
+        let e_lo -> H_lo[4]
+        let f_hi -> H_hi[5]
+        let f_lo -> H_lo[5]
+        let g_hi -> H_hi[6]
+        let g_lo -> H_lo[6]
+        let h_hi -> H_hi[7]
+        let h_lo -> H_lo[7]
+
+        t -> 0
+        do while t < 80 {
+            // S1 = rotr(14) ^ rotr(18) ^ rotr(41)
+            let S1_hi -> _rotr_hi(e_hi, e_lo, 14) ^^ _rotr_hi(e_hi, e_lo, 18) ^^ _rotr_hi(e_hi, e_lo, 41)
+            let S1_lo -> _rotr_lo(e_hi, e_lo, 14) ^^ _rotr_lo(e_hi, e_lo, 18) ^^ _rotr_lo(e_hi, e_lo, 41)
+
+            // ch = (e & f) ^ ((~e) & g)
+            let ch_hi -> (e_hi & f_hi) ^^ ((e_hi ^^ 0xffffffff) & g_hi)
+            let ch_lo -> (e_lo & f_lo) ^^ ((e_lo ^^ 0xffffffff) & g_lo)
+
+            // temp1 = h + S1 + ch + K[t] + w[t]
+            let kt_hi -> K_hi[t]
+            let kt_lo -> K_lo[t]
+            let wt_hi -> w_hi[t]
+            let wt_lo -> w_lo[t]
+
+            let t1_lo -> h_lo + S1_lo + ch_lo + kt_lo + wt_lo
+            let c1 -> t1_lo >> 32
+            let t1_hi -> (h_hi + S1_hi + ch_hi + kt_hi + wt_hi + c1) & 0xffffffff
+            t1_lo -> t1_lo & 0xffffffff
+
+            // S0 = rotr(28) ^ rotr(34) ^ rotr(39)
+            let S0_hi -> _rotr_hi(a_hi, a_lo, 28) ^^ _rotr_hi(a_hi, a_lo, 34) ^^ _rotr_hi(a_hi, a_lo, 39)
+            let S0_lo -> _rotr_lo(a_hi, a_lo, 28) ^^ _rotr_lo(a_hi, a_lo, 34) ^^ _rotr_lo(a_hi, a_lo, 39)
+
+            // maj = (a & b) ^ (a & c) ^ (b & c)
+            let maj_hi -> (a_hi & b_hi) ^^ (a_hi & c_hi) ^^ (b_hi & c_hi)
+            let maj_lo -> (a_lo & b_lo) ^^ (a_lo & c_lo) ^^ (b_lo & c_lo)
+
+            let t2_lo -> S0_lo + maj_lo
+            let c2 -> t2_lo >> 32
+            let t2_hi -> (S0_hi + maj_hi + c2) & 0xffffffff
+            t2_lo -> t2_lo & 0xffffffff
+
+            h_hi -> g_hi
+            h_lo -> g_lo
+            g_hi -> f_hi
+            g_lo -> f_lo
+            f_hi -> e_hi
+            f_lo -> e_lo
+
+            let e_sum_lo -> d_lo + t1_lo
+            let e_carry -> e_sum_lo >> 32
+            e_hi -> (d_hi + t1_hi + e_carry) & 0xffffffff
+            e_lo -> e_sum_lo & 0xffffffff
+
+            d_hi -> c_hi
+            d_lo -> c_lo
+            c_hi -> b_hi
+            c_lo -> b_lo
+            b_hi -> a_hi
+            b_lo -> a_lo
+
+            let a_sum_lo -> t1_lo + t2_lo
+            let a_carry -> a_sum_lo >> 32
+            a_hi -> (t1_hi + t2_hi + a_carry) & 0xffffffff
+            a_lo -> a_sum_lo & 0xffffffff
+
+            t -> t + 1
+        }
+
+        let s0_lo -> H_lo[0] + a_lo
+        H_hi[0] -> (H_hi[0] + a_hi + (s0_lo >> 32)) & 0xffffffff
+        H_lo[0] -> s0_lo & 0xffffffff
+
+        let s1_lo -> H_lo[1] + b_lo
+        H_hi[1] -> (H_hi[1] + b_hi + (s1_lo >> 32)) & 0xffffffff
+        H_lo[1] -> s1_lo & 0xffffffff
+
+        let s2_lo -> H_lo[2] + c_lo
+        H_hi[2] -> (H_hi[2] + c_hi + (s2_lo >> 32)) & 0xffffffff
+        H_lo[2] -> s2_lo & 0xffffffff
+
+        let s3_lo -> H_lo[3] + d_lo
+        H_hi[3] -> (H_hi[3] + d_hi + (s3_lo >> 32)) & 0xffffffff
+        H_lo[3] -> s3_lo & 0xffffffff
+
+        let s4_lo -> H_lo[4] + e_lo
+        H_hi[4] -> (H_hi[4] + e_hi + (s4_lo >> 32)) & 0xffffffff
+        H_lo[4] -> s4_lo & 0xffffffff
+
+        let s5_lo -> H_lo[5] + f_lo
+        H_hi[5] -> (H_hi[5] + f_hi + (s5_lo >> 32)) & 0xffffffff
+        H_lo[5] -> s5_lo & 0xffffffff
+
+        let s6_lo -> H_lo[6] + g_lo
+        H_hi[6] -> (H_hi[6] + g_hi + (s6_lo >> 32)) & 0xffffffff
+        H_lo[6] -> s6_lo & 0xffffffff
+
+        let s7_lo -> H_lo[7] + h_lo
+        H_hi[7] -> (H_hi[7] + h_hi + (s7_lo >> 32)) & 0xffffffff
+        H_lo[7] -> s7_lo & 0xffffffff
+
+        chunk_idx -> chunk_idx + 1
+    }
+
+    let out -> ``
+    i -> 0
+    do while i < num_words_out {
+        out -> out + _pad_hex32(H_hi[i]) + _pad_hex32(H_lo[i])
+        i -> i + 1
+    }
+    <- out
+}
+
+/!
+  Computes SHA-512 digest of input string or byte list (FIPS 180-4).
+  @return 128-character lowercase hex string.
+!/
+export function sha512(data) {
+    let init_hi -> [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+    ]
+    let init_lo -> [
+        0xf3bcc908, 0x84caa73b, 0xfe94f82b, 0x5f1d36f1,
+        0xade682d1, 0x2b3e6c1f, 0xfb41bd6b, 0x137e2179
+    ]
+    <- _sha512_internal(data, init_hi, init_lo, 8)
+}
+
+/!
+  Computes SHA-384 digest of input string or byte list (FIPS 180-4).
+  @return 96-character lowercase hex string.
+!/
+export function sha384(data) {
+    let init_hi -> [
+        0xcbbb9d5d, 0x629a292a, 0x9159015a, 0x152fecd8,
+        0x67332667, 0x8eb44a87, 0xdb0c2e0d, 0x47b5481d
+    ]
+    let init_lo -> [
+        0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939,
+        0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4
+    ]
+    <- _sha512_internal(data, init_hi, init_lo, 6)
+}

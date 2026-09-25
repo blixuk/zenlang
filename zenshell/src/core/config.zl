@@ -1,0 +1,57 @@
+/!
+  zenshell - ZenData Configuration Manager
+!/
+
+import zen.data.zendata as zd
+import zen.io.file as file
+import zen.io.path as path
+import zen.sys.sys as sys
+import zen.text.string as Str
+
+function join_path(p1, p2) {
+    when p1 == `` or p1 == Nothing { <- p2 }
+    when p2 == `` or p2 == Nothing { <- p1 }
+    when Str.ends_with(p1, `/`) { <- p1 + p2 }
+    <- p1 + `/` + p2
+}
+
+export function get_config_path() {
+    let home -> sys.get_env(`HOME`)
+    when home == Nothing { home -> `.` }
+    <- join_path(home, `.config/zenshell/config.zd`)
+}
+
+export function load_config(fallback_path) {
+    let cfg_path -> get_config_path()
+    when file.exists(cfg_path) {
+        let content -> file.read(cfg_path)
+        when content != Nothing and content != `` {
+            let parsed -> zd.parse(content)
+            when parsed != Nothing {
+                <- parsed
+            }
+        }
+    }
+
+    when fallback_path != Nothing and file.exists(fallback_path) {
+        let content -> file.read(fallback_path)
+        when content != Nothing and content != `` {
+            let parsed -> zd.parse(content)
+            when parsed != Nothing {
+                <- parsed
+            }
+        }
+    }
+
+    <- Nothing
+}
+
+export function save_config(cfg_val) {
+    let cfg_path -> get_config_path()
+    let parent -> path.dirname(cfg_path)
+    when not file.exists(parent) {
+        file.mkdir(parent)
+    }
+    let serialized -> zd.stringify(cfg_val, 0)
+    <- file.write(cfg_path, serialized)
+}

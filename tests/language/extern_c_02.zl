@@ -1,0 +1,28 @@
+extern use `<math.h>`
+extern use `<stdlib.h>`
+extern use `<string.h>`
+extern use sys.sysinfo
+extern use unistd as u
+extern from math use sqrt, pow, cos
+
+function main() {
+    let val_abs -> abs(-42)
+    assert val_abs == 42
+
+    let r_sqrt -> sqrt(16.0)
+    assert r_sqrt == 4.0
+
+    let r_pow -> pow(2.0, 3.0)
+    assert r_pow == 8.0
+
+    let pid -> u.getpid()
+    assert pid > 0
+
+    let cpus -> sysinfo.get_nprocs()
+    assert cpus > 0
+
+    let slen -> strlen(`Zenlang`)
+    assert slen == 7
+
+    writeln(f`All extern C tests passed! abs={val_abs}, sqrt={r_sqrt}, pow={r_pow}, pid={pid}, cpus={cpus}, slen={slen}`)
+}

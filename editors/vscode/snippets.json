@@ -210,9 +210,16 @@
   "Write line": {
     "prefix": ["writeln", "print"],
     "body": [
+      "writeln(`${1:message}`)"
+    ],
+    "description": "Universal writeln prelude (no import needed)"
+  },
+  "Write line (io)": {
+    "prefix": "iowriteln",
+    "body": [
       "io.writeln(`${1:message}`)"
     ],
-    "description": "Write a line (needs import zen.io.io as io)"
+    "description": "Structured line output via zen.io"
   },
   "Doc comment": {
     "prefix": "doc",
@@ -292,6 +299,69 @@
       "```"
     ],
     "description": "Triple-backtick multiline string"
+  },
+  "List comprehension": {
+    "prefix": ["lcomp", "listcomp"],
+    "body": [
+      "[for ${1:x} in ${2:iterable} -> ${0:x}]"
+    ],
+    "description": "Directional list comprehension"
+  },
+  "Filtered list comprehension": {
+    "prefix": ["lcompf", "listcompfilter"],
+    "body": [
+      "[for ${1:x} in ${2:iterable} when ${3:cond} -> ${0:x}]"
+    ],
+    "description": "Filtered directional list comprehension"
+  },
+  "Map comprehension": {
+    "prefix": ["mcomp", "mapcomp"],
+    "body": [
+      "{for ${1:k}, ${2:v} in ${3:iterable} -> ${4:key}: ${0:val}}"
+    ],
+    "description": "Directional map comprehension"
+  },
+  "Filtered map comprehension": {
+    "prefix": ["mcompf", "mapcompfilter"],
+    "body": [
+      "{for ${1:k}, ${2:v} in ${3:iterable} when ${4:cond} -> ${5:key}: ${0:val}}"
+    ],
+    "description": "Filtered directional map comprehension"
+  },
+  "Collection spread": {
+    "prefix": "spread",
+    "body": [
+      "...${0:items}"
+    ],
+    "description": "Collection spread expression"
+  },
+  "Pipeline expression": {
+    "prefix": ["pipe", "pipeline"],
+    "body": [
+      "${1:data} |> ${0:func}"
+    ],
+    "description": "Directional pipeline operator (|>) expression"
+  },
+  "Null coalescing": {
+    "prefix": ["coal", "coalesce"],
+    "body": [
+      "${1:value} ?? ${0:fallback}"
+    ],
+    "description": "Null/sentinel coalescing (??) fallback"
+  },
+  "Extern use C header": {
+    "prefix": ["extern", "externuse"],
+    "body": [
+      "extern use `<${1:header.h}>`"
+    ],
+    "description": "Direct C system header import"
+  },
+  "Extern from C header": {
+    "prefix": ["externfrom"],
+    "body": [
+      "extern from `<${1:header.h}>` use ${0:functions}"
+    ],
+    "description": "Selective direct C symbol import"
   }
 }
 

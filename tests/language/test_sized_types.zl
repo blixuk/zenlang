@@ -1,0 +1,90 @@
+// Test Sized Primitive Types, Casting, Bounds & Parity
+import zen.test as test
+
+function test_sized_declarations() {
+    let a : Integer[32] -> 100
+    let b : Integer[16] -> 200
+    let c : Byte -> 250
+    let d : Decimal[32] -> 3.5
+
+    let pass -> test.assert_equal(a, 100, `Integer[32] should be 100`)
+    pass -> pass and test.assert_equal(b, 200, `Integer[16] should be 200`)
+    pass -> pass and test.assert_equal(c, 250, `Byte should be 250`)
+    pass -> pass and test.assert_equal(d, 3.5, `Decimal[32] should be 3.5`)
+    <- pass
+}
+
+function test_sized_defaults() {
+    let x : Integer[16] -> Default
+    let y : Byte -> Default
+    let z : Decimal[32] -> Default
+
+    let pass -> test.assert_equal(x, 0, `Default Integer[16] should be 0`)
+    pass -> pass and test.assert_equal(y, 0, `Default Byte should be 0`)
+    pass -> pass and test.assert_equal(z, 0.0, `Default Decimal[32] should be 0.0`)
+    pass -> pass and test.assert_true(x == Default, `x == Default`)
+    pass -> pass and test.assert_true(y == Default, `y == Default`)
+    <- pass
+}
+
+function test_sized_casting_truncation() {
+    // Byte: unsigned 8-bit [0..255]
+    let b1 -> 300 <: Byte
+    let b2 -> (-1) <: Byte
+    let b3 -> Byte(300)
+    let b4 -> Byte(-1)
+
+    let pass -> test.assert_equal(b1, 44, `300 <: Byte should truncate to 44`)
+    pass -> pass and test.assert_equal(b2, 255, `(-1) <: Byte should truncate to 255`)
+    pass -> pass and test.assert_equal(b3, 44, `Byte(300) should truncate to 44`)
+    pass -> pass and test.assert_equal(b4, 255, `Byte(-1) should truncate to 255`)
+
+    // Integer[16]: signed 16-bit [-32768..32767]
+    let s1 -> 70000 <: Integer[16]
+    let s2 -> (-32769) <: Integer[16]
+    let s3 -> Integer[16](70000)
+
+    pass -> pass and test.assert_equal(s1, 4464, `70000 <: Integer[16] should truncate to 4464`)
+    pass -> pass and test.assert_equal(s2, 32767, `(-32769) <: Integer[16] should wrap to 32767`)
+    pass -> pass and test.assert_equal(s3, 4464, `Integer[16](70000) should truncate to 4464`)
+
+    // Integer[32]: signed 32-bit
+    let i1 -> 5000000000 <: Integer[32]
+    let i2 -> Integer[32](5000000000)
+    pass -> pass and test.assert_equal(i1, 705032704, `5000000000 <: Integer[32] should truncate to 705032704`)
+    pass -> pass and test.assert_equal(i2, 705032704, `Integer[32](5000000000) should truncate to 705032704`)
+
+    // String[N]: clamped length
+    let str1 -> `HelloWorld` <: String[5]
+    let str2 -> `Zen` <: String[10]
+    pass -> pass and test.assert_equal(str1, `Hello`, `String[5] should clamp to 5 characters`)
+    pass -> pass and test.assert_equal(str2, `Zen`, `String[10] should retain shorter string`)
+
+    <- pass
+}
+
+function test_vector_tuple() {
+    let v : Vector[3] -> [10, 20, 30]
+    let t : Tuple -> [1, `two`, true]
+
+    let pass -> test.assert_equal(v.length, 3, `Vector[3] length should be 3`)
+    pass -> pass and test.assert_equal(v[0], 10, `Vector[3][0] should be 10`)
+    pass -> pass and test.assert_equal(t.length, 3, `Tuple length should be 3`)
+    pass -> pass and test.assert_equal(t[1], `two`, `Tuple[1] should be 'two'`)
+    <- pass
+}
+
+function main() {
+    let p1 -> test_sized_declarations()
+    let p2 -> test_sized_defaults()
+    let p3 -> test_sized_casting_truncation()
+    let p4 -> test_vector_tuple()
+
+    when p1 and p2 and p3 and p4 {
+        writeln(`TEST SIZED TYPES: ALL PASSED`)
+        <- 0
+    } or {
+        writeln(`TEST SIZED TYPES: FAILED`)
+        <- 1
+    }
+}

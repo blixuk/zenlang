@@ -1,0 +1,194 @@
+/!
+  zenshell - Dynamic Welcome & Productivity Greeter (greet)
+  Contextual greeting, system status, git topology, and mini calendar.
+!/
+
+import zen.sys.sys as sys
+import zen.sys.process as process
+import zen.text.string as Str
+import ui.theme as color
+import core.command as cmd_base
+import commands.calendar as cal_cmd
+
+function get_time_of_day_greeting(hour) {
+    when hour >= 4 and hour < 12 {
+        <- `Good morning`
+    } or when hour >= 12 and hour < 17 {
+        <- `Good afternoon`
+    } or when hour >= 17 and hour < 22 {
+        <- `Good evening`
+    }
+    <- `Good night`
+}
+
+function get_git_status() {
+    let git_chk -> process.result(`git rev-parse --is-inside-work-tree 2>/dev/null`)
+    when git_chk == Nothing or git_chk[`code`] != 0 {
+        <- Nothing
+    }
+
+    let b_res -> process.result(`git branch --show-current 2>/dev/null`)
+    let branch -> when (b_res != Nothing and b_res[`code`] == 0 and Str.trim(b_res[`stdout`]) != ``) {
+        Str.trim(b_res[`stdout`])
+    } or {
+        `detached`
+    }
+
+    let s_res -> process.result(`git status --porcelain 2>/dev/null`)
+    when s_res == Nothing or s_res[`code`] != 0 or Str.trim(s_res[`stdout`]) == `` {
+        <- color.cyan(`🌿 Git: `) + color.bold(branch) + ` (` + color.green(`clean`) + `)`
+    }
+
+    let lines -> Str.split(Str.trim(s_res[`stdout`]), `\n`)
+    let count -> lines.length
+    let desc -> Str.to_string(count) + ` changed ` + when (count == 1) { `file` } or { `files` }
+    <- color.cyan(`🌿 Git: `) + color.bold(branch) + ` (` + color.yellow(desc) + `)`
+}
+
+function get_quick_sys_stats() {
+    let up_res -> process.result(`cat /proc/uptime 2>/dev/null`)
+    let uptime_str -> `-`
+    when up_res != Nothing and up_res[`code`] == 0 and Str.trim(up_res[`stdout`]) != `` {
+        let parts -> Str.split(up_res[`stdout`], ` `)
+        when parts.length > 0 {
+            let total_sec -> Integer(parts[0])
+            when total_sec != Nothing {
+                let days -> Integer(total_sec / 86400)
+                let rem -> total_sec - (days * 86400)
+                let hours -> Integer(rem / 3600)
+                let rem2 -> rem - (hours * 3600)
+                let mins -> Integer(rem2 / 60)
+                let s -> ``
+                when days > 0 { s -> s + Str.to_string(days) + `d ` }
+                when hours > 0 or days > 0 { s -> s + Str.to_string(hours) + `h ` }
+                s -> s + Str.to_string(mins) + `m`
+                uptime_str -> s
+            }
+        }
+    }
+
+    let mem_res -> process.result(`cat /proc/meminfo 2>/dev/null`)
+    let ram_str -> `-`
+    when mem_res != Nothing and mem_res[`code`] == 0 and Str.trim(mem_res[`stdout`]) != `` {
+        let lines -> Str.split(mem_res[`stdout`], `\n`)
+        let total_kb -> 0
+        let avail_kb -> 0
+        do for line in lines {
+            when Str.starts_with(line, `MemTotal:`) {
+                let p -> Str.split(line, `:`)
+                when p.length > 1 {
+                    let sub -> Str.split(Str.trim(p[1]), ` `)
+                    when sub.length > 0 { total_kb -> Integer(sub[0]) }
+                }
+            } or when Str.starts_with(line, `MemAvailable:`) {
+                let p -> Str.split(line, `:`)
+                when p.length > 1 {
+                    let sub -> Str.split(Str.trim(p[1]), ` `)
+                    when sub.length > 0 { avail_kb -> Integer(sub[0]) }
+                }
+            }
+        }
+        when total_kb > 0 and avail_kb > 0 {
+            let used_kb -> total_kb - avail_kb
+            let pct -> Integer((Decimal(used_kb) / Decimal(total_kb)) * 100.0)
+            let avail_gb -> Integer(avail_kb / 1048576)
+            ram_str -> Str.to_string(pct) + `% (` + Str.to_string(avail_gb) + ` GB free)`
+        }
+    }
+
+    <- `⚡ Uptime: ` + uptime_str + ` • RAM: ` + ram_str
+}
+
+function pad_box_line(text, inner_width) {
+    // Basic ANSI-strip length estimation
+    let stripped -> text
+    let len -> Str.length(stripped)
+    // Avoid manual strip loop if not needed: inner width padding
+    when len >= inner_width { <- text }
+    <- text + Str.repeat(` `, inner_width - len)
+}
+
+function pad02(val) {
+    let s -> Str.to_string(val)
+    when Str.length(s) < 2 { <- `0` + s }
+    <- s
+}
+
+function handle_greet_default(args, ctx) {
+    let now -> cal_cmd.get_local_now()
+    let hour -> now[`hour`]
+    let min -> now[`minute`]
+    let sec -> now[`second`]
+    let user -> sys.get_env(`USER`)
+    when user == Nothing or user == `` { user -> `developer` }
+
+    let salutation -> get_time_of_day_greeting(hour)
+    let min_padded -> pad02(min)
+    let sec_padded -> pad02(sec)
+
+    let time_str -> Str.to_string(hour) + `:` + min_padded + `:` + sec_padded
+    let date_str -> now[`weekday`] + `, ` + Str.to_string(now[`day`]) + ` ` + now[`month_name`] + ` ` + Str.to_string(now[`year`])
+
+    let git_info -> get_git_status()
+    let sys_stats -> get_quick_sys_stats()
+
+    let out -> `\n`
+    out -> out + color.bold(color.cyan(`  ✨ ` + salutation + `, ` + user + `!`)) + `\n`
+    out -> out + color.dim(`  📅 `) + color.bold(date_str) + color.dim(` • `) + color.yellow(time_str) + `\n`
+    out -> out + color.dim(`  `) + sys_stats + `\n`
+
+    when git_info != Nothing {
+        out -> out + `  ` + git_info + `\n`
+    }
+    out -> out + color.dim(`  📂 ` + ctx.cwd) + `\n\n`
+
+    // Embed mini calendar
+    let cal_str -> cal_cmd.render_calendar_month(now[`year`], now[`month`], now[`day`])
+    let cal_lines -> Str.split(cal_str, `\n`)
+    do for cline in cal_lines {
+        when Str.trim(cline) != `` {
+            out -> out + `  ` + cline + `\n`
+        }
+    }
+
+    <- out
+}
+
+function handle_greet_brief(args, ctx) {
+    let now -> cal_cmd.get_local_now()
+    let hour -> now[`hour`]
+    let min -> now[`minute`]
+    let user -> sys.get_env(`USER`)
+    when user == Nothing { user -> `developer` }
+
+    let salutation -> get_time_of_day_greeting(hour)
+    let min_str -> pad02(min)
+    let time_str -> Str.to_string(hour) + `:` + min_str
+    let date_str -> now[`weekday`] + `, ` + Str.to_string(now[`day`]) + ` ` + now[`month_name`] + ` ` + Str.to_string(now[`year`])
+
+    <- color.cyan(`✨ ` + salutation + `, ` + user + `! `) + color.bold(date_str) + ` (` + color.yellow(time_str) + `)`
+}
+
+let DOC_GREET -> ```
+# greet — Dynamic Welcome & Productivity Greeter
+
+Displays an intelligent terminal greeting with contextual date/time, system status, git topology, and mini monthly calendar.
+
+## Usage
+- `greet` — Displays complete welcome dashboard.
+- `greet brief` (or `greet mini`) — Displays concise one-line greeting.
+
+## Features
+- Contextual day-part greeting (morning, afternoon, evening, night).
+- Real-time system uptime and RAM metrics.
+- Active git branch & dirty file indicator.
+- Built-in monthly calendar with today highlighted.
+```
+
+export function create_greet_command(ctx) {
+    let cmd -> cmd_base.Command(`greet`, `Dynamic terminal greeter with calendar, git status, and system info`)
+    cmd.set_default(handle_greet_default)
+    cmd.add_subcommand(`brief`, `Display concise one-line greeting`, handle_greet_brief)
+    cmd.add_subcommand(`mini`, `Display concise one-line greeting`, handle_greet_brief)
+    <- cmd
+}

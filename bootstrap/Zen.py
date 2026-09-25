@@ -109,6 +109,8 @@ class ZenCompiler:
         # Scan for imports
         for statement in ast.statements:
             if isinstance(statement, (ImportStatement, FromImportStatement)):
+                if getattr(statement, "is_extern", False):
+                    continue
                 import_path = getattr(statement, "path")
                 
                 try:

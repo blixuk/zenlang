@@ -1,0 +1,85 @@
+function assert_equal(actual, expected, msg) {
+    when actual != expected {
+        stdout.writeln(f`FAIL: {msg} - expected {expected}, got {actual}`)
+        <- 1
+    }
+    stdout.writeln(f`PASS: {msg}`)
+    <- 0
+}
+
+function test_list_spread_basic() {
+    let a -> [1, 2]
+    let b -> [3, 4]
+    let c -> [...a, ...b]
+    let failures -> 0
+    failures -> failures + assert_equal(c.length, 4, `c.length == 4`)
+    failures -> failures + assert_equal(c[0], 1, `c[0] == 1`)
+    failures -> failures + assert_equal(c[1], 2, `c[1] == 2`)
+    failures -> failures + assert_equal(c[2], 3, `c[2] == 3`)
+    failures -> failures + assert_equal(c[3], 4, `c[3] == 4`)
+    <- failures
+}
+
+function test_list_spread_interleaved() {
+    let mid -> [2, 3]
+    let full -> [1, ...mid, 4, 5]
+    let failures -> 0
+    failures -> failures + assert_equal(full.length, 5, `full.length == 5`)
+    failures -> failures + assert_equal(full[0], 1, `full[0] == 1`)
+    failures -> failures + assert_equal(full[1], 2, `full[1] == 2`)
+    failures -> failures + assert_equal(full[2], 3, `full[2] == 3`)
+    failures -> failures + assert_equal(full[3], 4, `full[3] == 4`)
+    failures -> failures + assert_equal(full[4], 5, `full[4] == 5`)
+    <- failures
+}
+
+function test_map_spread_basic() {
+    let a -> {`x` -> 1, `y` -> 2}
+    let b -> {...a, `z` -> 3}
+    let failures -> 0
+    failures -> failures + assert_equal(b.length, 3, `b.length == 3`)
+    failures -> failures + assert_equal(b[`x`], 1, `b[x] == 1`)
+    failures -> failures + assert_equal(b[`y`], 2, `b[y] == 2`)
+    failures -> failures + assert_equal(b[`z`], 3, `b[z] == 3`)
+    <- failures
+}
+
+function test_map_spread_override() {
+    let base_config -> {`timeout` -> 30, `retries` -> 3, `debug` -> false}
+    let user_config -> {...base_config, `debug` -> true, `host` -> `localhost`}
+    let failures -> 0
+    failures -> failures + assert_equal(user_config[`timeout`], 30, `user_config[timeout] == 30`)
+    failures -> failures + assert_equal(user_config[`retries`], 3, `user_config[retries] == 3`)
+    failures -> failures + assert_equal(user_config[`debug`], true, `user_config[debug] == true`)
+    failures -> failures + assert_equal(user_config[`host`], `localhost`, `user_config[host] == localhost`)
+    <- failures
+}
+
+function test_map_spread_multiple() {
+    let a -> {`a` -> 10}
+    let b -> {`b` -> 20}
+    let c -> {...a, ...b, `c` -> 30}
+    let failures -> 0
+    failures -> failures + assert_equal(c.length, 3, `c.length == 3`)
+    failures -> failures + assert_equal(c[`a`], 10, `c[a] == 10`)
+    failures -> failures + assert_equal(c[`b`], 20, `c[b] == 20`)
+    failures -> failures + assert_equal(c[`c`], 30, `c[c] == 30`)
+    <- failures
+}
+
+function main() {
+    stdout.writeln(`=== Running Collection Spreads Tests ===`)
+    let total_failures -> 0
+    total_failures -> total_failures + test_list_spread_basic()
+    total_failures -> total_failures + test_list_spread_interleaved()
+    total_failures -> total_failures + test_map_spread_basic()
+    total_failures -> total_failures + test_map_spread_override()
+    total_failures -> total_failures + test_map_spread_multiple()
+    
+    when total_failures > 0 {
+        stdout.writeln(f`=== {total_failures} test(s) failed ===`)
+        <- 1
+    }
+    stdout.writeln(`=== All Collection Spread Tests Passed ===`)
+    <- 0
+}

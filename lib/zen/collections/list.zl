@@ -224,3 +224,80 @@ export function all(list, fn) {
     }
     <- true
 }
+
+function _merge_sorted(left, right, cmp_fn) {
+    let result -> []
+    let i -> 0
+    let j -> 0
+    let n_l -> left.length
+    let n_r -> right.length
+
+    do while i < n_l and j < n_r {
+        let a -> left[i]
+        let b -> right[j]
+        let take_left -> False
+        when (cmp_fn == Nothing) {
+            take_left -> a <= b
+        } or {
+            take_left -> cmp_fn(a, b)
+        }
+        when (take_left) {
+            result.append(a)
+            i -> i + 1
+        } or {
+            result.append(b)
+            j -> j + 1
+        }
+    }
+
+    do while i < n_l {
+        result.append(left[i])
+        i -> i + 1
+    }
+    do while j < n_r {
+        result.append(right[j])
+        j -> j + 1
+    }
+
+    <- result
+}
+
+/!
+  Sorts a list using an optional comparator function.
+  Returns a new sorted list (does not mutate the original).
+  @param list The list to sort.
+  @param cmp_fn Optional comparator function (a, b -> boolean). Defaults to ascending (a <= b).
+  @return A new sorted list.
+!/
+export function sort_by(list, cmp_fn) {
+    when (list == Nothing) { <- [] }
+    let n -> list.length
+    when (n <= 1) {
+        <- list
+    }
+    let mid -> Integer(n / 2)
+    let left -> []
+    let right -> []
+    let idx -> 0
+    do while idx < mid {
+        left.append(list[idx])
+        idx -> idx + 1
+    }
+    do while idx < n {
+        right.append(list[idx])
+        idx -> idx + 1
+    }
+    let s_left -> sort_by(left, cmp_fn)
+    let s_right -> sort_by(right, cmp_fn)
+    <- _merge_sorted(s_left, s_right, cmp_fn)
+}
+
+/!
+  Sorts a list in ascending order.
+  Returns a new sorted list (does not mutate the original).
+  @param list The list to sort.
+  @return A new sorted list.
+!/
+export function sort(list) {
+    <- sort_by(list, Nothing)
+}

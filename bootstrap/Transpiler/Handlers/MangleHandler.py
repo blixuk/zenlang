@@ -50,6 +50,8 @@ class MangleHandler:
             return "__builtin_time"
         if name == "term" and not (hasattr(self, "module_aliases") and "term" in self.module_aliases):
             return "__builtin_term"
+        if name in ("ast", "Ast") and not (hasattr(self, "module_aliases") and "ast" in self.module_aliases):
+            return "__builtin_ast"
         if name in ("stdout", "stderr", "stdin", "args", "env"):
             return f"z_{name}"
              
@@ -65,8 +67,8 @@ class MangleHandler:
         # If it's a string name, try to resolve it or just return it
         if isinstance(type_obj, str):
             if type_obj in (
-                "String", "Bool", "Boolean", "Integer", "Float", "Decimal",
-                "Variant", "List", "Map", "Any", "string", "char*", "int",
+                "String", "Boolean", "Integer", "Decimal", "Byte", "Bytes",
+                "Variant", "List", "Set", "Vector", "Tuple", "Map", "Any", "string", "char*", "int",
                 "bool", "double", "float", "rune", "Rune", "Void", "void"
             ):
                 return "ZenValue"
@@ -79,7 +81,7 @@ class MangleHandler:
         filename = getattr(type_obj, "filename", None)
         if not filename and hasattr(type_obj, "symbol") and type_obj.symbol:
             filename = getattr(type_obj.symbol, "filename", None)
-        if name in ("String", "Bool", "Boolean", "Integer", "Float", "Decimal", "Variant", "List", "Map", "Any", "string", "char*", "int", "bool", "double", "float", "rune", "Rune", "Void", "void"):
+        if name in ("String", "Boolean", "Integer", "Decimal", "Byte", "Bytes", "Variant", "List", "Set", "Vector", "Tuple", "Map", "Any", "string", "char*", "int", "bool", "double", "float", "rune", "Rune", "Void", "void"):
             return "ZenValue"
         
         if not filename or not self.main_file:
@@ -302,6 +304,28 @@ class MangleHandler:
                 if raw_prop in ("run_file", "run_bytecode", "run"):
                     return "ZenValue_run_bytecode_file"
                 return f"ZenVM_{raw_prop}"
+
+            if obj_name in ("__builtin_ffi", "ffi", "FFI"):
+                if raw_prop in ("load", "open"):
+                    return "ZenFFI_builtin_load"
+                if raw_prop in ("symbol", "sym"):
+                    return "ZenFFI_builtin_symbol"
+                if raw_prop == "call":
+                    return "ZenFFI_builtin_call"
+                if raw_prop == "close":
+                    return "ZenFFI_builtin_close"
+                if raw_prop == "error":
+                    return "ZenFFI_builtin_error"
+                if raw_prop == "resolve":
+                    return "ZenFFI_builtin_resolve"
+                return f"ZenFFI_builtin_{raw_prop}"
+
+            if obj_name in ("__builtin_ast", "ast", "Ast"):
+                if raw_prop == "token":
+                    return "ZenToken_make"
+                if raw_prop.startswith("create"):
+                    return f"ZenAst_node_{raw_prop}"
+                return f"ZenAst_node_{raw_prop}"
             
             if obj_name == "__builtin_set":
                 if raw_prop == "has": return "ZenSet_contains_value"
@@ -393,7 +417,11 @@ class MangleHandler:
             name = node.name
         else:
             name = getattr(node, "name", "unknown")
-        
+
+        if "<" in name and name.endswith(">"):
+            base_name = name[:name.index("<")]
+            name = base_name
+
         name = self.sanitize_name(name)
 
         if name == "self":
