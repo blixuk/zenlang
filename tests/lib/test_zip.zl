@@ -1,0 +1,227 @@
+/!
+  tests/lib/test_zip.zl - Comprehensive verification suite for pure Zenlang PKZIP engine.
+!/
+
+use zen.data.zip as zip
+use zen.io.file as file
+use zen.text.string as Str
+
+function assert_true(condition, message) {
+    when not condition {
+        writeln(`FAIL: ` + message)
+        raise `Assertion failed: ` + message
+    }
+    writeln(`PASS: ` + message)
+}
+
+function test_basic_roundtrip() {
+    writeln(`--- Test: ZIP Basic Round-trip ---`)
+
+    let files -> [
+        {
+            `name`    -> `hello.txt`,
+            `content` -> `Hello, Zenlang PKZIP World!`
+        },
+        {
+            `name`    -> `nested/docs/guide.md`,
+            `content` -> `# Zenlang Guide\n\nPure Zenlang data compression and archival.\n`
+        },
+        {
+            `name`    -> `empty.txt`,
+            `content` -> ``
+        }
+    ]
+
+    // Create compressed zip archive (default level 6)
+    let zip_bytes -> zip.create(files, 6)
+    assert_true(zip_bytes.length > 0, `zip archive generated with non-zero size`)
+
+    // Verify magic bytes: 0x50 0x4B 0x03 0x04
+    assert_true(zip_bytes[0] == 0x50 and zip_bytes[1] == 0x4B and zip_bytes[2] == 0x03 and zip_bytes[3] == 0x04, `valid local file header signature`)
+
+    // Inspect metadata
+    let summary -> zip.inspect(zip_bytes)
+    assert_true(summary[`total_entries`] == 3, `summary reports 3 entries`)
+
+    let entries -> summary[`entries`]
+    assert_true(entries[0][`name`] == `hello.txt`, `first entry name matches`)
+    assert_true(entries[1][`name`] == `nested/docs/guide.md`, `second entry nested path matches`)
+    assert_true(entries[2][`name`] == `empty.txt`, `third entry empty file matches`)
+    assert_true(entries[0][`method`] == 8, `compression method is 8 (deflate)`)
+    assert_true(entries[2][`method`] == 0, `empty file method is 0 (stored)`)
+
+    // Parse and extract files
+    let extracted -> zip.parse(zip_bytes)
+    assert_true(extracted.length == 3, `extracted 3 files`)
+
+    let text0 -> __builtin.bytes_to_string(extracted[0][`content`])
+    assert_true(text0 == `Hello, Zenlang PKZIP World!`, `first file content restored exactly`)
+
+    let text1 -> __builtin.bytes_to_string(extracted[1][`content`])
+    assert_true(text1 == `# Zenlang Guide\n\nPure Zenlang data compression and archival.\n`, `second file content restored exactly`)
+
+    let text2 -> __builtin.bytes_to_string(extracted[2][`content`])
+    assert_true(text2 == ``, `empty file restored as empty`)
+
+    // Direct helper reads
+    let s_direct -> zip.read_string(zip_bytes, `hello.txt`)
+    assert_true(s_direct == `Hello, Zenlang PKZIP World!`, `read_string reads entry directly`)
+
+    let missing -> zip.read_entry(zip_bytes, `nonexistent.txt`)
+    assert_true(missing == Nothing, `reading nonexistent entry returns Nothing`)
+}
+
+function test_stored_level0() {
+    writeln(`--- Test: ZIP Level 0 (Stored) ---`)
+
+    let files -> [
+        {
+            `name`    -> `stored.txt`,
+            `content` -> `Uncompressed payload in zip archive.`
+        }
+    ]
+
+    let zip_bytes -> zip.create(files, 0)
+    let meta -> zip.list_entries(zip_bytes)
+    assert_true(meta.length == 1, `listed 1 entry`)
+    assert_true(meta[0][`method`] == 0, `method is 0 (stored)`)
+    assert_true(meta[0][`compressed_size`] == meta[0][`size`], `compressed size equals uncompressed size`)
+
+    let content -> zip.read_string(zip_bytes, `stored.txt`)
+    assert_true(content == `Uncompressed payload in zip archive.`, `stored level 0 round-trip matches`)
+}
+
+function test_binary_and_comments() {
+    writeln(`--- Test: Binary Payload & Comments ---`)
+
+    let bin_data -> []
+    let i -> 0
+    do while i < 256 {
+        bin_data.append(i)
+        i -> i + 1
+    }
+
+    let files -> [
+        {
+            `name`    -> `binary.dat`,
+            `content` -> bin_data,
+            `comment` -> `256 binary bytes table`
+        }
+    ]
+
+    let zip_bytes -> zip.create(files, 6)
+    let entries -> zip.list_entries(zip_bytes)
+    assert_true(entries[0][`comment`] == `256 binary bytes table`, `entry comment preserved in central directory`)
+
+    let extracted -> zip.parse(zip_bytes)
+    let ext_bytes -> extracted[0][`content`]
+    assert_true(ext_bytes.length == 256, `extracted binary size is 256`)
+
+    let match_ok -> true
+    i -> 0
+    do while i < 256 {
+        when ext_bytes[i] != i { match_ok -> false }
+        i -> i + 1
+    }
+    assert_true(match_ok, `binary payload 0..255 byte-exact match`)
+}
+
+function test_crc_corruption_detection() {
+    writeln(`--- Test: CRC-32 Tamper Detection ---`)
+
+    let files -> [
+        {
+            `name`    -> `sensitive.txt`,
+            `content` -> `Crucial data with strict CRC-32 integrity validation.`
+        }
+    ]
+
+    let zip_bytes -> zip.create(files, 6)
+
+    // Tamper with one payload byte
+    // Payload starts after LFH (30 bytes + name length 13 = 43)
+    let corrupted -> []
+    let i -> 0
+    do while i < zip_bytes.length {
+        let b -> zip_bytes[i]
+        when i == 45 {
+            b -> (b + 1) & 255 // Flip byte
+        }
+        corrupted.append(b)
+        i -> i + 1
+    }
+
+    let res -> check zip.parse(corrupted) or Nothing
+    assert_true(res == Nothing, `corrupted payload rejected by CRC-32 validation`)
+}
+
+function test_filesystem_helpers() {
+    writeln(`--- Test: File System Helpers ---`)
+
+    let tmp_zip -> `/tmp/test_zen_archive.zip`
+    let tmp_dir -> `/tmp/test_zen_extract`
+
+    let files -> [
+        { `name` -> `a.txt`, `content` -> `File A` },
+        { `name` -> `sub/b.txt`, `content` -> `File B` }
+    ]
+
+    let written_len -> zip.create_archive(files, tmp_zip, 6)
+    assert_true(written_len > 0, `create_archive wrote zip file to disk`)
+    assert_true(file.exists(tmp_zip), `archive file exists on disk`)
+
+    let ext_count -> zip.extract_archive(tmp_zip, tmp_dir)
+    assert_true(ext_count == 2, `extract_archive extracted 2 files`)
+
+    let content_a -> file.read(tmp_dir + `/a.txt`)
+    assert_true(content_a == `File A`, `extracted file a.txt matches`)
+
+    let content_b -> file.read(tmp_dir + `/sub/b.txt`)
+    assert_true(content_b == `File B`, `extracted file sub/b.txt matches`)
+
+    // Cleanup
+    file.remove(tmp_zip)
+    file.remove_tree(tmp_dir)
+}
+
+function test_standard_vector() {
+    writeln(`--- Test: Standard PKZIP Vector Decompression ---`)
+
+    let vec_bytes -> [
+        80, 75, 3, 4, 20, 0, 0, 0, 8, 0, 241, 25, 58, 93, 70, 51, 48, 125, 52, 0, 0, 0, 50, 0, 0, 0, 10, 0, 0, 0,
+        118, 101, 99, 116, 111, 114, 46, 116, 120, 116, 11, 46, 73, 204, 75, 73, 44, 74, 81, 8, 240, 142, 242, 12,
+        80, 112, 73, 77, 203, 73, 44, 73, 85, 8, 75, 77, 46, 201, 47, 82, 72, 43, 202, 207, 85, 8, 168, 44, 201,
+        200, 207, 83, 168, 202, 44, 72, 203, 204, 73, 85, 4, 0, 80, 75, 3, 4, 20, 0, 0, 0, 8, 0, 241, 25, 58, 93,
+        248, 211, 157, 81, 23, 0, 0, 0, 21, 0, 0, 0, 12, 0, 0, 0, 115, 117, 98, 47, 116, 101, 115, 116, 46, 116,
+        120, 116, 11, 46, 77, 74, 201, 44, 74, 77, 46, 201, 47, 170, 84, 40, 72, 172, 204, 201, 79, 76, 209, 3,
+        0, 80, 75, 1, 2, 20, 3, 20, 0, 0, 0, 8, 0, 241, 25, 58, 93, 70, 51, 48, 125, 52, 0, 0, 0, 50, 0, 0, 0,
+        10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 1, 0, 0, 0, 0, 118, 101, 99, 116, 111, 114, 46, 116, 120, 116,
+        80, 75, 1, 2, 20, 3, 20, 0, 0, 0, 8, 0, 241, 25, 58, 93, 248, 211, 157, 81, 23, 0, 0, 0, 21, 0, 0, 0, 12,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 1, 92, 0, 0, 0, 115, 117, 98, 47, 116, 101, 115, 116, 46, 116, 120,
+        116, 80, 75, 5, 6, 0, 0, 0, 0, 2, 0, 2, 0, 114, 0, 0, 0, 157, 0, 0, 0, 0, 0
+    ]
+
+    let parsed -> zip.parse(vec_bytes)
+    assert_true(parsed.length == 2, `parsed 2 entries from standard vector`)
+    assert_true(parsed[0][`name`] == `vector.txt`, `first entry is vector.txt`)
+    assert_true(parsed[1][`name`] == `sub/test.txt`, `second entry is sub/test.txt`)
+
+    let text0 -> __builtin.bytes_to_string(parsed[0][`content`])
+    assert_true(text0 == `Standard PKZIP Deflate Vector from Python zipfile!`, `vector.txt decompresses accurately`)
+
+    let text1 -> __builtin.bytes_to_string(parsed[1][`content`])
+    assert_true(text1 == `Subdirectory payload.`, `sub/test.txt decompresses accurately`)
+}
+
+function main() {
+    writeln(`=== Running Pure Zenlang PKZIP (.zip) Verification Suite ===`)
+    test_basic_roundtrip()
+    test_stored_level0()
+    test_binary_and_comments()
+    test_crc_corruption_detection()
+    test_filesystem_helpers()
+    test_standard_vector()
+    writeln(`=== ALL PKZIP TESTS PASSED ===`)
+    <- 0
+}
+

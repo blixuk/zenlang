@@ -72,6 +72,16 @@ function read(path) {
 }
 
 /!
+ Reads the content of a file as a string.
+ Alias for read(path).
+ @param path The path to the file.
+ @return The file content as a string.
+!/
+function read_string(path) {
+    <- __builtin_file.read(path)
+}
+
+/!
  Reads a file and returns its content as a list of lines.
  @param path The path to the file.
  @return A list of strings representing the lines.

@@ -657,3 +657,28 @@ export function deflate(data, level) {
 
     <- writer.get_bytes()
 }
+
+/!
+  Compresses input bytes using RFC 1951 DEFLATE.
+  Alias for deflate(data, level).
+!/
+export function compress(data, level) {
+    <- deflate(data, level)
+}
+
+/!
+  Decompresses raw DEFLATE bytes into an uncompressed byte list.
+  Alias for inflate(data).
+!/
+export function decompress(data) {
+    <- inflate(data)
+}
+
+/!
+  Decompresses raw DEFLATE bytes and returns decoded UTF-8 string.
+!/
+export function decompress_to_string(data) {
+    let uncomp -> inflate(data)
+    <- __builtin.bytes_to_string(uncomp)
+}
+

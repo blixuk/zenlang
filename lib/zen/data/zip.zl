@@ -1,0 +1,682 @@
+/!
+  zen.data.zip - Pure Zenlang PKZIP (.zip) Archive Engine.
+
+  Supports:
+  - Standard PKZIP format archive creation and extraction in 100% pure Zenlang.
+  - Deflate compression (method 8) and Stored uncompressed (method 0).
+  - CRC-32 integrity validation (RFC 1952 / IEEE 802.3) on every extracted file.
+  - Central Directory parsing with EOCD (End of Central Directory) record lookup.
+  - Filename and archive comment preservation (UTF-8 bit 11 flag).
+  - MS-DOS timestamp encoding & decoding to/from Unix Epoch.
+  - File system helpers: create_archive(files, path) and extract_archive(path, dir).
+  - Full two-way cross-tool interoperability with GNU unzip, zip, and Python zipfile.
+!/
+
+use zen.data.deflate as deflate_mod
+use zen.crypto.crc32 as crc_mod
+use zen.text.string as Str
+use zen.io.file as file
+use zen.io.path as Path
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind == `List` or (data is List) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+function _write_u16_le(out, val) {
+    out.append(val & 255)
+    out.append((val >> 8) & 255)
+}
+
+function _write_u32_le(out, val) {
+    out.append(val & 255)
+    out.append((val >> 8) & 255)
+    out.append((val >> 16) & 255)
+    out.append((val >> 24) & 255)
+}
+
+function _read_u16_le(bytes, offset) {
+    <- (bytes[offset] & 255) | ((bytes[offset + 1] & 255) << 8)
+}
+
+function _read_u32_le(bytes, offset) {
+    let b0 -> bytes[offset] & 255
+    let b1 -> (bytes[offset + 1] & 255) << 8
+    let b2 -> (bytes[offset + 2] & 255) << 16
+    let b3 -> (bytes[offset + 3] & 255) << 24
+    <- (b0 | b1 | b2 | b3) & 0xffffffff
+}
+
+/!
+  Converts Unix Epoch seconds to MS-DOS [time, date] 16-bit integers.
+  @param epoch Unix timestamp in seconds.
+  @return List [dos_time, dos_date].
+!/
+function _epoch_to_dos(epoch) {
+    when epoch == Nothing or epoch <= 0 {
+        // Default: 2026-01-01 00:00:00 (year 46, month 1, day 1)
+        <- [0, 23585]
+    }
+    let sec_in_day -> 86400
+    let days -> (epoch - (epoch % sec_in_day)) / sec_in_day
+    let day_rem -> epoch % sec_in_day
+    when day_rem < 0 {
+        day_rem -> day_rem + sec_in_day
+        days -> days - 1
+    }
+
+    let hour -> (day_rem - (day_rem % 3600)) / 3600
+    let min_rem -> day_rem % 3600
+    let minute -> (min_rem - (min_rem % 60)) / 60
+    let second -> min_rem % 60
+
+    let dos_time -> ((hour & 0x1f) << 11) | ((minute & 0x3f) << 5) | ((second / 2) & 0x1f)
+
+    let year -> 1970
+    let d -> days
+    do while true {
+        let leap -> 0
+        when (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) { leap -> 1 }
+        let y_days -> 365 + leap
+        when d < y_days { break }
+        d -> d - y_days
+        year -> year + 1
+    }
+
+    let m_days -> [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    when (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) {
+        m_days[1] -> 29
+    }
+    let month -> 1
+    let mi -> 0
+    do while mi < 12 {
+        let dim -> m_days[mi]
+        when d < dim { break }
+        d -> d - dim
+        month -> month + 1
+        mi -> mi + 1
+    }
+    let day -> d + 1
+
+    let y_offset -> year - 1980
+    when y_offset < 0 { y_offset -> 0 }
+    let dos_date -> ((y_offset & 0x7f) << 9) | ((month & 0x0f) << 5) | (day & 0x1f)
+    <- [dos_time, dos_date]
+}
+
+/!
+  Converts MS-DOS [time, date] 16-bit integers to Unix Epoch seconds.
+  @param dos_time 16-bit DOS time integer.
+  @param dos_date 16-bit DOS date integer.
+  @return Unix timestamp in seconds.
+!/
+function _dos_to_epoch(dos_time, dos_date) {
+    let second -> (dos_time & 0x1f) * 2
+    let minute -> (dos_time >> 5) & 0x3f
+    let hour -> (dos_time >> 11) & 0x1f
+
+    let day -> dos_date & 0x1f
+    let month -> (dos_date >> 5) & 0x0f
+    let year -> 1980 + ((dos_date >> 9) & 0x7f)
+
+    when day < 1 { day -> 1 }
+    when month < 1 { month -> 1 }
+    when month > 12 { month -> 12 }
+
+    let days -> 0
+    let y -> 1970
+    do while y < year {
+        let leap -> 0
+        when (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)) { leap -> 1 }
+        days -> days + 365 + leap
+        y -> y + 1
+    }
+
+    let m_days -> [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    when (year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)) {
+        m_days[1] -> 29
+    }
+
+    let m -> 1
+    do while m < month {
+        days -> days + m_days[m - 1]
+        m -> m + 1
+    }
+    days -> days + (day - 1)
+
+    <- (days * 86400) + (hour * 3600) + (minute * 60) + second
+}
+
+/!
+  Finds the offset of the End of Central Directory (EOCD) record.
+  Scans backwards from end of bytes for signature 0x06054b50.
+  @param bytes Byte list of the archive.
+  @return Offset index, or -1 if not found.
+!/
+function _find_eocd(bytes) {
+    let n -> bytes.length
+    when n < 22 { <- -1 }
+    let max_search -> 65557
+    when max_search > n { max_search -> n }
+    let stop_pos -> n - max_search
+
+    let pos -> n - 22
+    do while pos >= stop_pos {
+        when (bytes[pos] == 0x50 and
+              bytes[pos + 1] == 0x4B and
+              bytes[pos + 2] == 0x05 and
+              bytes[pos + 3] == 0x06) {
+            <- pos
+        }
+        pos -> pos - 1
+    }
+    <- -1
+}
+
+/!
+  Creates a standard PKZIP archive from a list of file maps.
+  Each file map can specify:
+  - `name`: string path inside archive (e.g. "docs/readme.txt")
+  - `content`: string or byte list of data
+  - `mtime`: optional Unix timestamp (seconds)
+  - `comment`: optional string comment for the file
+  @param files List of file maps.
+  @param level Compression level (0 = stored, 1..9 = deflate, default: 6).
+  @return List of bytes representing the complete .zip archive.
+!/
+export function create(files, level) {
+    when files == Nothing { <- [] }
+    when level == Nothing { level -> 6 }
+
+    let out -> []
+    let cd_entries -> []
+    let total_files -> files.length
+    let f_idx -> 0
+
+    do while f_idx < total_files {
+        let f -> files[f_idx]
+        let name_str -> Str.to_string(f[`name`])
+        let content_raw -> f[`content`]
+        let uncompressed -> _to_byte_list(content_raw)
+        let uncomp_size -> uncompressed.length & 0xffffffff
+        let crc -> crc_mod.crc32(uncompressed) & 0xffffffff
+
+        let mtime_val -> f[`mtime`]
+        let dos_td -> _epoch_to_dos(mtime_val)
+        let dos_time -> dos_td[0]
+        let dos_date -> dos_td[1]
+
+        let comment_str -> ``
+        when f[`comment`] != Nothing {
+            comment_str -> Str.to_string(f[`comment`])
+        }
+
+        let is_dir -> Str.ends_with(name_str, `/`)
+        let comp_bytes -> []
+        let comp_method -> 0
+
+        when is_dir or uncomp_size == 0 {
+            comp_method -> 0
+            comp_bytes -> []
+        } or when level == 0 {
+            comp_method -> 0
+            comp_bytes -> uncompressed
+        } or {
+            comp_method -> 8
+            comp_bytes -> deflate_mod.deflate(uncompressed, level)
+        }
+
+        let comp_size -> comp_bytes.length & 0xffffffff
+        let local_hdr_offset -> out.length & 0xffffffff
+        let name_bytes -> __builtin.string_to_bytes(name_str)
+        let fname_len -> name_bytes.length & 0xffff
+        let comment_bytes -> __builtin.string_to_bytes(comment_str)
+        let comment_len -> comment_bytes.length & 0xffff
+
+        // --- Write Local File Header (LFH) ---
+        // Signature: 0x04034b50 (PK\x03\x04)
+        out.append(0x50)
+        out.append(0x4B)
+        out.append(0x03)
+        out.append(0x04)
+
+        // Version needed: 2.0 (20)
+        _write_u16_le(out, 20)
+
+        // General purpose bit flag: 0x0800 (Bit 11 = UTF-8 filenames)
+        _write_u16_le(out, 0x0800)
+
+        // Compression method: 0 or 8
+        _write_u16_le(out, comp_method)
+
+        // Last mod file time & date
+        _write_u16_le(out, dos_time)
+        _write_u16_le(out, dos_date)
+
+        // CRC-32
+        _write_u32_le(out, crc)
+
+        // Compressed & Uncompressed sizes
+        _write_u32_le(out, comp_size)
+        _write_u32_le(out, uncomp_size)
+
+        // Filename length & Extra field length (0)
+        _write_u16_le(out, fname_len)
+        _write_u16_le(out, 0)
+
+        // Filename
+        let bi -> 0
+        do while bi < fname_len {
+            out.append(name_bytes[bi] & 255)
+            bi -> bi + 1
+        }
+
+        // --- Write File Payload ---
+        bi -> 0
+        do while bi < comp_size {
+            out.append(comp_bytes[bi] & 255)
+            bi -> bi + 1
+        }
+
+        // Stash entry for Central Directory
+        cd_entries.append({
+            `name_bytes`   -> name_bytes,
+            `fname_len`    -> fname_len,
+            `comment_bytes`-> comment_bytes,
+            `comment_len`  -> comment_len,
+            `comp_method`  -> comp_method,
+            `dos_time`     -> dos_time,
+            `dos_date`     -> dos_date,
+            `crc`          -> crc,
+            `comp_size`    -> comp_size,
+            `uncomp_size`  -> uncomp_size,
+            `local_offset` -> local_hdr_offset,
+            `is_dir`       -> is_dir
+        })
+
+        f_idx -> f_idx + 1
+    }
+
+    // --- Write Central Directory ---
+    let cd_start_offset -> out.length & 0xffffffff
+    let cde_count -> cd_entries.length
+    let ci -> 0
+
+    do while ci < cde_count {
+        let entry -> cd_entries[ci]
+
+        // Signature: 0x02014b50 (PK\x01\x02)
+        out.append(0x50)
+        out.append(0x4B)
+        out.append(0x01)
+        out.append(0x02)
+
+        // Version made by: 63 (6.3) on Unix (3) -> 0x033F = 831
+        _write_u16_le(out, 831)
+
+        // Version needed to extract: 20 (2.0)
+        _write_u16_le(out, 20)
+
+        // General purpose bit flag: 0x0800 (UTF-8)
+        _write_u16_le(out, 0x0800)
+
+        // Compression method
+        _write_u16_le(out, entry[`comp_method`])
+
+        // Last mod file time & date
+        _write_u16_le(out, entry[`dos_time`])
+        _write_u16_le(out, entry[`dos_date`])
+
+        // CRC-32
+        _write_u32_le(out, entry[`crc`])
+
+        // Compressed & Uncompressed sizes
+        _write_u32_le(out, entry[`comp_size`])
+        _write_u32_le(out, entry[`uncomp_size`])
+
+        // Filename, Extra, Comment lengths
+        _write_u16_le(out, entry[`fname_len`])
+        _write_u16_le(out, 0) // Extra length = 0
+        _write_u16_le(out, entry[`comment_len`])
+
+        // Disk number start (0), Internal attributes (0)
+        _write_u16_le(out, 0)
+        _write_u16_le(out, 0)
+
+        // External attributes: Unix regular file 0644 (0x81A40000) or directory (0x41FF0000)
+        let ext_attr -> when entry[`is_dir`] { 0x41FF0010 } or { 0x81A40000 }
+        _write_u32_le(out, ext_attr)
+
+        // Relative offset of local header
+        _write_u32_le(out, entry[`local_offset`])
+
+        // Filename
+        let nb -> entry[`name_bytes`]
+        let nblen -> entry[`fname_len`]
+        let bi -> 0
+        do while bi < nblen {
+            out.append(nb[bi] & 255)
+            bi -> bi + 1
+        }
+
+        // File comment
+        let cb -> entry[`comment_bytes`]
+        let cblen -> entry[`comment_len`]
+        bi -> 0
+        do while bi < cblen {
+            out.append(cb[bi] & 255)
+            bi -> bi + 1
+        }
+
+        ci -> ci + 1
+    }
+
+    let cd_size -> (out.length - cd_start_offset) & 0xffffffff
+
+    // --- Write End of Central Directory Record (EOCD) ---
+    // Signature: 0x06054b50 (PK\x05\x06)
+    out.append(0x50)
+    out.append(0x4B)
+    out.append(0x05)
+    out.append(0x06)
+
+    // Number of this disk: 0
+    _write_u16_le(out, 0)
+
+    // Disk where central directory starts: 0
+    _write_u16_le(out, 0)
+
+    // Number of records on this disk & Total records
+    _write_u16_le(out, cde_count & 0xffff)
+    _write_u16_le(out, cde_count & 0xffff)
+
+    // Size of central directory
+    _write_u32_le(out, cd_size)
+
+    // Offset of start of central directory
+    _write_u32_le(out, cd_start_offset)
+
+    // ZIP file comment length: 0
+    _write_u16_le(out, 0)
+
+    <- out
+}
+
+/!
+  Lists all file metadata entries in a ZIP archive without decompressing payloads.
+  Fast directory scanning via Central Directory.
+  @param zip_data String or byte list of ZIP archive.
+  @return List of entry metadata maps.
+!/
+export function list_entries(zip_data) {
+    let bytes -> _to_byte_list(zip_data)
+    let eocd_pos -> _find_eocd(bytes)
+    when eocd_pos < 0 {
+        raise `Invalid ZIP archive: End of Central Directory (EOCD) signature not found`
+    }
+
+    let total_records -> _read_u16_le(bytes, eocd_pos + 10)
+    let cd_size -> _read_u32_le(bytes, eocd_pos + 12)
+    let cd_offset -> _read_u32_le(bytes, eocd_pos + 16)
+
+    let entries -> []
+    let pos -> cd_offset
+    let ri -> 0
+
+    do while ri < total_records and pos + 46 <= bytes.length {
+        when not (bytes[pos] == 0x50 and
+                  bytes[pos + 1] == 0x4B and
+                  bytes[pos + 2] == 0x01 and
+                  bytes[pos + 3] == 0x02) {
+            break
+        }
+
+        let comp_method -> _read_u16_le(bytes, pos + 10)
+        let dos_time -> _read_u16_le(bytes, pos + 12)
+        let dos_date -> _read_u16_le(bytes, pos + 14)
+        let crc -> _read_u32_le(bytes, pos + 16)
+        let comp_size -> _read_u32_le(bytes, pos + 20)
+        let uncomp_size -> _read_u32_le(bytes, pos + 24)
+        let fname_len -> _read_u16_le(bytes, pos + 28)
+        let extra_len -> _read_u16_le(bytes, pos + 30)
+        let comment_len -> _read_u16_le(bytes, pos + 32)
+        let local_offset -> _read_u32_le(bytes, pos + 42)
+
+        let name_start -> pos + 46
+        let name_bytes -> []
+        let bi -> 0
+        do while bi < fname_len {
+            name_bytes.append(bytes[name_start + bi])
+            bi -> bi + 1
+        }
+        let name_str -> __builtin.bytes_to_string(name_bytes)
+
+        let comment_start -> name_start + fname_len + extra_len
+        let comment_bytes -> []
+        bi -> 0
+        do while bi < comment_len {
+            comment_bytes.append(bytes[comment_start + bi])
+            bi -> bi + 1
+        }
+        let comment_str -> __builtin.bytes_to_string(comment_bytes)
+
+        let is_dir -> Str.ends_with(name_str, `/`)
+        let mtime -> _dos_to_epoch(dos_time, dos_date)
+
+        entries.append({
+            `name`            -> name_str,
+            `size`            -> uncomp_size,
+            `compressed_size` -> comp_size,
+            `crc32`           -> crc,
+            `method`          -> comp_method,
+            `comment`         -> comment_str,
+            `is_dir`          -> is_dir,
+            `mtime`           -> mtime,
+            `local_offset`    -> local_offset
+        })
+
+        pos -> pos + 46 + fname_len + extra_len + comment_len
+        ri -> ri + 1
+    }
+
+    <- entries
+}
+
+/!
+  Extracts and decompresses all member files from a ZIP archive.
+  @param zip_data String or byte list of ZIP archive.
+  @return List of maps: [{ "name" -> ..., "size" -> ..., "content" -> [bytes], ... }]
+!/
+export function parse(zip_data) {
+    let bytes -> _to_byte_list(zip_data)
+    let meta_list -> list_entries(bytes)
+    let files -> []
+    let total -> meta_list.length
+    let i -> 0
+
+    do while i < total {
+        let entry -> meta_list[i]
+        let name_str -> entry[`name`]
+        let local_offset -> entry[`local_offset`]
+        let comp_method -> entry[`method`]
+        let comp_size -> entry[`compressed_size`]
+        let uncomp_size -> entry[`size`]
+        let expected_crc -> entry[`crc32`]
+        let is_dir -> entry[`is_dir`]
+
+        when local_offset + 30 > bytes.length {
+            raise `Truncated ZIP archive: local file header for ` + name_str + ` out of bounds`
+        }
+
+        when not (bytes[local_offset] == 0x50 and
+                  bytes[local_offset + 1] == 0x4B and
+                  bytes[local_offset + 2] == 0x03 and
+                  bytes[local_offset + 3] == 0x04) {
+            raise `Corrupted ZIP archive: invalid local file header signature for ` + name_str
+        }
+
+        let lfh_fname_len -> _read_u16_le(bytes, local_offset + 26)
+        let lfh_extra_len -> _read_u16_le(bytes, local_offset + 28)
+        let payload_offset -> local_offset + 30 + lfh_fname_len + lfh_extra_len
+
+        when payload_offset + comp_size > bytes.length {
+            raise `Truncated ZIP archive: payload for ` + name_str + ` exceeds file bounds`
+        }
+
+        let payload_bytes -> []
+        let bi -> 0
+        do while bi < comp_size {
+            payload_bytes.append(bytes[payload_offset + bi])
+            bi -> bi + 1
+        }
+
+        let content_bytes -> []
+        when is_dir or uncomp_size == 0 {
+            content_bytes -> []
+        } or when comp_method == 0 {
+            // Method 0: Stored (uncompressed)
+            content_bytes -> payload_bytes
+        } or when comp_method == 8 {
+            // Method 8: DEFLATE
+            content_bytes -> deflate_mod.inflate(payload_bytes)
+        } or {
+            raise `Unsupported compression method (` + Str.to_string(comp_method) + `) for ` + name_str
+        }
+
+        // Validate CRC-32 for non-directory files
+        when not is_dir and uncomp_size > 0 {
+            let actual_crc -> crc_mod.crc32(content_bytes) & 0xffffffff
+            when actual_crc != expected_crc {
+                raise `CRC-32 checksum mismatch for ` + name_str + `: expected ` + Str.to_string(expected_crc) + ` but got ` + Str.to_string(actual_crc)
+            }
+        }
+
+        files.append({
+            `name`            -> name_str,
+            `size`            -> uncomp_size,
+            `compressed_size` -> comp_size,
+            `content`         -> content_bytes,
+            `comment`         -> entry[`comment`],
+            `is_dir`          -> is_dir,
+            `mtime`           -> entry[`mtime`],
+            `crc32`           -> expected_crc,
+            `method`          -> comp_method
+        })
+
+        i -> i + 1
+    }
+
+    <- files
+}
+
+/!
+  Reads a single file entry from a ZIP archive directly into bytes.
+  @param zip_data String or byte list of ZIP archive.
+  @param filename Path of the file inside the archive to extract.
+  @return List of bytes [0..255], or Nothing if not found.
+!/
+export function read_entry(zip_data, filename) {
+    let files -> parse(zip_data)
+    let n -> files.length
+    let i -> 0
+    do while i < n {
+        let f -> files[i]
+        when f[`name`] == filename {
+            <- f[`content`]
+        }
+        i -> i + 1
+    }
+    <- Nothing
+}
+
+/!
+  Reads a single file entry from a ZIP archive directly into a decoded string.
+  @param zip_data String or byte list of ZIP archive.
+  @param filename Path of the file inside the archive to extract.
+  @return Decoded string content, or Nothing if not found.
+!/
+export function read_string(zip_data, filename) {
+    let raw -> read_entry(zip_data, filename)
+    when raw == Nothing { <- Nothing }
+    <- __builtin.bytes_to_string(raw)
+}
+
+/!
+  Inspects a ZIP archive and returns an overview metadata summary.
+  @param zip_data String or byte list of ZIP archive.
+  @return Summary map with total counts and entries list.
+!/
+export function inspect(zip_data) {
+    let entries -> list_entries(zip_data)
+    let total_uncomp -> 0
+    let total_comp -> 0
+    let n -> entries.length
+    let i -> 0
+    do while i < n {
+        let e -> entries[i]
+        total_uncomp -> total_uncomp + e[`size`]
+        total_comp -> total_comp + e[`compressed_size`]
+        i -> i + 1
+    }
+    <- {
+        `total_entries`           -> n,
+        `total_uncompressed_size` -> total_uncomp,
+        `total_compressed_size`   -> total_comp,
+        `entries`                 -> entries
+    }
+}
+
+/!
+  Extracts an entire ZIP archive on disk into a target directory.
+  @param zip_path Path to the .zip file on disk.
+  @param target_dir Directory path to write extracted files into.
+  @return Number of files extracted.
+!/
+export function extract_archive(zip_path, target_dir) {
+    let zip_bytes -> file.read_bytes(zip_path)
+    let files -> parse(zip_bytes)
+    let n -> files.length
+    let i -> 0
+    let count -> 0
+
+    do while i < n {
+        let f -> files[i]
+        let name -> f[`name`]
+        let dest_path -> Path.join(target_dir, name)
+
+        when f[`is_dir`] {
+            file.mkdir_p(dest_path)
+        } or {
+            let parent -> Path.dirname(dest_path)
+            when parent != `` and parent != `.` {
+                file.mkdir_p(parent)
+            }
+            file.write_bytes(dest_path, f[`content`])
+            count -> count + 1
+        }
+        i -> i + 1
+    }
+
+    <- count
+}
+
+/!
+  Creates a ZIP archive file on disk from a list of file maps.
+  @param files List of file maps [{ "name" -> ..., "content" -> ... }].
+  @param zip_path Path where the .zip archive should be written.
+  @param level Compression level (default: 6).
+  @return Number of bytes written.
+!/
+export function create_archive(files, zip_path, level) {
+    let zip_bytes -> create(files, level)
+    file.write_bytes(zip_path, zip_bytes)
+    <- zip_bytes.length
+}

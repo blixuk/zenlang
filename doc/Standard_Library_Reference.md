@@ -28,7 +28,7 @@ Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports 
 | **text** | `zen.text.string`, `zen.text.text`, `zen.text.regex`, `zen.text.markdown`, … |
 | **math** | `zen.math.math`, `zen.math.random`, `zen.math.range` |
 | **collections** | `zen.collections.list`, `.set`, `.stack`, `.queue` |
-| **data** | `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.bytes`, `.deflate`, `.gzip`, `.zlib`, … |
+| **data** | `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.bytes`, `.deflate`, `.gzip`, `.zlib`, `.zip`, … |
 | **geometry** | `zen.geometry.point`, `.rectangle`, … |
 | **ui** | `zen.ui.canvas`, `.layout` (map flex), `.term`; widgets/geometry (legacy classes) |
 | **net** | `zen.net.http`, `zen.net.socket` |
@@ -4635,6 +4635,23 @@ Creates an error literal.
 | `compress` | `compress(data, level)` | Compresses payload into standard RFC 1950 ZLIB stream with 2-byte header and 4-byte Adler-32 checksum trailer. |
 | `decompress` | `decompress(zlib_bytes)` | Validates 2-byte CMF/FLG header (`(CMF * 256 + FLG) % 31 == 0`), decompresses Deflate stream, and validates Adler-32 trailer checksum. Returns list of byte integers. |
 | `decompress_to_string` | `decompress_to_string(zlib_bytes)` | Validates and decompresses ZLIB container directly into a decoded string. |
+
+---
+
+# Module: zen.data.zip
+
+> Standard PKZIP format archive parser, creator, and extractor in 100% pure Zenlang. Supports Deflate (method 8) and Stored (method 0), Central Directory parsing, per-entry CRC-32 integrity validation, and direct disk archive operations. Import: `use zen.data.zip as zip`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `create` | `create(files, level)` | Generates complete PKZIP archive byte list from a list of file maps `[{ "name" -> ..., "content" -> ... }]` (`level`: `0` stored, `1..9` deflate). |
+| `parse` | `parse(zip_data)` | Decompresses and extracts all entries from a ZIP archive. Enforces CRC-32 integrity checks. Returns list of maps with uncompressed `content` byte lists. |
+| `list_entries` | `list_entries(zip_data)` | Scans Central Directory and returns entry metadata (`name`, `size`, `compressed_size`, `crc32`, `method`, `is_dir`, `mtime`) without decompressing payloads. |
+| `read_entry` | `read_entry(zip_data, filename)` | Extracts uncompressed bytes `[0..255]` for a specific file inside the archive. |
+| `read_string` | `read_string(zip_data, filename)` | Extracts uncompressed content for a specific file directly as a UTF-8 string. |
+| `inspect` | `inspect(zip_data)` | Returns summary map with total entry count, total uncompressed size, total compressed size, and entries metadata. |
+| `create_archive` | `create_archive(files, zip_path, level)` | Creates a PKZIP archive from file maps and writes it directly to `zip_path` on disk. |
+| `extract_archive` | `extract_archive(zip_path, target_dir)` | Decompresses all files from `zip_path` on disk and writes them into `target_dir`, creating subdirectories as needed. |
 
 ---
 
