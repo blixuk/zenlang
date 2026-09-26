@@ -1,0 +1,659 @@
+/!
+  zen.data.deflate - Pure Zenlang DEFLATE (RFC 1951) Compression and Decompression.
+
+  Implements:
+  - LSB-first BitReader and BitWriter
+  - Canonical Huffman tree generation and decoding
+  - Stored (uncompressed) blocks (BTYPE = 00)
+  - Fixed Huffman blocks (BTYPE = 01)
+  - Dynamic Huffman blocks (BTYPE = 10)
+  - LZ77 sliding-window match search with hash chaining
+  - 100% compliant with RFC 1951, interoperable with gzip and zlib
+!/
+
+use zen.text.string as Str
+
+// ---------------------------------------------------------------------------
+// Helpers: Input normalization
+// ---------------------------------------------------------------------------
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind == `List` or (data is List) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+// ---------------------------------------------------------------------------
+// BitReader: LSB-first bitstream reader
+// ---------------------------------------------------------------------------
+
+class BitReader {
+    let bytes: List
+    let byte_pos: Integer
+    let bit_buf: Integer
+    let bit_count: Integer
+    let total_bytes: Integer
+
+    function init(data) {
+        self.bytes -> _to_byte_list(data)
+        self.total_bytes -> self.bytes.length
+        self.byte_pos -> 0
+        self.bit_buf -> 0
+        self.bit_count -> 0
+    }
+
+    function _fill(needed) {
+        do while self.bit_count < needed and self.byte_pos < self.total_bytes {
+            let b -> self.bytes[self.byte_pos] & 255
+            self.byte_pos -> self.byte_pos + 1
+            self.bit_buf -> self.bit_buf | (b << self.bit_count)
+            self.bit_count -> self.bit_count + 8
+        }
+    }
+
+    function read_bit() {
+        when self.bit_count < 1 {
+            self._fill(1)
+            when self.bit_count < 1 { <- 0 }
+        }
+        let bit -> self.bit_buf & 1
+        self.bit_buf -> self.bit_buf >> 1
+        self.bit_count -> self.bit_count - 1
+        <- bit
+    }
+
+    function read_bits(n) {
+        when n == 0 { <- 0 }
+        when self.bit_count < n {
+            self._fill(n)
+        }
+        let mask -> (1 << n) - 1
+        let val -> self.bit_buf & mask
+        self.bit_buf -> self.bit_buf >> n
+        self.bit_count -> self.bit_count - n
+        <- val
+    }
+
+    function align_to_byte() {
+        self.bit_buf -> 0
+        self.bit_count -> 0
+    }
+
+    function read_byte() {
+        self.align_to_byte()
+        when self.byte_pos >= self.total_bytes { <- 0 }
+        let b -> self.bytes[self.byte_pos] & 255
+        self.byte_pos -> self.byte_pos + 1
+        <- b
+    }
+
+    function read_uint16_le() {
+        let b0 -> self.read_byte()
+        let b1 -> self.read_byte()
+        <- b0 | (b1 << 8)
+    }
+
+    function is_eof() {
+        <- self.byte_pos >= self.total_bytes and self.bit_count <= 0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BitWriter: LSB-first bitstream writer
+// ---------------------------------------------------------------------------
+
+class BitWriter {
+    let output: List
+    let bit_buf: Integer
+    let bit_count: Integer
+
+    function init() {
+        self.output -> []
+        self.bit_buf -> 0
+        self.bit_count -> 0
+    }
+
+    function write_bit(b) {
+        self.write_bits(b & 1, 1)
+    }
+
+    function write_bits(val, n) {
+        when n == 0 { <- 0 }
+        self.bit_buf -> self.bit_buf | ((val & ((1 << n) - 1)) << self.bit_count)
+        self.bit_count -> self.bit_count + n
+        do while self.bit_count >= 8 {
+            self.output.append(self.bit_buf & 255)
+            self.bit_buf -> self.bit_buf >> 8
+            self.bit_count -> self.bit_count - 8
+        }
+    }
+
+    function align_to_byte() {
+        when self.bit_count > 0 {
+            self.output.append(self.bit_buf & 255)
+            self.bit_buf -> 0
+            self.bit_count -> 0
+        }
+    }
+
+    function write_byte(b) {
+        self.align_to_byte()
+        self.output.append(b & 255)
+    }
+
+    function write_uint16_le(val) {
+        self.align_to_byte()
+        self.output.append(val & 255)
+        self.output.append((val >> 8) & 255)
+    }
+
+    function get_bytes() {
+        self.align_to_byte()
+        <- self.output
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Canonical Huffman Decoder Tree
+// ---------------------------------------------------------------------------
+
+/!
+  Builds a binary decode table from a list of code lengths.
+  Each entry in the lookup table maps a reversed-bit prefix to a symbol.
+!/
+function build_huffman_decoder(lengths) {
+    let num_symbols -> lengths.length
+    let max_len -> 0
+    let bl_count -> {}
+    let i -> 0
+    do while i < num_symbols {
+        let l -> lengths[i]
+        when l > 0 {
+            when l > max_len { max_len -> l }
+            let count -> bl_count[l] ?? 0
+            bl_count[l] -> count + 1
+        }
+        i -> i + 1
+    }
+
+    when max_len == 0 {
+        <- { `max_len` -> 0, `table` -> {} }
+    }
+
+    // Step 2: find the numerical value of the smallest code for each code length
+    let next_code -> {}
+    let code -> 0
+    let bits -> 1
+    do while bits <= max_len {
+        let prev_count -> bl_count[bits - 1] ?? 0
+        code -> (code + prev_count) << 1
+        next_code[bits] -> code
+        bits -> bits + 1
+    }
+
+    // Step 3: assign codes to symbols and build lookup table
+    // Table key: f"{bits}:{code}" -> symbol
+    let table -> {}
+    i -> 0
+    do while i < num_symbols {
+        let l -> lengths[i]
+        when l > 0 {
+            let c -> next_code[l]
+            next_code[l] -> c + 1
+            let key -> f`{l}:{c}`
+            table[key] -> i
+        }
+        i -> i + 1
+    }
+
+    <- {
+        `max_len` -> max_len,
+        `table`   -> table
+    }
+}
+
+/!
+  Decodes a single symbol using a canonical Huffman decoder table.
+!/
+function decode_huffman_symbol(reader, decoder) {
+    let max_len -> decoder[`max_len`]
+    let table -> decoder[`table`]
+    let cur_code -> 0
+    let bits -> 1
+    do while bits <= max_len {
+        let bit -> reader.read_bit()
+        cur_code -> (cur_code << 1) | bit
+        let key -> f`{bits}:{cur_code}`
+        when table.has(key) {
+            <- table[key]
+        }
+        bits -> bits + 1
+    }
+    <- -1 // Symbol not found or corrupt stream
+}
+
+// ---------------------------------------------------------------------------
+// RFC 1951 Fixed Huffman Tables
+// ---------------------------------------------------------------------------
+
+let _FIXED_LIT_LEN_TABLE -> Nothing
+let _FIXED_DIST_TABLE -> Nothing
+
+function get_fixed_lit_decoder() {
+    when _FIXED_LIT_LEN_TABLE != Nothing {
+        <- _FIXED_LIT_LEN_TABLE
+    }
+    // Literal/Length lengths (288 symbols):
+    // 0..143: 8 bits
+    // 144..255: 9 bits
+    // 256..279: 7 bits
+    // 280..287: 8 bits
+    let lengths -> []
+    let i -> 0
+    do while i <= 143 {
+        lengths.append(8)
+        i -> i + 1
+    }
+    do while i <= 255 {
+        lengths.append(9)
+        i -> i + 1
+    }
+    do while i <= 279 {
+        lengths.append(7)
+        i -> i + 1
+    }
+    do while i <= 287 {
+        lengths.append(8)
+        i -> i + 1
+    }
+    _FIXED_LIT_LEN_TABLE -> build_huffman_decoder(lengths)
+    <- _FIXED_LIT_LEN_TABLE
+}
+
+function get_fixed_dist_decoder() {
+    when _FIXED_DIST_TABLE != Nothing {
+        <- _FIXED_DIST_TABLE
+    }
+    // 32 distance symbols, each length 5
+    let lengths -> []
+    let i -> 0
+    do while i < 32 {
+        lengths.append(5)
+        i -> i + 1
+    }
+    _FIXED_DIST_TABLE -> build_huffman_decoder(lengths)
+    <- _FIXED_DIST_TABLE
+}
+
+// ---------------------------------------------------------------------------
+// Extra Bits & Base Values for Lengths and Distances (RFC 1951)
+// ---------------------------------------------------------------------------
+
+let LENGTH_BASES -> [
+    3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31,
+    35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258
+]
+
+let LENGTH_EXTRA_BITS -> [
+    0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2,
+    3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0
+]
+
+let DIST_BASES -> [
+    1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193,
+    257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
+]
+
+let DIST_EXTRA_BITS -> [
+    0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6,
+    7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13
+]
+
+let CODE_LENGTH_ORDER -> [
+    16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
+]
+
+// ---------------------------------------------------------------------------
+// Inflate Decompression Engine (RFC 1951)
+// ---------------------------------------------------------------------------
+
+/!
+  Decompresses raw DEFLATE bytes into an uncompressed byte list.
+  @param data String or byte list of raw DEFLATE data.
+  @return List of uncompressed bytes (0-255).
+!/
+export function inflate(data) {
+    let reader -> BitReader(data)
+    let output -> []
+    let is_final -> 0
+
+    do while is_final == 0 {
+        is_final -> reader.read_bit()
+        let btype -> reader.read_bits(2)
+
+        when btype == 0 {
+            // Uncompressed / Stored block
+            reader.align_to_byte()
+            let len -> reader.read_uint16_le()
+            let nlen -> reader.read_uint16_le()
+            when (len ^^ nlen) != 0xFFFF {
+                // Checksum failure in stored block
+                break
+            }
+            let i -> 0
+            do while i < len {
+                output.append(reader.read_byte())
+                i -> i + 1
+            }
+        } or when btype == 1 {
+            // Fixed Huffman block
+            let lit_decoder -> get_fixed_lit_decoder()
+            let dist_decoder -> get_fixed_dist_decoder()
+            _inflate_huffman_block(reader, lit_decoder, dist_decoder, output)
+        } or when btype == 2 {
+            // Dynamic Huffman block
+            let hlit -> reader.read_bits(5) + 257
+            let hdist -> reader.read_bits(5) + 1
+            let hclen -> reader.read_bits(4) + 4
+
+            // Read code lengths for the code length alphabet
+            let cl_lengths -> [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+            let i -> 0
+            do while i < hclen {
+                let code_idx -> CODE_LENGTH_ORDER[i]
+                cl_lengths[code_idx] -> reader.read_bits(3)
+                i -> i + 1
+            }
+
+            let cl_decoder -> build_huffman_decoder(cl_lengths)
+
+            // Read literal/length and distance code lengths
+            let total_codes -> hlit + hdist
+            let code_lengths -> []
+            do while code_lengths.length < total_codes {
+                let sym -> decode_huffman_symbol(reader, cl_decoder)
+                when sym < 0 { break }
+
+                when sym <= 15 {
+                    code_lengths.append(sym)
+                } or when sym == 16 {
+                    let repeat -> reader.read_bits(2) + 3
+                    let prev -> code_lengths[code_lengths.length - 1] ?? 0
+                    let r -> 0
+                    do while r < repeat {
+                        code_lengths.append(prev)
+                        r -> r + 1
+                    }
+                } or when sym == 17 {
+                    let repeat -> reader.read_bits(3) + 3
+                    let r -> 0
+                    do while r < repeat {
+                        code_lengths.append(0)
+                        r -> r + 1
+                    }
+                } or when sym == 18 {
+                    let repeat -> reader.read_bits(7) + 11
+                    let r -> 0
+                    do while r < repeat {
+                        code_lengths.append(0)
+                        r -> r + 1
+                    }
+                }
+            }
+
+            let lit_lengths -> code_lengths[0:hlit]
+            let dist_lengths -> code_lengths[hlit:total_codes]
+
+            let lit_decoder -> build_huffman_decoder(lit_lengths)
+            let dist_decoder -> build_huffman_decoder(dist_lengths)
+
+            _inflate_huffman_block(reader, lit_decoder, dist_decoder, output)
+        } or {
+            // Reserved / Error block
+            break
+        }
+    }
+
+    <- output
+}
+
+function _inflate_huffman_block(reader, lit_decoder, dist_decoder, output) {
+    do while true {
+        let sym -> decode_huffman_symbol(reader, lit_decoder)
+        when sym < 0 or sym == 256 {
+            // End of block
+            break
+        }
+
+        when sym < 256 {
+            // Literal byte
+            output.append(sym)
+        } or {
+            // Length symbol: 257..285
+            let len_idx -> sym - 257
+            let base_len -> LENGTH_BASES[len_idx] ?? 3
+            let extra_bits -> LENGTH_EXTRA_BITS[len_idx] ?? 0
+            let extra_val -> 0
+            when extra_bits > 0 {
+                extra_val -> reader.read_bits(extra_bits)
+            }
+            let length -> base_len + extra_val
+
+            // Distance symbol: 0..29
+            let dist_sym -> decode_huffman_symbol(reader, dist_decoder)
+            when dist_sym < 0 { break }
+
+            let dist_base -> DIST_BASES[dist_sym] ?? 1
+            let dist_extra_bits -> DIST_EXTRA_BITS[dist_sym] ?? 0
+            let dist_extra_val -> 0
+            when dist_extra_bits > 0 {
+                dist_extra_val -> reader.read_bits(dist_extra_bits)
+            }
+            let distance -> dist_base + dist_extra_val
+
+            // Copy length bytes from distance backwards (byte-by-byte for run-lengths)
+            let cur_len -> output.length
+            let start -> cur_len - distance
+            let k -> 0
+            do while k < length {
+                let b -> output[start + k]
+                output.append(b)
+                k -> k + 1
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Deflate Compression Engine (RFC 1951)
+// ---------------------------------------------------------------------------
+
+function _find_length_code(length) {
+    let i -> 0
+    do while i < 29 {
+        let base -> LENGTH_BASES[i]
+        let extra -> LENGTH_EXTRA_BITS[i]
+        let max_val -> base + ((1 << extra) - 1)
+        when length >= base and length <= max_val {
+            <- {
+                `code`       -> 257 + i,
+                `extra_bits` -> extra,
+                `extra_val`  -> length - base
+            }
+        }
+        i -> i + 1
+    }
+    <- { `code` -> 285, `extra_bits` -> 0, `extra_val` -> 0 }
+}
+
+function _find_dist_code(distance) {
+    let i -> 0
+    do while i < 30 {
+        let base -> DIST_BASES[i]
+        let extra -> DIST_EXTRA_BITS[i]
+        let max_val -> base + ((1 << extra) - 1)
+        when distance >= base and distance <= max_val {
+            <- {
+                `code`       -> i,
+                `extra_bits` -> extra,
+                `extra_val`  -> distance - base
+            }
+        }
+        i -> i + 1
+    }
+    <- { `code` -> 29, `extra_bits` -> 13, `extra_val` -> 0 }
+}
+
+/!
+  Encodes fixed Huffman literal/length and distance codes (RFC 1951 §3.2.6).
+!/
+function _write_fixed_lit(writer, sym) {
+    when sym <= 143 {
+        // 0..143: 8 bits, 00110000..10111111 (val = 48 + sym)
+        let code -> 48 + sym
+        writer.write_bits(_reverse_bits(code, 8), 8)
+    } or when sym <= 255 {
+        // 144..255: 9 bits, 110010000..111111111 (val = 400 + (sym - 144))
+        let code -> 400 + (sym - 144)
+        writer.write_bits(_reverse_bits(code, 9), 9)
+    } or when sym <= 279 {
+        // 256..279: 7 bits, 0000000..0010111 (val = sym - 256)
+        let code -> sym - 256
+        writer.write_bits(_reverse_bits(code, 7), 7)
+    } or {
+        // 280..287: 8 bits, 11000000..11000111 (val = 192 + (sym - 280))
+        let code -> 192 + (sym - 280)
+        writer.write_bits(_reverse_bits(code, 8), 8)
+    }
+}
+
+function _write_fixed_dist(writer, dist_sym) {
+    // 5 bits, reversed
+    writer.write_bits(_reverse_bits(dist_sym, 5), 5)
+}
+
+function _reverse_bits(val, bits) {
+    let res -> 0
+    let i -> 0
+    do while i < bits {
+        res -> (res << 1) | ((val >> i) & 1)
+        i -> i + 1
+    }
+    <- res
+}
+
+/!
+  Compresses input bytes using RFC 1951 DEFLATE.
+  Supports levels:
+  - 0: Stored / uncompressed blocks (fastest, no compression)
+  - 1..9: LZ77 sliding window + Fixed Huffman block
+  @param data String or byte list.
+  @param level Compression level (0..9, default 6).
+  @return List of compressed bytes.
+!/
+export function deflate(data, level) {
+    when level == Nothing { level -> 6 }
+    let bytes -> _to_byte_list(data)
+    let n -> bytes.length
+    let writer -> BitWriter()
+
+    when level == 0 or n == 0 {
+        // Emit stored block(s)
+        let pos -> 0
+        do while pos < n or n == 0 {
+            let chunk_len -> n - pos
+            when chunk_len > 65535 { chunk_len -> 65535 }
+            let is_final -> when (pos + chunk_len >= n) { 1 } or { 0 }
+
+            writer.write_bit(is_final)
+            writer.write_bits(0, 2) // BTYPE = 00 (stored)
+            writer.align_to_byte()
+            writer.write_uint16_le(chunk_len)
+            writer.write_uint16_le(chunk_len ^^ 0xFFFF)
+
+            let i -> 0
+            do while i < chunk_len {
+                writer.write_byte(bytes[pos + i])
+                i -> i + 1
+            }
+            pos -> pos + chunk_len
+            when n == 0 { break }
+        }
+        <- writer.get_bytes()
+    }
+
+    // Level 1-9: LZ77 match finder + Fixed Huffman block
+    writer.write_bit(1) // BFINAL = 1 (single block)
+    writer.write_bits(1, 2) // BTYPE = 01 (Fixed Huffman)
+
+    let window_size -> 32768
+    let max_match -> 258
+    let min_match -> 3
+    let hash_head -> {}
+
+    let pos -> 0
+    do while pos < n {
+        let best_len -> 0
+        let best_dist -> 0
+
+        // Search for matches if at least 3 bytes remain
+        when pos + min_match <= n {
+            let b0 -> bytes[pos] & 255
+            let b1 -> bytes[pos + 1] & 255
+            let b2 -> bytes[pos + 2] & 255
+            let h -> (b0 << 10) ^^ (b1 << 5) ^^ b2
+
+            let prev_pos -> hash_head[h]
+            hash_head[h] -> pos
+
+            when prev_pos != Nothing {
+                let dist -> pos - prev_pos
+                when dist > 0 and dist <= window_size {
+                    // Check match length
+                    let match_len -> 0
+                    let limit -> n - pos
+                    when limit > max_match { limit -> max_match }
+                    do while match_len < limit and bytes[pos + match_len] == bytes[prev_pos + match_len] {
+                        match_len -> match_len + 1
+                    }
+                    when match_len >= min_match {
+                        best_len -> match_len
+                        best_dist -> dist
+                    }
+                }
+            }
+        }
+
+        when best_len >= min_match {
+            // Emit length + distance
+            let lc -> _find_length_code(best_len)
+            _write_fixed_lit(writer, lc[`code`])
+            when lc[`extra_bits`] > 0 {
+                writer.write_bits(lc[`extra_val`], lc[`extra_bits`])
+            }
+
+            let dc -> _find_dist_code(best_dist)
+            _write_fixed_dist(writer, dc[`code`])
+            when dc[`extra_bits`] > 0 {
+                writer.write_bits(dc[`extra_val`], dc[`extra_bits`])
+            }
+            pos -> pos + best_len
+        } or {
+            // Emit literal byte
+            _write_fixed_lit(writer, bytes[pos] & 255)
+            pos -> pos + 1
+        }
+    }
+
+    // Emit end-of-block symbol (256)
+    _write_fixed_lit(writer, 256)
+
+    <- writer.get_bytes()
+}

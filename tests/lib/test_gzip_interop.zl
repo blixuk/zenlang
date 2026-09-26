@@ -1,0 +1,24 @@
+/!
+  tests/lib/test_gzip_interop.zl - Interoperability test between Zenlang gzip/zlib
+  and standard tools / Python.
+!/
+
+use zen.data.gzip as gzip
+use zen.data.zlib as zlib
+use zen.data.deflate as deflate
+use zen.io.file as file
+
+function main() {
+    let test_str -> `Cross-platform interoperability test between Zenlang and Python/GNU Gzip!`
+
+    // 1. Zenlang compresses to /tmp/zen_out.gz
+    let gz_bytes -> gzip.compress(test_str, `interop.txt`, 1700000000, 6)
+    file.write_bytes(`/tmp/zen_out.gz`, gz_bytes)
+
+    // 2. Zenlang compresses to /tmp/zen_out.zlib
+    let zl_bytes -> zlib.compress(test_str, 6)
+    file.write_bytes(`/tmp/zen_out.zlib`, zl_bytes)
+
+    writeln(`ZEN_EXPORTED_OK`)
+    <- 0
+}

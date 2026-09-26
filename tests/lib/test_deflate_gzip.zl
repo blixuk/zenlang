@@ -1,0 +1,172 @@
+/!
+  tests/lib/test_deflate_gzip.zl - Comprehensive Verification Suite for
+  DEFLATE (RFC 1951), GZIP (RFC 1952), and ZLIB (RFC 1950).
+!/
+
+use zen.data.deflate as deflate
+use zen.data.gzip as gzip
+use zen.data.zlib as zlib
+use zen.io.file as file
+use zen.text.string as Str
+
+function assert_equal(actual, expected, msg) {
+    when actual != expected {
+        writeln(f`FAIL: {msg} - expected {expected}, got {actual}`)
+        <- 1
+    }
+    writeln(f`PASS: {msg}`)
+    <- 0
+}
+
+function test_deflate_basic() {
+    writeln(`--- Test: DEFLATE Basic Round-trip ---`)
+    let failures -> 0
+
+    // 1. Short text
+    let original -> `Hello, Zenlang DEFLATE and GZIP compression system!`
+    let compressed -> deflate.deflate(original, 6)
+    let decompressed_bytes -> deflate.inflate(compressed)
+    let decompressed -> __builtin.bytes_to_string(decompressed_bytes)
+    failures -> failures + assert_equal(decompressed, original, `deflate short string round-trip`)
+
+    // 2. Repetitive text (tests LZ77 run lengths)
+    let rep -> `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_` + `ABCXYZ_`
+    let comp_rep -> deflate.deflate(rep, 6)
+    let decomp_rep_bytes -> deflate.inflate(comp_rep)
+    let decomp_rep -> __builtin.bytes_to_string(decomp_rep_bytes)
+    failures -> failures + assert_equal(decomp_rep, rep, `deflate repetitive string round-trip`)
+    failures -> failures + assert_equal(comp_rep.length < rep.length, true, `compressed is smaller than original`)
+
+    // 3. Stored / Uncompressed block (level 0)
+    let stored_comp -> deflate.deflate(original, 0)
+    let stored_decomp_bytes -> deflate.inflate(stored_comp)
+    let stored_decomp -> __builtin.bytes_to_string(stored_decomp_bytes)
+    failures -> failures + assert_equal(stored_decomp, original, `deflate level 0 (stored) round-trip`)
+
+    // 4. Binary bytes 0..255
+    let bin_in -> []
+    let b -> 0
+    do while b < 256 {
+        bin_in.append(b)
+        b -> b + 1
+    }
+    let comp_bin -> deflate.deflate(bin_in, 6)
+    let decomp_bin -> deflate.inflate(comp_bin)
+    failures -> failures + assert_equal(decomp_bin.length, 256, `binary 0..255 length`)
+    let match_bin -> true
+    b -> 0
+    do while b < 256 {
+        when decomp_bin[b] != b {
+            match_bin -> false
+        }
+        b -> b + 1
+    }
+    failures -> failures + assert_equal(match_bin, true, `binary 0..255 content match`)
+
+    <- failures
+}
+
+function test_gzip_container() {
+    writeln(`--- Test: GZIP Container (RFC 1952) ---`)
+    let failures -> 0
+
+    let text -> `Zenlang is a modern Unix-native language with directional visual flow -> and <-.`
+    let filename -> `zen_manifesto.txt`
+    let mtime -> 1700000000
+
+    let gz -> gzip.compress(text, filename, mtime, 6)
+    failures -> failures + assert_equal(gz[0], 0x1f, `magic byte 0 is 0x1F`)
+    failures -> failures + assert_equal(gz[1], 0x8b, `magic byte 1 is 0x8B`)
+    failures -> failures + assert_equal(gz[2], 8, `compression method is 8 (DEFLATE)`)
+
+    // Inspect metadata
+    let meta -> gzip.inspect(gz)
+    failures -> failures + assert_equal(meta[`valid`], true, `metadata valid`)
+    failures -> failures + assert_equal(meta[`filename`], filename, `metadata filename match`)
+    failures -> failures + assert_equal(meta[`mtime`], mtime, `metadata mtime match`)
+
+    // Decompress
+    let recovered -> gzip.decompress_to_string(gz)
+    failures -> failures + assert_equal(recovered, text, `gzip decompress_to_string round-trip`)
+
+    // Test corrupted archive rejection
+    let corrupt_gz -> []
+    let i -> 0
+    do while i < gz.length {
+        corrupt_gz.append(gz[i])
+        i -> i + 1
+    }
+    // Corrupt one trailer byte (CRC / ISIZE)
+    let last_idx -> gz.length - 2
+    corrupt_gz[last_idx] -> corrupt_gz[last_idx] ^^ 0xFF
+    let corrupt_res -> gzip.decompress(corrupt_gz)
+    failures -> failures + assert_equal(corrupt_res.length == 0, true, `corrupt archive rejected by CRC check`)
+
+    <- failures
+}
+
+function test_zlib_container() {
+    writeln(`--- Test: ZLIB Container (RFC 1950) ---`)
+    let failures -> 0
+
+    let text -> `ZLIB container with Adler-32 verification for PNG chunks and protocol streams.`
+    let zl -> zlib.compress(text, 6)
+    failures -> failures + assert_equal(zl[0], 0x78, `zlib CMF is 0x78`)
+
+    // Check formula (CMF * 256 + FLG) % 31 == 0
+    let check_val -> ((zl[0] & 255) * 256 + (zl[1] & 255)) % 31
+    failures -> failures + assert_equal(check_val, 0, `zlib header check divisible by 31`)
+
+    let decomp -> zlib.decompress(zl)
+    let decomp_str -> __builtin.bytes_to_string(decomp)
+    failures -> failures + assert_equal(decomp_str, text, `zlib decompress round-trip`)
+
+    <- failures
+}
+
+function test_interop() {
+    writeln(`--- Test: Cross-tool Interoperability (Python/GNU Gzip) ---`)
+    let failures -> 0
+
+    let expected -> `Zenlang interoperability test vector for Gzip and Zlib!`
+
+    // 1. Standard GZIP vector produced by standard RFC 1952 / Python gzip
+    let gz_vector -> [
+        31, 139, 8, 0, 0, 0, 0, 0, 2, 3, 139, 74, 205, 203, 73, 204, 75, 87, 200, 204,
+        43, 73, 45, 202, 47, 72, 45, 74, 76, 202, 204, 201, 44, 169, 84, 40, 73, 45,
+        46, 81, 40, 75, 77, 46, 201, 47, 82, 72, 3, 98, 247, 170, 204, 2, 133, 196,
+        188, 20, 133, 168, 156, 204, 36, 69, 0, 199, 40, 232, 42, 55, 0, 0, 0
+    ]
+    let decomp_gz -> gzip.decompress_to_string(gz_vector)
+    failures -> failures + assert_equal(decomp_gz, expected, `decompress standard GZIP vector`)
+
+    // 2. Standard ZLIB vector produced by standard RFC 1950 / Python zlib
+    let zl_vector -> [
+        120, 156, 139, 74, 205, 203, 73, 204, 75, 87, 200, 204, 43, 73, 45, 202, 47,
+        72, 45, 74, 76, 202, 204, 201, 44, 169, 84, 40, 73, 45, 46, 81, 40, 75, 77,
+        46, 201, 47, 82, 72, 3, 98, 247, 170, 204, 2, 133, 196, 188, 20, 133, 168,
+        156, 204, 36, 69, 0, 85, 73, 20, 143
+    ]
+    let decomp_zl_bytes -> zlib.decompress(zl_vector)
+    let decomp_zl -> __builtin.bytes_to_string(decomp_zl_bytes)
+    failures -> failures + assert_equal(decomp_zl, expected, `decompress standard ZLIB vector`)
+
+    <- failures
+}
+
+function main() {
+    writeln(`=== Running Pure Zenlang Deflate & Gzip Verification Suite ===`)
+    let total_failures -> 0
+    total_failures -> total_failures + test_deflate_basic()
+    total_failures -> total_failures + test_gzip_container()
+    total_failures -> total_failures + test_zlib_container()
+    total_failures -> total_failures + test_interop()
+
+    when total_failures == 0 {
+        writeln(`=== ALL DEFLATE & GZIP TESTS PASSED ===`)
+        <- 0
+    } or {
+        writeln(f`=== FAILED with {total_failures} errors ===`)
+        <- 1
+    }
+}

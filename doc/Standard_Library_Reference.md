@@ -28,7 +28,7 @@ Nested package layout under `lib/zen/<domain>/`. Prefer fully qualified imports 
 | **text** | `zen.text.string`, `zen.text.text`, `zen.text.regex`, `zen.text.markdown`, … |
 | **math** | `zen.math.math`, `zen.math.random`, `zen.math.range` |
 | **collections** | `zen.collections.list`, `.set`, `.stack`, `.queue` |
-| **data** | `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.bytes`, … |
+| **data** | `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.bytes`, `.deflate`, `.gzip`, `.zlib`, … |
 | **geometry** | `zen.geometry.point`, `.rectangle`, … |
 | **ui** | `zen.ui.canvas`, `.layout` (map flex), `.term`; widgets/geometry (legacy classes) |
 | **net** | `zen.net.http`, `zen.net.socket` |
@@ -4598,6 +4598,43 @@ Creates an error literal.
 |---|---|---|
 | `create` | `create(files_list)` | Generates raw tar archive bytes from a list of `{ "name" -> ..., "content" -> ... }` maps. |
 | `parse` | `parse(tar_data)` | Parses tar archive into list of member file maps. |
+
+---
+
+# Module: zen.data.deflate
+
+> RFC 1951 DEFLATE & INFLATE lossless compression and decompression engine. 100% pure Zenlang with 32KB sliding window LZ77 and canonical fixed Huffman trees. Import: `use zen.data.deflate as deflate`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `compress` | `compress(data, level)` | Compresses string or byte list to raw RFC 1951 Deflate byte stream (`level`: `0` stored, `1..9` LZ77 + Huffman). |
+| `decompress` | `decompress(deflate_bytes)` | Decompresses raw RFC 1951 Deflate byte stream into a list of byte integers `[0..255]`. |
+| `decompress_to_string` | `decompress_to_string(deflate_bytes)` | Decompresses raw Deflate bytes and returns decoded UTF-8 string. |
+
+---
+
+# Module: zen.data.gzip
+
+> RFC 1952 GZIP file container format parser, compressor, and decompressor. Preserves filenames and timestamps, and verifies integrity using IEEE 802.3 CRC-32 checksums. Import: `use zen.data.gzip as gzip`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `compress` | `compress(data, filename, mtime, level)` | Compresses payload into standard GZIP container (`.gz`) with 10-byte header, optional original filename, timestamp, and 8-byte trailer (`CRC-32` and `ISIZE`). |
+| `decompress` | `decompress(gz_bytes)` | Validates GZIP header and CRC-32/ISIZE trailer, decompresses Deflate payload, and returns list of byte integers. Raises error on corrupted data or checksum mismatch. |
+| `decompress_to_string` | `decompress_to_string(gz_bytes)` | Validates and decompresses GZIP container directly into a decoded string. |
+| `inspect` | `inspect(gz_bytes)` | Extracts archive metadata without decompressing payload (`filename`, `mtime`, `isize_expected`, `crc32_expected`, `valid_header`). |
+
+---
+
+# Module: zen.data.zlib
+
+> RFC 1950 ZLIB container stream format compressor and decompressor. Generates valid CMF/FLG headers and enforces big-endian Adler-32 trailer checksum verification. Essential foundation for PNG IDAT chunks. Import: `use zen.data.zlib as zlib`.
+
+| Function | Signature | Description |
+|---|---|---|
+| `compress` | `compress(data, level)` | Compresses payload into standard RFC 1950 ZLIB stream with 2-byte header and 4-byte Adler-32 checksum trailer. |
+| `decompress` | `decompress(zlib_bytes)` | Validates 2-byte CMF/FLG header (`(CMF * 256 + FLG) % 31 == 0`), decompresses Deflate stream, and validates Adler-32 trailer checksum. Returns list of byte integers. |
+| `decompress_to_string` | `decompress_to_string(zlib_bytes)` | Validates and decompresses ZLIB container directly into a decoded string. |
 
 ---
 

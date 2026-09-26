@@ -53,6 +53,7 @@ ZenValue ZenIO_write_file(ZenValue path, ZenValue content);
 ZenValue ZenIO_list_dir(ZenValue path);
 ZenValue ZenIO_append(ZenValue path, ZenValue content);
 ZenValue ZenIO_write_bytes(ZenValue path, ZenValue bytes);
+ZenValue ZenIO_read_bytes(ZenValue path);
 ZenValue ZenIO_remove(ZenValue path);
 ZenValue ZenIO_is_file(ZenValue path);
 ZenValue ZenIO_is_dir(ZenValue path);

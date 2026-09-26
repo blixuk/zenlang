@@ -56,6 +56,7 @@ TEST_FILES=(
   tests/lib/test_trie.zl
   tests/lib/test_crypto_ciphers.zl
   tests/lib/test_qrcode.zl
+  tests/lib/test_deflate_gzip.zl
 )
 
 echo "===================================="

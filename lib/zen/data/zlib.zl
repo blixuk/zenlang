@@ -1,0 +1,122 @@
+/!
+  zen.data.zlib - Pure Zenlang ZLIB (RFC 1950) Compression and Decompression.
+
+  Standard ZLIB format container wrapping RFC 1951 DEFLATE payload with:
+  - 2-byte header (CMF: 0x78, FLG: 0x9C with FCHECK verification)
+  - 4-byte trailer (Adler-32 checksum in big-endian network byte order)
+  - 100% interoperable with standard zlib, Python zlib module, and PNG IDAT chunks
+!/
+
+use zen.data.deflate as deflate_mod
+use zen.crypto.crc32 as crc_mod
+use zen.text.string as Str
+
+function _to_byte_list(data) {
+    when data == Nothing { <- [] }
+    when data.kind == `String` {
+        <- __builtin.string_to_bytes(data)
+    }
+    when data.kind == `List` or (data is List) {
+        <- data
+    }
+    let b -> __builtin.string_to_bytes(data)
+    when b.length > 0 { <- b }
+    <- data
+}
+
+/!
+  Compresses input data into RFC 1950 ZLIB format.
+  @param data String or byte list of data to compress.
+  @param level Compression level (0..9, default: 6).
+  @return List of bytes representing the complete zlib stream.
+!/
+export function compress(data, level) {
+    when level == Nothing { level -> 6 }
+    let uncompressed -> _to_byte_list(data)
+    let adler -> crc_mod.adler32(uncompressed) & 0xffffffff
+
+    let out -> []
+
+    // 1. CMF: Compression Method = 8 (DEFLATE), CINFO = 7 (32KB window)
+    let cmf -> 0x78
+    out.append(cmf)
+
+    // 2. FLG: FLEVEL = 2 (default compression), FCHECK ensures (CMF*256 + FLG) % 31 == 0
+    // (0x78 * 256 + 0x9C) = 30876 = 31 * 996
+    let flg -> 0x9c
+    out.append(flg)
+
+    // 3. Compressed DEFLATE payload
+    let payload -> deflate_mod.deflate(uncompressed, level)
+    let p_len -> payload.length
+    let i -> 0
+    do while i < p_len {
+        out.append(payload[i] & 255)
+        i -> i + 1
+    }
+
+    // 4. Trailer: Adler-32 (4 bytes BIG-ENDIAN per RFC 1950)
+    out.append((adler >> 24) & 255)
+    out.append((adler >> 16) & 255)
+    out.append((adler >> 8) & 255)
+    out.append(adler & 255)
+
+    <- out
+}
+
+/!
+  Decompresses an RFC 1950 ZLIB byte list or string.
+  Validates CMF/FLG header check and Adler-32 trailer checksum.
+  @param zlib_data ZLIB byte list or string.
+  @return List of uncompressed bytes, or empty list on corruption.
+!/
+export function decompress(zlib_data) {
+    let bytes -> _to_byte_list(zlib_data)
+    let n -> bytes.length
+    when n < 6 {
+        // Minimum header (2) + trailer (4) = 6 bytes
+        <- []
+    }
+
+    let cmf -> bytes[0] & 255
+    let flg -> bytes[1] & 255
+
+    // Check header validity: (CMF * 256 + FLG) must be a multiple of 31
+    let chk_val -> (cmf * 256 + flg) % 31
+    when chk_val != 0 {
+        <- [] // Header check failed
+    }
+
+    // Check compression method (CM == 8 is DEFLATE)
+    let cm -> cmf & 15
+    when cm != 8 {
+        <- [] // Unsupported compression method
+    }
+
+    let fdict -> (flg & 32) != 0
+    let pos -> 2
+    when fdict {
+        pos -> pos + 4 // Skip preset dictionary ID
+    }
+
+    when pos >= n - 4 {
+        <- []
+    }
+
+    // Payload is bytes[pos:(n - 4)]
+    let payload -> bytes[pos:(n - 4)]
+    let decompressed -> deflate_mod.inflate(payload)
+
+    // Validate Adler-32 trailer (Big-Endian)
+    let t_adler -> ((bytes[n - 4] & 255) << 24) |
+                   ((bytes[n - 3] & 255) << 16) |
+                   ((bytes[n - 2] & 255) << 8) |
+                   (bytes[n - 1] & 255)
+
+    let actual_adler -> crc_mod.adler32(decompressed) & 0xffffffff
+    when actual_adler != (t_adler & 0xffffffff) {
+        <- [] // Adler-32 checksum mismatch
+    }
+
+    <- decompressed
+}

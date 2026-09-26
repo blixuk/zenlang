@@ -353,6 +353,25 @@ ZenValue ZenIO_write_bytes(ZenValue path_val, ZenValue bytes_val) {
     return ZenValue_make_nothing();
 }
 
+ZenValue ZenIO_read_bytes(ZenValue path_val) {
+    const char* path = ZenString_get_pointer(path_val);
+    if (!path) return ZenList_make_from_arguments(0);
+    FILE* f = fopen(path, "rb");
+    if (!f) return ZenList_make_from_arguments(0);
+    fseek(f, 0, SEEK_END);
+    long len = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    struct ZenList* list = ZenList_new();
+    ZenValue list_v = ZenValue_from_list(list);
+    for (long i = 0; i < len; i++) {
+        int c = fgetc(f);
+        if (c == EOF) break;
+        ZenList_append_value(list_v, ZenValue_make_integer((unsigned char)c));
+    }
+    fclose(f);
+    return list_v;
+}
+
 ZenValue ZenIO_remove(ZenValue path_val) {
     const char* path = ZenString_get_pointer(path_val);
     if (!path) return ZenValue_make_boolean(false);

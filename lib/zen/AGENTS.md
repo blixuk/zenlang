@@ -36,7 +36,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
   | color | `zen.color` (`.color`, `zen.ui.color`) — RGB, Hex, HSL, 8/16/256 ANSI, TrueColor, WCAG contrast |
   | net | `zen.net.http` (curl under `-g`), `.socket` (interpret), `.url`, `.mime` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.lorem`, `zen.text.zenmark` (`.zenmark`, `zen.zenmark`), `zen.text.regex`, `.wrap`, `.template`, `.diff`, `.html`, … |
-  | data | `zen.data.zendata` (`.zendata`, `zen.zendata`), `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.dotenv`, `.ini`, … |
+  | data | `zen.data.zendata` (`.zendata`, `zen.zendata`), `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.dotenv`, `.ini`, `.deflate`, `.gzip`, `.zlib`, … |
   | tooling | `zen.tooling.zencode` (`.zencode`, `zen.zencode`), `zen.tooling.builder`, `zen.tooling.pkg` |
 
 - Short aliases (`zen.string`, `zen.file`, `zen.term`, `zen.list`, `zen.json`, `zen.random`, `zen.io`, `zen.process`, `zen.zendata`, `zen.zencode`, `zen.zenmark`, `zen.qrcode`, `zen.data.qrcode`) resolve via `bootstrap/Module/Resolver.py` for compatibility; **prefer nested forms** in new code.
@@ -84,7 +84,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
 - collections/: list (`sort`, `sort_by`, `map`, `filter`, `reduce`), set, stack, queue, collections (map/set helpers; Map.items), priority_queue (min/max heap queue), lru (fixed-capacity cache), ring_buffer (circular sliding buffer), trie (Prefix tree, autocomplete, longest prefix matching)
 - reflect/: type_name, is_*, fields/call/apply, keys/values/items
 - plugins/: create, add, has, list, dispatch, merge
-- data/: json (parse, stringify, stringify_pretty, load, dump, dump_pretty), csv (parse, parse_with_headers, stringify, stringify_with_headers, load, load_with_headers, dump, dump_with_headers), xml, yaml, toml, bytes, serialize, sexp, logfmt, database, dotenv (parse/stringify), ini (parse/stringify/get), schema (declarative validation, type/range/enum checks), tar (USTAR format archive creator & parser)
+- data/: json (parse, stringify, stringify_pretty, load, dump, dump_pretty), csv (parse, parse_with_headers, stringify, stringify_with_headers, load, load_with_headers, dump, dump_with_headers), xml, yaml, toml, bytes, serialize, sexp, logfmt, database, dotenv (parse/stringify), ini (parse/stringify/get), schema (declarative validation, type/range/enum checks), tar (USTAR format archive creator & parser), deflate (RFC 1951 Deflate/Inflate compression engine with LZ77 32KB window & canonical fixed Huffman trees), gzip (RFC 1952 .gz archive container with header, filename/timestamp preservation, and CRC-32 verification), zlib (RFC 1950 zlib stream container with Adler-32 verification)
 - geometry/: point, vectors, shapes, geometry package entry
 - ui/: app shell (Bubble Tea–style), canvas, map layout (dual-path); term; prompt (confirm, text, password, select, multiselect), tree (ASCII/Unicode hierarchy formatting), chart (sparkline, bar charts), color bridge
 - color/: Color (RGB, RGBA, Hex, HSL, named 8/16 ANSI palette, TrueColor SGR escapes, 256-color, blend, luminance, contrast_ratio)

@@ -102,6 +102,15 @@ function write_bytes(path, bytes) {
 }
 
 /!
+  Reads raw bytes (list of integers 0-255) from a file.
+  @param path The path to the file.
+  @return A list of integers representing the file's bytes.
+!/
+function read_bytes(path) {
+    <- __builtin_file.read_bytes(path)
+}
+
+/!
  Writes a list of strings to a file as separate lines.
  @param path The path to the file.
  @param lines The list of strings to write.

@@ -2532,7 +2532,7 @@ function compile_expression(ctx, expr) {
         let val_node -> expr[3]
         let pat_node -> expr[4]
         compile_expression(ctx, val_node)
-        when pat_node != Nothing and pat_node.length > 3 and is_type_name_str(Str.to_string(pat_node[3])) {
+        when pat_node != Nothing and pat_node.length > 3 and (pat_node[0] == 2 or pat_node[0] == 4 or pat_node[0] == 45) and is_type_name_str(Str.to_string(pat_node[3])) {
             let type_name -> Str.to_string(pat_node[3])
             let type_idx -> add_constant(ctx, type_name)
             emit_byte(ctx, 85, line) // OP_IS_TYPE
@@ -2945,7 +2945,8 @@ export function create_vm_prelude() {
         `mkdir` -> make_native(`file_mkdir`),
         `mkdir_p` -> make_native(`file_mkdir`),
         `open` -> make_native(`file_open`),
-        `write_bytes` -> make_native(`file_write_bytes`)
+        `write_bytes` -> make_native(`file_write_bytes`),
+        `read_bytes` -> make_native(`file_read_bytes`)
     }
     g[`file`] -> file_mod
     g[`__builtin_file`] -> file_mod
@@ -3718,6 +3719,9 @@ export function invoke_callable_g(callee, args, globals) {
             }
             when nfn == `file_write_bytes` {
                 <- __builtin_file.write_bytes(args[0], args[1])
+            }
+            when nfn == `file_read_bytes` {
+                <- __builtin_file.read_bytes(args[0])
             }
             when nfn == `sys_args` {
                 <- __builtin_sys.get_args()
