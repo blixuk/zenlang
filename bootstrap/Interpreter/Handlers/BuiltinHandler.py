@@ -1435,3 +1435,138 @@ class BuiltinHandler:
         })
         self.global_environment.define("__builtin_signal", signal_obj, mutable=False, type="BuiltinCapability")
 
+        import queue as py_queue
+        import threading as py_threading
+        import select as py_select
+
+        class PyChannel:
+            def __init__(self, cap=1):
+                self._capacity = max(1, int(cap))
+                self._queue = py_queue.Queue(maxsize=self._capacity)
+                self._closed = False
+                self._lock = py_threading.Lock()
+
+            def send(self, val):
+                with self._lock:
+                    if self._closed:
+                        return False
+                self._queue.put(val)
+                return True
+
+            def try_send(self, val):
+                with self._lock:
+                    if self._closed:
+                        return False
+                try:
+                    self._queue.put_nowait(val)
+                    return True
+                except py_queue.Full:
+                    return False
+
+            def receive(self):
+                while not self.is_closed() or not self._queue.empty():
+                    try:
+                        return self._queue.get(timeout=0.1)
+                    except py_queue.Empty:
+                        continue
+                return None
+
+            def try_receive(self):
+                try:
+                    return self._queue.get_nowait()
+                except py_queue.Empty:
+                    return None
+
+            def close(self):
+                with self._lock:
+                    self._closed = True
+                return True
+
+            def is_closed(self):
+                with self._lock:
+                    return self._closed
+
+            def length(self):
+                return self._queue.qsize()
+
+            def capacity(self):
+                return self._capacity
+
+            def drain(self):
+                items = []
+                while not self._queue.empty():
+                    try:
+                        items.append(self._queue.get_nowait())
+                    except py_queue.Empty:
+                        break
+                return items
+
+        class PyTask:
+            def __init__(self, target, arg=None):
+                self.result = None
+                self.error = None
+                self._done = False
+                def run():
+                    try:
+                        if arg is not None:
+                            self.result = target(arg)
+                        else:
+                            self.result = target()
+                    except Exception as e:
+                        self.error = str(e)
+                    finally:
+                        self._done = True
+                self.thread = py_threading.Thread(target=run, daemon=True)
+                self.thread.start()
+
+            def wait(self):
+                self.thread.join()
+                return self.result
+
+            def is_done(self):
+                return self._done
+
+            def cancel(self):
+                self._done = True
+
+        def _conc_channel(cap=1):
+            return PyChannel(cap)
+
+        def _conc_spawn(callable_fn, arg=None):
+            def runner(a=None):
+                if hasattr(self, '_call_function') and callable_fn:
+                    args = [a] if a is not None else []
+                    return self._call_function(callable_fn, args)
+                elif callable(callable_fn):
+                    return callable_fn(a) if a is not None else callable_fn()
+            return PyTask(runner, arg)
+
+        def _conc_sleep(sec):
+            time.sleep(float(sec) if sec is not None else 0.0)
+            return True
+
+        def _conc_poll_fd(fd, events=1, timeout_sec=0.0):
+            try:
+                r = [int(fd)] if (int(events) & 1) else []
+                w = [int(fd)] if (int(events) & 2) else []
+                timeout = max(0.0, float(timeout_sec)) if timeout_sec is not None else 0.0
+                r_ready, w_ready, _ = py_select.select(r, w, [], timeout)
+                res = 0
+                if r_ready:
+                    res |= 1
+                if w_ready:
+                    res |= 2
+                return res
+            except Exception:
+                return 0
+
+        conc_obj = BuiltinCapability("concurrency", {
+            "channel": _conc_channel,
+            "spawn": _conc_spawn,
+            "spawn_blocking": _conc_spawn,
+            "sleep": _conc_sleep,
+            "poll_fd": _conc_poll_fd,
+        })
+        self.global_environment.define("__builtin_concurrency", conc_obj, mutable=False, type="BuiltinCapability")
+        self.global_environment.define("concurrency", conc_obj, mutable=False, type="BuiltinCapability")
+

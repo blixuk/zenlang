@@ -1,11 +1,49 @@
 /!
   Zenlang Language Server Protocol (LSP) Server CLI Entry.
-  Runs the JSON-RPC language server over standard I/O for IDE integration.
+  Runs the JSON-RPC language server over standard I/O for IDE integration
+  backed by non-blocking concurrency and channel dispatch.
 !/
 
+import zen.concurrency as conc
+import selfhost.lsp.Protocol as Protocol
 import selfhost.lsp.Server as Server
+import zen.io.io as io
 
-function main() {
-    Server.run_lsp_loop()
+function reader_task(ch) {
+    do while not ch.is_closed() {
+        let msg -> Protocol.read_message_async()
+        when msg != Nothing {
+            ch.send(msg)
+        }
+    }
+}
+
+function main(args) {
+    let ch -> conc.channel(100)
+
+    // Spawn the non-blocking I/O reader task on the fiber pool
+    conc.spawn(reader_task, ch)
+
+    let srv -> Server.init()
+
+    // Main event dispatch loop
+    do while not ch.is_closed() {
+        let msg -> ch.receive()
+
+        when msg != Nothing {
+            // Check for shutdown/exit signal
+            when msg.has(`method`) and msg[`method`] == `exit` {
+                ch.close()
+                break
+            }
+
+            // Dispatch to language server implementation
+            let response -> Server.handle_request(srv, msg)
+            when response != Nothing and type(response) == `Map` {
+                Protocol.write_message(response)
+            }
+        }
+    }
+
     <- 0
 }

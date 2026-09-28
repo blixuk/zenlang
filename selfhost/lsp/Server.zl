@@ -16,8 +16,6 @@ import zen.text.string as Str
 let docs_map -> {}
 // Cached parsed ASTs: uri -> Program AST
 let progs_map -> {}
-let DOCS -> docs_map
-let DOC_PROGS -> progs_map
 
 export function set_document(uri, text) {
     docs_map[uri] -> text
@@ -90,6 +88,26 @@ function is_ident_char(c) {
     <- false
 }
 
+function stmt_name(stmt) {
+    when stmt == Nothing { <- `` }
+    let k -> AST.ast_kind(stmt)
+    when k == AST.K_FUNCTION { <- Str.to_string(AST.fn_name(stmt)) }
+    when k == AST.K_CLASS { <- Str.to_string(AST.class_name(stmt)) }
+    when k == AST.K_STRUCTURE { <- Str.to_string(AST.struct_name(stmt)) }
+    when k == AST.K_ENUMERATOR { <- Str.to_string(AST.enum_name(stmt)) }
+    when k == AST.K_LET { <- Str.to_string(AST.let_name(stmt)) }
+    <- ``
+}
+
+function kind_name(k) {
+    when k == AST.K_FUNCTION { <- `function` }
+    when k == AST.K_CLASS { <- `class` }
+    when k == AST.K_STRUCTURE { <- `structure` }
+    when k == AST.K_ENUMERATOR { <- `enumerator` }
+    when k == AST.K_LET { <- `let` }
+    <- `variable`
+}
+
 /!
   Runs parser and typechecker on in-memory document text and publishes diagnostics.
 !/
@@ -105,14 +123,15 @@ export function publish_diagnostics(uri, text) {
     let prog -> Parser.parse_source(text)
     progs_map[uri] -> prog
     let diags -> []
-    when prog[`error`] != Nothing {
-        let err_str -> Str.to_string(prog[`error`])
-        let line_num -> prog[`line`]
-        when line_num == Nothing {
+    let p_err -> AST.prog_err(prog)
+    when p_err != Nothing {
+        let err_str -> Str.to_string(p_err)
+        let line_num -> AST.ast_line(prog)
+        when line_num == Nothing or line_num <= 0 {
             line_num -> 1
         }
-        let col_num -> prog[`column`]
-        when col_num == Nothing {
+        let col_num -> AST.ast_col(prog)
+        when col_num == Nothing or col_num <= 0 {
             col_num -> 1
         }
         let start_l -> line_num - 1
@@ -228,35 +247,39 @@ export function build_completions(uri, line, col) {
         prog -> Parser.parse_source(doc_text)
         progs_map[uri] -> prog
     }
-    when prog != Nothing and prog[`statements`] != Nothing {
-        do for stmt in prog[`statements`] {
-            when stmt[`kind`] == `FunctionStatement` {
-                items.append({
-                    `label` -> Str.to_string(stmt[`name`]),
-                    `kind` -> 3, // Function
-                    `detail` -> `function in this file`
-                })
-            }
-            when stmt[`kind`] == `ClassStatement` {
-                items.append({
-                    `label` -> Str.to_string(stmt[`name`]),
-                    `kind` -> 7, // Class
-                    `detail` -> `class in this file`
-                })
-            }
-            when stmt[`kind`] == `StructureStatement` {
-                items.append({
-                    `label` -> Str.to_string(stmt[`name`]),
-                    `kind` -> 22, // Struct
-                    `detail` -> `structure in this file`
-                })
-            }
-            when stmt[`kind`] == `LetStatement` {
-                items.append({
-                    `label` -> Str.to_string(stmt[`name`]),
-                    `kind` -> 6, // Variable
-                    `detail` -> `variable in this file`
-                })
+    when prog != Nothing {
+        let stmts -> AST.prog_stmts(prog)
+        when stmts != Nothing {
+            do for stmt in stmts {
+                let k -> AST.ast_kind(stmt)
+                when k == AST.K_FUNCTION {
+                    items.append({
+                        `label` -> Str.to_string(AST.fn_name(stmt)),
+                        `kind` -> 3, // Function
+                        `detail` -> `function in this file`
+                    })
+                }
+                when k == AST.K_CLASS {
+                    items.append({
+                        `label` -> Str.to_string(AST.class_name(stmt)),
+                        `kind` -> 7, // Class
+                        `detail` -> `class in this file`
+                    })
+                }
+                when k == AST.K_STRUCTURE {
+                    items.append({
+                        `label` -> Str.to_string(AST.struct_name(stmt)),
+                        `kind` -> 22, // Struct
+                        `detail` -> `structure in this file`
+                    })
+                }
+                when k == AST.K_LET {
+                    items.append({
+                        `label` -> Str.to_string(AST.let_name(stmt)),
+                        `kind` -> 6, // Variable
+                        `detail` -> `variable in this file`
+                    })
+                }
             }
         }
     }
@@ -317,15 +340,20 @@ export function build_hover(uri, line, col) {
         prog -> Parser.parse_source(text)
         progs_map[uri] -> prog
     }
-    when prog != Nothing and prog[`statements`] != Nothing {
-        do for stmt in prog[`statements`] {
-            when stmt[`name`] == word {
-                let kind -> stmt[`kind`]
-                let detail -> `\`\`\`zen\n` + Str.to_string(kind) + ` ` + word + `\n\`\`\``
-                <- {
-                    `contents` -> {
-                        `kind` -> `markdown`,
-                        `value` -> detail
+    when prog != Nothing {
+        let stmts -> AST.prog_stmts(prog)
+        when stmts != Nothing {
+            do for stmt in stmts {
+                let name -> stmt_name(stmt)
+                when name == word {
+                    let k -> AST.ast_kind(stmt)
+                    let kname -> kind_name(k)
+                    let detail -> `\`\`\`zen\n` + kname + ` ` + word + `\n\`\`\``
+                    <- {
+                        `contents` -> {
+                            `kind` -> `markdown`,
+                            `value` -> detail
+                        }
                     }
                 }
             }
@@ -345,37 +373,42 @@ export function build_document_symbols(uri) {
         prog -> Parser.parse_source(doc_text)
         progs_map[uri] -> prog
     }
-    when prog == Nothing or prog[`statements`] == Nothing {
+    when prog == Nothing {
+        <- []
+    }
+    let stmts -> AST.prog_stmts(prog)
+    when stmts == Nothing {
         <- []
     }
     let symbols -> []
-    do for stmt in prog[`statements`] {
-        let name -> stmt[`name`]
-        when name != Nothing {
+    do for stmt in stmts {
+        let name -> stmt_name(stmt)
+        when name != `` {
+            let k -> AST.ast_kind(stmt)
             let skind -> 13 // Variable default
             let detail -> ``
-            when stmt[`kind`] == `FunctionStatement` {
+            when k == AST.K_FUNCTION {
                 skind -> 12 // Function
                 detail -> `function`
             }
-            when stmt[`kind`] == `ClassStatement` {
+            when k == AST.K_CLASS {
                 skind -> 5 // Class
                 detail -> `class`
             }
-            when stmt[`kind`] == `StructureStatement` {
+            when k == AST.K_STRUCTURE {
                 skind -> 23 // Struct
                 detail -> `structure`
             }
-            when stmt[`kind`] == `EnumeratorStatement` {
+            when k == AST.K_ENUMERATOR {
                 skind -> 10 // Enum
                 detail -> `enumerator`
             }
-            when stmt[`kind`] == `LetStatement` {
+            when k == AST.K_LET {
                 skind -> 13 // Variable
                 detail -> `let`
             }
-            let l -> stmt[`line`]
-            when l == Nothing {
+            let l -> AST.ast_line(stmt)
+            when l == Nothing or l <= 0 {
                 l -> 1
             }
             let start_l -> l - 1
@@ -383,7 +416,7 @@ export function build_document_symbols(uri) {
                 start_l -> 0
             }
             symbols.append({
-                `name` -> Str.to_string(name),
+                `name` -> name,
                 `kind` -> skind,
                 `detail` -> detail,
                 `range` -> {
@@ -392,7 +425,7 @@ export function build_document_symbols(uri) {
                 },
                 `selectionRange` -> {
                     `start` -> { `line` -> start_l, `character` -> 0 },
-                    `end` -> { `line` -> start_l, `character` -> Str.to_string(name).length }
+                    `end` -> { `line` -> start_l, `character` -> name.length }
                 }
             })
         }
@@ -417,22 +450,25 @@ export function find_definition(uri, line, col) {
         prog -> Parser.parse_source(text)
         progs_map[uri] -> prog
     }
-    when prog != Nothing and prog[`statements`] != Nothing {
-        do for stmt in prog[`statements`] {
-            when stmt[`name`] == word {
-                let l -> stmt[`line`]
-                when l == Nothing {
-                    l -> 1
-                }
-                let start_l -> l - 1
-                when start_l < 0 {
-                    start_l -> 0
-                }
-                <- {
-                    `uri` -> uri,
-                    `range` -> {
-                        `start` -> { `line` -> start_l, `character` -> 0 },
-                        `end` -> { `line` -> start_l, `character` -> Str.to_string(word).length }
+    when prog != Nothing {
+        let stmts -> AST.prog_stmts(prog)
+        when stmts != Nothing {
+            do for stmt in stmts {
+                when stmt_name(stmt) == word {
+                    let l -> AST.ast_line(stmt)
+                    when l == Nothing or l <= 0 {
+                        l -> 1
+                    }
+                    let start_l -> l - 1
+                    when start_l < 0 {
+                        start_l -> 0
+                    }
+                    <- {
+                        `uri` -> uri,
+                        `range` -> {
+                            `start` -> { `line` -> start_l, `character` -> 0 },
+                            `end` -> { `line` -> start_l, `character` -> Str.to_string(word).length }
+                        }
                     }
                 }
             }
@@ -601,6 +637,17 @@ export function handle_message(msg) {
         Protocol.send_error(id, -32601, `Method not found: ` + Str.to_string(method))
     }
     <- true
+}
+
+export function init() {
+    RUNNING -> true
+    docs_map -> {}
+    progs_map -> {}
+    <- { `running` -> true }
+}
+
+export function handle_request(srv, msg) {
+    <- handle_message(msg)
 }
 
 /!

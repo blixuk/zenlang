@@ -50,7 +50,19 @@ function fs_remove(path) {
     <- false
 }
 
+function canon_path(path) {
+    when path == Nothing or path == `` {
+        <- path
+    }
+    let s -> Str.to_string(path)
+    when Str.starts_with(s, `./`) {
+        <- Str.substring(s, 2, Str.length(s))
+    }
+    <- s
+}
+
 function parse_file_cached(path) {
+    path -> canon_path(path)
     let p -> GraphBuilder.parse_cached(path)
     when p != Nothing {
         <- p
@@ -1096,14 +1108,17 @@ function merge_program_files(order, entry_path) {
     let n -> order.length
     let i -> 0
     let last_err -> Nothing
+    let seen_files -> {}
+    let canon_entry -> canon_path(entry_path)
     do while i < n {
-        let path -> order[i]
-        when fs_is_file(path) {
+        let path -> canon_path(order[i])
+        when fs_is_file(path) and not seen_files.has(path) {
+            seen_files[path] -> true
             let prog -> parse_file_cached(path)
             when AST.prog_err(prog) != Nothing {
                 last_err -> `parse ` + path + `: ` + Str.to_string(AST.prog_err(prog))
             } or {
-                let chunk -> prepare_file_chunk(AST.prog_stmts(prog), path, entry_path)
+                let chunk -> prepare_file_chunk(AST.prog_stmts(prog), path, canon_entry)
                 when chunk != Nothing {
                     chunks.append(chunk)
                 }

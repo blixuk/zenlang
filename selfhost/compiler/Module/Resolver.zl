@@ -178,6 +178,17 @@ export function try_base(base_path, relative_path) {
     <- ``
 }
 
+function canon_path(path) {
+    when path == Nothing or path == `` {
+        <- path
+    }
+    let s -> Str.to_string(path)
+    when Str.starts_with(s, `./`) {
+        <- Str.substring(s, 2, Str.length(s))
+    }
+    <- s
+}
+
 export function resolve(import_path, base_dir) {
     let _paths -> ensure_paths()
     let relative_path -> to_relative(import_path)
@@ -185,27 +196,27 @@ export function resolve(import_path, base_dir) {
     when base_dir != Nothing and base_dir != `` {
         let hit -> try_base(base_dir, relative_path)
         when hit != `` {
-            <- hit
+            <- canon_path(hit)
         }
         let hit_deps -> try_base(Path.join(base_dir, `deps`), relative_path)
         when hit_deps != `` {
-            <- hit_deps
+            <- canon_path(hit_deps)
         }
         let parent_dir -> Path.dirname(base_dir)
         when parent_dir != base_dir {
             let hit2 -> try_base(parent_dir, relative_path)
             when hit2 != `` {
-                <- hit2
+                <- canon_path(hit2)
             }
             let hit2_deps -> try_base(Path.join(parent_dir, `deps`), relative_path)
             when hit2_deps != `` {
-                <- hit2_deps
+                <- canon_path(hit2_deps)
             }
         }
     }
 
     let paths -> R[`paths`]
-    <- resolve_in_list(paths, 0, relative_path)
+    <- canon_path(resolve_in_list(paths, 0, relative_path))
 }
 
 function resolve_in_list(paths, i, relative_path) {

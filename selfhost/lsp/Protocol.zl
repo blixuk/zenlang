@@ -3,6 +3,7 @@
   Implements JSON-RPC 2.0 framing over standard I/O for Zenlang LSP.
 !/
 
+import zen.concurrency as conc
 import zen.data.json as json
 import zen.io.io as io
 import zen.text.string as Str
@@ -11,7 +12,7 @@ import zen.text.string as Str
   Parses Content-Length integer from header line.
   e.g. "Content-Length: 123" -> 123
 !/
-function parse_content_length(line) {
+export function parse_content_length(line) {
     let prefix -> `content-length:`
     let lower -> Str.trim(line)
     when lower.length < prefix.length {
@@ -77,6 +78,49 @@ export function read_rpc_message() {
 }
 
 /!
+  Reads JSON-RPC messages from stdin without blocking the fiber pool.
+  Uses non-blocking kernel event reactor (poll_fd) with timeout.
+!/
+export function read_message_async() {
+    // 1. Wait for stdin (fd 0) to be readable (POLLIN = 1)
+    // Timeout of 0.5s allows graceful shutdown checks
+    let ready -> conc.poll_fd(0, 1, 0.5)
+    when ready <= 0 {
+        <- Nothing
+    }
+
+    // 2. Read headers until empty line
+    let content_len -> -1
+    do while true {
+        let line -> io.read_line()
+        when line == Nothing {
+            <- Nothing
+        }
+        let trimmed -> Str.trim(line)
+        when trimmed == `` {
+            break
+        }
+        let cl -> parse_content_length(trimmed)
+        when cl >= 0 {
+            content_len -> cl
+        }
+    }
+
+    when content_len < 0 {
+        <- Nothing
+    }
+
+    // 3. Read exact payload bytes
+    let body -> io.read_exact(content_len)
+    when body == Nothing or body == `` {
+        <- Nothing
+    }
+
+    let msg -> json.parse(body)
+    <- msg
+}
+
+/!
   Sends a JSON-RPC message to standard output with Content-Length header.
 !/
 export function send_rpc_message(msg) {
@@ -85,6 +129,13 @@ export function send_rpc_message(msg) {
     let header -> `Content-Length: ` + Str.to_string(len) + `\r\n\r\n`
     io.write_raw(header + body)
     io.flush()
+}
+
+/!
+  Ergonomic alias for send_rpc_message.
+!/
+export function write_message(msg_map) {
+    send_rpc_message(msg_map)
 }
 
 /!

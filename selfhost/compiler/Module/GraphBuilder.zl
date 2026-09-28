@@ -269,6 +269,7 @@ function walk_file(path) {
         let imp -> imports[ii]
         let resolved -> Resolver.resolve(imp, base)
         when resolved != Nothing and resolved != `` {
+            resolved -> canon_path(resolved)
             g -> B[`graph`]
             g -> Graph.add_edge(g, path, resolved)
             B[`graph`] -> g
