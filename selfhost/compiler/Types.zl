@@ -354,24 +354,26 @@ function type_equal(a, b) {
     }
     when ka == kb {
         when ka == `Integer` {
-            let ba -> a[`bits`]
-            let bb -> b[`bits`]
-            let ua -> a[`unsigned`]
-            let ub -> b[`unsigned`]
-            when ba != Nothing and bb != Nothing {
-                when ba != bb or ua != ub {
-                    <- false
-                }
+            let ba -> 64
+            when a.has(`bits`) and a[`bits`] != Nothing { ba -> a[`bits`] }
+            let bb -> 64
+            when b.has(`bits`) and b[`bits`] != Nothing { bb -> b[`bits`] }
+            let ua -> false
+            when a.has(`unsigned`) and a[`unsigned`] != Nothing { ua -> a[`unsigned`] }
+            let ub -> false
+            when b.has(`unsigned`) and b[`unsigned`] != Nothing { ub -> b[`unsigned`] }
+            when ba != bb or ua != ub {
+                <- false
             }
             <- true
         }
         when ka == `Decimal` {
-            let ba -> a[`bits`]
-            let bb -> b[`bits`]
-            when ba != Nothing and bb != Nothing {
-                when ba != bb {
-                    <- false
-                }
+            let ba -> 64
+            when a.has(`bits`) and a[`bits`] != Nothing { ba -> a[`bits`] }
+            let bb -> 64
+            when b.has(`bits`) and b[`bits`] != Nothing { bb -> b[`bits`] }
+            when ba != bb {
+                <- false
             }
             <- true
         }
@@ -500,7 +502,321 @@ function type_equal(a, b) {
     <- false
 }
 
-function split_type_args(s) {
+export function is_subtype(sub, super) {
+    when sub == Nothing or super == Nothing {
+        <- false
+    }
+    let k_sub -> Str.to_string(sub[`kind`])
+    let k_sup -> Str.to_string(super[`kind`])
+    when k_sub == `Forbidden` or k_sup == `Forbidden` {
+        <- false
+    }
+    // Variant / Unknown are universal dynamic top types
+    when k_sup == `Variant` or k_sup == `Unknown` {
+        <- true
+    }
+    when k_sub == `Variant` or k_sub == `Unknown` {
+        <- false
+    }
+    // Exact kind equality or abstract supertypes
+    when k_sup == `Number` {
+        <- k_sub == `Number` or k_sub == `Integer` or k_sub == `Decimal` or k_sub == `Byte`
+    }
+    when k_sup == `Text` {
+        <- k_sub == `Text` or k_sub == `String` or k_sub == `Rune`
+    }
+    when k_sup == `Collection` {
+        <- k_sub == `Collection` or k_sub == `List` or k_sub == `Vector` or k_sub == `Set` or k_sub == `Map` or k_sub == `Tuple`
+    }
+    when k_sup == `Container` {
+        <- k_sub == `Container` or k_sub == `Structure` or k_sub == `Class` or k_sub == `Object` or k_sub == `Enumerator`
+    }
+    // If sub is abstract and sup is not abstract, sub is NOT a subtype of sup
+    when k_sub == `Number` or k_sub == `Text` or k_sub == `Collection` or k_sub == `Container` {
+        <- false
+    }
+
+    // Byte is a subtype of Integer
+    when k_sub == `Byte` and k_sup == `Integer` {
+        <- true
+    }
+    // Integer / Byte are subtypes of Decimal
+    when (k_sub == `Integer` or k_sub == `Byte`) and k_sup == `Decimal` {
+        <- true
+    }
+
+    // Named type handling (unresolved class/struct references)
+    when k_sup == `Named` {
+        let sup_name -> Str.to_string(super[`name`])
+        when type_name(sub) == sup_name {
+            <- true
+        }
+        when k_sub == `Class` {
+            let cur -> sub
+            do while cur != Nothing and cur.has(`base`) and cur[`base`] != Nothing {
+                let base_name -> Str.to_string(cur[`base`])
+                when base_name == sup_name {
+                    <- true
+                }
+                when cur.has(`base_type`) and cur[`base_type`] != Nothing {
+                    cur -> cur[`base_type`]
+                } or {
+                    cur -> Nothing
+                }
+            }
+            <- false
+        }
+        when k_sub == `Named` {
+            <- Str.to_string(sub[`name`]) == sup_name
+        }
+        <- false
+    }
+    when k_sub == `Named` {
+        let sub_name -> Str.to_string(sub[`name`])
+        when type_name(super) == sub_name {
+            <- true
+        }
+        <- false
+    }
+
+    // Same kind checks
+    when k_sub == k_sup {
+        when k_sub == `Integer` {
+            let ba -> 64
+            when sub.has(`bits`) and sub[`bits`] != Nothing { ba -> sub[`bits`] }
+            let bb -> 64
+            when super.has(`bits`) and super[`bits`] != Nothing { bb -> super[`bits`] }
+            let ua -> false
+            when sub.has(`unsigned`) and sub[`unsigned`] != Nothing { ua -> sub[`unsigned`] }
+            let ub -> false
+            when super.has(`unsigned`) and super[`unsigned`] != Nothing { ub -> super[`unsigned`] }
+            // Widening: smaller signed integer fits in larger signed integer
+            when ba <= bb {
+                when ua == ub { <- true }
+                when not ua and not ub { <- true }
+                when ua and bb > ba { <- true }
+                <- false
+            }
+            <- false
+        }
+        when k_sub == `Decimal` {
+            let ba -> 64
+            when sub.has(`bits`) and sub[`bits`] != Nothing { ba -> sub[`bits`] }
+            let bb -> 64
+            when super.has(`bits`) and super[`bits`] != Nothing { bb -> super[`bits`] }
+            <- ba <= bb
+        }
+        when k_sub == `List` {
+            let ea -> sub[`element`]
+            let eb -> super[`element`]
+            when eb == Nothing or Str.to_string(eb[`kind`]) == `Variant` or Str.to_string(eb[`kind`]) == `Unknown` {
+                <- true
+            }
+            when ea == Nothing or Str.to_string(ea[`kind`]) == `Variant` or Str.to_string(ea[`kind`]) == `Unknown` {
+                <- true
+            }
+            <- is_subtype(ea, eb)
+        }
+        when k_sub == `Set` {
+            let ea -> sub[`element`]
+            let eb -> super[`element`]
+            when eb == Nothing or Str.to_string(eb[`kind`]) == `Variant` or Str.to_string(eb[`kind`]) == `Unknown` {
+                <- true
+            }
+            when ea == Nothing or Str.to_string(ea[`kind`]) == `Variant` or Str.to_string(ea[`kind`]) == `Unknown` {
+                <- true
+            }
+            <- is_subtype(ea, eb)
+        }
+        when k_sub == `Map` {
+            let ka_t -> sub[`key`]
+            let kb_t -> super[`key`]
+            let va_t -> sub[`value`]
+            let vb_t -> super[`value`]
+            let k_ok -> true
+            when kb_t != Nothing and Str.to_string(kb_t[`kind`]) != `Variant` and Str.to_string(kb_t[`kind`]) != `Unknown` {
+                when ka_t != Nothing and Str.to_string(ka_t[`kind`]) != `Variant` and Str.to_string(ka_t[`kind`]) != `Unknown` {
+                    k_ok -> is_subtype(ka_t, kb_t)
+                }
+            }
+            let v_ok -> true
+            when vb_t != Nothing and Str.to_string(vb_t[`kind`]) != `Variant` and Str.to_string(vb_t[`kind`]) != `Unknown` {
+                when va_t != Nothing and Str.to_string(va_t[`kind`]) != `Variant` and Str.to_string(va_t[`kind`]) != `Unknown` {
+                    v_ok -> is_subtype(va_t, vb_t)
+                }
+            }
+            <- k_ok and v_ok
+        }
+        when k_sub == `Vector` {
+            let la -> sub[`length`]
+            let lb -> super[`length`]
+            when lb != Nothing and lb > 0 {
+                when la != Nothing and la > 0 and la != lb {
+                    <- false
+                }
+            }
+            let ea -> sub[`element`]
+            let eb -> super[`element`]
+            when eb == Nothing or Str.to_string(eb[`kind`]) == `Variant` or Str.to_string(eb[`kind`]) == `Unknown` {
+                <- true
+            }
+            when ea == Nothing or Str.to_string(ea[`kind`]) == `Variant` or Str.to_string(ea[`kind`]) == `Unknown` {
+                <- true
+            }
+            <- is_subtype(ea, eb)
+        }
+        when k_sub == `Tuple` {
+            let ea -> sub[`elements`]
+            let eb -> super[`elements`]
+            when eb == Nothing or eb.length == 0 {
+                <- true
+            }
+            when ea == Nothing or ea.length == 0 {
+                <- true
+            }
+            when ea.length != eb.length {
+                <- false
+            }
+            let i -> 0
+            do while i < ea.length {
+                when not is_subtype(ea[i], eb[i]) {
+                    <- false
+                }
+                i -> i + 1
+            }
+            <- true
+        }
+        when k_sub == `Option` {
+            let va -> sub[`value`]
+            let vb -> super[`value`]
+            when vb == Nothing { <- true }
+            when va == Nothing { <- true }
+            <- is_subtype(va, vb)
+        }
+        when k_sub == `Result` {
+            let oa -> sub[`ok`]
+            let ob -> super[`ok`]
+            let ea -> sub[`error`]
+            let eb -> super[`error`]
+            let ok_match -> true
+            when ob != Nothing and oa != Nothing { ok_match -> is_subtype(oa, ob) }
+            let err_match -> true
+            when eb != Nothing and ea != Nothing { err_match -> is_subtype(ea, eb) }
+            <- ok_match and err_match
+        }
+        when k_sub == `Task` {
+            let ra -> sub[`result`]
+            let rb -> super[`result`]
+            when rb == Nothing or ra == Nothing { <- true }
+            <- is_subtype(ra, rb)
+        }
+        when k_sub == `Structure` {
+            when type_name(sub) == type_name(super) {
+                <- true
+            }
+            let mems_b -> super[`members`]
+            when mems_b != Nothing and mems_b.keys().length > 0 {
+                let mems_a -> sub[`members`]
+                when mems_a == Nothing { <- false }
+                let b_keys -> mems_b.keys()
+                let bi -> 0
+                do while bi < b_keys.length {
+                    let k -> b_keys[bi]
+                    when not mems_a.has(k) { <- false }
+                    when not is_subtype(mems_a[k], mems_b[k]) { <- false }
+                    bi -> bi + 1
+                }
+                <- true
+            }
+            <- false
+        }
+        when k_sub == `Class` {
+            when type_name(sub) == type_name(super) {
+                <- true
+            }
+            let cur -> sub
+            do while cur != Nothing and cur.has(`base`) and cur[`base`] != Nothing {
+                let base_name -> Str.to_string(cur[`base`])
+                when base_name == type_name(super) {
+                    <- true
+                }
+                when cur.has(`base_type`) and cur[`base_type`] != Nothing {
+                    cur -> cur[`base_type`]
+                } or {
+                    cur -> Nothing
+                }
+            }
+            <- false
+        }
+        when k_sub == `Function` {
+            let pa -> sub[`params`]
+            let pb -> super[`params`]
+            when pa != Nothing and pb != Nothing {
+                when pa.length != pb.length { <- false }
+                let pi -> 0
+                do while pi < pa.length {
+                    when not is_subtype(pb[pi], pa[pi]) { <- false }
+                    pi -> pi + 1
+                }
+            }
+            let ra -> sub[`return`]
+            let rb -> super[`return`]
+            when ra != Nothing and rb != Nothing {
+                when not is_subtype(ra, rb) { <- false }
+            }
+            <- true
+        }
+        when k_sub == `TypeParam` {
+            <- sub[`name`] == super[`name`]
+        }
+        when k_sub == `Generic` {
+            when sub[`base`] != super[`base`] {
+                <- false
+            }
+            let pa -> sub[`params`]
+            let pb -> super[`params`]
+            when pa == Nothing or pb == Nothing { <- true }
+            when pa.length != pb.length { <- false }
+            let idx -> 0
+            do while idx < pa.length {
+                when not is_subtype(pa[idx], pb[idx]) { <- false }
+                idx -> idx + 1
+            }
+            <- true
+        }
+        <- true
+    }
+    <- false
+}
+
+export function is_assignable(tgt, src_t) {
+    when tgt == Nothing or src_t == Nothing {
+        <- true
+    }
+    let tk -> Str.to_string(tgt[`kind`])
+    let sk -> Str.to_string(src_t[`kind`])
+    when tk == `Forbidden` or sk == `Forbidden` {
+        <- false
+    }
+    when tk == `Variant` or tk == `Unknown` {
+        <- true
+    }
+    when sk == `Variant` or sk == `Unknown` {
+        <- true
+    }
+    when sk == `Default` {
+        <- true
+    }
+    when sk == `Nothing` {
+        when tk == `Nothing` or tk == `Variant` or tk == `Option` or tk == `Class` or tk == `Structure` or tk == `Object` {
+            <- true
+        }
+        <- false
+    }
+    <- is_subtype(src_t, tgt)
+}
+
+export function split_type_args(s) {
     let args -> []
     let current -> ``
     let depth -> 0
@@ -532,7 +848,7 @@ function split_type_args(s) {
     <- args
 }
 
-function type_from_name(name) {
+export function type_from_name(name) {
     when name == Nothing or name == `` {
         <- t_variant()
     }
@@ -989,37 +1305,94 @@ function substitute_type(t, substs) {
     <- t
 }
 
-function infer_type_substitutions(expected, actual, param_names, substs) {
+export function unify_types(expected, actual, param_names, substs) {
     when expected == Nothing or actual == Nothing {
-        <- Nothing
+        <- true
     }
     let ek -> Str.to_string(expected[`kind`])
     let ak -> Str.to_string(actual[`kind`])
+    
+    // TypeParam on expected side
     when ek == `TypeParam` or ek == `Named` {
         let pname -> Str.to_string(expected[`name`])
         when param_names == Nothing or (pname in param_names) {
-            when not substs.has(pname) {
+            when substs.has(pname) {
+                let existing -> substs[pname]
+                when ak == `Variant` or ak == `Unknown` {
+                    <- true
+                }
+                let ex_k -> Str.to_string(existing[`kind`])
+                when ex_k == `Variant` or ex_k == `Unknown` {
+                    substs[pname] -> actual
+                    <- true
+                }
+                when is_subtype(actual, existing) {
+                    <- true
+                }
+                when is_subtype(existing, actual) {
+                    substs[pname] -> actual
+                    <- true
+                }
+                // Numeric unification: Integer + Decimal -> Decimal
+                when (ex_k == `Integer` and ak == `Decimal`) or (ex_k == `Decimal` and ak == `Integer`) {
+                    substs[pname] -> t_decimal()
+                    <- true
+                }
+                // String + Rune -> String
+                when (ex_k == `String` and ak == `Rune`) or (ex_k == `Rune` and ak == `String`) {
+                    substs[pname] -> t_string()
+                    <- true
+                }
+                <- false
+            } or {
                 substs[pname] -> actual
+                <- true
             }
         }
-        <- Nothing
     }
+    
+    // TypeParam on actual side
+    when ak == `TypeParam` or ak == `Named` {
+        let pname -> Str.to_string(actual[`name`])
+        when param_names == Nothing or (pname in param_names) {
+            when substs.has(pname) {
+                let existing -> substs[pname]
+                when ek == `Variant` or ek == `Unknown` {
+                    <- true
+                }
+                let ex_k -> Str.to_string(existing[`kind`])
+                when ex_k == `Variant` or ex_k == `Unknown` {
+                    substs[pname] -> expected
+                    <- true
+                }
+                when is_subtype(expected, existing) {
+                    <- true
+                }
+                when is_subtype(existing, expected) {
+                    substs[pname] -> expected
+                    <- true
+                }
+                <- false
+            } or {
+                substs[pname] -> expected
+                <- true
+            }
+        }
+    }
+    
     when ek == `List` and ak == `List` {
-        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
-        <- Nothing
+        <- unify_types(expected[`element`], actual[`element`], param_names, substs)
     }
     when ek == `Set` and ak == `Set` {
-        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
-        <- Nothing
+        <- unify_types(expected[`element`], actual[`element`], param_names, substs)
     }
     when ek == `Map` and ak == `Map` {
-        infer_type_substitutions(expected[`key`], actual[`key`], param_names, substs)
-        infer_type_substitutions(expected[`value`], actual[`value`], param_names, substs)
-        <- Nothing
+        let k_ok -> unify_types(expected[`key`], actual[`key`], param_names, substs)
+        let v_ok -> unify_types(expected[`value`], actual[`value`], param_names, substs)
+        <- k_ok and v_ok
     }
     when ek == `Vector` and ak == `Vector` {
-        infer_type_substitutions(expected[`element`], actual[`element`], param_names, substs)
-        <- Nothing
+        <- unify_types(expected[`element`], actual[`element`], param_names, substs)
     }
     when ek == `Tuple` and ak == `Tuple` {
         let pa -> expected[`elements`]
@@ -1029,11 +1402,13 @@ function infer_type_substitutions(expected, actual, param_names, substs) {
             when pb.length < min_len { min_len -> pb.length }
             let idx -> 0
             do while idx < min_len {
-                infer_type_substitutions(pa[idx], pb[idx], param_names, substs)
+                when not unify_types(pa[idx], pb[idx], param_names, substs) {
+                    <- false
+                }
                 idx -> idx + 1
             }
         }
-        <- Nothing
+        <- true
     }
     when ek == `Generic` and ak == `Generic` {
         when expected[`base`] == actual[`base`] {
@@ -1044,14 +1419,70 @@ function infer_type_substitutions(expected, actual, param_names, substs) {
                 when pb.length < min_len { min_len -> pb.length }
                 let idx -> 0
                 do while idx < min_len {
-                    infer_type_substitutions(pa[idx], pb[idx], param_names, substs)
+                    when not unify_types(pa[idx], pb[idx], param_names, substs) {
+                        <- false
+                    }
                     idx -> idx + 1
                 }
             }
         }
-        <- Nothing
+        <- true
     }
+    <- is_assignable(expected, actual)
+}
+
+function infer_type_substitutions(expected, actual, param_names, substs) {
+    unify_types(expected, actual, param_names, substs)
     <- Nothing
+}
+
+export function instantiate_generic_call(callee_t, explicit_args, arg_types) {
+    when callee_t == Nothing {
+        <- callee_t
+    }
+    when not callee_t.has(`generics`) or callee_t[`generics`] == Nothing or callee_t[`generics`].length == 0 {
+        <- callee_t
+    }
+    let gparams -> callee_t[`generics`]
+    let substs -> {}
+    
+    // 1. Explicit generic type arguments
+    when explicit_args != Nothing and explicit_args.length > 0 {
+        let ei -> 0
+        let en -> explicit_args.length
+        when en > gparams.length { en -> gparams.length }
+        do while ei < en {
+            let gp -> Str.to_string(gparams[ei])
+            substs[gp] -> explicit_args[ei]
+            ei -> ei + 1
+        }
+    }
+    
+    // 2. Infer from call-site actual arguments
+    let params0 -> callee_t[`params`]
+    when params0 != Nothing and arg_types != Nothing {
+        let min_len -> params0.length
+        when arg_types.length < min_len { min_len -> arg_types.length }
+        let pi -> 0
+        do while pi < min_len {
+            let act_t -> arg_types[pi]
+            unify_types(params0[pi], act_t, gparams, substs)
+            pi -> pi + 1
+        }
+    }
+    
+    // 3. Fallback any unbound generic parameters to Variant
+    let gi -> 0
+    let gn -> gparams.length
+    do while gi < gn {
+        let gp -> Str.to_string(gparams[gi])
+        when not substs.has(gp) {
+            substs[gp] -> t_variant()
+        }
+        gi -> gi + 1
+    }
+    
+    <- substitute_type(callee_t, substs)
 }
 
 function instantiate_generic_symbol(t, type_spec_name) {

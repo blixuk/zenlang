@@ -1,0 +1,74 @@
+import zen.concurrency as conc
+
+function simulate_heavy_c_call(x) {
+    // In real code, this could be sqlite3, curl, or heavy compression
+    conc.sleep(0.03)
+    <- x * 10
+}
+
+function fiber_task(ch) {
+    for i in 1...3 {
+        conc.sleep(0.01)
+        ch.send(i)
+    }
+    ch.close()
+    <- `done`
+}
+
+function main() {
+    writeln(`[Test] Starting Reactor & Blocking Pool Zenlang Tests...`)
+
+    // 1. Non-blocking sleep
+    conc.sleep(0.04)
+    writeln(`  [OK] conc.sleep(0.04) completed successfully`)
+
+    // 2. Dedicated Blocking Task
+    let btask -> conc.spawn_blocking(simulate_heavy_c_call, 7)
+    let bres -> btask.wait()
+    when bres != 70 {
+        writeln(f`FAILED: spawn_blocking result expected 70, got {bres}`)
+        <- 1
+    }
+    writeln(f`  [OK] conc.spawn_blocking returned: {bres}`)
+
+    // 3. Structured Concurrency TaskGroup with spawn_blocking
+    let tg -> conc.task_group()
+    let t1 -> tg.spawn_blocking(simulate_heavy_c_call, 2)
+    let t2 -> tg.spawn_blocking(simulate_heavy_c_call, 3)
+    let t3 -> tg.spawn_blocking(simulate_heavy_c_call, 4)
+
+    tg.wait_all()
+    let r1 -> t1.wait()
+    let r2 -> t2.wait()
+    let r3 -> t3.wait()
+
+    when r1 != 20 or r2 != 30 or r3 != 40 {
+        writeln(f`FAILED: TaskGroup blocking results: {r1}, {r2}, {r3}`)
+        <- 1
+    }
+    writeln(f`  [OK] TaskGroup.spawn_blocking wait_all verified: {r1}, {r2}, {r3}`)
+
+    // 4. Cooperative Fiber streaming into Channel with non-blocking sleep
+    let ch -> conc.channel(4)
+    let fib -> conc.spawn(fiber_task, ch)
+
+    let sum -> 0
+    let done -> false
+    while not done {
+        let v -> ch.receive()
+        when v == Nothing {
+            done -> true
+        } or {
+            sum -> sum + v
+        }
+    }
+    let fib_res -> fib.wait()
+    when fib_res != `done` or sum != 6 {
+        writeln(f`FAILED: fiber streaming sum expected 6, got {sum}, status: {fib_res}`)
+        <- 1
+    }
+    writeln(f`  [OK] Cooperative fiber streaming with reactor sleep verified: sum = {sum}`)
+
+    writeln(`[SUCCESS] All Reactor & Blocking Pool Zenlang tests passed!`)
+    <- 0
+}

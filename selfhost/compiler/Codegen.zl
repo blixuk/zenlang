@@ -4807,6 +4807,21 @@ function emit_call(node) {
                 }
                 <- `ZenTask_spawn_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)`
             }
+            when raw == `spawn_blocking` {
+                when args != Nothing and args.length == 1 {
+                    <- `ZenTask_spawn_blocking_val(` + emit_expr(args[0]) + `, ZEN_NOTHING_VAL)`
+                }
+                when args != Nothing and args.length >= 2 {
+                    <- `ZenTask_spawn_blocking_val(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `)`
+                }
+                <- `ZenTask_spawn_blocking_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)`
+            }
+            when raw == `sleep` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenReactor_sleep_val(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenReactor_sleep_val(ZenValue_make_decimal(0.0))`
+            }
             when is_extern_fn(raw) or (CG[`has_open_extern`] == true and not is_local_or_param(raw) and not is_registered_class(raw)) {
                 let c_args -> emit_extern_args(args)
                 when c_args == `` {
@@ -5445,6 +5460,18 @@ function emit_builtin_call(oname, m, alist) {
             when alist == `` { <- `ZenTask_spawn_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)` }
             when not Str.contains(alist, `,`) { <- `ZenTask_spawn_val(` + alist + `, ZEN_NOTHING_VAL)` }
             <- `ZenTask_spawn_val(` + alist + `)`
+        }
+        when m == `spawn_blocking` {
+            when alist == `` { <- `ZenTask_spawn_blocking_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)` }
+            when not Str.contains(alist, `,`) { <- `ZenTask_spawn_blocking_val(` + alist + `, ZEN_NOTHING_VAL)` }
+            <- `ZenTask_spawn_blocking_val(` + alist + `)`
+        }
+        when m == `sleep` {
+            when alist == `` { <- `ZenReactor_sleep_val(ZenValue_make_decimal(0.0))` }
+            <- `ZenReactor_sleep_val(` + alist + `)`
+        }
+        when m == `poll_fd` {
+            <- `ZenValue_poll_fd(` + alist + `)`
         }
     }
     when oname == `__builtin_channel` or oname == `Channel` {

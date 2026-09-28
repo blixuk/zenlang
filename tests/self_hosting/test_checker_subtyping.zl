@@ -1,0 +1,330 @@
+/!
+ Stage 4: TypeChecker Subtyping & Generics Formalization Tests.
+ Dual-path parity test suite.
+ !/
+
+import compiler.TypeChecker as Checker
+import compiler.Types as Ty
+import zen.test as test
+import zen.text.string as Str
+import zen.io.io as IO
+
+function errors_join(errs) {
+    let out -> ``
+    do for e in errs {
+        out -> out + e + `|`
+    }
+    <- out
+}
+
+// 1. Direct unit tests on Types.is_subtype and Types.is_assignable
+function test_unit_abstract_subtypes() {
+    let t_int -> Ty.type_from_name(`Integer`)
+    let t_dec -> Ty.type_from_name(`Decimal`)
+    let t_byte -> Ty.type_from_name(`Byte`)
+    let t_num -> Ty.type_from_name(`Number`)
+    let t_str -> Ty.type_from_name(`String`)
+    let t_rune -> Ty.type_from_name(`Rune`)
+    let t_txt -> Ty.type_from_name(`Text`)
+    let t_list_int -> Ty.type_from_name(`List[Integer]`)
+    let t_coll -> Ty.type_from_name(`Collection`)
+    let t_cont -> Ty.type_from_name(`Container`)
+    
+    let pass -> true
+    // Concrete <: Abstract
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_int, t_num), true, `int <: num`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_dec, t_num), true, `dec <: num`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_byte, t_num), true, `byte <: num`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_str, t_txt), true, `str <: txt`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_rune, t_txt), true, `rune <: txt`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_list_int, t_coll), true, `list <: coll`)
+    
+    // Abstract NOT <: Concrete
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_num, t_int), false, `num not<: int`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_txt, t_str), false, `txt not<: str`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_coll, t_list_int), false, `coll not<: list`)
+    
+    // Primitive widening
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_byte, t_int), true, `byte <: int`)
+    let t_i16 -> Ty.type_from_name(`Integer[16]`)
+    let t_i32 -> Ty.type_from_name(`Integer[32]`)
+    let t_i64 -> Ty.type_from_name(`Integer[64]`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_i16, t_i32), true, `i16 <: i32`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_i32, t_i64), true, `i32 <: i64`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(t_i32, t_i16), false, `i32 not<: i16`)
+    
+    <- pass
+}
+
+function test_unit_collection_subtypes() {
+    let l_int -> Ty.type_from_name(`List[Integer]`)
+    let l_num -> Ty.type_from_name(`List[Number]`)
+    let l_str -> Ty.type_from_name(`List[String]`)
+    
+    let pass -> true
+    pass -> pass and test.assert_equal(Ty.is_subtype(l_int, l_num), true, `List<Int> <: List<Num>`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(l_num, l_int), false, `List<Num> not<: List<Int>`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(l_int, l_str), false, `List<Int> not<: List<Str>`)
+    
+    let tup_sub -> Ty.type_from_name(`Tuple[Integer, String]`)
+    let tup_sup -> Ty.type_from_name(`Tuple[Number, Text]`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(tup_sub, tup_sup), true, `Tuple<Int, Str> <: Tuple<Num, Txt>`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(tup_sup, tup_sub), false, `Tuple<Num, Txt> not<: Tuple<Int, Str>`)
+    
+    <- pass
+}
+
+function test_unit_record_subtypes() {
+    let t_int -> Ty.type_from_name(`Integer`)
+    let t_num -> Ty.type_from_name(`Number`)
+    let t_str -> Ty.type_from_name(`String`)
+    
+    let pt2d -> {`kind` -> `Structure`, `name` -> `Point2D`, `members` -> {`x` -> t_num, `y` -> t_num}}
+    let pt3d -> {`kind` -> `Structure`, `name` -> `Point3D`, `members` -> {`x` -> t_int, `y` -> t_int, `z` -> t_int, `name` -> t_str}}
+    let bad_pt -> {`kind` -> `Structure`, `name` -> `BadPoint`, `members` -> {`x` -> t_int}}
+    
+    let pass -> true
+    pass -> pass and test.assert_equal(Ty.is_subtype(pt3d, pt2d), true, `Point3D <: Point2D`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(pt2d, pt3d), false, `Point2D not<: Point3D`)
+    pass -> pass and test.assert_equal(Ty.is_subtype(bad_pt, pt2d), false, `BadPoint not<: Point2D`)
+    <- pass
+}
+
+// 2. End-to-end typechecker tests
+function test_check_abstract_type_ok() {
+    let src -> ```
+function take_num(n: Number) : Number {
+    <- n
+}
+function main() {
+    let a : Integer -> 10
+    let b : Decimal -> 3.14
+    let r1 -> take_num(a)
+    let r2 -> take_num(b)
+    let n : Number -> a
+    <- n
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `abstract type ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function test_check_abstract_type_reject() {
+    let src -> ```
+function main() {
+    let n : Number -> 10
+    let i : Integer -> n
+    <- i
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `abstract downcast reject`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`), true, `mismatch error msg`)
+    <- pass
+}
+
+function test_check_collection_covariance_ok() {
+    let src -> ```
+function sum_numbers(nums: List<Number>) : Number {
+    <- nums.length
+}
+function main() {
+    let ints : List<Integer> -> [1, 2, 3]
+    let res -> sum_numbers(ints)
+    <- res
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `collection covariance ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function test_check_collection_covariance_reject() {
+    let src -> ```
+function take_ints(ints: List<Integer>) : Integer {
+    <- ints.length
+}
+function main() {
+    let nums : List<Number> -> [1, 2, 3]
+    <- take_ints(nums)
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `collection contravariance reject`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `mismatch`), true, `mismatch error msg`)
+    <- pass
+}
+
+function test_check_class_inheritance_ok() {
+    let src -> ```
+class Animal {
+    name: String
+    function speak(): String { <- `sound` }
+}
+class Mammal extends Animal {
+    warm_blooded: Boolean
+}
+class Dog extends Mammal {
+    breed: String
+    function bark(): String { <- `woof` }
+}
+function pet(a: Animal): String {
+    <- a.speak()
+}
+function main() {
+    let d -> Dog()
+    let m : Mammal -> d
+    let a : Animal -> d
+    <- pet(d)
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `class inheritance ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function test_check_class_inheritance_reject() {
+    let src -> ```
+class Animal {
+    name: String
+}
+class Dog extends Animal {
+    breed: String
+}
+function main() {
+    let a -> Animal()
+    let d : Dog -> a
+    <- d
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `class downcast reject`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`), true, `mismatch error msg`)
+    <- pass
+}
+
+function test_check_generic_function_inference() {
+    let src -> ```
+function choose<T>(a: T, b: T): T {
+    <- a
+}
+function main() {
+    let x -> choose(10, 20)
+    let y -> choose(10, 20.5)
+    let s -> choose(`hello`, `world`)
+    <- x
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `generic inference ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function test_check_generic_function_mismatch() {
+    let src -> ```
+function choose<T>(a: T, b: T): T {
+    <- a
+}
+function main() {
+    let s : String -> choose(10, 20)
+    <- s
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic result mismatch`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`), true, `mismatch error msg`)
+    <- pass
+}
+
+function test_check_generic_struct_inference() {
+    let src -> ```
+structure Box<T> {
+    value: T
+}
+function main() {
+    let b -> Box{ value -> 42 }
+    let v : Integer -> b.value
+    let b_str -> Box{ value -> `zen` }
+    let s : String -> b_str.value
+    <- v
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `generic struct inference ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function test_check_generic_struct_field_mismatch() {
+    let src -> ```
+structure Box<T> {
+    value: T
+}
+function main() {
+    let b : Box<String> -> Box{ value -> 42 }
+    <- b
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], false, `generic struct field mismatch`)
+    let joined -> errors_join(r[`errors`])
+    pass -> pass and test.assert_equal(Str.contains(joined, `Type mismatch`), true, `field mismatch error msg`)
+    <- pass
+}
+
+function test_check_return_type_widening() {
+    let src -> ```
+function pick_number(flag: Boolean) {
+    when flag {
+        <- 10
+    } or {
+        <- 20.5
+    }
+}
+function main() {
+    let n : Decimal -> pick_number(true)
+    <- n
+}
+```
+    let r -> Checker.check_source(src)
+    let pass -> test.assert_equal(r[`ok`], true, `return widening ok`)
+    pass -> pass and test.assert_equal(r[`errors`].length, 0, `no errors`)
+    <- pass
+}
+
+function run_tests() {
+    let tests -> [
+        {`name` -> `Subtyping.unit_abstract`, `fn` -> test_unit_abstract_subtypes},
+        {`name` -> `Subtyping.unit_collection`, `fn` -> test_unit_collection_subtypes},
+        {`name` -> `Subtyping.unit_record`, `fn` -> test_unit_record_subtypes},
+        {`name` -> `Subtyping.abstract_ok`, `fn` -> test_check_abstract_type_ok},
+        {`name` -> `Subtyping.abstract_reject`, `fn` -> test_check_abstract_type_reject},
+        {`name` -> `Subtyping.collection_cov_ok`, `fn` -> test_check_collection_covariance_ok},
+        {`name` -> `Subtyping.collection_cov_reject`, `fn` -> test_check_collection_covariance_reject},
+        {`name` -> `Subtyping.class_inherit_ok`, `fn` -> test_check_class_inheritance_ok},
+        {`name` -> `Subtyping.class_inherit_reject`, `fn` -> test_check_class_inheritance_reject},
+        {`name` -> `Subtyping.generic_inference`, `fn` -> test_check_generic_function_inference},
+        {`name` -> `Subtyping.generic_mismatch`, `fn` -> test_check_generic_function_mismatch},
+        {`name` -> `Subtyping.generic_struct_infer`, `fn` -> test_check_generic_struct_inference},
+        {`name` -> `Subtyping.generic_struct_mismatch`, `fn` -> test_check_generic_struct_field_mismatch},
+        {`name` -> `Subtyping.return_widening`, `fn` -> test_check_return_type_widening}
+    ]
+    <- test.run_suite(`Selfhost Stage4 Subtyping & Generics`, tests)
+}
+
+function main() {
+    when run_tests() {
+        <- 0
+    } or {
+        <- 1
+    }
+}

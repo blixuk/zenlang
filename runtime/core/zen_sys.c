@@ -137,9 +137,11 @@ void ZenRuntime_initialize(void) {
 
     ZenTask_scheduler_init();
     ZenTaskEngine_init();
+    ZenReactor_init();
 }
 
 void ZenRuntime_terminate(void) {
+    ZenReactor_shutdown();
     ZenTaskEngine_shutdown();
 }
 

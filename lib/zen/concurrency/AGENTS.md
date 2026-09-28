@@ -9,7 +9,9 @@ Standard library maintainers and language concurrency team.
 # Local Contracts
 
 - **FIFO Channels (`channel.zl`)**: Supports unbuffered (rendezvous) and buffered queues with safe closure, non-blocking `try_send`/`try_receive`, and multiplexed `select()`.
-- **Unified Task Model (`task.zl`)**: Encapsulates asynchronous task lifecycle (`spawn`, `wait`/`await`, `all`, `race`, `cancel`, `timeout`) and bounded `TaskPool` worker queues.
+- **Unified Task Model (`task.zl`, `concurrency.zl`)**: Encapsulates asynchronous task lifecycle (`spawn`, `wait`/`await`, `all`, `race`, `cancel`, `timeout`) and bounded `TaskPool` worker queues.
+- **Non-Blocking C-FFI Worker Pool (`spawn_blocking`)**: Offloads synchronous or blocking C-FFI operations to a dedicated OS worker pool (`task.spawn_blocking`, `conc.spawn_blocking`, `TaskGroup.spawn_blocking`), preventing cooperative compute worker starvation while enforcing the frozen handoff boundary.
+- **Kernel Event Reactor (`sleep`, `poll_fd`)**: Asynchronous `epoll`/`kqueue` kernel event poller exposing non-blocking high-resolution monotonic sleep (`conc.sleep(seconds)`) and file descriptor readiness polling (`conc.poll_fd(fd, events, timeout_sec)`).
 - **Synchronization Primitives (`sync.zl`)**: Provides `WaitGroup` for count coordination, `Mutex` with `with_lock`, `Atomic` with compare-and-swap (`CAS`), `Barrier` for multi-party synchronization, counting `Semaphore`, and `Once` execution guards.
 - **Cooperative Fibers (`fiber.zl`)**: Lightweight resumable coroutines with explicit `yield`/`resume` and a cooperative round-robin `Scheduler`.
 - **Dual-Path Execution**: Pure Zenlang map-based structures that execute identically under both AST interpreter and native AOT compiled binaries (`-g`).

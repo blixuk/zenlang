@@ -239,6 +239,9 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("__builtin_task", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("channel", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("spawn", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("spawn_blocking", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("sleep", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("poll_fd", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("Task", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("Channel", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
 

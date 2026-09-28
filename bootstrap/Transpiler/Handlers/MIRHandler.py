@@ -767,6 +767,20 @@ class MIRHandler:
                              call_args = call_args[1:]
                          if len(call_args) == 1:
                              call_args = [call_args[0], "ZEN_NOTHING_VAL"]
+                     elif prop_name in ("spawn_blocking", "spawn_blocking_task"):
+                         callee_str = "ZenTask_spawn_blocking_val"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
+                         if len(call_args) == 1:
+                             call_args = [call_args[0], "ZEN_NOTHING_VAL"]
+                     elif prop_name == "sleep":
+                         callee_str = "ZenReactor_sleep_val"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
+                     elif prop_name == "poll_fd":
+                         callee_str = "ZenValue_poll_fd"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
                      else:
                          callee_str = f"ZenConcurrency_{prop_name}"
                          if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):

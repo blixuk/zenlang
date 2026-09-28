@@ -32,3 +32,4 @@
 // Concurrency
 #include "concurrency/zen_task.c"
 #include "concurrency/zen_channel.c"
+#include "concurrency/zen_reactor.c"

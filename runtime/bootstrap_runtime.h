@@ -40,6 +40,7 @@
 // Concurrency
 #include "concurrency/zen_task.h"
 #include "concurrency/zen_channel.h"
+#include "concurrency/zen_reactor.h"
 
 // Compatibility helpers for the transpiler
 static inline void* zen_get_body_ptr(void* obj) {

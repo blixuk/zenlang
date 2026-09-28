@@ -45,6 +45,9 @@ ZenValue ZenValue_is_cancelled(ZenValue self);
 ZenValue ZenValue_send(ZenValue self, ZenValue value);
 ZenValue ZenValue_receive(ZenValue self);
 ZenValue ZenValue_is_closed(ZenValue self);
+ZenValue ZenValue_spawn_blocking(ZenValue callable, ZenValue argument);
+ZenValue ZenValue_sleep(ZenValue seconds);
+ZenValue ZenValue_poll_fd(ZenValue fd_val, ZenValue events_val, ZenValue timeout_val);
 
 ZenValue ZenValue_info(ZenValue self, ZenValue value);
 ZenValue ZenValue_warn(ZenValue self, ZenValue value);

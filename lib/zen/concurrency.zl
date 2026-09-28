@@ -33,6 +33,36 @@ export function spawn(callable, argument) {
 }
 
 /!
+  Spawns a synchronous or blocking C-FFI operation onto a dedicated OS worker thread pool,
+  preventing starvation of the cooperative work-stealing fiber scheduler.
+  @param callable Function or C-FFI function to execute.
+  @param argument Optional argument passed across the frozen memory boundary.
+  @return Native Task handle.
+!/
+export function spawn_blocking(callable, argument) {
+    <- __builtin_concurrency.spawn_blocking(callable, argument)
+}
+
+/!
+  Asynchronously sleeps the calling fiber task via the non-blocking kernel event reactor (epoll/kqueue).
+  @param seconds Sleep duration in seconds (fractional supported).
+!/
+export function sleep(seconds) {
+    <- __builtin_concurrency.sleep(seconds)
+}
+
+/!
+  Non-blocking poll on a file descriptor via the kernel event reactor (epoll/kqueue).
+  @param fd File descriptor to poll.
+  @param events Event bitmask (1 = READ, 2 = WRITE).
+  @param timeout_sec Timeout in seconds (negative for indefinite).
+  @return Ready event bitmask.
+!/
+export function poll_fd(fd, events, timeout_sec) {
+    <- __builtin_concurrency.poll_fd(fd, events, timeout_sec)
+}
+
+/!
   Structured concurrency TaskGroup context manager.
   Spawns child tasks and deterministically waits or cancels them upon scope exit.
 !/
@@ -45,6 +75,12 @@ export class TaskGroup {
     
     function spawn(callable, argument) {
         let t -> __builtin_concurrency.spawn(callable, argument)
+        self.tasks.append(t)
+        <- t
+    }
+
+    function spawn_blocking(callable, argument) {
+        let t -> __builtin_concurrency.spawn_blocking(callable, argument)
         self.tasks.append(t)
         <- t
     }
@@ -101,7 +137,6 @@ export let error -> tasks_mod.task_error
 export let cancel -> tasks_mod.cancel_task
 export let all -> tasks_mod.task_all
 export let race -> tasks_mod.task_race
-export let sleep -> tasks_mod.task_sleep
 export let yield_now -> tasks_mod.task_yield_now
 export let create_task_pool -> tasks_mod.create_task_pool
 export let pool_submit -> tasks_mod.pool_submit

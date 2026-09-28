@@ -2299,7 +2299,9 @@ function compile_expression(ctx, expr) {
                      oname != `__builtin_net` and
                      oname != `__builtin_ffi` and oname != `ffi` and
                      oname != `__builtin_output` and oname != `__builtin_input` and
-                     oname != `__builtin_reflect` and oname != `__builtin` {
+                     oname != `__builtin_reflect` and oname != `__builtin` and
+                     oname != `__builtin_ast` and oname != `ast` and
+                     oname != `__builtin_memory` and oname != `memory` {
                     let direct_name -> oname + `_` + mname
                     let name_idx -> add_constant(ctx, direct_name)
                     emit_byte(ctx, 34, line) // OP_LOAD_GLOBAL
@@ -3218,14 +3220,23 @@ export function create_vm_prelude() {
         `channel` -> make_native(`conc_channel`),
         `create_channel` -> make_native(`conc_channel`),
         `spawn` -> make_native(`conc_spawn`),
-        `spawn_task` -> make_native(`conc_spawn`)
+        `spawn_task` -> make_native(`conc_spawn`),
+        `spawn_blocking` -> make_native(`conc_spawn_blocking`),
+        `sleep` -> make_native(`conc_sleep`),
+        `poll_fd` -> make_native(`conc_poll_fd`)
     }
     g[`concurrency`] -> conc_mod
     g[`__builtin_concurrency`] -> conc_mod
     g[`channel`] -> make_native(`conc_channel`)
     g[`spawn`] -> make_native(`conc_spawn`)
+    g[`spawn_blocking`] -> make_native(`conc_spawn_blocking`)
+    g[`sleep`] -> make_native(`conc_sleep`)
+    g[`poll_fd`] -> make_native(`conc_poll_fd`)
     g[`__builtin_concurrency_channel`] -> make_native(`conc_channel`)
     g[`__builtin_concurrency_spawn`] -> make_native(`conc_spawn`)
+    g[`__builtin_concurrency_spawn_blocking`] -> make_native(`conc_spawn_blocking`)
+    g[`__builtin_concurrency_sleep`] -> make_native(`conc_sleep`)
+    g[`__builtin_concurrency_poll_fd`] -> make_native(`conc_poll_fd`)
     g[`__builtin_concurrency_create_channel`] -> make_native(`conc_channel`)
     g[`__builtin_concurrency_spawn_task`] -> make_native(`conc_spawn`)
     g[`__builtin_channel_make`] -> make_native(`conc_channel`)
@@ -3544,6 +3555,37 @@ export function invoke_callable_g(callee, args, globals) {
                     a1 -> rargs[0]
                 }
                 <- __builtin_concurrency.spawn(fn_val, a1)
+            }
+            when nfn == `conc_spawn_blocking` {
+                let fn_val -> args[0]
+                let rargs -> []
+                when args != Nothing and args.length >= 2 {
+                    rargs.append(args[1])
+                }
+                when fn_val is Map {
+                    <- __builtin_concurrency.spawn_blocking(run_bytecode_task, [fn_val, rargs, globals])
+                }
+                let a1 -> Nothing
+                when rargs.length > 0 {
+                    a1 -> rargs[0]
+                }
+                <- __builtin_concurrency.spawn_blocking(fn_val, a1)
+            }
+            when nfn == `conc_sleep` {
+                let sec -> 0.0
+                when args != Nothing and args.length >= 1 and args[0] != Nothing {
+                    sec -> args[0]
+                }
+                <- __builtin_concurrency.sleep(sec)
+            }
+            when nfn == `conc_poll_fd` {
+                let fd -> -1
+                let ev -> 3
+                let to -> -1.0
+                when args != Nothing and args.length >= 1 { fd -> args[0] }
+                when args != Nothing and args.length >= 2 { ev -> args[1] }
+                when args != Nothing and args.length >= 3 { to -> args[2] }
+                <- __builtin_concurrency.poll_fd(fd, ev, to)
             }
             when nfn == `str_starts_with` {
                 <- Str.starts_with(args[0], args[1])

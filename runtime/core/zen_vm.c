@@ -231,6 +231,8 @@ ZenVM* ZenVM_new(void) {
     vm->globals = ZenMap_new();
     ZenVM_register_native_func(vm, "channel", (void*)ZenChannel_make);
     ZenVM_register_native_func(vm, "spawn", (void*)ZenTask_spawn_val);
+    ZenVM_register_native_func(vm, "spawn_blocking", (void*)ZenTask_spawn_blocking_val);
+    ZenVM_register_native_func(vm, "sleep", (void*)ZenReactor_sleep_val);
     vm->stack_top = vm->stack;
     vm->frame_count = 0;
     vm->has_error = false;

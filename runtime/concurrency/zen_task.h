@@ -8,6 +8,8 @@
 typedef enum {
     TASK_PENDING,
     TASK_RUNNING,
+    TASK_WAITING_IO,
+    TASK_WAITING_TIMER,
     TASK_COMPLETED,
     TASK_FAILED,
     TASK_CANCELLED
@@ -30,10 +32,18 @@ typedef struct ZenTaskHandle {
 void ZenTaskEngine_init(void);
 void ZenTaskEngine_shutdown(void);
 
-/* Task API */
+/* Cooperative Compute Task API */
 ZenTaskHandle* (ZenTask_spawn)(ZenValue callable, ZenValue argument);
 ZenValue ZenTask_spawn_val(ZenValue callable, ZenValue argument);
 ZenValue ZenTask_spawn_legacy(void* func, int arg_count, ZenValue* args);
+
+/* Dedicated Blocking C-FFI / I/O Task API */
+ZenTaskHandle* ZenTask_spawn_blocking(ZenValue callable, ZenValue argument);
+ZenValue ZenTask_spawn_blocking_val(ZenValue callable, ZenValue argument);
+
+/* Reactor & Worker Queue Dispatch */
+void ZenTask_enqueue_ready(ZenTaskHandle* task);
+ZenTaskHandle* ZenTask_current(void);
 
 ZenValue (ZenTask_wait)(ZenTaskHandle* task);
 ZenValue ZenTask_wait_value(ZenValue task_val);

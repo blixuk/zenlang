@@ -554,6 +554,27 @@ ZenValue ZenValue_is_closed(ZenValue self) {
     return ZenValue_make_boolean(0);
 }
 
+ZenValue ZenValue_spawn_blocking(ZenValue callable, ZenValue argument) {
+    return ZenTask_spawn_blocking_val(callable, argument);
+}
+
+ZenValue ZenValue_sleep(ZenValue seconds) {
+    return ZenReactor_sleep_val(seconds);
+}
+
+ZenValue ZenValue_poll_fd(ZenValue fd_val, ZenValue events_val, ZenValue timeout_val) {
+    int fd = (fd_val.type == ZEN_INTEGER) ? (int)fd_val.as.integer : -1;
+    int events = (events_val.type == ZEN_INTEGER) ? (int)events_val.as.integer : (ZEN_REACTOR_READ | ZEN_REACTOR_WRITE);
+    double timeout = -1.0;
+    if (timeout_val.type == ZEN_INTEGER) {
+        timeout = (double)timeout_val.as.integer;
+    } else if (timeout_val.type == ZEN_DECIMAL) {
+        timeout = timeout_val.as.decimal;
+    }
+    int res = ZenReactor_poll_fd(fd, events, timeout);
+    return ZenValue_make_integer(res);
+}
+
 ZenValue ZenValue_info(ZenValue self, ZenValue value) { return ZenIO_write_info(value); }
 ZenValue ZenValue_warn(ZenValue self, ZenValue value) { return ZenIO_write_warning(value); }
 ZenValue ZenValue_error(ZenValue self, ZenValue value) { return ZenIO_write_error(value); }

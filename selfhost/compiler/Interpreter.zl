@@ -997,6 +997,9 @@ function env_prelude() {
     global -> env_define(global, `concurrency`, make_builtin_mod(`concurrency`), false)
     global -> env_define(global, `channel`, make_builtin(`concurrency`, `channel`), false)
     global -> env_define(global, `spawn`, make_builtin(`concurrency`, `spawn`), false)
+    global -> env_define(global, `spawn_blocking`, make_builtin(`concurrency`, `spawn_blocking`), false)
+    global -> env_define(global, `sleep`, make_builtin(`concurrency`, `sleep`), false)
+    global -> env_define(global, `poll_fd`, make_builtin(`concurrency`, `poll_fd`), false)
     global -> env_define(global, `write`, make_builtin(`stdout`, `write`), false)
     global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
     global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
@@ -2983,6 +2986,23 @@ function eval_builtin(name, args) {
     }
     when name == `concurrency.spawn` or name == `spawn` {
         <- __builtin_concurrency.spawn(a0, a1)
+    }
+    when name == `concurrency.spawn_blocking` or name == `spawn_blocking` {
+        <- __builtin_concurrency.spawn_blocking(a0, a1)
+    }
+    when name == `concurrency.sleep` or name == `sleep` {
+        let sec -> 0.0
+        when a0 != Nothing { sec -> a0 }
+        <- __builtin_concurrency.sleep(sec)
+    }
+    when name == `concurrency.poll_fd` or name == `poll_fd` {
+        let fd -> -1
+        let ev -> 0
+        let to -> 0.0
+        when a0 != Nothing { fd -> a0 }
+        when a1 != Nothing { ev -> a1 }
+        when a2 != Nothing { to -> a2 }
+        <- __builtin_concurrency.poll_fd(fd, ev, to)
     }
     when Str.starts_with(name, `ast.`) {
         <- args
