@@ -1,0 +1,53 @@
+/!
+  tools/zar/src/cmd_unpack.zl - 'zar unpack' command handler.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_unpack(args) {
+    when args.length < 1 {
+        ui.print_error(`Usage: zar unpack <archive.zar> [destination_dir] [--password <pass>]`)
+        <- 1
+    }
+
+    let archive_path -> args[0]
+    let dest_dir -> `.`
+    let password -> Nothing
+
+    let non_opt -> []
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--password` or arg == `-p` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            }
+        } or {
+            non_opt.append(arg)
+        }
+        i -> i + 1
+    }
+
+    when non_opt.length > 0 {
+        dest_dir -> non_opt[0]
+    }
+
+    ui.print_info(`Extracting ` + archive_path + ` to ` + dest_dir + `...`)
+
+    let extracted -> zar.extract_archive(archive_path, dest_dir, { `password` -> password })
+    when extracted == Nothing {
+        ui.print_error(`Failed to extract archive: invalid format, incorrect password, or corrupted data`)
+        <- 1
+    }
+
+    ui.print_success(`Extracted ` + String(extracted.length) + ` file(s) successfully:`)
+    for p in extracted {
+        writeln(`  [+] ` + p)
+    }
+
+    <- 0
+}

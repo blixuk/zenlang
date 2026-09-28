@@ -1,0 +1,90 @@
+/!
+  tools/zar/src/cmd_sfx.zl - 'zar sfx' executable builder command handler.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_sfx(args) {
+    when args.length < 2 {
+        ui.print_error(`Usage: zar sfx <source_path...> <output_executable> [--entry <script.zl>] [--compress]`)
+        <- 1
+    }
+
+    let sources -> []
+    let out_exe -> ``
+    let entrypoint -> `main.zl`
+    let compression -> 0
+
+    let non_opt -> []
+    let i -> 0
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--entry` or arg == `-e` {
+            when i + 1 < args.length {
+                entrypoint -> args[i + 1]
+                i -> i + 1
+            }
+        } or when Str.starts_with(arg, `--entry=`) {
+            entrypoint -> Str.substring(arg, 8, Str.length(arg))
+        } or when arg == `--compress` or arg == `-c` {
+            compression -> 6
+        } or {
+            non_opt.append(arg)
+        }
+        i -> i + 1
+    }
+
+    when non_opt.length < 2 {
+        ui.print_error(`Must specify at least one source and one output executable`)
+        <- 1
+    }
+
+    out_exe -> non_opt[non_opt.length - 1]
+    let s_idx -> 0
+    do while s_idx < non_opt.length - 1 {
+        sources.append(non_opt[s_idx])
+        s_idx -> s_idx + 1
+    }
+
+    ui.print_info(`Building Self-Extracting Executable (SFX): ` + out_exe + ` (entrypoint: ` + entrypoint + `)...`)
+
+    let archive -> zar.new_archive({
+        `compression` -> compression
+    })
+
+    for src in sources {
+        when file.is_dir(src) {
+            let files_in_dir -> file.list_files(src)
+            for f in files_in_dir {
+                let content -> file.read_bytes(f)
+                let rel -> f
+                when Str.starts_with(rel, `./`) {
+                    rel -> Str.substring(rel, 2, Str.length(rel))
+                }
+                zar.add(archive, rel, content, Nothing)
+            }
+        } or {
+            when not file.exists(src) {
+                ui.print_error(`Source not found: ` + src)
+                <- 1
+            }
+            let content -> file.read_bytes(src)
+            let rel -> src
+            when Str.starts_with(rel, `./`) {
+                rel -> Str.substring(rel, 2, Str.length(rel))
+            }
+            zar.add(archive, rel, content, Nothing)
+        }
+    }
+
+    zar.create_sfx(archive, out_exe, { `entrypoint` -> entrypoint })
+
+    ui.print_success(`Created self-extracting executable: ` + out_exe)
+    writeln(`  Direct run:  ` + out_exe)
+    writeln(`  Inspect:     ` + out_exe + ` --list`)
+    writeln(`  Extract:     ` + out_exe + ` --extract <dir>`)
+    <- 0
+}

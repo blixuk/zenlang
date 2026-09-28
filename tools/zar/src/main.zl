@@ -1,0 +1,122 @@
+/!
+  tools/zar/src/main.zl - Master CLI entrypoint and subcommand dispatcher for zar.
+!/
+
+import zar_ui as ui
+import cmd_pack as pack_mod
+import cmd_unpack as unpack_mod
+import cmd_list as list_mod
+import cmd_verify as verify_mod
+import cmd_edit as edit_mod
+import cmd_qr as qr_mod
+import cmd_sfx as sfx_mod
+use zen.sys.process as process
+use zen.sys.sys as Sys
+use zen.text.string as Str
+
+function print_usage() {
+    ui.banner()
+    writeln(`Usage: zar <subcommand> [options]`)
+    writeln(``)
+    writeln(`Subcommands:`)
+    writeln(`  pack <src...> <archive.zar>     Create a new archive`)
+    writeln(`  unpack <archive.zar> [dest]     Extract archive contents`)
+    writeln(`  list <archive.zar>              List archive contents in formatted table`)
+    writeln(`  verify <archive.zar>            Audit archive integrity & Merkle root`)
+    writeln(`  add <archive.zar> <file...>     Add/update files in existing archive`)
+    writeln(`  rm <archive.zar> <file...>      Remove files from existing archive`)
+    writeln(`  qr <passkey>                    Render passkey as terminal/SVG QR code`)
+    writeln(`  sfx <src...> <executable>      Build self-extracting executable`)
+    writeln(`  version                         Display zar version and format details`)
+    writeln(`  help                            Show this help menu`)
+    writeln(``)
+    writeln(`Pack Options:`)
+    writeln(`  --compress, -c [1..9]           Opt-in Deflate compression (default level 6)`)
+    writeln(`  --encrypt, -e <password>        Opt-in ChaCha20-Poly1305 authenticated encryption`)
+    writeln(`  --qr                            Display terminal QR code for encryption passkey`)
+    writeln(`  --no-dedup                      Disable content-addressable file deduplication`)
+    writeln(``)
+    writeln(`Examples:`)
+    writeln(`  zar pack ./src bundle.zar --compress`)
+    writeln(`  zar pack ./src vault.zar --encrypt "my-secret-key" --qr`)
+    writeln(`  zar list vault.zar --password "my-secret-key"`)
+    writeln(`  zar verify bundle.zar`)
+    writeln(`  zar sfx ./src mytool --entry=main.zl`)
+}
+
+function main(args) {
+    let clean_args -> Sys.user_args(args)
+    when clean_args.length == 0 {
+        print_usage()
+        <- 0
+    }
+
+
+    let subcmd -> clean_args[0]
+    let rest -> []
+    let i -> 1
+    do while i < clean_args.length {
+        rest.append(clean_args[i])
+        i -> i + 1
+    }
+
+    when subcmd == `pack` or subcmd == `create` or subcmd == `c` {
+        let code -> pack_mod.handle_pack(rest)
+        <- code
+    }
+
+    when subcmd == `unpack` or subcmd == `extract` or subcmd == `x` {
+        let code -> unpack_mod.handle_unpack(rest)
+        <- code
+    }
+
+    when subcmd == `list` or subcmd == `ls` or subcmd == `l` {
+        let code -> list_mod.handle_list(rest)
+        <- code
+    }
+
+    when subcmd == `verify` or subcmd == `audit` or subcmd == `check` or subcmd == `v` {
+        let code -> verify_mod.handle_verify(rest)
+        <- code
+    }
+
+    when subcmd == `add` or subcmd == `put` {
+        let code -> edit_mod.handle_add(rest)
+        <- code
+    }
+
+    when subcmd == `rm` or subcmd == `del` or subcmd == `remove` {
+        let code -> edit_mod.handle_rm(rest)
+        <- code
+    }
+
+    when subcmd == `qr` or subcmd == `passkey` {
+        let code -> qr_mod.handle_qr(rest)
+        <- code
+    }
+
+    when subcmd == `sfx` or subcmd == `bundle` {
+        let code -> sfx_mod.handle_sfx(rest)
+        <- code
+    }
+
+    when subcmd == `version` or subcmd == `-v` or subcmd == `--version` {
+        ui.banner()
+        writeln(`Version:     1.0.0 (ZAR Format v1)`)
+        writeln(`Engine:      Pure Zenlang 100%`)
+        writeln(`Compression: RFC 1951 Deflate (opt-in)`)
+        writeln(`Encryption:  RFC 8439 ChaCha20-Poly1305 AEAD + PBKDF2 (opt-in)`)
+        writeln(`Integrity:   IEEE 802.3 CRC-32 + SHA-256 + Merkle Tree Root Seal`)
+        writeln(`Passkeys:    ISO/IEC 18004 QR Code Generator`)
+        <- 0
+    }
+
+    when subcmd == `help` or subcmd == `-h` or subcmd == `--help` {
+        print_usage()
+        <- 0
+    }
+
+    ui.print_error(`Unknown subcommand: ` + subcmd)
+    writeln(`Run 'zar help' for available subcommands.`)
+    <- 1
+}

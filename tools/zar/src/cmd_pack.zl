@@ -1,0 +1,135 @@
+/!
+  tools/zar/src/cmd_pack.zl - 'zar pack' command handler.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_pack(args) {
+    when args.length < 2 {
+        ui.print_error(`Usage: zar pack <source_path...> <output.zar> [options]`)
+        writeln(`Options:`)
+        writeln(`  --compress, -c [1..9]   Enable Deflate compression (default level 6)`)
+        writeln(`  --encrypt, -e <pass>    Enable ChaCha20-Poly1305 encryption`)
+        writeln(`  --qr                    Display terminal QR code for encryption passkey`)
+        writeln(`  --no-dedup              Disable content-addressable file deduplication`)
+        <- 1
+    }
+
+    let sources -> []
+    let out_path -> ``
+    let compression -> 0
+    let password -> Nothing
+    let show_qr -> False
+    let dedup -> True
+
+    let i -> 0
+    let non_opt -> []
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--compress` or arg == `-c` {
+            compression -> 6
+            when i + 1 < args.length and Str.starts_with(args[i + 1], `-`) == False and (args[i + 1] == `1` or args[i + 1] == `2` or args[i + 1] == `3` or args[i + 1] == `4` or args[i + 1] == `5` or args[i + 1] == `6` or args[i + 1] == `7` or args[i + 1] == `8` or args[i + 1] == `9`) {
+                compression -> Integer(args[i + 1])
+                i -> i + 1
+            }
+        } or when arg == `--encrypt` or arg == `-e` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            } or {
+                ui.print_error(`--encrypt requires a password argument`)
+                <- 1
+            }
+        } or when arg == `--qr` {
+            show_qr -> True
+        } or when arg == `--no-dedup` {
+            dedup -> False
+        } or {
+            non_opt.append(arg)
+        }
+        i -> i + 1
+    }
+
+    when non_opt.length < 2 {
+        ui.print_error(`Must specify at least one source path and one output archive path`)
+        <- 1
+    }
+
+    out_path -> non_opt[non_opt.length - 1]
+    let s_idx -> 0
+    do while s_idx < non_opt.length - 1 {
+        sources.append(non_opt[s_idx])
+        s_idx -> s_idx + 1
+    }
+
+    ui.print_info(`Packing ` + String(sources.length) + ` source(s) into ` + out_path + `...`)
+
+    let archive -> zar.new_archive({
+        `compression` -> compression,
+        `password` -> password,
+        `dedup` -> dedup
+    })
+
+    let total_files -> 0
+    let total_orig_bytes -> 0
+
+    for src in sources {
+        when file.is_dir(src) {
+            let files_in_dir -> file.list_files(src)
+            for f in files_in_dir {
+                let content -> file.read_bytes(f)
+                let rel -> f
+                when Str.starts_with(rel, `./`) {
+                    rel -> Str.substring(rel, 2, Str.length(rel))
+                }
+                zar.add(archive, rel, content, Nothing)
+                total_files -> total_files + 1
+                total_orig_bytes -> total_orig_bytes + content.length
+            }
+        } or {
+            when not file.exists(src) {
+                ui.print_error(`Source not found: ` + src)
+                <- 1
+            }
+            let content -> file.read_bytes(src)
+            let rel -> src
+            when Str.starts_with(rel, `./`) {
+                rel -> Str.substring(rel, 2, Str.length(rel))
+            }
+            zar.add(archive, rel, content, Nothing)
+            total_files -> total_files + 1
+            total_orig_bytes -> total_orig_bytes + content.length
+        }
+    }
+
+    zar.save(archive, out_path, Nothing)
+    let archive_size -> file.read_bytes(out_path).length
+
+    ui.print_success(`Archive created successfully: ` + out_path)
+    writeln(`  Files:       ` + String(total_files))
+    writeln(`  Raw Size:    ` + ui.format_bytes(total_orig_bytes))
+    writeln(`  Final Size:  ` + ui.format_bytes(archive_size))
+
+    when total_orig_bytes > 0 {
+        let ratio -> Integer((archive_size * 100) / total_orig_bytes)
+        writeln(`  Ratio:       ` + String(ratio) + `%`)
+    }
+
+    let root -> zar.get_merkle_root(archive)
+    writeln(`  Merkle Root: ` + ui.cyan(root))
+
+    when password != Nothing {
+        ui.print_success(`Authenticated encryption enabled (ChaCha20-Poly1305)`)
+        when show_qr {
+            writeln(``)
+            ui.print_info(`Encryption Passkey QR Code:`)
+            let qr_term -> zar.render_passkey_qr(password, { `target` -> `term` })
+            writeln(qr_term)
+        }
+    }
+
+    <- 0
+}

@@ -1,0 +1,55 @@
+/!
+  tools/zar/src/cmd_qr.zl - 'zar qr' passkey QR code command handler.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+import zar_ui as ui
+
+export function handle_qr(args) {
+    when args.length < 1 {
+        ui.print_error(`Usage: zar qr <passkey_or_text> [--target term|ascii|svg|bmp] [--out <file>]`)
+        <- 1
+    }
+
+    let passkey -> args[0]
+    let target -> `term`
+    let out_file -> Nothing
+
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--target` or arg == `-t` {
+            when i + 1 < args.length {
+                target -> args[i + 1]
+                i -> i + 1
+            }
+        } or when arg == `--out` or arg == `-o` {
+            when i + 1 < args.length {
+                out_file -> args[i + 1]
+                i -> i + 1
+            }
+        }
+        i -> i + 1
+    }
+
+    ui.print_info(`Generating Passkey QR Code (target: ` + target + `)...`)
+    let qr_res -> zar.render_passkey_qr(passkey, { `target` -> target })
+
+    when out_file != Nothing {
+        when target == `bmp` {
+            file.write_bytes(out_file, qr_res)
+        } or {
+            file.write(out_file, qr_res)
+        }
+        ui.print_success(`Saved QR code image to: ` + out_file)
+        <- 0
+    }
+
+    // Print to terminal
+    writeln(``)
+    writeln(qr_res)
+    writeln(``)
+    ui.print_success(`Scan the QR code above with your mobile device or authenticator to import the passkey.`)
+    <- 0
+}

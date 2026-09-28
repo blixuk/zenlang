@@ -1,0 +1,4 @@
+name: zar
+entry: src/main.zl
+target: build/zar
+c_flags: -O2

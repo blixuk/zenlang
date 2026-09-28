@@ -1,0 +1,14 @@
+// ==========================================================
+// Zenlang Package Manifest (zen.pkg.zd) - zar tool
+// ==========================================================
+
+Package {
+    `name`         -> `zar`,
+    `version`      -> `1.0.0`,
+    `type`         -> `cli`,
+    `entry`        -> `src/main.zl`,
+    `target`       -> `build/zar`,
+    `description`  -> `Next-generation Zen Archive standalone tool (compression, encryption, Merkle proofs, SFX, QR passkeys)`,
+    `c_flags`      -> `-O2`,
+    `license`      -> `MIT`
+}

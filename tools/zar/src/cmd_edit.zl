@@ -1,0 +1,111 @@
+/!
+  tools/zar/src/cmd_edit.zl - 'zar add' and 'zar rm' command handlers.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_add(args) {
+    when args.length < 2 {
+        ui.print_error(`Usage: zar add <archive.zar> <file_to_add...> [--password <pass>]`)
+        <- 1
+    }
+
+    let archive_path -> args[0]
+    let password -> Nothing
+    let files_to_add -> []
+
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--password` or arg == `-p` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            }
+        } or {
+            files_to_add.append(arg)
+        }
+        i -> i + 1
+    }
+
+    when files_to_add.length == 0 {
+        ui.print_error(`No files specified to add`)
+        <- 1
+    }
+
+    let arc -> zar.open(archive_path, { `password` -> password })
+    when arc == Nothing {
+        ui.print_error(`Failed to open archive: ` + archive_path)
+        <- 1
+    }
+
+    for f in files_to_add {
+        when not file.exists(f) {
+            ui.print_error(`File not found: ` + f)
+            <- 1
+        }
+        let content -> file.read_bytes(f)
+        let rel -> f
+        when Str.starts_with(rel, `./`) {
+            rel -> Str.substring(rel, 2, Str.length(rel))
+        }
+        zar.add(arc, rel, content, Nothing)
+        ui.print_success(`Added ` + rel + ` (` + ui.format_bytes(content.length) + `)`)
+    }
+
+    zar.save(arc, archive_path, Nothing)
+    ui.print_info(`Updated archive saved: ` + archive_path)
+    <- 0
+}
+
+export function handle_rm(args) {
+    when args.length < 2 {
+        ui.print_error(`Usage: zar rm <archive.zar> <file_to_remove...> [--password <pass>]`)
+        <- 1
+    }
+
+    let archive_path -> args[0]
+    let password -> Nothing
+    let files_to_rm -> []
+
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--password` or arg == `-p` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            }
+        } or {
+            files_to_rm.append(arg)
+        }
+        i -> i + 1
+    }
+
+    when files_to_rm.length == 0 {
+        ui.print_error(`No files specified to remove`)
+        <- 1
+    }
+
+    let arc -> zar.open(archive_path, { `password` -> password })
+    when arc == Nothing {
+        ui.print_error(`Failed to open archive: ` + archive_path)
+        <- 1
+    }
+
+    for f in files_to_rm {
+        let removed -> zar.remove(arc, f)
+        when removed {
+            ui.print_success(`Removed ` + f)
+        } or {
+            ui.print_warn(`Entry not found in archive: ` + f)
+        }
+    }
+
+    zar.save(arc, archive_path, Nothing)
+    ui.print_info(`Updated archive saved: ` + archive_path)
+    <- 0
+}

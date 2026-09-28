@@ -1,0 +1,209 @@
+/!
+  tests/lib/test_zar.zl - Verification suite for pure Zenlang ZAR v1 archive engine.
+!/
+
+use zen.data.zar as zar
+use zen.io.file as file
+use zen.text.string as Str
+
+function assert_true(condition, message) {
+    when not condition {
+        writeln(`FAIL: ` + message)
+        raise `Assertion failed: ` + message
+    }
+    writeln(`PASS: ` + message)
+}
+
+function test_basic_roundtrip() {
+    writeln(`--- Test: ZAR Basic Stored Round-trip ---`)
+
+    let a -> zar.new_archive({
+        `compression` -> 0,
+        `dedup` -> True
+    })
+
+    zar.add(a, `greeting.txt`, `Hello, Next-Gen Zenlang ZAR Archive!`, Nothing)
+    zar.add(a, `docs/readme.md`, `# ZAR Specification\n\nPure Zenlang Archive.`, Nothing)
+    zar.add(a, `empty.dat`, ``, Nothing)
+
+    assert_true(zar.has(a, `greeting.txt`), `has greeting.txt`)
+    assert_true(zar.has(a, `docs/readme.md`), `has docs/readme.md`)
+    assert_true(zar.has(a, `empty.dat`), `has empty.dat`)
+
+    let bytes -> zar.to_bytes(a, Nothing)
+    assert_true(bytes.length > 0, `serialized non-empty byte list`)
+
+    // Verify magic bytes: 0x5A 0x41 0x52 0x01 ('ZAR\x01')
+    assert_true(bytes[0] == 0x5A and bytes[1] == 0x41 and bytes[2] == 0x52 and bytes[3] == 0x01, `valid header magic signature`)
+
+    // Verify trailer magic bytes: 0x01 0x52 0x41 0x5A ('\x01RAZ')
+    let len -> bytes.length
+    assert_true(bytes[len - 4] == 0x01 and bytes[len - 3] == 0x52 and bytes[len - 2] == 0x41 and bytes[len - 1] == 0x5A, `valid trailer magic signature`)
+
+    // Inspect manifest
+    let man -> zar.inspect(bytes, Nothing)
+    assert_true(man[`total_files`] == 3, `inspect reports 3 files`)
+    assert_true(man[`encrypted`] == False, `inspect reports unencrypted`)
+    assert_true(man[`compressed`] == False, `inspect reports uncompressed directory`)
+    assert_true(Str.length(man[`merkle_root`]) == 64, `valid 64-hex char Merkle root`)
+
+    // Load and extract
+    let loaded -> zar.load(bytes, Nothing)
+    assert_true(loaded != Nothing, `loaded archive is non-null`)
+    assert_true(zar.get_string(loaded, `greeting.txt`) == `Hello, Next-Gen Zenlang ZAR Archive!`, `greeting.txt content matches`)
+    assert_true(zar.get_string(loaded, `docs/readme.md`) == `# ZAR Specification\n\nPure Zenlang Archive.`, `docs/readme.md content matches`)
+    assert_true(zar.get_string(loaded, `empty.dat`) == ``, `empty.dat content matches`)
+}
+
+function test_compressed_roundtrip() {
+    writeln(`--- Test: ZAR Deflate Compression Round-trip ---`)
+
+    let repeated_text -> ``
+    let i -> 0
+    do while i < 50 {
+        repeated_text -> repeated_text + `Zenlang is a modern, unix-native programming language. `
+        i -> i + 1
+    }
+
+    let a -> zar.new_archive({
+        `compression` -> 6
+    })
+    zar.add(a, `lorem.txt`, repeated_text, Nothing)
+
+    let raw_bytes -> __builtin.string_to_bytes(repeated_text)
+    let zar_bytes -> zar.to_bytes(a, Nothing)
+
+    assert_true(zar_bytes.length < raw_bytes.length, `compressed archive smaller than raw text`)
+
+    let loaded -> zar.load(zar_bytes, Nothing)
+    let extracted_text -> zar.get_string(loaded, `lorem.txt`)
+    assert_true(extracted_text == repeated_text, `decompressed text restored identically`)
+}
+
+function test_encrypted_roundtrip() {
+    writeln(`--- Test: ZAR ChaCha20-Poly1305 AEAD Encryption ---`)
+
+    let secret_payload -> `SUPER-CONFIDENTIAL-ZEN-PAYLOAD-999`
+    let pass -> `strong-zen-passkey-xyz`
+
+    let a -> zar.new_archive({
+        `compression` -> 6,
+        `password` -> pass
+    })
+    zar.add(a, `classified/vault.key`, secret_payload, Nothing)
+
+    let enc_bytes -> zar.to_bytes(a, Nothing)
+
+    // Inspect without password: metadata privacy active!
+    let man_nopass -> zar.inspect(enc_bytes, Nothing)
+    assert_true(man_nopass[`encrypted`] == True, `inspect indicates archive is encrypted`)
+    assert_true(man_nopass.has(`error`), `inspect without password reports password required`)
+    assert_true(man_nopass[`total_files`] == 1, `inspect reports total file count`)
+
+    // Inspect with password
+    let man_pass -> zar.inspect(enc_bytes, { `password` -> pass })
+    assert_true(not man_pass.has(`error`), `inspect with correct password succeeds`)
+    assert_true(man_pass[`entries`][0][`path`] == `classified/vault.key`, `manifest entry path decrypted`)
+
+    // Load with password
+    let loaded -> zar.load(enc_bytes, { `password` -> pass })
+    assert_true(loaded != Nothing, `loaded with correct password`)
+    let secret_restored -> zar.get_string(loaded, `classified/vault.key`)
+    assert_true(secret_restored == secret_payload, `secret restored identically`)
+}
+
+function test_dynamic_container() {
+    writeln(`--- Test: ZAR Dynamic Container (Add/Remove/Rename/List) ---`)
+
+    let a -> zar.new_archive({})
+    zar.add(a, `file1.txt`, `One`, Nothing)
+    zar.add(a, `file2.txt`, `Two`, Nothing)
+    zar.add(a, `file3.txt`, `Three`, Nothing)
+
+    let files -> zar.list(a)
+    assert_true(files.length == 3, `container has 3 files`)
+
+    zar.rename(a, `file2.txt`, `renamed2.txt`)
+    assert_true(not zar.has(a, `file2.txt`), `old path removed after rename`)
+    assert_true(zar.has(a, `renamed2.txt`), `new path present after rename`)
+    assert_true(zar.get_string(a, `renamed2.txt`) == `Two`, `content intact after rename`)
+
+    zar.remove(a, `file3.txt`)
+    assert_true(not zar.has(a, `file3.txt`), `file3.txt removed`)
+    assert_true(zar.list(a).length == 2, `container count decremented to 2`)
+}
+
+function test_merkle_tamperproof() {
+    writeln(`--- Test: ZAR Merkle Tree Audit & Inclusion Proofs ---`)
+
+    let a -> zar.new_archive({})
+    zar.add(a, `doc_a.txt`, `Content Alpha`, Nothing)
+    zar.add(a, `doc_b.txt`, `Content Beta`, Nothing)
+    zar.add(a, `doc_c.txt`, `Content Gamma`, Nothing)
+
+    let root -> zar.get_merkle_root(a)
+    assert_true(Str.length(root) == 64, `merkle root is 64-hex string`)
+
+    let proof -> zar.prove_file(a, `doc_b.txt`)
+    assert_true(proof != Nothing, `generated inclusion proof for doc_b.txt`)
+    assert_true(proof[`path`] == `doc_b.txt`, `proof path matches`)
+
+    let proof_valid -> zar.verify_file_proof(proof)
+    assert_true(proof_valid, `Merkle inclusion proof verified successfully`)
+
+    let bytes -> zar.to_bytes(a, Nothing)
+    let audit_res -> zar.verify(bytes, Nothing)
+    assert_true(audit_res[`ok`] == True, `overall archive audit passed`)
+}
+
+function test_deduplication() {
+    writeln(`--- Test: ZAR Content-Addressable Deduplication ---`)
+
+    let large_chunk -> ``
+    let i -> 0
+    do while i < 100 {
+        large_chunk -> large_chunk + `Deduplicated identical data chunk block. `
+        i -> i + 1
+    }
+
+    let a -> zar.new_archive({ `dedup` -> True })
+    zar.add(a, `copy1.txt`, large_chunk, Nothing)
+    zar.add(a, `copy2.txt`, large_chunk, Nothing)
+
+    let bytes -> zar.to_bytes(a, Nothing)
+    let man -> zar.inspect(bytes, Nothing)
+    assert_true(man[`total_files`] == 2, `two entries in manifest`)
+    assert_true(man[`entries`][0][`offset`] == man[`entries`][1][`offset`], `both files share identical chunk offset`)
+
+    let loaded -> zar.load(bytes, Nothing)
+    assert_true(zar.get_string(loaded, `copy1.txt`) == large_chunk, `copy1 content restored`)
+    assert_true(zar.get_string(loaded, `copy2.txt`) == large_chunk, `copy2 content restored`)
+}
+
+function test_qr_passkey() {
+    writeln(`--- Test: ZAR Passkey QR Code Export ---`)
+
+    let pass -> `vault-passkey-123456`
+    let qr_term -> zar.render_passkey_qr(pass, { `target` -> `term` })
+    assert_true(Str.length(qr_term) > 50, `terminal QR code string generated`)
+
+    let qr_svg -> zar.render_passkey_qr(pass, { `target` -> `svg` })
+    assert_true(Str.starts_with(qr_svg, `<svg`), `SVG QR code generated`)
+}
+
+function main(args) {
+    writeln(`====================================================`)
+    writeln(`  ZAR Format Verification Suite (zen.data.zar)      `)
+    writeln(`====================================================`)
+
+    test_basic_roundtrip()
+    test_compressed_roundtrip()
+    test_encrypted_roundtrip()
+    test_dynamic_container()
+    test_merkle_tamperproof()
+    test_deduplication()
+    test_qr_passkey()
+
+    writeln(``)
+    writeln(`ALL ZAR TESTS PASSED!`)
+}

@@ -1,0 +1,78 @@
+/!
+  tools/zar/src/cmd_list.zl - 'zar list' command handler.
+!/
+
+use zen.data.zar as zar
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_list(args) {
+    when args.length < 1 {
+        ui.print_error(`Usage: zar list <archive.zar> [--password <pass>]`)
+        <- 1
+    }
+
+    let archive_path -> args[0]
+    let password -> Nothing
+
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--password` or arg == `-p` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            }
+        }
+        i -> i + 1
+    }
+
+    let man -> zar.inspect(archive_path, { `password` -> password })
+    when man == Nothing {
+        ui.print_error(`Failed to inspect archive: invalid format or corrupted file`)
+        <- 1
+    }
+
+    when man.has(`error`) {
+        ui.print_warn(man[`error`])
+        writeln(`Encrypted archive contains ` + String(man[`total_files`]) + ` files. Pass --password to decrypt.`)
+        <- 1
+    }
+
+    ui.print_info(`Archive Contents: ` + archive_path)
+    writeln(`  Files:       ` + String(man[`total_files`]))
+    writeln(`  Encrypted:   ` + when man[`encrypted`] { `Yes (ChaCha20-Poly1305)` } or { `No` })
+    writeln(`  Compressed:  ` + when man[`compressed`] { `Yes (RFC 1951 Deflate)` } or { `No` })
+    writeln(`  Merkle Root: ` + ui.cyan(man[`merkle_root`]))
+    writeln(``)
+
+    let headers -> [`Path`, `Size`, `Compressed`, `Ratio`, `Mode`]
+    let rows -> []
+    let total_orig -> 0
+    let total_comp -> 0
+
+    for e in man[`entries`] {
+        total_orig -> total_orig + e[`orig_size`]
+        total_comp -> total_comp + e[`comp_size`]
+
+        let ratio_str -> `100%`
+        when e[`orig_size`] > 0 {
+            let r -> (e[`comp_size`] * 100) / e[`orig_size`]
+            ratio_str -> String(r) + `%`
+        }
+
+        let mode_octal -> String(e[`mode`])
+
+        rows.append([
+            e[`path`],
+            ui.format_bytes(e[`orig_size`]),
+            ui.format_bytes(e[`comp_size`]),
+            ratio_str,
+            mode_octal
+        ])
+    }
+
+    ui.print_table(headers, rows)
+    writeln(ui.bold(`Total:`) + ` ` + ui.format_bytes(total_orig) + ` original, ` + ui.format_bytes(total_comp) + ` stored`)
+    <- 0
+}

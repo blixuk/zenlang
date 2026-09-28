@@ -1,0 +1,73 @@
+/!
+  tools/zar/src/cmd_verify.zl - 'zar verify' command handler.
+!/
+
+use zen.data.zar as zar
+use zen.text.string as Str
+import zar_ui as ui
+
+export function handle_verify(args) {
+    when args.length < 1 {
+        ui.print_error(`Usage: zar verify <archive.zar> [--password <pass>] [--file <path>]`)
+        <- 1
+    }
+
+    let archive_path -> args[0]
+    let password -> Nothing
+    let target_file -> Nothing
+
+    let i -> 1
+    do while i < args.length {
+        let arg -> args[i]
+        when arg == `--password` or arg == `-p` {
+            when i + 1 < args.length {
+                password -> args[i + 1]
+                i -> i + 1
+            }
+        } or when arg == `--file` or arg == `-f` {
+            when i + 1 < args.length {
+                target_file -> args[i + 1]
+                i -> i + 1
+            }
+        }
+        i -> i + 1
+    }
+
+    ui.print_info(`Auditing cryptographic integrity: ` + archive_path + `...`)
+
+    let res -> zar.verify(archive_path, { `password` -> password })
+
+    when not res[`ok`] {
+        ui.print_error(`INTEGRITY AUDIT FAILED!`)
+        writeln(`  Error: ` + res[`error`])
+        <- 2
+    }
+
+    ui.print_success(`Overall archive integrity verified:`)
+    writeln(`  Files Audited: ` + String(res[`files_checked`]))
+    writeln(`  CRC-32:        ` + ui.green(`VALID (IEEE 802.3)`))
+    writeln(`  SHA-256:       ` + ui.green(`VALID (FIPS 180-4)`))
+    writeln(`  Merkle Root:   ` + ui.cyan(res[`merkle_root`]))
+
+    when target_file != Nothing {
+        writeln(``)
+        ui.print_info(`Verifying single-file inclusion proof for: ` + target_file)
+        let arc -> zar.open(archive_path, { `password` -> password })
+        let proof -> zar.prove_file(arc, target_file)
+        when proof == Nothing {
+            ui.print_error(`File not found in archive: ` + target_file)
+            <- 1
+        }
+        let proof_ok -> zar.verify_file_proof(proof)
+        when proof_ok {
+            ui.print_success(`Cryptographic Merkle inclusion proof verified!`)
+            writeln(`  Leaf SHA-256: ` + proof[`leaf`])
+            writeln(`  Proof Steps:  ` + String(proof[`proof`].length))
+        } or {
+            ui.print_error(`Inclusion proof failed for ` + target_file)
+            <- 2
+        }
+    }
+
+    <- 0
+}
