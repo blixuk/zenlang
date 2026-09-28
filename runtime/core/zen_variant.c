@@ -4,11 +4,14 @@
 #include "memory/zen_memory.h"
 #include <stdarg.h>
 #include <string.h>
+#include <stdlib.h>
 
 ZenValue ZenValue_make_variant(ZenValue enum_name, ZenValue variant_name, int n_params, ...) {
     ZenVariantObject* v = (ZenVariantObject*)ZenRuntime_allocate(sizeof(ZenVariantObject));
-    v->enum_name = enum_name;
-    v->variant_name = variant_name;
+    if (!v) return ZenValue_make_nothing();
+    ZenHeapHeader_init(&v->header, ZEN_VARIANT, ZEN_FLAG_CONTAINER);
+    v->enum_name = ZenValue_write_barrier_target(&v->header, enum_name);
+    v->variant_name = ZenValue_write_barrier_target(&v->header, variant_name);
     v->data = ZenValue_from_list(ZenList_new());
     
     va_list args;
@@ -23,6 +26,28 @@ ZenValue ZenValue_make_variant(ZenValue enum_name, ZenValue variant_name, int n_
     res.type = ZEN_VARIANT;
     res.as.variant = v;
     return res;
+}
+
+void ZenVariantObject_destroy(ZenVariantObject* v) {
+    if (!v) return;
+    ZenValue_release(v->enum_name);
+    ZenValue_release(v->variant_name);
+    ZenValue_release(v->data);
+    if (v->header.ref_count != ZEN_REF_PINNED) {
+        free(v);
+    }
+}
+
+ZenVariantObject* ZenVariantObject_deep_clone(ZenVariantObject* v) {
+    if (!v) return NULL;
+    ZenVariantObject* out = (ZenVariantObject*)ZenRuntime_allocate(sizeof(ZenVariantObject));
+    if (!out) return NULL;
+    ZenHeapHeader_init(&out->header, ZEN_VARIANT, ZEN_FLAG_CONTAINER);
+    zen_clone_register((void*)v, ZenValue_from_variant(out));
+    out->enum_name = ZenValue_write_barrier_target(&out->header, v->enum_name);
+    out->variant_name = ZenValue_write_barrier_target(&out->header, v->variant_name);
+    out->data = ZenValue_clone_to_heap(v->data);
+    return out;
 }
 
 ZenValue ZenValue_is_variant(ZenValue val, ZenValue expected_enum, ZenValue expected_variant) {
@@ -70,7 +95,9 @@ ZenValue ZenValue_is_type_name(ZenValue val, const char* expected_type) {
     if (strcmp(expected_type, "Number") == 0) return ZenValue_make_boolean(val.type == ZEN_INTEGER || val.type == ZEN_DECIMAL);
     if (strcmp(expected_type, "Text") == 0) return ZenValue_make_boolean(val.type == ZEN_STRING);
     if (strcmp(expected_type, "Collection") == 0) return ZenValue_make_boolean(val.type == ZEN_LIST || val.type == ZEN_MAP || val.type == ZEN_SET || val.type == ZEN_AST_NODE || val.type == ZEN_TOKEN);
-    if (strcmp(expected_type, "Container") == 0) return ZenValue_make_boolean(val.type == ZEN_MAP || val.type == ZEN_OBJECT || val.type == ZEN_VARIANT);
+    if (strcmp(expected_type, "Container") == 0) return ZenValue_make_boolean(val.type == ZEN_MAP || val.type == ZEN_OBJECT || val.type == ZEN_VARIANT || val.type == ZEN_CHANNEL);
+    if (strcmp(expected_type, "Channel") == 0 || strncmp(expected_type, "Channel<", 8) == 0 || strncmp(expected_type, "Channel[", 8) == 0) return ZenValue_make_boolean(val.type == ZEN_CHANNEL);
+    if (strcmp(expected_type, "Task") == 0 || strncmp(expected_type, "Task<", 5) == 0 || strncmp(expected_type, "Task[", 5) == 0) return ZenValue_make_boolean(val.type == ZEN_TASK);
     if (strcmp(expected_type, "Integer") == 0 ||
         strcmp(expected_type, "Integer[64]") == 0 || strcmp(expected_type, "Integer[32]") == 0 ||
         strcmp(expected_type, "Integer[16]") == 0 || strcmp(expected_type, "Integer[8]") == 0 ||

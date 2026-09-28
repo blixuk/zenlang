@@ -37,11 +37,16 @@ let CG -> {
     `current_base` -> ``,
     `emitted` -> {},
     `free_fns` -> {},
+    `structs` -> {},
     `enums` -> {},
     `init_fn_name` -> `zen_module_init`,
     `out_path` -> ``,
     `wrote` -> false,
-    `var_types` -> {}
+    `var_types` -> {},
+    `extern_modules` -> {},
+    `extern_fns` -> {},
+    `has_open_extern` -> false,
+    `emitted_includes` -> {}
 }
 
 function codegen_reset() {
@@ -58,6 +63,7 @@ function codegen_reset() {
     CG[`current_base`] -> ``
     CG[`emitted`] -> {}
     CG[`free_fns`] -> {}
+    CG[`structs`] -> {}
     CG[`enums`] -> {}
     CG[`init_fn_name`] -> `zen_module_init`
     CG[`out_path`] -> ``
@@ -362,7 +368,8 @@ function is_builtin_method_name(m) {
          m == `reverse` or m == `unique` or m == `flatten` or m == `chunk` or m == `take` or
          m == `drop` or m == `map` or m == `filter` or m == `reduce` or m == `each` or
          m == `find` or m == `any` or m == `all` or m == `merge` or m == `invert` or
-         m == `union` or m == `intersection` or m == `difference` or m == `to_list` or m == `add` {
+         m == `union` or m == `intersection` or m == `difference` or m == `to_list` or m == `add` or
+         m == `send` or m == `receive` or m == `cancel` or m == `is_cancelled` or m == `is_closed` {
         <- true
     }
     <- false
@@ -466,7 +473,22 @@ function emit_builtin_method_default(m, obj, alist) {
         <- `ZenObject_get_code((` + obj + `).as.object)`
     }
     when m == `wait` {
-        <- `ZenObject_wait((` + obj + `).as.object)`
+        <- `ZenValue_wait(` + obj + `)`
+    }
+    when m == `cancel` {
+        <- `ZenValue_cancel(` + obj + `)`
+    }
+    when m == `is_cancelled` {
+        <- `ZenValue_is_cancelled(` + obj + `)`
+    }
+    when m == `send` {
+        <- `ZenValue_send(` + obj + `, ` + alist + `)`
+    }
+    when m == `receive` {
+        <- `ZenValue_receive(` + obj + `)`
+    }
+    when m == `is_closed` {
+        <- `ZenValue_is_closed(` + obj + `)`
     }
     when m == `kill` {
         <- `ZenObject_kill((` + obj + `).as.object)`
@@ -2435,6 +2457,10 @@ function emit_stmt(node) {
                         vt[name] -> `Boolean`
                     } or when is_str_expr(vnode) {
                         vt[name] -> `String`
+                    } or when is_task_expr(vnode) {
+                        vt[name] -> `Task`
+                    } or when is_channel_expr(vnode) {
+                        vt[name] -> `Channel`
                     }
                 }
             }
@@ -2838,6 +2864,24 @@ function bind_pattern_guard(pat, t) {
     when pat == Nothing {
         <- `ZenValue_make_boolean(true)`
     }
+    when cg_is_kind(pat, AST.K_IS) {
+        let rpat -> AST.is_expr_pat(pat)
+        let rname -> ``
+        when cg_is_kind(rpat, AST.K_VARIABLE) {
+            rname -> Str.to_string(AST.var_name(rpat))
+        }
+        when cg_is_kind(rpat, AST.K_LITERAL) {
+            rname -> Str.to_string(AST.lit_val(rpat))
+        }
+        when rname != `` {
+            <- `ZenValue_is_type_name(` + t + `, "` + rname + `")`
+        }
+        <- `ZenValue_make_boolean(true)`
+    }
+    when cg_is_kind(pat, AST.K_BINARY) and Str.to_string(AST.bin_op(pat)) == `in` {
+        let coll -> emit_expr(AST.bin_right(pat))
+        <- `ZenValue_in(` + t + `, ` + coll + `)`
+    }
     when cg_is_kind(pat, AST.K_VARIABLE) {
         let name -> Str.to_string(AST.var_name(pat))
         when is_type_name_str(name) or is_registered_class(name) or is_registered_struct(name) or is_enum_name(name) {
@@ -2903,6 +2947,17 @@ function enum_is_guard(pat, t) {
 
 function emit_pattern_binds(pat, t) {
     when pat == Nothing {
+        <- Nothing
+    }
+    when cg_is_kind(pat, AST.K_IS) {
+        let lvar -> AST.is_expr_val(pat)
+        when lvar != Nothing and cg_is_kind(lvar, AST.K_VARIABLE) {
+            let name -> Str.to_string(AST.var_name(lvar))
+            when name != `` and name != `_` {
+                let nm -> c_ident(name)
+                cg_emit(`ZenValue ` + nm + ` = ` + t + `;`)
+            }
+        }
         <- Nothing
     }
     when cg_is_kind(pat, AST.K_VARIABLE) {
@@ -3026,6 +3081,7 @@ function emit_check_stmt(node) {
     let or_b -> AST.check_stmt_or_block(node)
     let raise_e -> AST.check_stmt_raise(node)
     let cases -> AST.check_stmt_cases(node)
+    let alias -> AST.check_stmt_alias(node)
     when expr_node != Nothing and cg_is_kind(expr_node, AST.K_BLOCK) {
         let exc -> next_temp()
         cg_emit(`ZenExceptionContext ` + exc + `;`)
@@ -3038,6 +3094,10 @@ function emit_check_stmt(node) {
         cg_emit(`} else {`)
         push_indent()
         cg_emit(`ZenException_pop_context();`)
+        cg_emit(`ZenValue error = ZenException_last;`)
+        when alias != Nothing and alias != `error` and alias != `_` {
+            cg_emit(`ZenValue ` + c_ident(alias) + ` = ZenException_last;`)
+        }
         when or_b != Nothing {
             emit_stmt(or_b)
         }
@@ -3050,11 +3110,28 @@ function emit_check_stmt(node) {
         <- Nothing
     }
     let flag -> next_temp()
+    let t -> next_temp()
+    let exc -> next_temp()
+    let has_exc -> next_temp()
     cg_emit(`ZenValue ` + flag + ` = ZenValue_make_boolean(false);`)
+    cg_emit(`ZenValue ` + t + ` = ZEN_NOTHING_VAL;`)
+    cg_emit(`int ` + has_exc + ` = 0;`)
     when expr_node != Nothing {
+        cg_emit(`ZenExceptionContext ` + exc + `;`)
+        cg_emit(`ZenException_push_context(&` + exc + `);`)
+        cg_emit(`if (setjmp(` + exc + `.buf) == 0) {`)
+        push_indent()
         let v -> emit_expr(expr_node)
-        let t -> next_temp()
-        cg_emit(`ZenValue ` + t + ` = ` + v + `;`)
+        cg_emit(t + ` = ` + v + `;`)
+        cg_emit(`ZenException_pop_context();`)
+        pop_indent()
+        cg_emit(`} else {`)
+        push_indent()
+        cg_emit(`ZenException_pop_context();`)
+        cg_emit(t + ` = ZenException_last;`)
+        cg_emit(has_exc + ` = 1;`)
+        pop_indent()
+        cg_emit(`}`)
         when cases != Nothing {
             emit_check_cases(cases, 0, cases.length, t, flag)
         }
@@ -3062,6 +3139,10 @@ function emit_check_stmt(node) {
     when or_b != Nothing {
         cg_emit(`if (!(` + flag + `.as.boolean)) {`)
         push_indent()
+        cg_emit(`ZenValue error = ` + t + `;`)
+        when alias != Nothing and alias != `error` and alias != `_` {
+            cg_emit(`ZenValue ` + c_ident(alias) + ` = ` + t + `;`)
+        }
         emit_stmt(or_b)
         pop_indent()
         cg_emit(`}`)
@@ -3071,6 +3152,13 @@ function emit_check_stmt(node) {
         push_indent()
         let rv -> emit_expr(raise_e)
         cg_emit(`ZenException_raise(` + rv + `);`)
+        pop_indent()
+        cg_emit(`}`)
+    }
+    when or_b == Nothing and raise_e == Nothing {
+        cg_emit(`if (!(` + flag + `.as.boolean) && ` + has_exc + `) {`)
+        push_indent()
+        cg_emit(`ZenException_raise(ZenException_last);`)
         pop_indent()
         cg_emit(`}`)
     }
@@ -3328,7 +3416,7 @@ function emit_expr(node) {
             let l -> emit_expr(AST.bin_left(node))
             let t -> next_temp()
             cg_emit(`ZenValue ` + t + ` = ` + l + `;`)
-            cg_emit(`if (` + t + `.type == ZEN_NOTHING || (` + t + `.type == ZEN_BOOLEAN && !` + t + `.as.boolean) || (` + t + `.type == ZEN_INTEGER && ` + t + `.as.integer == 0)) {`)
+            cg_emit(`if (` + t + `.type == ZEN_NOTHING || ` + t + `.type == ZEN_ERROR || (` + t + `.type == ZEN_BOOLEAN && !` + t + `.as.boolean) || (` + t + `.type == ZEN_INTEGER && ` + t + `.as.integer == 0)) {`)
             push_indent()
             let r -> emit_expr(AST.bin_right(node))
             cg_emit(t + ` = ` + r + `;`)
@@ -3456,6 +3544,16 @@ function emit_expr(node) {
             let tkind -> next_temp()
             cg_emit(`ZenValue ` + tkind + ` = ZenValue_get_kind(` + obj + `);`)
             <- tkind
+        }
+        when fname == `wait` and is_task_expr(objn) {
+            let tw -> next_temp()
+            cg_emit(`ZenValue ` + tw + ` = ZenTask_wait((ZenTaskHandle*)(` + obj + `).as.object);`)
+            <- tw
+        }
+        when fname == `receive` and is_channel_expr(objn) {
+            let tr -> next_temp()
+            cg_emit(`ZenValue ` + tr + ` = ZenChannel_receive((ZenChannel*)(` + obj + `).as.object);`)
+            <- tr
         }
         // Map field: ZenValue_get_field(obj, "name")
         let t -> next_temp()
@@ -4309,6 +4407,98 @@ function is_str_expr(node) {
     <- false
 }
 
+function is_task_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            let tname -> vt[nm]
+            when tname == `Task` or Str.starts_with(tname, `Task<`) or Str.starts_with(tname, `Task[`) {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CALL) {
+        let callee -> AST.call_callee(node)
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            let cname -> Str.to_string(AST.var_name(callee))
+            when cname == `spawn` or cname == `Task` or cname == `spawn_task` {
+                <- true
+            }
+        }
+        when cg_is_kind(callee, AST.K_GET) {
+            let m -> Str.to_string(AST.get_name(callee))
+            when m == `spawn` or m == `spawn_task` {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            when tname == `Task` or Str.starts_with(tname, `Task<`) or Str.starts_with(tname, `Task[`) {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- is_task_expr(AST.group_expr(node))
+    }
+    <- false
+}
+
+function is_channel_expr(node) {
+    when node == Nothing { <- false }
+    when cg_is_kind(node, AST.K_VARIABLE) {
+        let raw -> Str.to_string(AST.var_name(node))
+        let nm -> c_ident(raw)
+        let vt -> CG[`var_types`]
+        when vt != Nothing and vt.has(nm) {
+            let tname -> vt[nm]
+            when tname == `Channel` or Str.starts_with(tname, `Channel<`) or Str.starts_with(tname, `Channel[`) {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CALL) {
+        let callee -> AST.call_callee(node)
+        when cg_is_kind(callee, AST.K_VARIABLE) {
+            let cname -> Str.to_string(AST.var_name(callee))
+            when cname == `channel` or cname == `Channel` or cname == `create_channel` {
+                <- true
+            }
+        }
+        when cg_is_kind(callee, AST.K_GET) {
+            let m -> Str.to_string(AST.get_name(callee))
+            when m == `channel` or m == `create_channel` {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_CAST) {
+        let tann -> AST.cast_type(node)
+        when tann != Nothing {
+            let tname -> type_name_of_ann(tann)
+            when tname == `Channel` or Str.starts_with(tname, `Channel<`) or Str.starts_with(tname, `Channel[`) {
+                <- true
+            }
+        }
+        <- false
+    }
+    when cg_is_kind(node, AST.K_GROUPING) {
+        <- is_channel_expr(AST.group_expr(node))
+    }
+    <- false
+}
+
 function is_local_or_param(raw) {
     let nm -> c_ident(raw)
     let p -> CG[`params`]
@@ -4602,6 +4792,21 @@ function emit_call(node) {
                 }
                 <- `ZenValue_make_string("Nothing")`
             }
+            when raw == `channel` {
+                when args != Nothing and args.length >= 1 {
+                    <- `ZenChannel_make(` + emit_expr(args[0]) + `)`
+                }
+                <- `ZenChannel_make(ZEN_NOTHING_VAL)`
+            }
+            when raw == `spawn` {
+                when args != Nothing and args.length == 1 {
+                    <- `ZenTask_spawn_val(` + emit_expr(args[0]) + `, ZEN_NOTHING_VAL)`
+                }
+                when args != Nothing and args.length >= 2 {
+                    <- `ZenTask_spawn_val(` + emit_expr(args[0]) + `, ` + emit_expr(args[1]) + `)`
+                }
+                <- `ZenTask_spawn_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)`
+            }
             when is_extern_fn(raw) or (CG[`has_open_extern`] == true and not is_local_or_param(raw) and not is_registered_class(raw)) {
                 let c_args -> emit_extern_args(args)
                 when c_args == `` {
@@ -4702,7 +4907,7 @@ function emit_call(node) {
                 }
                 <- c_ident(oname + `_` + m) + `(` + alist + `)`
             }
-            when is_free_fn(m) {
+            when is_free_fn(m) and not is_local_or_param(oname) and not is_param_name(oname) and is_module_alias_name(oname) {
                 when alist == `` {
                     <- c_ident(m) + `()`
                 }
@@ -4718,7 +4923,7 @@ function emit_call(node) {
             }
         }
         let obj -> emit_expr(objn)
-        <- emit_method_call(m, obj, alist)
+        <- emit_method_call_with_objn(m, obj, alist, objn)
     }
     <- `ZEN_NOTHING_VAL`
 }
@@ -5231,6 +5436,30 @@ function emit_builtin_call(oname, m, alist) {
             <- `ZenFFI_builtin_resolve(` + alist + `)`
         }
     }
+    when oname == `__builtin_concurrency` or oname == `concurrency` {
+        when m == `channel` or m == `create_channel` {
+            when alist == `` { <- `ZenChannel_make(ZEN_NOTHING_VAL)` }
+            <- `ZenChannel_make(` + alist + `)`
+        }
+        when m == `spawn` or m == `spawn_task` {
+            when alist == `` { <- `ZenTask_spawn_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)` }
+            when not Str.contains(alist, `,`) { <- `ZenTask_spawn_val(` + alist + `, ZEN_NOTHING_VAL)` }
+            <- `ZenTask_spawn_val(` + alist + `)`
+        }
+    }
+    when oname == `__builtin_channel` or oname == `Channel` {
+        when m == `make` or m == `new` or m == `create` {
+            when alist == `` { <- `ZenChannel_make(ZEN_NOTHING_VAL)` }
+            <- `ZenChannel_make(` + alist + `)`
+        }
+    }
+    when oname == `__builtin_task` or oname == `Task` {
+        when m == `spawn` {
+            when alist == `` { <- `ZenTask_spawn_val(ZEN_NOTHING_VAL, ZEN_NOTHING_VAL)` }
+            when not Str.contains(alist, `,`) { <- `ZenTask_spawn_val(` + alist + `, ZEN_NOTHING_VAL)` }
+            <- `ZenTask_spawn_val(` + alist + `)`
+        }
+    }
     <- ``
 }
 
@@ -5249,6 +5478,35 @@ function emit_enum_construct(ename, vname, args) {
     }
     let alist -> emit_args(args)
     <- `ZenValue_make_variant(ZenValue_make_string("` + en + `"), ZenValue_make_string("` + vn + `"), ` + int_to_str(n) + `, ` + alist + `)`
+}
+
+function emit_method_call_with_objn(m, obj, alist, objn) {
+    when is_task_expr(objn) {
+        when m == `wait` {
+            <- `ZenTask_wait((ZenTaskHandle*)((` + obj + `).as.object))`
+        }
+        when m == `cancel` {
+            <- `(ZenTask_cancel((ZenTaskHandle*)((` + obj + `).as.object)), ZEN_NOTHING_VAL)`
+        }
+        when m == `is_cancelled` {
+            <- `ZenValue_from_boolean(ZenTask_is_cancelled((ZenTaskHandle*)((` + obj + `).as.object)))`
+        }
+    }
+    when is_channel_expr(objn) {
+        when m == `send` {
+            <- `(ZenChannel_send((ZenChannel*)((` + obj + `).as.object), ` + alist + `), ZEN_NOTHING_VAL)`
+        }
+        when m == `receive` {
+            <- `ZenChannel_receive((ZenChannel*)((` + obj + `).as.object))`
+        }
+        when m == `close` {
+            <- `(ZenChannel_close((ZenChannel*)((` + obj + `).as.object)), ZEN_NOTHING_VAL)`
+        }
+        when m == `is_closed` {
+            <- `ZenValue_from_boolean(ZenChannel_is_closed((ZenChannel*)((` + obj + `).as.object)))`
+        }
+    }
+    <- emit_method_call(m, obj, alist)
 }
 
 function emit_method_call(m, obj, alist) {
@@ -5279,7 +5537,7 @@ function emit_method_call(m, obj, alist) {
         <- emit_builtin_method_default(m, obj, alist)
     }
     when m == `wait` {
-        <- `ZenObject_wait((` + obj + `).as.object)`
+        <- `ZenValue_wait(` + obj + `)`
     }
     when m == `kill` {
         <- `ZenObject_kill((` + obj + `).as.object)`

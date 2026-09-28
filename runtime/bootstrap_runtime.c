@@ -18,6 +18,7 @@
 
 // Memory
 #include "memory/zen_memory.c"
+#include "memory/zen_gc.c"
 
 // Collections
 #include "collections/zen_list.c"
@@ -30,3 +31,4 @@
 
 // Concurrency
 #include "concurrency/zen_task.c"
+#include "concurrency/zen_channel.c"

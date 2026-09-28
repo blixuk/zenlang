@@ -1,0 +1,156 @@
+/!
+  The Zenlang Concurrency and Task subsystem.
+  Exposes native Tasks, MPMC Channels, structured concurrency (TaskGroup),
+  and standard synchronization primitives.
+!/
+
+import zen.concurrency.channel as channel_mod
+import zen.concurrency.task as tasks_mod
+import zen.concurrency.sync as sync_mod
+import zen.concurrency.fiber as fiber_mod
+
+/!
+  Creates a native MPMC ring-buffer channel backed by the C runtime.
+  @param capacity Buffer capacity (default 1).
+  @return Native Channel instance.
+!/
+export function channel(capacity) {
+    let cap -> 1
+    when capacity != Nothing and capacity > 0 {
+        cap -> capacity
+    }
+    <- __builtin_concurrency.channel(cap)
+}
+
+/!
+  Spawns an asynchronous task on the native work-stealing fiber pool.
+  @param callable Function or closure to execute.
+  @param argument Optional argument passed across the frozen memory boundary.
+  @return Native Task handle.
+!/
+export function spawn(callable, argument) {
+    <- __builtin_concurrency.spawn(callable, argument)
+}
+
+/!
+  Structured concurrency TaskGroup context manager.
+  Spawns child tasks and deterministically waits or cancels them upon scope exit.
+!/
+export class TaskGroup {
+    let tasks
+    
+    function init() {
+        self.tasks -> []
+    }
+    
+    function spawn(callable, argument) {
+        let t -> __builtin_concurrency.spawn(callable, argument)
+        self.tasks.append(t)
+        <- t
+    }
+    
+    function wait_all() {
+        for t in self.tasks {
+            t.wait()
+        }
+    }
+    
+    function cancel_all() {
+        for t in self.tasks {
+            t.cancel()
+        }
+    }
+    
+    function __exit__() {
+        self.wait_all()
+    }
+}
+
+/!
+  Constructs a new TaskGroup for structured concurrency.
+!/
+export function task_group() {
+    <- TaskGroup()
+}
+
+// Channel re-exports
+export let create_channel -> channel_mod.create_channel
+export let send -> channel_mod.send
+export let try_send -> channel_mod.try_send
+export let receive -> channel_mod.receive
+export let try_receive -> channel_mod.try_receive
+export let close -> channel_mod.close
+export let is_closed -> channel_mod.is_closed
+export let length -> channel_mod.length
+export let capacity -> channel_mod.capacity
+export let is_empty -> channel_mod.is_empty
+export let is_full -> channel_mod.is_full
+export let drain -> channel_mod.drain
+export let select -> channel_mod.select
+
+// Task re-exports
+export let create_task -> tasks_mod.create_task
+export let spawn_task -> tasks_mod.spawn_task
+export let wait -> tasks_mod.wait_task
+export let wait_task -> tasks_mod.wait_task
+export let await_task -> tasks_mod.await_task
+export let is_done -> tasks_mod.task_is_done
+export let is_success -> tasks_mod.task_is_success
+export let result -> tasks_mod.task_result
+export let error -> tasks_mod.task_error
+export let cancel -> tasks_mod.cancel_task
+export let all -> tasks_mod.task_all
+export let race -> tasks_mod.task_race
+export let sleep -> tasks_mod.task_sleep
+export let yield_now -> tasks_mod.task_yield_now
+export let create_task_pool -> tasks_mod.create_task_pool
+export let pool_submit -> tasks_mod.pool_submit
+export let pool_run_all -> tasks_mod.pool_run_all
+
+// Sync re-exports
+export let create_waitgroup -> sync_mod.create_waitgroup
+export let wg_add -> sync_mod.wg_add
+export let wg_done -> sync_mod.wg_done
+export let wg_wait -> sync_mod.wg_wait
+export let wg_count -> sync_mod.wg_count
+export let wg_is_done -> sync_mod.wg_is_done
+
+export let create_mutex -> sync_mod.create_mutex
+export let mutex_acquire -> sync_mod.mutex_acquire
+export let mutex_try_acquire -> sync_mod.mutex_try_acquire
+export let mutex_release -> sync_mod.mutex_release
+export let mutex_is_locked -> sync_mod.mutex_is_locked
+export let with_lock -> sync_mod.with_lock
+
+export let create_atomic -> sync_mod.create_atomic
+export let atomic_get -> sync_mod.atomic_get
+export let atomic_set -> sync_mod.atomic_set
+export let atomic_add -> sync_mod.atomic_add
+export let atomic_sub -> sync_mod.atomic_sub
+export let atomic_compare_and_swap -> sync_mod.atomic_compare_and_swap
+
+export let create_barrier -> sync_mod.create_barrier
+export let barrier_arrive -> sync_mod.barrier_arrive
+export let barrier_reset -> sync_mod.barrier_reset
+
+export let create_semaphore -> sync_mod.create_semaphore
+export let sem_acquire -> sync_mod.sem_acquire
+export let sem_release -> sync_mod.sem_release
+export let sem_available -> sync_mod.sem_available
+
+export let create_once -> sync_mod.create_once
+export let do_once -> sync_mod.do_once
+export let once_is_done -> sync_mod.once_is_done
+
+// Fiber re-exports
+export let create_fiber -> fiber_mod.create_fiber
+export let resume -> fiber_mod.resume
+export let fiber_yield -> fiber_mod.fiber_yield
+export let fiber_done -> fiber_mod.fiber_done
+export let fiber_is_dead -> fiber_mod.fiber_is_dead
+export let fiber_is_suspended -> fiber_mod.fiber_is_suspended
+export let create_scheduler -> fiber_mod.create_scheduler
+export let sched_spawn -> fiber_mod.sched_spawn
+export let sched_step -> fiber_mod.sched_step
+export let sched_run_all -> fiber_mod.sched_run_all
+export let sched_active_count -> fiber_mod.sched_active_count

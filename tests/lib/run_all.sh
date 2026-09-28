@@ -58,6 +58,7 @@ TEST_FILES=(
   tests/lib/test_qrcode.zl
   tests/lib/test_deflate_gzip.zl
   tests/lib/test_zip.zl
+  tests/lib/test_zar.zl
 )
 
 echo "===================================="

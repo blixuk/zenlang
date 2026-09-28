@@ -331,6 +331,11 @@ class TypePointer(Type):
     inner_type: Type
     name: str = "Pointer"
 
+@dataclass(frozen=True)
+class TypeChannel(Type):
+    name: str = "Channel"
+
+
 OBJECT_TYPES: Dict = {
     "Function": TypeFunction,
     "Structure": TypeStructure,
@@ -338,6 +343,7 @@ OBJECT_TYPES: Dict = {
     "Enumerator": TypeEnum,
     "Task": TypeTask,
     "TaskHandle": TypeTaskHandle,
+    "Channel": TypeChannel,
     "Option": TypeOption,
     "Result": TypeResult,
 }

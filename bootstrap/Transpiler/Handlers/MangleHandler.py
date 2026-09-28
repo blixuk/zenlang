@@ -52,6 +52,8 @@ class MangleHandler:
             return "__builtin_term"
         if name in ("ast", "Ast") and not (hasattr(self, "module_aliases") and "ast" in self.module_aliases):
             return "__builtin_ast"
+        if name in ("concurrency", "Concurrency") and not (hasattr(self, "module_aliases") and "concurrency" in self.module_aliases):
+            return "__builtin_concurrency"
         if name in ("stdout", "stderr", "stdin", "args", "env"):
             return f"z_{name}"
              
@@ -332,6 +334,23 @@ class MangleHandler:
                 if raw_prop == "add": return "ZenSet_add_value"
                 return f"ZenSet_{raw_prop}"
             
+            if obj_name in ("__builtin_concurrency", "concurrency"):
+                if raw_prop in ("channel", "make_channel"):
+                    return "ZenChannel_make"
+                if raw_prop in ("spawn", "spawn_task"):
+                    return "ZenTask_spawn_val"
+                return f"ZenConcurrency_{raw_prop}"
+
+            if obj_name in ("__builtin_channel", "channel", "Channel"):
+                if raw_prop in ("make", "new", "create"):
+                    return "ZenChannel_make"
+                return f"ZenChannel_{raw_prop}"
+
+            if obj_name in ("__builtin_task", "task", "Task"):
+                if raw_prop in ("spawn", "create"):
+                    return "ZenTask_spawn_val"
+                return f"ZenTask_{raw_prop}"
+
             # If it was a built-in, we already returned.
             # Otherwise, check for module prefixing
             target_filename = None
@@ -398,7 +417,14 @@ class MangleHandler:
                 "has": "contains",
                 "info": "info",
                 "warn": "warn",
-                "error": "error"
+                "error": "error",
+                "wait": "wait",
+                "cancel": "cancel",
+                "is_cancelled": "is_cancelled",
+                "send": "send",
+                "receive": "receive",
+                "close": "close",
+                "is_closed": "is_closed"
             }
             if raw_prop in dispatch_mapping:
                 # Special case: length/count on objects with .as.object access?

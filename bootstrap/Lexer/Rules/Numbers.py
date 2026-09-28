@@ -69,8 +69,27 @@ class Numbers:
             )
             return
 
+        if self.peek() == "0" and self.peek(1) is not None and self.peek(1).isdigit():
+            while (character := self.peek()) is not None and (character.isdigit() or character == "_"):
+                number += self.advance()
+            snippet: str = self.get_snippet(start_line, start_column, int(self.column_number - start_column))
+            self.add_token(
+                TokenType.ERROR_INVALID_NUMBER,
+                snippet,
+                start_line,
+                start_column,
+                self.line_number,
+                self.column_number,
+            )
+            raise self.logger.error_token(
+                TokenType.ERROR_INVALID_NUMBER.name,
+                start_line,
+                start_column,
+                "Leading zeros are not permitted in decimal literals; use 0o prefix for octal",
+            )
 
         while (character := self.peek()) is not None:
+
             if character.isdigit():
                 number += self.advance()
             elif character == "_":

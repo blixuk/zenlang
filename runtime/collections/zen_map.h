@@ -10,6 +10,7 @@ typedef struct ZenMapEntry {
 } ZenMapEntry;
 
 typedef struct ZenMap {
+    ZenHeapHeader header;     /* 8 bytes: intrusive ARC / Sentinel header */
     ZenMapEntry* entries;
     int count;
     int capacity;
@@ -19,6 +20,9 @@ typedef struct ZenMap {
 } ZenMap;
 
 ZenMap* ZenMap_new(void);
+void ZenMap_destroy(ZenMap* map);
+ZenMap* ZenMap_deep_clone(ZenMap* map);
+ZenValue ZenMap_set(ZenMap* map, ZenValue key, ZenValue value);
 ZenValue ZenMap_make_from_arguments(int count, ...);
 
 // Primary ZenValue-based API

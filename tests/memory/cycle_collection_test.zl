@@ -1,0 +1,38 @@
+function test_list_cycles() {
+    let i -> 0
+    do while i < 1000 {
+        let a -> [1, 2]
+        let b -> [3, 4]
+        a.append(b)
+        b.append(a)
+        i -> i + 1
+    }
+}
+
+function test_self_cycle() {
+    let i -> 0
+    do while i < 1000 {
+        let a -> [42]
+        a.append(a)
+        i -> i + 1
+    }
+}
+
+function test_map_cycles() {
+    let i -> 0
+    do while i < 1000 {
+        let m1 -> { `name` -> `node1` }
+        let m2 -> { `name` -> `node2` }
+        m1[`next`] -> m2
+        m2[`prev`] -> m1
+        i -> i + 1
+    }
+}
+
+function main() {
+    test_list_cycles()
+    test_self_cycle()
+    test_map_cycles()
+    writeln(`CYCLE_COLLECTION_TEST_PASSED`)
+    return 0
+}

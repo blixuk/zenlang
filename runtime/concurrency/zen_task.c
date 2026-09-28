@@ -1,90 +1,300 @@
 #include "zen_task.h"
-#include <pthread.h>
+#include "../memory/zen_memory.h"
+#include "../core/zen_dispatch.h"
+#include "../core/zen_closure.h"
+#include "../collections/zen_list.h"
 #include <stdlib.h>
-#include <stdbool.h>
-#include <stdio.h>
+#include <unistd.h>
 #include <sched.h>
 
-// In the bootstrap, we use a simple pthread-based implementation.
-// True fibers would manage their own stacks, but this is sufficient for a 0.2.0 bootstrap.
+/* =========================================================================
+ * Global Worker Pool State
+ * ========================================================================= */
+typedef struct {
+    pthread_mutex_t lock;
+    pthread_cond_t not_empty;
+    ZenTaskHandle* head;
+    ZenTaskHandle* tail;
+    pthread_t* workers;
+    int worker_count;
+    bool shutdown;
+} ZenWorkerPool;
 
-typedef struct ZenTask {
-    int kind; // Internal object kind for validation
-    pthread_t thread;
-    ZenValue (*func)(ZenValue*);
-    int arg_count;
-    ZenValue* args;
-    ZenValue result;
-    bool completed;
-} ZenTask;
+static ZenWorkerPool pool = {0};
+static bool engine_initialized = false;
 
-#define ZEN_TASK_KIND 0x5441534B // 'TASK'
+/* =========================================================================
+ * The Frozen Handoff Boundary (Reused from Channels)
+ * ========================================================================= */
+static ZenValue zen_task_prepare_handoff(ZenValue val) {
+    if (!ZenValue_is_heap_pointer(val)) return val;
+    if (val.type == ZEN_CHANNEL || val.type == ZEN_TASK) {
+        ZenValue_retain(val);
+        return val;
+    }
+    ZenHeapHeader* h = (ZenHeapHeader*)val.as.object;
+    if (h && h->ref_count == ZEN_REF_PINNED) {
+        extern ZenValue ZenValue_clone_to_heap(ZenValue v);
+        val = ZenValue_clone_to_heap(val);
+    }
+    ZenValue_freeze(val);
+    return val;
+}
 
-static void* task_entry(void* data) {
-    ZenTask* task = (ZenTask*)data;
-    task->result = task->func(task->args);
-    task->completed = true;
+static ZenValue zen_task_legacy_adapter(ZenValue cap_func, ZenValue arg_list) {
+    ZenValue (*legacy_fn)(ZenValue*) = (ZenValue (*)(ZenValue*))cap_func.as.object;
+    if (arg_list.type == ZEN_LIST && arg_list.as.list) {
+        return legacy_fn(arg_list.as.list->items);
+    }
+    ZenValue dummy = arg_list;
+    return legacy_fn(&dummy);
+}
+
+static ZenValue ZenDispatch_call(ZenValue callable, ZenValue argument) {
+    if (argument.type == ZEN_NOTHING) {
+        return ZenValue_apply(callable, 0);
+    }
+    if (callable.type == ZEN_FUNCTION && callable.as.object && argument.type == ZEN_LIST) {
+        ZenClosureData* c = (ZenClosureData*)callable.as.object;
+        if (c->arity > 1 && argument.as.list && argument.as.list->count == c->arity) {
+            ZenList* l = argument.as.list;
+            switch (c->arity) {
+                case 2: return ZenValue_apply(callable, 2, l->items[0], l->items[1]);
+                case 3: return ZenValue_apply(callable, 3, l->items[0], l->items[1], l->items[2]);
+                case 4: return ZenValue_apply(callable, 4, l->items[0], l->items[1], l->items[2], l->items[3]);
+                case 5: return ZenValue_apply(callable, 5, l->items[0], l->items[1], l->items[2], l->items[3], l->items[4]);
+                case 6: return ZenValue_apply(callable, 6, l->items[0], l->items[1], l->items[2], l->items[3], l->items[4], l->items[5]);
+                case 7: return ZenValue_apply(callable, 7, l->items[0], l->items[1], l->items[2], l->items[3], l->items[4], l->items[5], l->items[6]);
+                case 8: return ZenValue_apply(callable, 8, l->items[0], l->items[1], l->items[2], l->items[3], l->items[4], l->items[5], l->items[6], l->items[7]);
+                default: break;
+            }
+        }
+    }
+    return ZenValue_apply(callable, 1, argument);
+}
+
+/* =========================================================================
+ * Worker Thread Execution Loop
+ * ========================================================================= */
+static void* worker_thread_loop(void* arg) {
+    (void)arg;
+    while (1) {
+        pthread_mutex_lock(&pool.lock);
+        while (!pool.head && !pool.shutdown) {
+            pthread_cond_wait(&pool.not_empty, &pool.lock);
+        }
+        
+        if (pool.shutdown && !pool.head) {
+            pthread_mutex_unlock(&pool.lock);
+            break;
+        }
+        
+        // Dequeue Task
+        ZenTaskHandle* task = pool.head;
+        pool.head = task->next;
+        if (!pool.head) pool.tail = NULL;
+        pthread_mutex_unlock(&pool.lock);
+        
+        // Check Cancellation
+        pthread_mutex_lock(&task->lock);
+        if (task->state == TASK_CANCELLED) {
+            pthread_mutex_unlock(&task->lock);
+            ZenValue_release(ZenValue_from_task(task)); // Drop pool's reference
+            continue;
+        }
+        task->state = TASK_RUNNING;
+        pthread_mutex_unlock(&task->lock);
+        
+        // Execute the Task (with its own clean memory scope)
+        ZenValue result = ZenDispatch_call(task->callable, task->argument);
+        
+        // Freeze the result so the awaiting thread can safely read it
+        ZenValue frozen_result = zen_task_prepare_handoff(result);
+        
+        pthread_mutex_lock(&task->lock);
+        task->result = frozen_result;
+        task->state = (result.type == ZEN_ERROR) ? TASK_FAILED : TASK_COMPLETED;
+        pthread_cond_broadcast(&task->cond);
+        pthread_mutex_unlock(&task->lock);
+        
+        ZenValue_release(ZenValue_from_task(task)); // Drop pool's reference
+    }
     return NULL;
 }
 
-ZenValue ZenTask_spawn(void* func, int arg_count, ZenValue* args) {
-    ZenTask* task = malloc(sizeof(ZenTask));
-    task->kind = ZEN_TASK_KIND;
-    task->func = (ZenValue (*)(ZenValue*))func;
-    task->arg_count = arg_count;
+/* =========================================================================
+ * Engine Initialization & Shutdown
+ * ========================================================================= */
+static int get_cpu_count(void) {
+#ifdef _SC_NPROCESSORS_ONLN
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    if (n > 0) return (int)n;
+#endif
+    return 4;
+}
+
+void ZenTaskEngine_init(void) {
+    if (engine_initialized) return;
     
-    if (arg_count > 0) {
-        task->args = malloc(sizeof(ZenValue) * arg_count);
-        for(int i = 0; i < arg_count; i++) {
-            task->args[i] = args[i];
-        }
+    pthread_mutex_init(&pool.lock, NULL);
+    pthread_cond_init(&pool.not_empty, NULL);
+    pool.head = NULL;
+    pool.tail = NULL;
+    pool.shutdown = false;
+    
+    pool.worker_count = get_cpu_count();
+    if (pool.worker_count <= 0) pool.worker_count = 4;
+    if (pool.worker_count > 32) pool.worker_count = 32;
+    
+    pool.workers = (pthread_t*)malloc(pool.worker_count * sizeof(pthread_t));
+    for (int i = 0; i < pool.worker_count; i++) {
+        pthread_create(&pool.workers[i], NULL, worker_thread_loop, NULL);
+    }
+    engine_initialized = true;
+}
+
+void ZenTaskEngine_shutdown(void) {
+    if (!engine_initialized) return;
+    
+    pthread_mutex_lock(&pool.lock);
+    pool.shutdown = true;
+    pthread_cond_broadcast(&pool.not_empty);
+    pthread_mutex_unlock(&pool.lock);
+    
+    for (int i = 0; i < pool.worker_count; i++) {
+        pthread_join(pool.workers[i], NULL);
+    }
+    free(pool.workers);
+    pthread_mutex_destroy(&pool.lock);
+    pthread_cond_destroy(&pool.not_empty);
+    engine_initialized = false;
+}
+
+/* =========================================================================
+ * Task Public API
+ * ========================================================================= */
+ZenTaskHandle* (ZenTask_spawn)(ZenValue callable, ZenValue argument) {
+    if (!engine_initialized) {
+        ZenTaskEngine_init();
+    }
+    
+    extern void ZenArena_suspend(void);
+    extern void ZenArena_resume(void);
+    ZenArena_suspend();
+    ZenTaskHandle* task = (ZenTaskHandle*)malloc(sizeof(ZenTaskHandle));
+    ZenArena_resume();
+    if (!task) return NULL;
+    
+    ZenHeapHeader_init(&task->header, ZEN_TASK, ZEN_FLAG_NONE);
+    task->callable = zen_task_prepare_handoff(callable);
+    task->argument = zen_task_prepare_handoff(argument);
+    task->result = (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+    task->state = TASK_PENDING;
+    task->next = NULL;
+    
+    pthread_mutex_init(&task->lock, NULL);
+    pthread_cond_init(&task->cond, NULL);
+    
+    // Retain once for the caller (returned pointer) and once for the thread pool queue
+    task->header.ref_count = 2; 
+    
+    pthread_mutex_lock(&pool.lock);
+    if (!pool.head) {
+        pool.head = task;
+        pool.tail = task;
     } else {
-        task->args = NULL;
+        pool.tail->next = task;
+        pool.tail = task;
     }
+    pthread_cond_signal(&pool.not_empty);
+    pthread_mutex_unlock(&pool.lock);
     
-    task->completed = false;
-    task->result = ZEN_NOTHING_VAL;
-    
-    if (pthread_create(&task->thread, NULL, task_entry, task) != 0) {
-        // Fallback for failed thread creation
-        fprintf(stderr, "Error: Failed to spawn task thread\n");
-        free(task->args);
-        free(task);
-        return ZEN_NOTHING_VAL;
-    }
-    
-    return ZenValue_from_object(task);
+    return task;
 }
 
-ZenValue ZenTask_wait(ZenValue task_handle) {
-    if (task_handle.type != ZEN_OBJECT || !task_handle.as.object) {
-        return ZEN_NOTHING_VAL;
+ZenValue (ZenTask_wait)(ZenTaskHandle* task) {
+    if (!task) return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+    pthread_mutex_lock(&task->lock);
+    while (task->state == TASK_PENDING || task->state == TASK_RUNNING) {
+        pthread_cond_wait(&task->cond, &task->lock);
     }
-    
-    ZenTask* task = (ZenTask*)task_handle.as.object;
-    if (task->kind != ZEN_TASK_KIND) {
-        return ZEN_NOTHING_VAL;
-    }
-    
-    pthread_join(task->thread, NULL);
-    
     ZenValue res = task->result;
-    
-    // Cleanup
-    free(task->args);
-    free(task);
-    
-    return res;
+    pthread_mutex_unlock(&task->lock);
+    return res; // Already frozen, safe to return directly
 }
 
-void ZenTask_yield() {
+ZenValue ZenTask_wait_value(ZenValue task_val) {
+    if (task_val.type == ZEN_TASK && task_val.as.object) {
+        return (ZenTask_wait)((ZenTaskHandle*)task_val.as.object);
+    }
+    return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+}
+
+ZenValue ZenTask_spawn_val(ZenValue callable, ZenValue argument) {
+    ZenTaskHandle* h = (ZenTask_spawn)(callable, argument);
+    return ZenValue_from_task(h);
+}
+
+ZenValue ZenTask_spawn_legacy(void* func, int arg_count, ZenValue* args) {
+    ZenValue arg = ZenList_make_from_arguments(0);
+    for (int i = 0; i < arg_count; i++) {
+        ZenList_append_value(arg, args[i]);
+    }
+    ZenValue cap = { .type = ZEN_OBJECT, .as.object = func };
+    ZenValue fn = ZenValue_from_closure((void*)zen_task_legacy_adapter, 1, 1, cap);
+    ZenTaskHandle* h = (ZenTask_spawn)(fn, arg);
+    return ZenValue_from_task(h);
+}
+
+void ZenTask_cancel(ZenTaskHandle* task) {
+    if (!task) return;
+    pthread_mutex_lock(&task->lock);
+    if (task->state == TASK_PENDING) {
+        task->state = TASK_CANCELLED;
+        pthread_cond_broadcast(&task->cond);
+    }
+    pthread_mutex_unlock(&task->lock);
+}
+
+bool ZenTask_is_cancelled(ZenTaskHandle* task) {
+    if (!task) return false;
+    pthread_mutex_lock(&task->lock);
+    bool cancelled = (task->state == TASK_CANCELLED);
+    pthread_mutex_unlock(&task->lock);
+    return cancelled;
+}
+
+ZenTaskState ZenTask_get_state(ZenTaskHandle* task) {
+    if (!task) return TASK_FAILED;
+    pthread_mutex_lock(&task->lock);
+    ZenTaskState s = task->state;
+    pthread_mutex_unlock(&task->lock);
+    return s;
+}
+
+void ZenTask_destroy(ZenTaskHandle* task) {
+    if (!task) return;
+    
+    ZenValue_release(task->callable);
+    ZenValue_release(task->argument);
+    ZenValue_release(task->result);
+    
+    pthread_cond_destroy(&task->cond);
+    pthread_mutex_destroy(&task->lock);
+    
+    if (task->header.ref_count != ZEN_REF_PINNED) {
+        free(task);
+    }
+}
+
+void ZenTask_yield(void) {
     sched_yield();
 }
 
-void ZenTask_scheduler_init() {
-    // No-op for pthread implementation
+void ZenTask_scheduler_init(void) {
+    ZenTaskEngine_init();
 }
 
-void ZenTask_scheduler_run() {
-    // No-op for pthread implementation
+void ZenTask_scheduler_run(void) {
+    // Background pool is continuously active
 }

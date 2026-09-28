@@ -1,0 +1,63 @@
+import zen.memory as memory
+
+function main() {
+    // 1. Create a heap container outside any arena
+    let heap_list -> []
+    let heap_map -> {}
+
+    // 2. Create and push an arena
+    let a -> memory.create_arena(16384)
+    memory.push_arena(a)
+
+    // 3. Inside the arena, create nested structures
+    let arena_inner_list -> [1, 2, 3]
+    let arena_inner_map -> {`key` -> `value`, `sub` -> [4, 5, 6]}
+
+    // 4. Store arena items into the heap containers via write barrier
+    heap_list.append(arena_inner_list)
+    heap_map[`nested`] -> arena_inner_map
+
+    // 5. Pop and free the arena
+    memory.pop_arena()
+    memory.free_arena(a)
+
+    // 6. Verify that the promoted structures in the heap containers are intact
+    let extracted_list -> heap_list[0]
+    when extracted_list.length() != 3 {
+        <- 1
+    }
+    when extracted_list[0] != 1 or extracted_list[1] != 2 or extracted_list[2] != 3 {
+        <- 2
+    }
+
+    let extracted_map -> heap_map[`nested`]
+    when extracted_map[`key`] != `value` {
+        <- 3
+    }
+    let extracted_sub -> extracted_map[`sub`]
+    when extracted_sub.length() != 3 or extracted_sub[0] != 4 {
+        <- 4
+    }
+
+    // 7. Mutate the promoted heap container
+    extracted_list.append(42)
+    when extracted_list.length() != 4 or extracted_list[3] != 42 {
+        <- 5
+    }
+
+    // 8. Zero-tax arena-to-arena pairing
+    let b -> memory.create_arena(16384)
+    memory.push_arena(b)
+    let arena_parent -> []
+    let arena_child -> [10, 20, 30]
+    arena_parent.append(arena_child)
+    when arena_parent[0][1] != 20 {
+        memory.pop_arena()
+        memory.free_arena(b)
+        <- 6
+    }
+    memory.pop_arena()
+    memory.free_arena(b)
+
+    <- 0
+}

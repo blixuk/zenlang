@@ -129,8 +129,7 @@ class ParsingHelpersMixin:
             self.token_handler.advance()
             return arguments, None
 
-        if self.token_handler.check_value("in"):
-            self.token_handler.advance()  # consume `in`
+        if self.token_handler.match_type_value(TokenType.KEYWORD, "in"):
             arena_token = self.token_handler.expect_types(
                 [TokenType.IDENTIFIER, TokenType.KEYWORD], 
                 "Expected arena name after `in`"

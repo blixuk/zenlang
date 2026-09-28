@@ -30,8 +30,9 @@ ZenValue ZenSystem_platform(void);
 ZenValue ZenSystem_version(void);
 ZenValue ZenSystem_exec(ZenValue cmd);
 
-// Runtime Initialization
+// Runtime Initialization & Termination
 void ZenRuntime_initialize(void);
+void ZenRuntime_terminate(void);
 
 // Built-in Errors
 ZenValue ZenValue_make_error_message(ZenValue message);

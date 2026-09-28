@@ -106,7 +106,13 @@ class ErrorParserMixin:
             self.token_handler.expect_type(TokenType.RIGHT_BRACE, "Expected `}` after check cases")
         
         raise_expr: ASTNode | None = None
+        error_alias: str | None = None
         if self.token_handler.match_type(TokenType.OR):
+            if self.token_handler.match_type(TokenType.LEFT_PAREN):
+                error_alias = self.token_handler.expect_type(TokenType.IDENTIFIER, "Expected identifier for error alias").value
+                self.token_handler.expect_type(TokenType.RIGHT_PAREN, "Expected `)`")
+            elif self.token_handler.check_type(TokenType.IDENTIFIER) and self.token_handler.check_type(TokenType.LEFT_BRACE, 1):
+                error_alias = self.token_handler.advance().value
             if self.token_handler.check_type(TokenType.LEFT_BRACE):
                 or_block = self.block_statement("or")
             else:
@@ -128,5 +134,6 @@ class ErrorParserMixin:
             expression,
             cases,
             or_block,
-            raise_expr
+            raise_expr,
+            error_alias
         )

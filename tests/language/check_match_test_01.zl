@@ -42,6 +42,37 @@ function test_check_match() {
         write(`[FAIL] Should have matched 10`)
     }
 
+    write(`--- Test 5: Pattern Matching in collections ---`)
+    let item -> 20
+    check item {
+        case in [10, 20, 30] { write(`[OK] Matched in list`) }
+        case 99 { write(`[FAIL] Should not match 99`) }
+    } or {
+        write(`[FAIL] Should have matched item in list`)
+    }
+
+    write(`--- Test 6: Error Alias Binding in or (err) ---`)
+    check throw_error() {
+        case 123 { write(`[FAIL] Should not match 123`) }
+    } or (my_err) {
+        when my_err is Error {
+            write(`[OK] Successfully bound my_err in or (my_err)`)
+        } or {
+            write(`[FAIL] my_err is not Error`)
+        }
+    }
+
+    write(`--- Test 7: Error Alias Binding in or err ---`)
+    check throw_error() {
+        case 456 { write(`[FAIL] Should not match 456`) }
+    } or single_err {
+        when single_err is Error {
+            write(`[OK] Successfully bound single_err in or single_err`)
+        } or {
+            write(`[FAIL] single_err is not Error`)
+        }
+    }
+
     write(`All check tests completed.`)
 }
 

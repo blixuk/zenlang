@@ -447,6 +447,34 @@ Returns the command line arguments passed to the process.
 
 ---
 
+## Function: `user_args`
+
+Returns only user-provided arguments, cleanly stripping the executable or script path if present at `args[0]`.
+
+**Parameters:**
+- `args`: Raw argument list (e.g. from `main(args)` or `get_args()`).
+
+**Returns:** A clean list of user argument strings.
+
+---
+
+## Function: `program_path`
+
+Returns the executing program binary path or script name.
+
+**Returns:** String path of the executing process, or empty string if unavailable.
+
+---
+
+## Function: `program_name`
+
+Returns the command name or basename of the running program.
+
+**Returns:** Basename string (e.g. `zar` or `zenfmt`).
+
+---
+
+
 ## Function: `exit`
 
 Exits the current process with the specified exit code.
@@ -4652,6 +4680,42 @@ Creates an error literal.
 | `inspect` | `inspect(zip_data)` | Returns summary map with total entry count, total uncompressed size, total compressed size, and entries metadata. |
 | `create_archive` | `create_archive(files, zip_path, level)` | Creates a PKZIP archive from file maps and writes it directly to `zip_path` on disk. |
 | `extract_archive` | `extract_archive(zip_path, target_dir)` | Decompresses all files from `zip_path` on disk and writes them into `target_dir`, creating subdirectories as needed. |
+
+---
+
+# Module: zen.data.zar
+
+> Next-Generation Pure Zenlang Archive Format (ZAR v1). Features opt-in RFC 1951 Deflate compression, opt-in RFC 8439 ChaCha20-Poly1305 AEAD authenticated encryption with PBKDF2 key derivation, encrypted zero-knowledge Central Directory hiding metadata, per-file CRC-32 and SHA-256 digests, cryptographic Merkle tree root seal with single-file inclusion proofs, content-addressable deduplication, dynamic mutable container operations, self-extracting executables (SFX), and terminal/SVG passkey QR codes. Import: `use zen.data.zar as zar`.
+
+### Archive Lifecycle & Container Operations
+
+| Function | Signature | Description |
+|---|---|---|
+| `new_archive` | `new_archive(opts)` | Creates a new dynamic mutable Archive container map (`opts`: `compression`, `password`, `kdf_iterations`, `dedup`). |
+| `add` | `add(archive, path, data, opts)` | Adds or replaces a file in the container (`opts`: `mode`, `mtime`, `metadata`). |
+| `remove` | `remove(archive, path)` | Removes an entry from the container. Returns `True` if removed. |
+| `rename` | `rename(archive, old_path, new_path)` | Renames an existing entry in the container. |
+| `get` | `get(archive, path)` | Returns raw byte list `[0..255]` of a file in the container, or `Nothing`. |
+| `get_string` | `get_string(archive, path)` | Returns decoded UTF-8 string content of a file in the container. |
+| `has` | `has(archive, path)` | Checks if a file path exists in the container. |
+| `list` | `list(archive)` | Returns list of relative file paths in the container. |
+| `get_merkle_root` | `get_merkle_root(archive)` | Computes and returns the 64-hex SHA-256 Merkle root across all file payloads. |
+| `prove_file` | `prove_file(archive, path)` | Generates a cryptographic Merkle audit path (inclusion proof) for a single file. |
+| `verify_file_proof` | `verify_file_proof(proof)` | Cryptographically verifies a single-file Merkle audit path against the root. |
+
+### Serialization, Inspection & Disk I/O
+
+| Function | Signature | Description |
+|---|---|---|
+| `to_bytes` | `to_bytes(archive, opts)` | Serializes the Archive container into a complete `.zar` binary byte list. |
+| `save` | `save(archive, path, opts)` | Serializes and writes the archive directly to disk at `path`. |
+| `open` / `load` | `open(bytes_or_path, opts)` | Loads and deserializes a `.zar` archive from disk or byte list into an active container (`opts`: `password`). |
+| `inspect` | `inspect(bytes_or_path, opts)` | Fast metadata inspection of archive manifest without loading all payloads into memory. |
+| `verify` | `verify(bytes_or_path, opts)` | Performs a full cryptographic audit verifying CRC-32, SHA-256, and Merkle root integrity. |
+| `extract_archive` | `extract_archive(bytes_or_path, dest_dir, opts)` | Extracts and writes all archive files into `dest_dir` on disk, creating folders and preserving permissions. |
+| `to_sfx` | `to_sfx(files_or_archive, opts)` | Bundles files or Archive into a standalone self-extracting shell executable byte list (`opts`: `entrypoint`). |
+| `create_sfx` | `create_sfx(files_or_archive, out_path, opts)` | Builds and writes a self-extracting executable to `out_path` with execute permissions (`chmod +x`). |
+| `render_passkey_qr` | `render_passkey_qr(pass, opts)` | Generates a terminal half-block ANSI or SVG QR code for the encryption passkey (`opts`: `target` -> `'term'` or `'svg'`). |
 
 ---
 

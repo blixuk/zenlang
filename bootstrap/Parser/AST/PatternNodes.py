@@ -56,3 +56,9 @@ class DestructurePattern(Pattern):
     name: str
     members: List[Tuple[str, Pattern]]
     node_type: Optional[str] = "DestructurePattern"
+
+@dataclass
+class InPattern(Pattern):
+    collection: ASTNode
+    node_type: Optional[str] = "InPattern"
+

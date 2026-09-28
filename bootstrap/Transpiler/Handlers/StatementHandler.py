@@ -308,7 +308,7 @@ class StatementHandler:
 
         self._emit(Jump(target=exit_label), node)
 
-        self._emit(Catch(), node)
+        self._emit(Catch(error_alias=getattr(node, "error_alias", None)), node)
         self._emit(Label(name=catch_label), node)
         
         if node.or_block:

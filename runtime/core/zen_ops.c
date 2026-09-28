@@ -321,6 +321,8 @@ ZenValue ZenValue_equal(ZenValue a, ZenValue b) {
             return ZenValue_equal(a.as.set->list, b.as.set->list);
         }
         case ZEN_OBJECT: return ZenValue_make_boolean(a.as.object == b.as.object);
+        case ZEN_CHANNEL: return ZenValue_make_boolean(a.as.object == b.as.object);
+        case ZEN_TASK: return ZenValue_make_boolean(a.as.object == b.as.object);
         case ZEN_ARENA: return ZenValue_make_boolean(a.as.arena == b.as.arena);
         case ZEN_AST_NODE: return ZenValue_make_boolean(a.as.ast_node == b.as.ast_node);
         case ZEN_TOKEN: {
@@ -612,6 +614,18 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
         return val;
     }
 
+    /* Target: Channel */
+    if (strcmp(target_type, "Channel") == 0) {
+        if (val.type == ZEN_CHANNEL) return val;
+        return ZEN_NOTHING_VAL;
+    }
+
+    /* Target: Task */
+    if (strcmp(target_type, "Task") == 0) {
+        if (val.type == ZEN_TASK) return val;
+        return ZEN_NOTHING_VAL;
+    }
+
     /* 10. Target: Default */
     if (strcmp(target_type, "Default") == 0 || strcmp(target_type, "default") == 0) {
         return ZEN_DEFAULT_VAL;
@@ -626,7 +640,7 @@ ZenValue ZenValue_cast(ZenValue val, const char* target_type) {
 }
 
 ZenValue ZenValue_coalesce(ZenValue a, ZenValue b) {
-    if (a.type != ZEN_NOTHING) {
+    if (a.type != ZEN_NOTHING && a.type != ZEN_ERROR) {
         return a;
     }
     return b;

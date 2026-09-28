@@ -785,7 +785,16 @@ function check_check(node) {
         }
     }
     when AST.check_stmt_or_block(node) != Nothing {
+        let outer -> C[`scope`]
+        let inner -> Ty.sc_create(outer)
+        C[`scope`] -> inner
+        Ty.sc_define(inner, `error`, Ty.t_variant(), `VARIABLE`, false)
+        let alias -> AST.check_stmt_alias(node)
+        when alias != Nothing and alias != `error` and alias != `_` {
+            Ty.sc_define(inner, alias, Ty.t_variant(), `VARIABLE`, false)
+        }
         check_stmt(AST.check_stmt_or_block(node))
+        C[`scope`] -> outer
     }
     when AST.check_stmt_raise(node) != Nothing {
         let _rt -> check_expr(AST.check_stmt_raise(node))
@@ -843,6 +852,13 @@ function check_pattern_binds(pat) {
             do for a in args {
                 check_pattern_binds(a)
             }
+        }
+        <- Nothing
+    }
+    when is_kind(pat, AST.K_IS) {
+        let lvar -> AST.is_expr_val(pat)
+        when lvar != Nothing {
+            check_pattern_binds(lvar)
         }
         <- Nothing
     }

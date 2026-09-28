@@ -10,7 +10,8 @@ from Parser.AST import (
     MapPattern,
     IdentifierPattern,
     VariantPattern,
-    LiteralPattern
+    LiteralPattern,
+    InPattern
 )
 
 class PatternParserMixin:
@@ -20,6 +21,11 @@ class PatternParserMixin:
         # Wildcard
         if self.token_handler.match_type_value(TokenType.IDENTIFIER, "_"):
              return WildcardPattern(getattr(token, "line"), getattr(token, "column"))
+
+        # In Match Pattern (in <collection>)
+        if self.token_handler.match_type_value(TokenType.KEYWORD, "in"):
+            coll = self.expression_handler.expression()
+            return InPattern(getattr(token, "line"), getattr(token, "column"), coll)
 
         # Rest Pattern (...name)
         if self.token_handler.match_type(TokenType.ELLIPSIS) or self.token_handler.match_type(TokenType.RANGE_FULL_INCLUSIVE):

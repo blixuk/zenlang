@@ -1346,10 +1346,18 @@ let result -> check divide(10, 0) or 0.0
 // 2. Symbolic inline recovery:
 let result -> ? divide(10, 0) or 0.0
 
-// 3. Fallback recovery block:
-let value -> check divide(10, 0) or {
-    io.warn(`Division failed; using fallback`)
+// 3. Fallback recovery block (with ambient `error` or explicit alias):
+let value -> check divide(10, 0) or (err) {
+    io.warn(`Division failed: ` + Str.to_string(err))
     <- 0.0
+}
+
+// 4. Pattern matching with type and membership cases:
+check divide(10, 0) {
+    case is Error { io.error(`Caught error variant`) }
+    case in [1.0, 2.0, 5.0] { io.info(`Expected quotient`) }
+} or (err) {
+    io.warn(`Unhandled result: ` + Str.to_string(err))
 }
 ```
 

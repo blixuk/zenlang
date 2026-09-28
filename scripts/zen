@@ -57,6 +57,7 @@ Commands:
   fm [path]         Interactive terminal file manager & code explorer
   fmt [file.zl...]  Zenlang source code formatter
   view [file.zm]    Terminal reader & interactive pager for Zen Mark (.zm) docs
+  zar [args...]     Next-Gen Pure Zenlang Archive & Container Tool (.zar)
   shell [args...]   Start the interactive Zen Trinity shell (zenshell / zsh)
   clean             Remove build/, output/, bin/zen* (not source)
 
@@ -282,6 +283,14 @@ case "$cmd" in
     export ZEN_PATH="$ROOT:$ROOT/zenshell/src:$ROOT/lib"
     export PYTHONPATH="$ROOT/bootstrap"
     exec python3 "$ROOT/bootstrap/Zen.py" "$ROOT/zenshell/src/main.zl" "$@"
+    ;;
+  zar)
+    if [ -x "$ROOT/bin/zar" ]; then
+      exec "$ROOT/bin/zar" "$@"
+    elif [ -x "$ROOT/tools/zar/build/app" ]; then
+      exec "$ROOT/tools/zar/build/app" "$@"
+    fi
+    exec "$ROOT/bin/zen" "$ROOT/tools/zar/src/main.zl" "$@"
     ;;
   init|new|watch|dash|dashboard|graph|todo|doc|pkg|bump|publish|benchmark|bench|profile)
     # shellcheck disable=SC2086

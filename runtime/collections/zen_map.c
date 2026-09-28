@@ -51,7 +51,8 @@ static void zen_map_rehash(ZenMap* m) {
     while (n < m->count * 2 + 2) {
         n *= 2;
     }
-    ZenArena* cur = ZenArena_current();
+    bool in_arena = (m->header.ref_count == ZEN_REF_PINNED);
+    ZenArena* cur = in_arena ? ZenArena_current() : NULL;
     int* b;
     if (cur) {
         b = (int*)ZenArena_allocate(cur, sizeof(int) * (size_t)n);
@@ -69,7 +70,7 @@ static void zen_map_rehash(ZenMap* m) {
         }
         b[j] = i;
     }
-    if (!cur && m->buckets) {
+    if (!in_arena && m->buckets) {
         free(m->buckets);
     }
     m->buckets = b;
@@ -98,12 +99,30 @@ static int zen_map_find_index(ZenMap* m, ZenValue key) {
 ZenMap* ZenMap_new(void) {
     ZenMap* map = (ZenMap*)ZenRuntime_allocate(sizeof(ZenMap));
     if (!map) return NULL;
+    ZenHeapHeader_init(&map->header, ZEN_MAP, ZEN_FLAG_CONTAINER);
     map->entries = NULL;
     map->count = 0;
     map->capacity = 0;
     map->buckets = NULL;
     map->bucket_n = 0;
     return map;
+}
+
+void ZenMap_destroy(ZenMap* map) {
+    if (!map) return;
+    for (int i = 0; i < map->count; i++) {
+        ZenValue_release(map->entries[i].key);
+        ZenValue_release(map->entries[i].value);
+    }
+    if (map->header.ref_count != ZEN_REF_PINNED) {
+        if (map->entries) {
+            free(map->entries);
+        }
+        if (map->buckets) {
+            free(map->buckets);
+        }
+        free(map);
+    }
 }
 
 ZenValue ZenMap_make_from_arguments(int count, ...) {
@@ -141,12 +160,15 @@ ZenValue ZenMap_set_value_at_key(ZenValue map, ZenValue key, ZenValue value) {
     if (!m) return map;
     int found = zen_map_find_index(m, key);
     if (found >= 0) {
-        m->entries[found].value = value;
+        ZenValue old_val = m->entries[found].value;
+        m->entries[found].value = ZenValue_write_barrier_target(&m->header, value);
+        ZenValue_release(old_val);
         return map;
     }
     if (m->count >= m->capacity) {
         int new_capacity = m->capacity == 0 ? 8 : m->capacity * 2;
-        ZenArena* cur = ZenArena_current();
+        bool in_arena = (m->header.ref_count == ZEN_REF_PINNED);
+        ZenArena* cur = in_arena ? ZenArena_current() : NULL;
         if (cur) {
             ZenMapEntry* new_entries = (ZenMapEntry*)ZenArena_allocate(cur, sizeof(ZenMapEntry) * (size_t)new_capacity);
             if (m->count > 0 && m->entries) {
@@ -160,8 +182,8 @@ ZenValue ZenMap_set_value_at_key(ZenValue map, ZenValue key, ZenValue value) {
         }
     }
     int idx = m->count;
-    m->entries[idx].key = key;
-    m->entries[idx].value = value;
+    m->entries[idx].key = ZenValue_write_barrier_target(&m->header, key);
+    m->entries[idx].value = ZenValue_write_barrier_target(&m->header, value);
     m->count++;
     if (!m->buckets || m->count * 2 > m->bucket_n) {
         zen_map_rehash(m);
@@ -174,6 +196,22 @@ ZenValue ZenMap_set_value_at_key(ZenValue map, ZenValue key, ZenValue value) {
         m->buckets[j] = idx;
     }
     return map;
+}
+
+ZenMap* ZenMap_deep_clone(ZenMap* map) {
+    if (!map) return NULL;
+    ZenMap* new_map = ZenMap_new();
+    if (!new_map) return NULL;
+    zen_clone_register((void*)map, ZenValue_from_map(new_map));
+    for (int i = 0; i < map->count; i++) {
+        ZenMap_set_value_at_key(ZenValue_from_map(new_map), map->entries[i].key, map->entries[i].value);
+    }
+    return new_map;
+}
+
+ZenValue ZenMap_set(ZenMap* map, ZenValue key, ZenValue value) {
+    if (!map) return ZEN_NOTHING_VAL;
+    return ZenMap_set_value_at_key(ZenValue_from_map(map), key, value);
 }
 
 ZenValue ZenMap_get_keys(ZenValue map) {
@@ -222,10 +260,14 @@ ZenValue ZenMap_remove_key(ZenValue map, ZenValue key) {
     ZenMap* m = map.as.map;
     int i = zen_map_find_index(m, key);
     if (i < 0) return map;
+    ZenValue old_k = m->entries[i].key;
+    ZenValue old_v = m->entries[i].value;
     for (int j = i; j < m->count - 1; j++) {
         m->entries[j] = m->entries[j + 1];
     }
     m->count--;
+    ZenValue_release(old_k);
+    ZenValue_release(old_v);
     if (m->count == 0) {
         ZenArena* cur = ZenArena_current();
         if (!cur && m->buckets) {

@@ -111,6 +111,9 @@ class MIRHandler:
         self.emit("} else {")
         self.indent_level += 1
         self.emit("ZenException_pop_context();")
+        self.emit("ZenValue error = ZenException_last;")
+        if getattr(instr, "error_alias", None) and instr.error_alias != "error":
+            self.emit(f"ZenValue {self.sanitize_name(instr.error_alias)} = ZenException_last;")
 
     def _emit_end_try(self, instr: EndTry):
         self.indent_level -= 1
@@ -478,6 +481,8 @@ class MIRHandler:
         elif callee_str == "Value_set_index": callee_str = "ZenValue_set_at"
         elif callee_str == "Value_is_type_name": callee_str = "ZenValue_is_type_name"
         elif callee_str == "write": callee_str = "ZenIO_write_line"
+        elif callee_str == "channel": callee_str = "ZenChannel_make"
+        elif callee_str == "spawn": callee_str = "ZenTask_spawn_val"
 
         if callee_str == "ZenList_make_from_arguments" or callee_str == "ZenMap_make_from_arguments":
             formatted_args = []
@@ -509,6 +514,11 @@ class MIRHandler:
         else:
             call_args = [self._format_zen_value_arg(arg) for arg in instr.args]
 
+        if callee_str == "ZenChannel_make" and len(call_args) == 0:
+            call_args = ["ZEN_NOTHING_VAL"]
+        elif callee_str == "ZenTask_spawn_val" and len(call_args) == 1:
+            call_args = [call_args[0], "ZEN_NOTHING_VAL"]
+
         if "." in callee_str:
             obj_name, prop_name = callee_str.split(".", 1)
             if obj_name in self.imported_modules or obj_name in getattr(self, "module_aliases", {}):
@@ -529,7 +539,7 @@ class MIRHandler:
                      pass
             elif obj_name in self.global_enums and prop_name and prop_name[0].isupper():
                 callee_str = f"ZenVariant_{obj_name}_{prop_name}"
-            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_ast", "ast", "Ast", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net", "__builtin_vm", "vm", "VM", "__builtin_ffi", "ffi"):
+            elif obj_name in ("IO", "Sys", "Memory", "io", "memory", "out", "in", "stdout", "stderr", "stdin", "z_stdout", "z_stderr", "z_stdin", "__builtin", "__builtin_ast", "ast", "Ast", "__builtin_io", "__builtin_sys", "__builtin_memory", "__builtin_output", "__builtin_input", "__builtin_file", "__builtin_math", "math", "Math", "__builtin_range", "Str", "String", "__builtin_string", "List", "__builtin_list", "Map", "__builtin_map", "sys", "file", "string", "__builtin_time", "time", "__builtin_term", "term", "__builtin_process", "process", "__builtin_regex", "__builtin_reflect", "__builtin_net", "net", "__builtin_vm", "vm", "VM", "__builtin_ffi", "ffi", "__builtin_concurrency", "concurrency", "__builtin_channel", "__builtin_task", "channel", "spawn", "Task", "Channel"):
                 if prop_name in ("create_arena", "__builtin_create_arena"):
                     callee_str = "ZenMemory_create_arena"
                     if call_args and call_args[0] in ("__builtin_memory", "Memory", "memory", "__builtin"):
@@ -744,6 +754,45 @@ class MIRHandler:
                           callee_str = f"ZenAst_node_{prop_name}"
                      if call_args and call_args[0] in ("__builtin_ast", "ast", "Ast"):
                           call_args = call_args[1:]
+                elif obj_name in ("__builtin_concurrency", "concurrency"):
+                     if prop_name in ("channel", "make_channel"):
+                         callee_str = "ZenChannel_make"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
+                         if len(call_args) == 0:
+                             call_args = ["ZEN_NOTHING_VAL"]
+                     elif prop_name in ("spawn", "spawn_task"):
+                         callee_str = "ZenTask_spawn_val"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
+                         if len(call_args) == 1:
+                             call_args = [call_args[0], "ZEN_NOTHING_VAL"]
+                     else:
+                         callee_str = f"ZenConcurrency_{prop_name}"
+                         if call_args and call_args[0] in ("__builtin_concurrency", "concurrency"):
+                             call_args = call_args[1:]
+                elif obj_name in ("__builtin_channel", "channel", "Channel"):
+                     if prop_name in ("make", "new", "create"):
+                         callee_str = "ZenChannel_make"
+                         if call_args and call_args[0] in ("__builtin_channel", "channel", "Channel"):
+                             call_args = call_args[1:]
+                         if len(call_args) == 0:
+                             call_args = ["ZEN_NOTHING_VAL"]
+                     else:
+                         callee_str = f"ZenChannel_{prop_name}"
+                         if call_args and call_args[0] in ("__builtin_channel", "channel", "Channel"):
+                             call_args = call_args[1:]
+                elif obj_name in ("__builtin_task", "task", "Task"):
+                     if prop_name in ("spawn", "create"):
+                         callee_str = "ZenTask_spawn_val"
+                         if call_args and call_args[0] in ("__builtin_task", "task", "Task"):
+                             call_args = call_args[1:]
+                         if len(call_args) == 1:
+                             call_args = [call_args[0], "ZEN_NOTHING_VAL"]
+                     else:
+                         callee_str = f"ZenTask_{prop_name}"
+                         if call_args and call_args[0] in ("__builtin_task", "task", "Task"):
+                             call_args = call_args[1:]
                 else:
                     callee_str = f"Zen{obj_name}_{prop_name}"
             elif obj_name[0].isupper() and prop_name[0].isupper() and obj_name != "Sys":
@@ -782,6 +831,8 @@ class MIRHandler:
                     "substring", "slice", "starts_with", "ends_with", "trim",
                     "to_upper", "to_lower", "to_number", "to_integer", "to_decimal",
                     "index_of", "replace", "split", "to_string",
+                    # concurrency methods on ZenValue receivers (Task, Channel)
+                    "send", "receive", "wait", "cancel", "is_cancelled", "close", "is_closed",
                 )
                 if prop_name in coll_methods and not is_known_class:
                     mapping = {
@@ -801,6 +852,13 @@ class MIRHandler:
                         "to_integer": "to_number",
                         "to_decimal": "to_number",
                         "to_string": "to_string_dispatch",
+                        "send": "send",
+                        "receive": "receive",
+                        "wait": "wait",
+                        "cancel": "cancel",
+                        "is_cancelled": "is_cancelled",
+                        "close": "close",
+                        "is_closed": "is_closed",
                     }
                     m_prop = mapping.get(prop_name, prop_name)
                     # Prefer ZenString_* free functions when available; else ZenValue_*

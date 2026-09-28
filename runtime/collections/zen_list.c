@@ -1,4 +1,5 @@
 #include "zen_list.h"
+#include "zen_map.h"
 #include "core/zen_ops.h"
 #include "core/zen_dispatch.h"
 #include "memory/zen_memory.h"
@@ -7,8 +8,15 @@
 #include <string.h>
 #include <stdio.h>
 
-ZenList* ZenList_new(void) {
+static inline ZenList* zen_list_alloc(void) {
     ZenList* list = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    if (!list) return NULL;
+    ZenHeapHeader_init(&list->header, ZEN_LIST, ZEN_FLAG_CONTAINER);
+    return list;
+}
+
+ZenList* ZenList_new(void) {
+    ZenList* list = zen_list_alloc();
     if (!list) return NULL;
     list->items = NULL;
     list->count = 0;
@@ -16,8 +24,26 @@ ZenList* ZenList_new(void) {
     return list;
 }
 
+void ZenList_destroy(ZenList* list) {
+    if (!list) return;
+    
+    // Cascade release to all child elements
+    for (int i = 0; i < list->count; i++) {
+        ZenValue_release(list->items[i]);
+    }
+    
+    // If allocated in an arena, the chunk frees it in O(1) bulk.
+    // If standard heap, free the buffers explicitly:
+    if (list->header.ref_count != ZEN_REF_PINNED) {
+        if (list->items) {
+            free(list->items);
+        }
+        free(list);
+    }
+}
+
 ZenValue ZenList_make_from_arguments(int count, ...) {
-    ZenList* list = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* list = zen_list_alloc();
     if (!list) return ZenValue_make_nothing();
     if (count > 0) {
         list->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)count);
@@ -26,7 +52,8 @@ ZenValue ZenList_make_from_arguments(int count, ...) {
         va_list args;
         va_start(args, count);
         for (int i = 0; i < count; i++) {
-            list->items[i] = va_arg(args, ZenVariant);
+            ZenVariant item = va_arg(args, ZenVariant);
+            list->items[i] = ZenValue_write_barrier_target(&list->header, item);
         }
         va_end(args);
     } else {
@@ -35,6 +62,22 @@ ZenValue ZenList_make_from_arguments(int count, ...) {
         list->capacity = 0;
     }
     return ZenValue_from_list(list);
+}
+
+ZenList* ZenList_deep_clone(ZenList* list) {
+    if (!list) return NULL;
+    ZenList* new_list = ZenList_new();
+    if (!new_list) return NULL;
+    zen_clone_register((void*)list, ZenValue_from_list(new_list));
+    if (list->count > 0 && list->items) {
+        new_list->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)list->count);
+        new_list->capacity = list->count;
+        for (int i = 0; i < list->count; i++) {
+            new_list->items[i] = ZenValue_write_barrier_target(&new_list->header, list->items[i]);
+        }
+        new_list->count = list->count;
+    }
+    return new_list;
 }
 
 ZenValue ZenList_get_length(ZenValue list) {
@@ -61,7 +104,9 @@ ZenValue ZenList_set_value_at_index(ZenValue list, ZenValue index, ZenValue valu
     int idx = (int)index.as.integer;
     if (idx < 0) idx += l->count;
     if (idx < 0 || idx >= l->count) return list;
-    l->items[idx] = value;
+    ZenValue old = l->items[idx];
+    l->items[idx] = ZenValue_write_barrier_target(&l->header, value);
+    ZenValue_release(old);
     return list;
 }
 
@@ -71,7 +116,8 @@ ZenValue ZenList_append_value(ZenValue list, ZenValue value) {
     if (!l) return list;
     if (l->count >= l->capacity) {
         int new_capacity = l->capacity == 0 ? 8 : l->capacity * 2;
-        ZenArena* cur = ZenArena_current();
+        bool in_arena = (l->header.ref_count == ZEN_REF_PINNED);
+        ZenArena* cur = in_arena ? ZenArena_current() : NULL;
         if (cur) {
             ZenVariant* new_items = (ZenVariant*)ZenArena_allocate(cur, sizeof(ZenVariant) * (size_t)new_capacity);
             if (l->count > 0 && l->items) {
@@ -84,8 +130,20 @@ ZenValue ZenList_append_value(ZenValue list, ZenValue value) {
             l->capacity = new_capacity;
         }
     }
-    l->items[l->count++] = value;
+    l->items[l->count++] = ZenValue_write_barrier_target(&l->header, value);
     return list;
+}
+
+void ZenList_append(ZenList* list, ZenValue item) {
+    if (!list) return;
+    ZenValue v_list = ZenValue_from_list(list);
+    ZenList_append_value(v_list, item);
+}
+
+void ZenList_set(ZenList* list, int index, ZenValue item) {
+    if (!list) return;
+    ZenValue v_list = ZenValue_from_list(list);
+    ZenList_set_value_at_index(v_list, ZenValue_make_integer(index), item);
 }
 
 ZenValue ZenList_remove_at_index(ZenValue list, ZenValue index) {
@@ -141,7 +199,8 @@ ZenValue ZenList_slice_from(ZenValue list, ZenValue start_index) {
     if (start > src->count) start = src->count;
 
     long long count = src->count - start;
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     if (count > 0 && src->items) {
         out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)count);
         out->count = (int)count;
@@ -170,7 +229,8 @@ ZenValue ZenList_clone(ZenValue list) {
         return ZenValue_from_list(ZenList_new());
     }
     ZenList* src = list.as.list;
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     if (src->count > 0 && src->items) {
         out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)src->count);
         out->count = src->count;
@@ -189,7 +249,8 @@ ZenValue ZenList_concat(ZenValue a, ZenValue b) {
     int cb = (b.type == ZEN_LIST && b.as.list) ? b.as.list->count : 0;
     int total = ca + cb;
 
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     if (total > 0) {
         out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)total);
         out->count = total;
@@ -212,7 +273,8 @@ ZenValue ZenList_prepend(ZenValue list, ZenValue item) {
     int count = (list.type == ZEN_LIST && list.as.list) ? list.as.list->count : 0;
     int total = count + 1;
 
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)total);
     out->count = total;
     out->capacity = total;
@@ -230,7 +292,8 @@ ZenValue ZenList_drop_end(ZenValue list, long long n) {
     long long remaining = src->count - n;
     if (remaining <= 0) return ZenValue_from_list(ZenList_new());
 
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)remaining);
     out->count = (int)remaining;
     out->capacity = (int)remaining;
@@ -256,7 +319,8 @@ static inline bool zen_list_is_truthy(ZenValue v) {
 ZenValue ZenList_reverse(ZenValue list) {
     if (list.type != ZEN_LIST || !list.as.list) return ZenValue_from_list(ZenList_new());
     ZenList* src = list.as.list;
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     out->count = src->count;
     out->capacity = src->count;
     if (src->count > 0) {
@@ -323,7 +387,8 @@ ZenValue ZenList_take(ZenValue list, ZenValue n_v) {
     if (n <= 0) return ZenValue_from_list(ZenList_new());
     ZenList* src = list.as.list;
     if (n > src->count) n = src->count;
-    ZenList* out = (ZenList*)ZenRuntime_allocate(sizeof(ZenList));
+    ZenList* out = zen_list_alloc();
+    if (!out) return ZenValue_from_list(ZenList_new());
     out->count = n;
     out->capacity = n;
     out->items = (ZenVariant*)ZenRuntime_allocate(sizeof(ZenVariant) * (size_t)n);

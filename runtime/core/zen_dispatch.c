@@ -1,4 +1,6 @@
 #include "../bootstrap_runtime.h"
+#include "../concurrency/zen_task.h"
+#include "../concurrency/zen_channel.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -44,6 +46,33 @@ ZenValue ZenValue_call(ZenValue value) {
     return ZenValue_apply(value, 0);
 }
 
+/* Method closures for dynamic property / method access */
+static ZenValue zen_dispatch_task_wait_thunk(ZenValue cap_task) {
+    return ZenTask_wait((ZenTaskHandle*)cap_task.as.object);
+}
+static ZenValue zen_dispatch_task_cancel_thunk(ZenValue cap_task) {
+    ZenTask_cancel((ZenTaskHandle*)cap_task.as.object);
+    return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+}
+static ZenValue zen_dispatch_task_is_cancelled_thunk(ZenValue cap_task) {
+    return ZenValue_from_boolean(ZenTask_is_cancelled((ZenTaskHandle*)cap_task.as.object));
+}
+
+static ZenValue zen_dispatch_channel_send_thunk(ZenValue cap_ch, ZenValue val) {
+    ZenChannel_send((ZenChannel*)cap_ch.as.object, val);
+    return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+}
+static ZenValue zen_dispatch_channel_receive_thunk(ZenValue cap_ch) {
+    return ZenChannel_receive((ZenChannel*)cap_ch.as.object);
+}
+static ZenValue zen_dispatch_channel_close_thunk(ZenValue cap_ch) {
+    ZenChannel_close((ZenChannel*)cap_ch.as.object);
+    return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+}
+static ZenValue zen_dispatch_channel_is_closed_thunk(ZenValue cap_ch) {
+    return ZenValue_from_boolean(ZenChannel_is_closed((ZenChannel*)cap_ch.as.object));
+}
+
 ZenValue ZenValue_get_field(ZenValue obj, const char* name) {
     if (!name) return ZenValue_make_nothing();
     if (strcmp(name, "length") == 0) return ZenValue_get_length(obj);
@@ -51,7 +80,75 @@ ZenValue ZenValue_get_field(ZenValue obj, const char* name) {
     if (obj.type == ZEN_MAP) {
         return ZenMap_get_value_at_key(obj, ZenValue_make_string(name));
     }
+    if (obj.type == ZEN_TASK && obj.as.object) {
+        if (strcmp(name, "wait") == 0) return ZenValue_from_closure((void*)zen_dispatch_task_wait_thunk, 0, 1, obj);
+        if (strcmp(name, "cancel") == 0) return ZenValue_from_closure((void*)zen_dispatch_task_cancel_thunk, 0, 1, obj);
+        if (strcmp(name, "is_cancelled") == 0) return ZenValue_from_closure((void*)zen_dispatch_task_is_cancelled_thunk, 0, 1, obj);
+        if (strcmp(name, "state") == 0) return ZenValue_make_integer((long long)ZenTask_get_state((ZenTaskHandle*)obj.as.object));
+    }
+    if (obj.type == ZEN_CHANNEL && obj.as.object) {
+        if (strcmp(name, "send") == 0) return ZenValue_from_closure((void*)zen_dispatch_channel_send_thunk, 1, 1, obj);
+        if (strcmp(name, "receive") == 0) return ZenValue_from_closure((void*)zen_dispatch_channel_receive_thunk, 0, 1, obj);
+        if (strcmp(name, "close") == 0) return ZenValue_from_closure((void*)zen_dispatch_channel_close_thunk, 0, 1, obj);
+        if (strcmp(name, "is_closed") == 0) return ZenValue_from_closure((void*)zen_dispatch_channel_is_closed_thunk, 0, 1, obj);
+    }
     return ZenValue_make_nothing();
+}
+
+/* =========================================================================
+ * Dynamic Method Dispatcher (ZEN_TASK & ZEN_CHANNEL Fast-Paths)
+ * ========================================================================= */
+ZenValue ZenDispatch_call_method(ZenValue receiver, const char* method_name, int arg_count, ZenValue* args) {
+    if (!method_name) return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+    ZenHeapHeader* h = ZenValue_get_header(receiver);
+    if (!h) return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+
+    /* ==========================================================
+     * ZEN_TASK Methods
+     * ========================================================== */
+    if (h->type == ZEN_TASK) {
+        ZenTaskHandle* task = (ZenTaskHandle*)h;
+        
+        if (strcmp(method_name, "wait") == 0) {
+            return ZenTask_wait(task);
+        }
+        if (strcmp(method_name, "cancel") == 0) {
+            ZenTask_cancel(task);
+            return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+        }
+        if (strcmp(method_name, "is_cancelled") == 0) {
+            return ZenValue_from_boolean(ZenTask_is_cancelled(task));
+        }
+        if (strcmp(method_name, "state") == 0) {
+            return ZenValue_make_integer((long long)ZenTask_get_state(task));
+        }
+    }
+
+    /* ==========================================================
+     * ZEN_CHANNEL Methods
+     * ========================================================== */
+    if (h->type == ZEN_CHANNEL) {
+        ZenChannel* ch = (ZenChannel*)h;
+        
+        if (strcmp(method_name, "send") == 0) {
+            // Assumes args is a C-array of ZenValues and arg_count >= 1
+            ZenValue val = (arg_count >= 1 && args) ? args[0] : (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+            ZenChannel_send(ch, val);
+            return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+        }
+        if (strcmp(method_name, "receive") == 0) {
+            return ZenChannel_receive(ch);
+        }
+        if (strcmp(method_name, "close") == 0) {
+            ZenChannel_close(ch);
+            return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
+        }
+        if (strcmp(method_name, "is_closed") == 0) {
+            return ZenValue_from_boolean(ZenChannel_is_closed(ch));
+        }
+    }
+
+    return (ZenValue){ .type = ZEN_NOTHING, .as.integer = 0 };
 }
 
 ZenValue ZenValue_get_kind(ZenValue obj) {
@@ -82,6 +179,8 @@ ZenValue ZenValue_get_kind(ZenValue obj) {
         case ZEN_DEFAULT: return ZenValue_make_string("Default");
         case ZEN_AST_NODE: return ZenValue_make_string("AstNode");
         case ZEN_TOKEN: return ZenValue_make_string("Token");
+        case ZEN_CHANNEL: return ZenValue_make_string("Channel");
+        case ZEN_TASK: return ZenValue_make_string("Task");
         default: return ZenValue_make_string("Variant");
     }
 }
@@ -402,8 +501,57 @@ ZenValue ZenValue_read(ZenValue self) {
     return ZenIO_read_value(ZenValue_make_nothing());
 }
 ZenValue ZenValue_close(ZenValue self) {
+    if (self.type == ZEN_CHANNEL && self.as.object) {
+        ZenChannel_close((ZenChannel*)self.as.object);
+        return ZenValue_make_nothing();
+    }
     if (self.type == ZEN_OBJECT && self.as.object) return ZenObject_close(self.as.object);
     return ZenValue_make_nothing();
+}
+
+ZenValue ZenValue_wait(ZenValue self) {
+    if (self.type == ZEN_TASK && self.as.object) {
+        return ZenTask_wait((ZenTaskHandle*)self.as.object);
+    }
+    if (self.type == ZEN_OBJECT && self.as.object) {
+        return ZenObject_wait(self.as.object);
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenValue_cancel(ZenValue self) {
+    if (self.type == ZEN_TASK && self.as.object) {
+        ZenTask_cancel((ZenTaskHandle*)self.as.object);
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenValue_is_cancelled(ZenValue self) {
+    if (self.type == ZEN_TASK && self.as.object) {
+        return ZenValue_from_boolean(ZenTask_is_cancelled((ZenTaskHandle*)self.as.object));
+    }
+    return ZenValue_make_boolean(0);
+}
+
+ZenValue ZenValue_send(ZenValue self, ZenValue value) {
+    if (self.type == ZEN_CHANNEL && self.as.object) {
+        ZenChannel_send((ZenChannel*)self.as.object, value);
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenValue_receive(ZenValue self) {
+    if (self.type == ZEN_CHANNEL && self.as.object) {
+        return ZenChannel_receive((ZenChannel*)self.as.object);
+    }
+    return ZenValue_make_nothing();
+}
+
+ZenValue ZenValue_is_closed(ZenValue self) {
+    if (self.type == ZEN_CHANNEL && self.as.object) {
+        return ZenValue_from_boolean(ZenChannel_is_closed((ZenChannel*)self.as.object));
+    }
+    return ZenValue_make_boolean(0);
 }
 
 ZenValue ZenValue_info(ZenValue self, ZenValue value) { return ZenIO_write_info(value); }

@@ -332,7 +332,8 @@ function parse_declaration(i) {
 function parse_statement(i) {
     let t -> tok_at(i)
     // check expr { case ... } / check expr or { ... } / check expr raise ...
-    when is_kind(t, TokenType.CHECK) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `check`)) {
+    when is_kind(t, TokenType.CHECK) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `check`)) or
+         is_kind(t, TokenType.CHECK_SYMBOL) or is_val(t, `?`) {
         <- parse_check(i + 1)
     }
     // with resource [as alias] { body } — TokenType.WITH
@@ -1231,6 +1232,7 @@ function parse_check(i) {
     let cases -> []
     let or_block -> Nothing
     let raise_expr -> Nothing
+    let error_alias -> Nothing
     let j -> i
     when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
         let br -> parse_block(j)
@@ -1262,6 +1264,21 @@ function parse_check(i) {
     }
     when is_kind(tok_at(j), TokenType.OR) or is_val(tok_at(j), `or`) {
         j -> j + 1
+        when is_kind(tok_at(j), TokenType.LEFT_PAREN) {
+            j -> j + 1
+            when is_kind(tok_at(j), TokenType.IDENTIFIER) {
+                error_alias -> val_of(tok_at(j))
+                j -> j + 1
+            }
+            when is_kind(tok_at(j), TokenType.RIGHT_PAREN) {
+                j -> j + 1
+            } or {
+                <- fail(j, `Expected ')' after error alias.`)
+            }
+        } or when is_kind(tok_at(j), TokenType.IDENTIFIER) and is_kind(tok_at(j + 1), TokenType.LEFT_BRACE) {
+            error_alias -> val_of(tok_at(j))
+            j -> j + 1
+        }
         when is_kind(tok_at(j), TokenType.LEFT_BRACE) {
             let br -> parse_block(j)
             when br[`err`] != Nothing {
@@ -1278,6 +1295,17 @@ function parse_check(i) {
             j -> sr[`i`]
         }
     }
+    when is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `raise`) {
+        let rr -> parse_expression(j + 1)
+        when rr[`err`] != Nothing {
+            <- rr
+        }
+        raise_expr -> rr[`node`]
+        j -> rr[`i`]
+    }
+    when error_alias != Nothing {
+        <- parser_ok(AST.check_statement_alias(subj, cases, or_block, raise_expr, error_alias, line_of(t0), col_of(t0)), j)
+    }
     <- parser_ok(AST.check_statement(subj, cases, or_block, raise_expr, line_of(t0), col_of(t0)), j)
 }
 
@@ -1287,12 +1315,31 @@ function parse_check_cases(i, acc) {
     }
     let t -> tok_at(i)
     when is_kind(t, TokenType.CASE) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `case`)) {
-        let pat_res -> parse_expression(i + 1)
-        when pat_res[`err`] != Nothing {
-            <- pat_res
+        let pat -> Nothing
+        let j -> i + 1
+        when is_kind(tok_at(j), TokenType.IS) or (is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `is`)) {
+            let tr -> parse_type_name(j + 1)
+            when tr[`err`] != Nothing {
+                <- tr
+            }
+            let tname -> AST.type_ann_name(tr[`node`])
+            pat -> AST.is_expr(Nothing, AST.variable(tname, line_of(tok_at(j + 1)), col_of(tok_at(j + 1))), line_of(t), col_of(t))
+            j -> tr[`i`]
+        } or when is_val(tok_at(j), `in`) {
+            let in_res -> parse_expression(j + 1)
+            when in_res[`err`] != Nothing {
+                <- in_res
+            }
+            pat -> AST.binary(Nothing, `in`, in_res[`node`], line_of(t), col_of(t))
+            j -> in_res[`i`]
+        } or {
+            let pat_res -> parse_expression(j)
+            when pat_res[`err`] != Nothing {
+                <- pat_res
+            }
+            pat -> pat_res[`node`]
+            j -> pat_res[`i`]
         }
-        let pat -> pat_res[`node`]
-        let j -> pat_res[`i`]
         let guard -> Nothing
         when is_kind(tok_at(j), TokenType.KEYWORD) and is_val(tok_at(j), `when`) {
             let gr -> parse_expression(j + 1)
@@ -2221,7 +2268,8 @@ function parse_unary(i) {
         }
         <- parser_ok(AST.unary(val_of(t), right[`node`], line_of(t), col_of(t)), right[`i`])
     }
-    when is_kind(t, TokenType.CHECK) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `check`)) {
+    when is_kind(t, TokenType.CHECK) or (is_kind(t, TokenType.KEYWORD) and is_val(t, `check`)) or
+         is_kind(t, TokenType.CHECK_SYMBOL) or is_val(t, `?`) {
         let right -> parse_cast(i + 1)
         when right[`err`] != Nothing {
             <- right
@@ -2398,6 +2446,9 @@ function parse_primary(i) {
     when is_kind(t, TokenType.INTEGER) or is_kind(t, TokenType.DECIMAL) or
          is_kind(t, TokenType.RUNE) or is_kind(t, TokenType.BOOLEAN) or is_kind(t, TokenType.NOTHING) or is_kind(t, TokenType.DEFAULT) {
         <- parser_ok(AST.lit_tok(val_of(t), kind_of(t), line_of(t), col_of(t)), i + 1)
+    }
+    when is_kind(t, TokenType.ERROR_INVALID_NUMBER) {
+        <- fail(i, `Invalid numeric literal '` + Str.to_string(val_of(t)) + `': leading zeros are not permitted in decimal literals; use '0o' prefix for octal.`)
     }
     when is_val(t, `true`) or is_val(t, `false`) or is_val(t, `True`) or is_val(t, `False`) or
          is_val(t, `nothing`) or is_val(t, `Nothing`) or is_val(t, `default`) or is_val(t, `Default`) {

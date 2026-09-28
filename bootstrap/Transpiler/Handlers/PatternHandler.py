@@ -49,6 +49,11 @@ class PatternHandler:
             self._emit(Load(target=tmp_match, source="true", type="bool"), node)
             return tmp_match
 
+        if isinstance(pattern, InPattern):
+            coll = self._visit_expression(pattern.collection)
+            self._emit(Call(target=tmp_match, callee="ZenValue_in", args=[subject, coll], region=current_reg), node)
+            return tmp_match
+
         if isinstance(pattern, IsMatchPattern):
             self._emit(Call(target=tmp_match, callee="ZenValue_is_type_name", args=[subject, f'"{pattern.type_name}"'], region=current_reg), node)
             return tmp_match

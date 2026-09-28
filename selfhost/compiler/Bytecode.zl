@@ -977,6 +977,8 @@ function compile_statement(ctx, stmt) {
             ci -> ci + 1
         }
         
+        let alias -> Nothing
+        when stmt.length > 7 { alias -> stmt[7] }
         when cn == 0 and (or_block != Nothing or raise_expr != Nothing) {
             emit_byte(ctx, 32, line) // OP_LOAD_LOCAL val_slot
             emit_u16(ctx, val_slot, line)
@@ -985,7 +987,21 @@ function compile_statement(ctx, stmt) {
             emit_u16(ctx, err_idx, line)
             let j_not_err -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
             when or_block != Nothing {
+                enter_scope(ctx)
+                emit_byte(ctx, 32, line)
+                emit_u16(ctx, val_slot, line)
+                let eslot -> declare_local(ctx, `error`)
+                emit_byte(ctx, 33, line)
+                emit_u16(ctx, eslot, line)
+                when alias != Nothing and alias != `error` and alias != `_` {
+                    emit_byte(ctx, 32, line)
+                    emit_u16(ctx, val_slot, line)
+                    let aslot -> declare_local(ctx, alias)
+                    emit_byte(ctx, 33, line)
+                    emit_u16(ctx, aslot, line)
+                }
                 compile_block(ctx, or_block)
+                exit_scope(ctx, line)
             }
             when raise_expr != Nothing {
                 compile_expression(ctx, raise_expr)
@@ -994,7 +1010,21 @@ function compile_statement(ctx, stmt) {
             patch_jump(ctx, j_not_err)
         } or when or_block != Nothing or raise_expr != Nothing {
             when or_block != Nothing {
+                enter_scope(ctx)
+                emit_byte(ctx, 32, line)
+                emit_u16(ctx, val_slot, line)
+                let eslot -> declare_local(ctx, `error`)
+                emit_byte(ctx, 33, line)
+                emit_u16(ctx, eslot, line)
+                when alias != Nothing and alias != `error` and alias != `_` {
+                    emit_byte(ctx, 32, line)
+                    emit_u16(ctx, val_slot, line)
+                    let aslot -> declare_local(ctx, alias)
+                    emit_byte(ctx, 33, line)
+                    emit_u16(ctx, aslot, line)
+                }
                 compile_block(ctx, or_block)
+                exit_scope(ctx, line)
             }
             when raise_expr != Nothing {
                 compile_expression(ctx, raise_expr)
@@ -1937,6 +1967,74 @@ function compile_pattern_case(ctx, val_slot, pat, body, guard, end_jumps, line) 
         when j_fail_var >= 0 {
             patch_jump(ctx, j_fail_var)
         }
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    when pk == 38 { // K_IS: case is Error or case e is Error
+        enter_scope(ctx)
+        let rpat -> pat[4]
+        let rname -> ``
+        when rpat != Nothing and (rpat is List) and rpat.length > 3 {
+            rname -> Str.to_string(rpat[3])
+        }
+        let j_fail1 -> -1
+        when rname != `` {
+            emit_byte(ctx, 32, line) // OP_LOAD_LOCAL val_slot
+            emit_u16(ctx, val_slot, line)
+            let t_idx -> add_constant(ctx, rname)
+            emit_byte(ctx, 85, line) // OP_IS_TYPE
+            emit_u16(ctx, t_idx, line)
+            j_fail1 -> emit_jump(ctx, 99, line) // OP_POP_JUMP_IF_FALSE
+        }
+        let lvar -> pat[3]
+        when lvar != Nothing and (lvar is List) and lvar.length > 3 and lvar[0] == 4 {
+            let vname -> Str.to_string(lvar[3])
+            when vname != `` and vname != `_` {
+                emit_byte(ctx, 32, line)
+                emit_u16(ctx, val_slot, line)
+                let vslot -> declare_local(ctx, vname)
+                emit_byte(ctx, 33, line)
+                emit_u16(ctx, vslot, line)
+            }
+        }
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        when j_fail1 >= 0 {
+            patch_jump(ctx, j_fail1)
+        }
+        when j_guard >= 0 {
+            patch_jump(ctx, j_guard)
+        }
+        exit_scope(ctx, line)
+        <- Nothing
+    }
+    
+    when pk == 0 and Str.to_string(pat[4]) == `in` { // K_BINARY: case in 1...100
+        enter_scope(ctx)
+        emit_byte(ctx, 32, line) // OP_LOAD_LOCAL val_slot
+        emit_u16(ctx, val_slot, line)
+        compile_expression(ctx, pat[5])
+        emit_byte(ctx, 95, line) // OP_IN
+        let j_fail1 -> emit_jump(ctx, 99, line)
+        let j_guard -> -1
+        when guard != Nothing {
+            compile_expression(ctx, guard)
+            j_guard -> emit_jump(ctx, 99, line)
+        }
+        compile_block(ctx, body)
+        let j_end -> emit_jump(ctx, 96, line)
+        end_jumps.append(j_end)
+        patch_jump(ctx, j_fail1)
         when j_guard >= 0 {
             patch_jump(ctx, j_guard)
         }
@@ -3115,6 +3213,24 @@ export function create_vm_prelude() {
     g[`__builtin_ffi_error`] -> make_native(`ffi_error`)
     g[`__builtin_ffi_resolve`] -> make_native(`ffi_resolve`)
     
+    // Concurrency & Tasks
+    let conc_mod -> {
+        `channel` -> make_native(`conc_channel`),
+        `create_channel` -> make_native(`conc_channel`),
+        `spawn` -> make_native(`conc_spawn`),
+        `spawn_task` -> make_native(`conc_spawn`)
+    }
+    g[`concurrency`] -> conc_mod
+    g[`__builtin_concurrency`] -> conc_mod
+    g[`channel`] -> make_native(`conc_channel`)
+    g[`spawn`] -> make_native(`conc_spawn`)
+    g[`__builtin_concurrency_channel`] -> make_native(`conc_channel`)
+    g[`__builtin_concurrency_spawn`] -> make_native(`conc_spawn`)
+    g[`__builtin_concurrency_create_channel`] -> make_native(`conc_channel`)
+    g[`__builtin_concurrency_spawn_task`] -> make_native(`conc_spawn`)
+    g[`__builtin_channel_make`] -> make_native(`conc_channel`)
+    g[`__builtin_task_spawn`] -> make_native(`conc_spawn`)
+    
     // AST & Token
     let ast_mod -> {
         `token` -> function(k, s, l, line, col, el, ec) { <- [k, s, l, line, col, el, ec] },
@@ -3407,6 +3523,28 @@ export function invoke_callable_g(callee, args, globals) {
     when callee is Map {
         when callee[`is_native`] == true {
             let nfn -> callee[`native_fn`]
+            when nfn == `conc_channel` {
+                let cap -> 1
+                when args != Nothing and args.length >= 1 and args[0] != Nothing {
+                    cap -> args[0]
+                }
+                <- __builtin_concurrency.channel(cap)
+            }
+            when nfn == `conc_spawn` {
+                let fn_val -> args[0]
+                let rargs -> []
+                when args != Nothing and args.length >= 2 {
+                    rargs.append(args[1])
+                }
+                when fn_val is Map {
+                    <- __builtin_concurrency.spawn(run_bytecode_task, [fn_val, rargs, globals])
+                }
+                let a1 -> Nothing
+                when rargs.length > 0 {
+                    a1 -> rargs[0]
+                }
+                <- __builtin_concurrency.spawn(fn_val, a1)
+            }
             when nfn == `str_starts_with` {
                 <- Str.starts_with(args[0], args[1])
             }
@@ -4647,6 +4785,22 @@ export function invoke_callable_g(callee, args, globals) {
             when m == `wait` {
                 <- recv.wait()
             }
+            when m == `cancel` {
+                <- recv.cancel()
+            }
+            when m == `is_cancelled` {
+                <- recv.is_cancelled()
+            }
+            when m == `send` {
+                when args.length > 0 { <- recv.send(args[0]) }
+                <- false
+            }
+            when m == `receive` {
+                <- recv.receive()
+            }
+            when m == `is_closed` {
+                <- recv.is_closed()
+            }
             when m == `get_stdout` {
                 <- recv.get_stdout()
             }
@@ -5114,7 +5268,7 @@ export function eval_chunk(chunk, globals) {
                 } or {
                     stack.append(Nothing)
                 }
-            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` {
+            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` or prop == `send` or prop == `receive` or prop == `cancel` or prop == `is_cancelled` or prop == `is_closed` {
                 stack.append({
                     `target` -> obj,
                     `method` -> prop,
@@ -5366,6 +5520,19 @@ export function eval_chunk(chunk, globals) {
         <- stack.pop()
     }
     <- Nothing
+}
+
+export function run_bytecode_task(spec) {
+    let fn_val -> spec[0]
+    let rargs -> spec[1]
+    let vm_globals -> spec[2]
+    when fn_val is Map and fn_val.has(`is_closure`) and fn_val[`is_closure`] != Nothing {
+        <- eval_chunk_fn(fn_val[`chunk`], rargs, vm_globals, fn_val[`captures`])
+    }
+    when fn_val is Map and fn_val.has(`code`) and fn_val[`code`] != Nothing {
+        <- eval_chunk_fn(fn_val, rargs, vm_globals, Nothing)
+    }
+    <- invoke_callable_g(fn_val, rargs, vm_globals)
 }
 
 function eval_chunk_fn(chunk, args, globals, captures) {
@@ -5794,7 +5961,7 @@ function eval_chunk_fn(chunk, args, globals, captures) {
                 } or {
                     stack.append(Nothing)
                 }
-            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` {
+            } or when prop == `read` or prop == `write` or prop == `close` or prop == `flush` or prop == `get_stdout` or prop == `get_code` or prop == `wait` or prop == `kill` or prop == `send` or prop == `receive` or prop == `cancel` or prop == `is_cancelled` or prop == `is_closed` {
                 stack.append({
                     `target` -> obj,
                     `method` -> prop,

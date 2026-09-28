@@ -136,19 +136,10 @@ function should_namespace_path(path) {
         <- false
     }
     let p -> Str.to_string(path)
-    when Str.contains(p, `lib/zen/`) or Str.contains(p, `/lib/zen/`) {
-        <- true
+    when Str.contains(p, `fixtures/`) or Str.contains(p, `/fixtures/`) {
+        <- false
     }
-    when Str.contains(p, `selfhost/compiler`) or Str.contains(p, `selfhost/Module`) {
-        <- true
-    }
-    when Str.contains(p, `/compiler/`) {
-        <- true
-    }
-    when Str.contains(p, `selfhost/lsp`) {
-        <- true
-    }
-    <- false
+    <- true
 }
 
 /!
@@ -695,11 +686,10 @@ function import_path_stem_from(s, i, n) {
 
 function import_should_rewrite(path) {
     let s -> Str.to_string(path)
-    when Str.contains(s, `compiler.`) or Str.contains(s, `zen.`) or
-         Str.contains(s, `selfhost.`) or Str.contains(s, `lib/zen`) {
-        <- true
+    when Str.contains(s, `fixtures/`) or Str.contains(s, `/fixtures/`) {
+        <- false
     }
-    <- false
+    <- true
 }
 
 function prefix_for_import_path(path) {

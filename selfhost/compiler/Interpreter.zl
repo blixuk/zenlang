@@ -993,6 +993,10 @@ function env_prelude() {
     global -> env_define(global, `FFI`, make_builtin_mod(`ffi`), false)
     global -> env_define(global, `__builtin_ast`, make_builtin_mod(`ast`), false)
     global -> env_define(global, `ast`, make_builtin_mod(`ast`), false)
+    global -> env_define(global, `__builtin_concurrency`, make_builtin_mod(`concurrency`), false)
+    global -> env_define(global, `concurrency`, make_builtin_mod(`concurrency`), false)
+    global -> env_define(global, `channel`, make_builtin(`concurrency`, `channel`), false)
+    global -> env_define(global, `spawn`, make_builtin(`concurrency`, `spawn`), false)
     global -> env_define(global, `write`, make_builtin(`stdout`, `write`), false)
     global -> env_define(global, `writeln`, make_builtin(`stdout`, `writeln`), false)
     global -> env_define(global, `read`, make_builtin(`stdin`, `read`), false)
@@ -1670,6 +1674,38 @@ function match_pattern_value(pat, v, lookup_env, bind_env) {
     when pat == Nothing {
         <- true
     }
+    when is_kind(pat, AST.K_IS) {
+        let rpat -> AST.is_expr_pat(pat)
+        let rname -> ``
+        when is_kind(rpat, AST.K_VARIABLE) {
+            rname -> Str.to_string(AST.var_name(rpat))
+        }
+        when is_kind(rpat, AST.K_LITERAL) {
+            rname -> Str.to_string(AST.lit_val(rpat))
+        }
+        let matches -> true
+        when rname != `` {
+            matches -> Bytecode.eval_is_type_vm(v, rname)
+        }
+        when matches == false {
+            <- false
+        }
+        let lvar -> AST.is_expr_val(pat)
+        when lvar != Nothing and is_kind(lvar, AST.K_VARIABLE) {
+            let name -> Str.to_string(AST.var_name(lvar))
+            when name != `` and name != `_` {
+                bind_env -> env_define(bind_env, name, v, true)
+            }
+        }
+        <- true
+    }
+    when is_kind(pat, AST.K_BINARY) and Str.to_string(AST.bin_op(pat)) == `in` {
+        let coll -> eval_expr(AST.bin_right(pat), lookup_env)
+        when get_error() != Nothing or is_returning() {
+            <- false
+        }
+        <- eval_binary(`in`, v, coll)
+    }
     when is_kind(pat, AST.K_VARIABLE) {
         let name -> Str.to_string(AST.var_name(pat))
         when name == `_` {
@@ -1838,9 +1874,14 @@ function match_fields_binds(fields, v, lookup_env, bind_env, i) {
 }
 
 function eval_check_stmt(node, env) {
+    let err_before -> I[`error`]
     let subj_v -> eval_expr(AST.check_stmt_expr(node), env)
-    when get_error() != Nothing {
-        <- Nothing
+    let err_after -> I[`error`]
+    let had_exc -> false
+    when err_after != Nothing and err_after != err_before {
+        I[`error`] -> err_before
+        subj_v -> err_after
+        had_exc -> true
     }
     let cases -> AST.check_stmt_cases(node)
     let matched -> false
@@ -1850,13 +1891,24 @@ function eval_check_stmt(node, env) {
     when matched == true {
         <- Nothing
     }
-    when AST.check_stmt_or_block(node) != Nothing {
-        let res -> eval_stmt(AST.check_stmt_or_block(node), env)
+    let or_b -> AST.check_stmt_or_block(node)
+    when or_b != Nothing {
+        let child -> env_create(env)
+        env_define(child, `error`, subj_v, false)
+        let alias -> AST.check_stmt_alias(node)
+        when alias != Nothing and alias != `error` and alias != `_` {
+            env_define(child, alias, subj_v, false)
+        }
+        let res -> eval_stmt(or_b, child)
         <- res
     }
     when AST.check_stmt_raise(node) != Nothing {
         let rv -> eval_expr(AST.check_stmt_raise(node), env)
         set_error(`Check failed: ` + Str.to_string(rv))
+        <- Nothing
+    }
+    when had_exc == true {
+        set_error(err_after)
         <- Nothing
     }
     set_error(`Check failed without handler`)
@@ -2400,6 +2452,12 @@ function eval_call(node, env) {
         let is_cast_type -> false
         when cname != `` and is_type_name_str(cname) {
             is_cast_type -> true
+            when env_has(env, cname) {
+                let val_in_env -> env_get(env, cname)
+                when is_class_val(val_in_env) or is_enum_val(val_in_env) or is_fn_val(val_in_env) {
+                    is_cast_type -> false
+                }
+            }
             when Str.contains(cname, `<`) and Str.ends_with(cname, `>`) {
                 let base_name -> Str.substring(cname, 0, Str.index_of(cname, `<`))
                 when env_has(env, base_name) {
@@ -2712,6 +2770,18 @@ function guest_get(obj, name) {
             }
             <- Nothing
         }
+        when rt == `Task` {
+            when name == `wait` or name == `cancel` or name == `is_cancelled` or name == `state` {
+                <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `task`, `method` -> name }
+            }
+            <- Nothing
+        }
+        when rt == `Channel` {
+            when name == `send` or name == `receive` or name == `close` or name == `is_closed` {
+                <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `channel`, `method` -> name }
+            }
+            <- Nothing
+        }
         when name == `has` or name == `keys` or name == `values` or name == `items` or
              name == `clear` or name == `delete` or name == `remove` {
             <- { `kind` -> `bound_builtin_method`, `target` -> obj, `type` -> `map`, `method` -> name }
@@ -2740,6 +2810,18 @@ function eval_bound_builtin(callee, args) {
     let a0 -> nth_arg(args, 0)
     let a1 -> nth_arg(args, 1)
     let a2 -> nth_arg(args, 2)
+    when mtype == `task` {
+        when mname == `wait` { <- tgt.wait() }
+        when mname == `cancel` { <- tgt.cancel() }
+        when mname == `is_cancelled` { <- tgt.is_cancelled() }
+        when mname == `state` { <- tgt.state }
+    }
+    when mtype == `channel` {
+        when mname == `send` { <- tgt.send(a0) }
+        when mname == `receive` { <- tgt.receive() }
+        when mname == `close` { <- tgt.close() }
+        when mname == `is_closed` { <- tgt.is_closed() }
+    }
     when mtype == `list` {
         when mname == `append` or mname == `push` {
             tgt.append(a0)
@@ -2894,11 +2976,21 @@ function eval_builtin(name, args) {
     let a0 -> nth_arg(args, 0)
     let a1 -> nth_arg(args, 1)
     let a2 -> nth_arg(args, 2)
+    when name == `concurrency.channel` or name == `channel` {
+        let cap -> 1
+        when a0 != Nothing { cap -> a0 }
+        <- __builtin_concurrency.channel(cap)
+    }
+    when name == `concurrency.spawn` or name == `spawn` {
+        <- __builtin_concurrency.spawn(a0, a1)
+    }
     when Str.starts_with(name, `ast.`) {
         <- args
     }
     when name == `reflect.type` or name == `type` {
         when a0 == Nothing { <- `Nothing` }
+        when a0.kind == `Channel` { <- `Channel` }
+        when a0.kind == `Task` { <- `Task` }
         when (a0 is Map) and a0[`kind`] == `DefaultSentinel` { <- `Default` }
         when a0 is Integer { <- `Integer` }
         when a0 is Decimal { <- `Decimal` }

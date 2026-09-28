@@ -8,7 +8,8 @@ from Parser.AST import (
     MapPattern,
     LiteralPattern,
     RestPattern,
-    DestructurePattern
+    DestructurePattern,
+    InPattern
 )
 from Interpreter.Runtime import Environment, VariantObject, BaseObject
 from Interpreter.Exceptions import RaiseException
@@ -21,6 +22,14 @@ class PatternHandler:
         if isinstance(pattern, IdentifierPattern):
             environment.define(pattern.name, value, mutable=False, type="Variant")
             return True
+
+        if isinstance(pattern, InPattern):
+            coll = self._evaluate(pattern.collection, environment)
+            if isinstance(coll, (list, tuple, set, str)):
+                return value in coll
+            if isinstance(coll, dict):
+                return value in coll
+            return False
 
         if isinstance(pattern, RestPattern):
             environment.define(pattern.name, value, mutable=False, type="Variant")

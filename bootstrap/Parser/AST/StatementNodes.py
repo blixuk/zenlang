@@ -241,6 +241,7 @@ class CheckStatement(Statement):
     cases: List[CaseBranch]
     or_block: Optional[Any] = None
     raise_expression: Optional[Any] = None
+    error_alias: Optional[str] = None
     node_type: Optional[str] = "CheckStatement"
 
 

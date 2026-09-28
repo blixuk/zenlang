@@ -1,0 +1,139 @@
+/!
+  Test suite for language-level Concurrency Substrate (Task & Channel).
+  Verifies:
+  1. Task spawning and .wait() returning computation result.
+  2. Task cancellation and .is_cancelled().
+  3. Channel creation, buffering, .send() and .receive().
+  4. Channel .close() and .is_closed().
+  5. Multi-producer / consumer message passing across tasks.
+  6. Structured concurrency with TaskGroup.
+!/
+
+import zen.concurrency as conc
+
+function square(x) {
+    <- x * x
+}
+
+function compute_sum(n) {
+    let s -> 0
+    for i in 1...n {
+        s -> s + i
+    }
+    <- s
+}
+
+function producer(ch) {
+    for i in 1...5 {
+        ch.send(i * 10)
+    }
+    ch.close()
+    <- 5
+}
+
+function main() {
+    writeln(`[Test] Starting Concurrency Language Integration Tests...`)
+
+    // 1. Task Spawning and Waiting
+    let t1 -> conc.spawn(square, 7)
+    let res1 -> t1.wait()
+    when res1 != 49 {
+        writeln(f`FAILED: square(7) expected 49, got {res1}`)
+        <- 1
+    }
+    writeln(f`  [OK] Task spawn and wait returned: {res1}`)
+
+    let t2 -> conc.spawn(compute_sum, 10)
+    let res2 -> t2.wait()
+    when res2 != 55 {
+        writeln(f`FAILED: compute_sum(10) expected 55, got {res2}`)
+        <- 1
+    }
+    writeln(f`  [OK] Task compute_sum returned: {res2}`)
+
+    // 2. Task Cancellation Status
+    let t3 -> conc.spawn(square, 12)
+    when t3.is_cancelled() {
+        writeln(`FAILED: newly spawned task should not be cancelled`)
+        <- 1
+    }
+    let res3 -> t3.wait()
+    when res3 != 144 {
+        writeln(f`FAILED: square(12) expected 144, got {res3}`)
+        <- 1
+    }
+    writeln(`  [OK] Task cancellation status verified`)
+
+    // 3. Channel creation, send, receive, close
+    let ch -> conc.channel(4)
+    when ch.is_closed() {
+        writeln(`FAILED: new channel should not be closed`)
+        <- 1
+    }
+
+    ch.send(100)
+    ch.send(200)
+    ch.send(300)
+
+    let v1 -> ch.receive()
+    let v2 -> ch.receive()
+    let v3 -> ch.receive()
+
+    when v1 != 100 or v2 != 200 or v3 != 300 {
+        writeln(f`FAILED: channel receive mismatch: {v1}, {v2}, {v3}`)
+        <- 1
+    }
+    writeln(f`  [OK] Channel buffer FIFO verified: {v1}, {v2}, {v3}`)
+
+    ch.close()
+    when not ch.is_closed() {
+        writeln(`FAILED: channel should be closed after ch.close()`)
+        <- 1
+    }
+    writeln(`  [OK] Channel close verified`)
+
+    // 4. Cross-task Producer/Consumer Communication
+    let msg_ch -> conc.channel(8)
+    let prod_task -> conc.spawn(producer, msg_ch)
+
+    let received -> []
+    let done -> false
+    while not done {
+        let val -> msg_ch.receive()
+        when val == Nothing {
+            done -> true
+        } or {
+            received.append(val)
+        }
+    }
+    let prod_res -> prod_task.wait()
+    when prod_res != 5 {
+        writeln(f`FAILED: producer task return value expected 5, got {prod_res}`)
+        <- 1
+    }
+    when received.length != 5 or received[0] != 10 or received[4] != 50 {
+        writeln(`FAILED: producer-consumer items received incorrect`)
+        <- 1
+    }
+    writeln(f`  [OK] Cross-task channel streaming verified: {received.length} items`)
+
+    // 5. Structured Concurrency TaskGroup
+    let tg -> conc.task_group()
+    let tg_t1 -> tg.spawn(square, 3)
+    let tg_t2 -> tg.spawn(square, 4)
+    let tg_t3 -> tg.spawn(square, 5)
+
+    tg.wait_all()
+    let r1 -> tg_t1.wait()
+    let r2 -> tg_t2.wait()
+    let r3 -> tg_t3.wait()
+
+    when r1 != 9 or r2 != 16 or r3 != 25 {
+        writeln(f`FAILED: TaskGroup results mismatch: {r1}, {r2}, {r3}`)
+        <- 1
+    }
+    writeln(f`  [OK] Structured TaskGroup wait_all verified: {r1}, {r2}, {r3}`)
+
+    writeln(`[SUCCESS] All Concurrency Language Integration tests passed!`)
+    <- 0
+}

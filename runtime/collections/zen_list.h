@@ -5,12 +5,17 @@
 
 // List structure and functions
 typedef struct ZenList {
-    ZenVariant* items;
-    int count;
-    int capacity;
-} ZenList;
+    ZenHeapHeader header;     /* 8 bytes: intrusive ARC / Sentinel header */
+    ZenVariant* items;        /* 8 bytes: naturally aligned pointer       */
+    int count;                /* 4 bytes                                  */
+    int capacity;             /* 4 bytes                                  */
+} ZenList;                    /* 24 bytes total                           */
 
 ZenList* ZenList_new(void);
+void ZenList_destroy(ZenList* list);
+ZenList* ZenList_deep_clone(ZenList* list);
+void ZenList_append(ZenList* list, ZenValue item);
+void ZenList_set(ZenList* list, int index, ZenValue item);
 ZenValue ZenList_make_from_arguments(int count, ...);
 
 // Primary ZenValue-based API

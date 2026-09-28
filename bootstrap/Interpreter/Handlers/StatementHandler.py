@@ -685,18 +685,32 @@ class StatementHandler:
                         if not self._evaluate(case.guard, branch_env):
                             continue
                     return self._evaluate(case.body, branch_env)
+            if node.or_block:
+                branch_env = Environment(parent=environment)
+                branch_env.define("error", matched_value, False, "variable")
+                if getattr(node, "error_alias", None) and node.error_alias != "error":
+                    branch_env.define(node.error_alias, matched_value, False, "variable")
+                return self._evaluate(node.or_block, branch_env)
+            if hasattr(node, "raise_expression") and node.raise_expression:
+                raise_val = self._evaluate(node.raise_expression, environment)
+                raise RaiseException(raise_val)
             return matched_value
         except RaiseException as e:
+            err_val = getattr(e, "value", e)
             for case in node.cases:
                 branch_env = Environment(parent=environment)
-                if self._evaluate_pattern_match(e, case.pattern, branch_env):
+                if self._evaluate_pattern_match(err_val, case.pattern, branch_env):
                     if case.guard:
                         if not self._evaluate(case.guard, branch_env):
                             continue
                     return self._evaluate(case.body, branch_env)
             
             if node.or_block:
-                return self._evaluate(node.or_block, environment)
+                branch_env = Environment(parent=environment)
+                branch_env.define("error", err_val, False, "variable")
+                if getattr(node, "error_alias", None) and node.error_alias != "error":
+                    branch_env.define(node.error_alias, err_val, False, "variable")
+                return self._evaluate(node.or_block, branch_env)
             if hasattr(node, "raise_expression") and node.raise_expression:
                 raise_val = self._evaluate(node.raise_expression, environment)
                 raise RaiseException(raise_val)

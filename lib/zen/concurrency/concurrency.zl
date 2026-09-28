@@ -8,6 +8,61 @@ import zen.concurrency.task as tasks
 import zen.concurrency.sync as sync
 import zen.concurrency.fiber as fiber
 
+/!
+  Creates a native MPMC ring-buffer channel backed by the C runtime.
+  @param capacity Buffer capacity (default 1).
+  @return Native Channel instance.
+!/
+export function channel(capacity) {
+    let cap -> 1
+    when capacity != Nothing and capacity > 0 {
+        cap -> capacity
+    }
+    <- __builtin_concurrency.channel(cap)
+}
+
+/!
+  Spawns an asynchronous task on the native work-stealing fiber pool.
+  @param callable Function or closure to execute.
+  @param argument Optional argument passed across the frozen memory boundary.
+  @return Native Task handle.
+!/
+export function spawn(callable, argument) {
+    <- __builtin_concurrency.spawn(callable, argument)
+}
+
+/!
+  Structured concurrency TaskGroup context manager.
+!/
+export class TaskGroup {
+    let tasks
+    function init() {
+        self.tasks -> []
+    }
+    function spawn(callable, argument) {
+        let t -> __builtin_concurrency.spawn(callable, argument)
+        self.tasks.append(t)
+        <- t
+    }
+    function wait_all() {
+        for t in self.tasks {
+            t.wait()
+        }
+    }
+    function cancel_all() {
+        for t in self.tasks {
+            t.cancel()
+        }
+    }
+    function __exit__() {
+        self.wait_all()
+    }
+}
+
+export function task_group() {
+    <- TaskGroup()
+}
+
 // Channel re-exports
 export let create_channel -> channel.create_channel
 export let send -> channel.send
@@ -25,11 +80,9 @@ export let select -> channel.select
 
 // Task re-exports
 export let create_task -> tasks.create_task
-export let spawn -> tasks.spawn_task
 export let spawn_task -> tasks.spawn_task
 export let wait -> tasks.wait_task
 export let wait_task -> tasks.wait_task
-export let await -> tasks.await_task
 export let await_task -> tasks.await_task
 export let is_done -> tasks.task_is_done
 export let is_success -> tasks.task_is_success

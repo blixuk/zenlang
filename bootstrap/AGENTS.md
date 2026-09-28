@@ -16,11 +16,12 @@ Owned by the bootstrap layer maintainers. Contains the complete working implemen
 - Deferred function bodies: `TypeChecker.defer_function_bodies` is on; `check_program` flushes deferred bodies after the declare pass so later siblings (e.g. Lexer `_read_doc`, `scope Sentence { to_words; count_words }`) resolve. Fail-closed: logged type errors still exit non-zero.
 - Module-level rebind of `__builtin` / `__builtin_*` is allowed (stdlib aliases).
 - `sys.get_args` / `__builtin_sys.get_args` reflects interpreter argv (script path + user args).
+- Strict numeric literal checking: Leading zeros on decimal integer literals (`0644`) are rejected as `TokenType.ERROR_INVALID_NUMBER`, matching selfhost Lexer parity.
 - Native `-g` runs `zen_program` with the same user/script argv extras as interpret mode (`CCompile.compile(..., run_args=)`).
 - Integer/bool `main` results become process exit codes.
 - Move checking is opt-in (`MemoryKind.UNIQUE`); structures share by default so compiler sources can rebind AST nodes.
 - Native error constructors: `__builtin.error` raises (`ZenValue_make_error_message` + `ZenException_raise`); `error_literal` returns Error value only.
-- Check expressions use Try/setjmp so raised errors are catchable (`check expr or { … }`), matching the interpreter.
+- Check expressions use Try/setjmp so raised errors are catchable (`check expr or { … }`), matching the interpreter. `check expr { case ... } or (err) { ... }` parses error aliases in `Errors.py` and binds `error` and alias in `StatementHandler.py` on error or unmatched fallthrough. `InPattern` supports `case in <collection>` matching across AST, Interpreter, Checker, and Transpiler (`ZenValue_in`).
 - Import aliases must install a fresh MODULE symbol — never mutate an existing function symbol in place (collision: `import zen.error as error` vs `io.error`).
 - `use` is a keyword alias for `import`; `from path use name` aliases `from path import name` (prefer `use` in new code; AST remains ImportStatement).
 - Built-in `module` map (name, path, file, dir, is_entry): interpreter injects per Environment; native `ZenModule_initialize` + global `module` in `runtime/core/zen_sys.c`.

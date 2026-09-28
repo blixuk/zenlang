@@ -36,6 +36,8 @@ void ZenArena_push(ZenArena* arena);
 void ZenArena_pop(void);
 ZenArena* ZenArena_current(void);
 int ZenArena_stack_depth(void);
+void ZenArena_suspend(void);
+void ZenArena_resume(void);
 
 /* Process heap when no arena pushed; current arena when pushed (opt-in). */
 void* ZenRuntime_allocate(size_t size);

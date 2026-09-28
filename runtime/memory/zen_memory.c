@@ -121,8 +121,30 @@ static void ZenUser_pop(void) {
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+#define ZEN_THREAD_LOCAL __thread
+#elif defined(_MSC_VER)
+#define ZEN_THREAD_LOCAL __declspec(thread)
+#elif __STDC_VERSION__ >= 201112L && !defined(__STDC_NO_THREADS__)
+#define ZEN_THREAD_LOCAL _Thread_local
+#else
+#define ZEN_THREAD_LOCAL
+#endif
+
+static ZEN_THREAD_LOCAL int suspended_arena_depth = 0;
+
+void ZenArena_suspend(void) {
+    suspended_arena_depth++;
+}
+
+void ZenArena_resume(void) {
+    if (suspended_arena_depth > 0) {
+        suspended_arena_depth--;
+    }
+}
+
 static ZenArena* ZenUser_current(void) {
-    if (ZenUser_sp <= 0) return NULL;
+    if (suspended_arena_depth > 0 || ZenUser_sp <= 0) return NULL;
     return ZenUser_stack[ZenUser_sp - 1];
 }
 
@@ -132,6 +154,7 @@ ZenArena* ZenArena_current(void) {
 
 int ZenArena_stack_depth(void) {
     /* User-visible depth = opt-in pushes only (stable under SMIR frames). */
+    if (suspended_arena_depth > 0) return 0;
     return ZenUser_sp;
 }
 

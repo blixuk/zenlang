@@ -119,6 +119,16 @@ ZenValue ZenValue_to_string(ZenValue value) {
                      (int)value.as.token->kind, (int)value.as.token->line, (int)value.as.token->col, (int)value.as.token->length);
             return ZenValue_make_string(buf_t);
         }
+        case ZEN_CHANNEL: {
+            char buf_c[64];
+            snprintf(buf_c, sizeof(buf_c), "Channel(%p)", value.as.object);
+            return ZenValue_make_string(buf_c);
+        }
+        case ZEN_TASK: {
+            char buf_t[64];
+            snprintf(buf_t, sizeof(buf_t), "Task(%p)", value.as.object);
+            return ZenValue_make_string(buf_t);
+        }
         case ZEN_VARIANT: {
             if (!value.as.variant) return ZenValue_make_string("Variant(null)");
             char buf_v[256];

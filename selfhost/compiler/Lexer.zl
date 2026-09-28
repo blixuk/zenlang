@@ -733,6 +733,12 @@ export function tokenize_source(src) {
                     }
                     let len_p -> LEX[LEX_POS] - start_p
                     tok_push(number_kind(false), start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
+                } or when ch == `0` and _is_digit(_peek()) {
+                    do while _is_digit(_peek()) or _peek() == `_` {
+                        _advance()
+                    }
+                    let len_p -> LEX[LEX_POS] - start_p
+                    tok_push(TokenType.ERROR_INVALID_NUMBER, start_p, len_p, sl, sc, LEX[LEX_LINE], LEX[LEX_COL])
                 } or {
                     do while _is_digit(_peek()) or _peek() == `_` {
                         _advance()

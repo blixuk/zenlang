@@ -5,10 +5,20 @@
 
 // Set API for Zenlang Bootstrap Runtime
 typedef struct ZenSet {
+    ZenHeapHeader header;     /* 8 bytes: intrusive ARC / Sentinel header */
     ZenValue list;
 } ZenSet;
 
 ZenValue ZenSet_new(void);
+void ZenSet_destroy(ZenSet* set);
+ZenSet* ZenSet_deep_clone(ZenSet* set);
+
+static inline ZenValue ZenValue_from_set(ZenSet* set) {
+    ZenValue v;
+    v.type = ZEN_SET;
+    v.as.set = set;
+    return v;
+}
 ZenValue ZenSet_from_list(ZenValue list);
 ZenValue ZenSet_to_list(ZenValue set);
 ZenValue ZenSet_add_value(ZenValue set, ZenValue value);

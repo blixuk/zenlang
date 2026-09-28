@@ -2,15 +2,36 @@
 #include "collections/zen_list.h"
 #include "core/zen_object.h"
 #include "core/zen_dispatch.h"
+#include "memory/zen_memory.h"
 #include <stdlib.h>
 
 ZenValue ZenSet_new(void) {
-    ZenSet* set = malloc(sizeof(ZenSet));
+    ZenSet* set = (ZenSet*)ZenRuntime_allocate(sizeof(ZenSet));
+    if (!set) return ZenValue_make_nothing();
+    ZenHeapHeader_init(&set->header, ZEN_SET, ZEN_FLAG_CONTAINER);
     set->list = ZenList_make_from_arguments(0);
     ZenValue v;
     v.type = ZEN_SET;
     v.as.set = set;
     return v;
+}
+
+void ZenSet_destroy(ZenSet* set) {
+    if (!set) return;
+    ZenValue_release(set->list);
+    if (set->header.ref_count != ZEN_REF_PINNED) {
+        free(set);
+    }
+}
+
+ZenSet* ZenSet_deep_clone(ZenSet* set) {
+    if (!set) return NULL;
+    ZenSet* new_set = (ZenSet*)ZenRuntime_allocate(sizeof(ZenSet));
+    if (!new_set) return NULL;
+    ZenHeapHeader_init(&new_set->header, ZEN_SET, ZEN_FLAG_CONTAINER);
+    zen_clone_register((void*)set, ZenValue_from_set(new_set));
+    new_set->list = ZenValue_clone_to_heap(set->list);
+    return new_set;
 }
 
 ZenValue ZenSet_contains_value(ZenValue set, ZenValue value) {

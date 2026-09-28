@@ -136,6 +136,11 @@ void ZenRuntime_initialize(void) {
     }
 
     ZenTask_scheduler_init();
+    ZenTaskEngine_init();
+}
+
+void ZenRuntime_terminate(void) {
+    ZenTaskEngine_shutdown();
 }
 
 static struct ZenList* ZenSystem_global_arguments = NULL;

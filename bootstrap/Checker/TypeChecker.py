@@ -232,6 +232,16 @@ class TypeChecker(ExpressionHandler, StatementHandler, PatternHandler, LiteralHa
         self.scope.define(Symbol("__builtin_ffi", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("ffi", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
 
+        # Concurrency primitives
+        self.scope.define(Symbol("__builtin_concurrency", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("concurrency", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_channel", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("__builtin_task", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("channel", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("spawn", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Task", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+        self.scope.define(Symbol("Channel", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
+
         # Internal compiler structures
         self.scope.define(Symbol("__builtin_memory", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))
         self.scope.define(Symbol("__builtin_math", TypeVariant(), None, False, SymbolKind.VARIABLE, 0))

@@ -160,7 +160,7 @@ class Try(MIRInstruction):
 
 @dataclass
 class Catch(MIRInstruction):
-    pass
+    error_alias: Optional[str] = None
 
 @dataclass
 class EndTry(MIRInstruction):

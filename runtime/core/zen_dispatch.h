@@ -39,6 +39,12 @@ ZenValue ZenValue_write(ZenValue self, ZenValue value);
 ZenValue ZenValue_writeln(ZenValue self, ZenValue value);
 ZenValue ZenValue_read(ZenValue self);
 ZenValue ZenValue_close(ZenValue self);
+ZenValue ZenValue_wait(ZenValue self);
+ZenValue ZenValue_cancel(ZenValue self);
+ZenValue ZenValue_is_cancelled(ZenValue self);
+ZenValue ZenValue_send(ZenValue self, ZenValue value);
+ZenValue ZenValue_receive(ZenValue self);
+ZenValue ZenValue_is_closed(ZenValue self);
 
 ZenValue ZenValue_info(ZenValue self, ZenValue value);
 ZenValue ZenValue_warn(ZenValue self, ZenValue value);
@@ -56,5 +62,8 @@ ZenValue ZenValue_slice(ZenValue self, ZenValue start, ZenValue end, ZenValue st
 
 // Bytecode VM execution bridge
 ZenValue ZenValue_run_bytecode_file(ZenValue path);
+
+// Dynamic method dispatch
+ZenValue ZenDispatch_call_method(ZenValue receiver, const char* method_name, int arg_count, ZenValue* args);
 
 #endif // ZEN_DISPATCH_H

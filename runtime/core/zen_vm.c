@@ -3,6 +3,8 @@
 #include "zen_dispatch.h"
 #include "zen_sys.h"
 #include "zen_closure.h"
+#include "../concurrency/zen_task.h"
+#include "../concurrency/zen_channel.h"
 #include "../collections/zen_list.h"
 #include "../collections/zen_map.h"
 #include <stdio.h>
@@ -75,6 +77,20 @@ int ZenChunk_add_constant(ZenChunk* chunk, ZenValue val) {
         chunk->constants = (ZenValue*)realloc(chunk->constants, new_cap * sizeof(ZenValue));
         chunk->const_capacity = new_cap;
     }
+    
+    /* ---------------------------------------------------------
+     * PHASE 3: Constant Pool Freezing
+     * Heap objects residing in the Bytecode chunk's constant 
+     * pool are permanently frozen to elide ARC churn.
+     * --------------------------------------------------------- */
+    if (ZenValue_is_heap_pointer(val)) {
+        ZenHeapHeader* h = (ZenHeapHeader*)val.as.object;
+        if (h) {
+            h->ref_count = ZEN_REF_FROZEN;
+            h->flags |= ZEN_FLAG_FROZEN;
+        }
+    }
+
     chunk->constants[chunk->const_count] = val;
     return chunk->const_count++;
 }
@@ -213,16 +229,31 @@ ZenVM* ZenVM_new(void) {
     ZenVM* vm = (ZenVM*)malloc(sizeof(ZenVM));
     if (!vm) return NULL;
     vm->globals = ZenMap_new();
-    ZenVM_reset(vm);
+    ZenVM_register_native_func(vm, "channel", (void*)ZenChannel_make);
+    ZenVM_register_native_func(vm, "spawn", (void*)ZenTask_spawn_val);
+    vm->stack_top = vm->stack;
+    vm->frame_count = 0;
+    vm->has_error = false;
+    vm->error_val = ZEN_NOTHING_VAL;
     return vm;
 }
 
 void ZenVM_free(ZenVM* vm) {
     if (!vm) return;
+    ZenVM_reset(vm);
     free(vm);
 }
 
 void ZenVM_reset(ZenVM* vm) {
+    if (!vm) return;
+    // Abnormal Unwind: Safely release all active stack slots to prevent 
+    // memory leaks during exception propagation or fatal panics.
+    while (vm->stack_top > vm->stack) {
+        vm->stack_top--;
+        ZenValue_release(*vm->stack_top);
+    }
+    ZenGC_collect_cycles();
+    
     vm->frame_count = 0;
     vm->stack_top = vm->stack;
     vm->has_error = false;
@@ -293,6 +324,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
     frame->chunk = chunk;
     frame->ip = chunk->code;
     frame->slots = vm->stack_top;
+    frame->argc = 0;
 
     // Reserve slots for locals
     for (int i = 0; i < chunk->num_locals; i++) {
@@ -316,6 +348,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
         [OP_STORE_LOCAL] = &&do_OP_STORE_LOCAL,
         [OP_LOAD_GLOBAL] = &&do_OP_LOAD_GLOBAL,
         [OP_STORE_GLOBAL] = &&do_OP_STORE_GLOBAL,
+        [OP_END_SCOPE] = &&do_OP_END_SCOPE,
         [OP_ADD] = &&do_OP_ADD,
         [OP_SUB] = &&do_OP_SUB,
         [OP_MUL] = &&do_OP_MUL,
@@ -414,12 +447,15 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
             }
             
             TARGET(OP_POP) {
-                pop(vm);
+                ZenValue discarded = pop(vm);
+                ZenValue_release(discarded);
                 NEXT();
             }
             
             TARGET(OP_DUP) {
-                push(vm, peek(vm, 0));
+                ZenValue val = peek(vm, 0);
+                ZenValue_retain(val);
+                push(vm, val);
                 NEXT();
             }
             
@@ -433,13 +469,18 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
             
             TARGET(OP_LOAD_LOCAL) {
                 uint16_t slot = READ_U16(frame);
-                push(vm, frame->slots[slot]);
+                ZenValue val = frame->slots[slot];
+                ZenValue_retain(val);
+                push(vm, val);
                 NEXT();
             }
             
             TARGET(OP_STORE_LOCAL) {
                 uint16_t slot = READ_U16(frame);
-                frame->slots[slot] = pop(vm);
+                ZenValue new_val = pop(vm);
+                ZenValue old_val = frame->slots[slot];
+                frame->slots[slot] = new_val;
+                ZenValue_release(old_val);
                 NEXT();
             }
             
@@ -460,6 +501,14 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 ZenValue name = READ_CONST(frame);
                 ZenValue val = pop(vm);
                 ZenMap_set_value_at_key(ZenValue_from_map(vm->globals), name, val);
+                NEXT();
+            }
+            
+            TARGET(OP_END_SCOPE) {
+                uint8_t count = READ_BYTE(frame);
+                for (int i = 0; i < count; i++) {
+                    ZenValue_release(pop(vm));
+                }
                 NEXT();
             }
             
@@ -844,6 +893,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     next_frame->chunk = callee_chunk;
                     next_frame->ip = callee_chunk->code;
                     next_frame->slots = vm->stack_top - argc;
+                    next_frame->argc = argc;
                     
                     // Allocate additional locals
                     for (int i = argc; i < callee_chunk->num_locals; i++) {
@@ -878,10 +928,18 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                     } else if (callee.as.func != NULL) {
                         res = zen_invoke_native_fn((void*)callee.as.func, n, args);
                     }
+                    for (int i = 0; i < argc; i++) {
+                        ZenValue_release(vm->stack_top[-argc + i]);
+                    }
+                    ZenValue_release(callee);
                     vm->stack_top -= (argc + 1);
                     push(vm, res);
                 } else {
                     fprintf(stderr, "VM Error: Callee is not callable (type %d)\n", callee.type);
+                    for (int i = 0; i < argc; i++) {
+                        ZenValue_release(vm->stack_top[-argc + i]);
+                    }
+                    ZenValue_release(callee);
                     vm->stack_top -= (argc + 1);
                     push(vm, ZEN_NOTHING_VAL);
                 }
@@ -890,11 +948,32 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
             
             TARGET(OP_RETURN) {
                 ZenValue result = pop(vm);
+                
+                // 1. Release locally allocated function variables & temporaries
+                // Boundary: (argc .. stack_top - 1)
+                for (ZenValue* slot = frame->slots + frame->argc; slot < vm->stack_top; slot++) {
+                    ZenValue_release(*slot);
+                }
+                
+                // 2. Cleanly release the call arguments pushed by the caller
+                // Boundary: (0 .. argc - 1)
+                for (int i = 0; i < frame->argc; i++) {
+                    ZenValue_release(frame->slots[i]);
+                }
+                
+                // 3. For inner frames, release the callee closure (residing at frame->slots - 1)
+                if (vm->frame_count > 1) {
+                    ZenValue_release(*(frame->slots - 1));
+                    vm->stack_top = frame->slots - 1; /* Discard frame & callee */
+                } else {
+                    vm->stack_top = frame->slots;
+                }
+                
                 vm->frame_count--;
                 if (vm->frame_count == 0) {
-                    return result;
+                    return result; // Program execution finished
                 }
-                vm->stack_top = frame->slots - 1; /* Discard frame & callee */
+                
                 push(vm, result);
                 frame = &vm->frames[vm->frame_count - 1];
                 NEXT();
@@ -909,6 +988,7 @@ ZenValue ZenVM_run_chunk(ZenVM* vm, ZenChunk* chunk) {
                 if (!c) {
                     push(vm, ZEN_NOTHING_VAL);
                 } else {
+                    ZenHeapHeader_init(&c->header, ZEN_FUNCTION, ZEN_FLAG_CONTAINER);
                     c->fn = (void*)proto_chunk;
                     c->n_caps = n_caps;
                     c->arity = proto_chunk ? proto_chunk->num_locals : 0;

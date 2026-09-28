@@ -25,6 +25,7 @@ typedef enum {
     OP_STORE_LOCAL = 0x21,  /* u16 slot */
     OP_LOAD_GLOBAL = 0x22,  /* u16 name_const_idx */
     OP_STORE_GLOBAL = 0x23, /* u16 name_const_idx */
+    OP_END_SCOPE = 0x24,    /* u8 count */
     
     OP_ADD = 0x30,
     OP_SUB = 0x31,
@@ -90,6 +91,7 @@ typedef struct ZenCallFrame {
     ZenChunk* chunk;
     uint8_t* ip;
     ZenValue* slots;
+    int argc;
 } ZenCallFrame;
 
 typedef struct ZenVM {

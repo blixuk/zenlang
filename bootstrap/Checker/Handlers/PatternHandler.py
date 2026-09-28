@@ -16,7 +16,8 @@ from Parser.AST import (
     LiteralPattern,
     VariantPattern,
     RestPattern,
-    DestructurePattern
+    DestructurePattern,
+    InPattern
 )
 
 class PatternHandler:
@@ -58,6 +59,10 @@ class PatternHandler:
             )
             self.scope.define(symbol)
             pattern.symbol = symbol
+            return
+
+        if isinstance(pattern, InPattern):
+            self.expression_handler.check(pattern.collection)
             return
 
         if isinstance(pattern, IsMatchPattern):

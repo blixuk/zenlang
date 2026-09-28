@@ -20,9 +20,10 @@ Standard library maintainers. This is the batteries layer — power without bloa
   | test | `zen.test` |
   | log | `zen.log` |
   | memory | `zen.memory` — auto default; opt-in arenas (`create_arena`/`push`/`pop`/`free`, `region_run`, `using_arena`) |
+  | concurrency | `zen.concurrency` (`channel`, `spawn`, `task_group`, `TaskGroup`), `zen.concurrency.channel`, `zen.concurrency.tasks` |
   | time | `zen.time` |
   | io | `zen.io.io`, `zen.io.file`, `zen.io.path` |
-  | sys | `zen.sys.sys`, `zen.sys.process`, `zen.sys.term`, `zen.sys.readline`, `zen.sys.cli`, `zen.sys.env`, `zen.sys.ffi`, `zen.sys.hardware`, `zen.sys.meminfo`, `zen.sys.termposix` |
+  | sys | `zen.sys.sys` (`get_args`, `user_args`, `program_path`, `program_name`), `zen.sys.process`, `zen.sys.term`, `zen.sys.readline`, `zen.sys.cli`, `zen.sys.env`, `zen.sys.ffi`, `zen.sys.hardware`, `zen.sys.meminfo`, `zen.sys.termposix` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.regex`, … |
   | math | `zen.math.math`, `zen.math.random`, `zen.math.range` |
   | collections | `zen.collections.list`, `.set`, `.stack`, `.queue`, `.trie`, `.collections` |
@@ -36,7 +37,7 @@ Standard library maintainers. This is the batteries layer — power without bloa
   | color | `zen.color` (`.color`, `zen.ui.color`) — RGB, Hex, HSL, 8/16/256 ANSI, TrueColor, WCAG contrast |
   | net | `zen.net.http` (curl under `-g`), `.socket` (interpret), `.url`, `.mime` |
   | text | `zen.text.string`, `zen.text.text`, `zen.text.lorem`, `zen.text.zenmark` (`.zenmark`, `zen.zenmark`), `zen.text.regex`, `.wrap`, `.template`, `.diff`, `.html`, … |
-  | data | `zen.data.zendata` (`.zendata`, `zen.zendata`), `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.dotenv`, `.ini`, `.deflate`, `.gzip`, `.zlib`, `.zip`, … |
+  | data | `zen.data.zendata` (`.zendata`, `zen.zendata`), `zen.data.json`, `.csv`, `.xml`, `.yaml`, `.toml`, `.dotenv`, `.ini`, `.deflate`, `.gzip`, `.zlib`, `.zip`, `.zar` (Next-Gen pure Zen archive with opt-in Deflate, ChaCha20-Poly1305 AEAD, Merkle tree root seal & SFX), … |
   | tooling | `zen.tooling.zencode` (`.zencode`, `zen.zencode`), `zen.tooling.builder`, `zen.tooling.pkg` |
 
 - Short aliases (`zen.string`, `zen.file`, `zen.term`, `zen.list`, `zen.json`, `zen.random`, `zen.io`, `zen.process`, `zen.zendata`, `zen.zencode`, `zen.zenmark`, `zen.qrcode`, `zen.data.qrcode`) resolve via `bootstrap/Module/Resolver.py` for compatibility; **prefer nested forms** in new code.

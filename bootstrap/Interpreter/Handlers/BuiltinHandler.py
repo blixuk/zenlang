@@ -163,10 +163,9 @@ class BuiltinHandler:
  
         # Register '__builtin' object
         def _builtin_error(msg):
-            # This requires access to RaiseException which is in Interpreter.py
-            # For now, let's assume we can import it or it's available on self
             from Interpreter.Interpreter import RaiseException
-            raise RaiseException(msg)
+            err_obj = msg if isinstance(msg, dict) and msg.get("__type__") == "Error" else {"__type__": "Error", "message": msg}
+            raise RaiseException(err_obj)
             
         def _create_object(type_name, data):
             # This is a bit complex as we need to find the type in the environments

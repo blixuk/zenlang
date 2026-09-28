@@ -316,6 +316,7 @@ class CheckStatement(ASTNode):
     cases: List[CaseBranch]
     or_block: Optional[Any] = None
     raise_expression: Optional[Any] = None
+    error_alias: Optional[str] = None
     node_type: Optional[str] = "CheckStatement"
 
 
@@ -834,3 +835,9 @@ class VariantPattern(Pattern):
 @dataclass
 class WildcardPattern(Pattern):
     node_type: Optional[str] = "WildcardPattern"
+
+@dataclass
+class InPattern(Pattern):
+    collection: ASTNode
+    node_type: Optional[str] = "InPattern"
+

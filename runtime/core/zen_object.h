@@ -5,8 +5,11 @@
 
 // Generic object base
 typedef struct ZenObject {
+    ZenHeapHeader header;     /* 8 bytes: intrusive ARC / Sentinel header */
     ZenValue __none; 
 } ZenObject;
+
+void ZenObject_destroy(ZenObject* obj);
 
 struct ZenObject_struct {
     ZenValue kind;

@@ -224,7 +224,11 @@ export function when_stmt(cases, line, column) {
 }
 
 export function check_statement(expression, cases, or_block, raise_expr, line, column) {
-    <- make_node4(K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr)
+    <- make_node5(K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr, Nothing)
+}
+
+export function check_statement_alias(expression, cases, or_block, raise_expr, alias, line, column) {
+    <- make_node5(K_CHECK_STMT, line, column, expression, cases, or_block, raise_expr, alias)
 }
 
 export function raise_stmt(expr, line, column) {
@@ -476,6 +480,12 @@ export function check_stmt_expr(n) { <- n[3] }
 export function check_stmt_cases(n) { <- n[4] }
 export function check_stmt_or_block(n) { <- n[5] }
 export function check_stmt_raise(n) { <- n[6] }
+export function check_stmt_alias(n) {
+    when n.length > 7 {
+        <- n[7]
+    }
+    <- Nothing
+}
 
 export function check_expr_expr(n) { <- n[3] }
 

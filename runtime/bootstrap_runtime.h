@@ -26,6 +26,7 @@
 
 // Memory
 #include "memory/zen_memory.h"
+#include "memory/zen_gc.h"
 
 // Collections
 #include "collections/zen_list.h"
@@ -38,6 +39,7 @@
 
 // Concurrency
 #include "concurrency/zen_task.h"
+#include "concurrency/zen_channel.h"
 
 // Compatibility helpers for the transpiler
 static inline void* zen_get_body_ptr(void* obj) {

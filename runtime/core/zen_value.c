@@ -1,5 +1,11 @@
 #include "zen_value.h"
 #include "zen_closure.h"
+#include "zen_variant.h"
+#include "../collections/zen_list.h"
+#include "../collections/zen_map.h"
+#include "../collections/zen_set.h"
+#include "../concurrency/zen_channel.h"
+#include "../concurrency/zen_task.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -21,6 +27,7 @@ typedef struct {
 static ZenInternSlot* zen_intern_slots = NULL;
 static int zen_intern_cap = 0;
 static int zen_intern_live = 0;
+static pthread_mutex_t zen_intern_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static inline uint32_t zen_intern_hash(const char* s, size_t n) {
     uint32_t h = 2166136261u;
@@ -96,8 +103,10 @@ ZenValue ZenValue_make_string(const char* s) {
     size_t len = strlen(s);
     if (len <= ZEN_INTERN_MAX_LEN) {
         uint32_t h = zen_intern_hash(s, len);
+        pthread_mutex_lock(&zen_intern_lock);
         char* interned = zen_intern_lookup(s, len, h);
         if (!interned) interned = zen_intern_put(s, len, h);
+        pthread_mutex_unlock(&zen_intern_lock);
         if (interned) {
             z.as.string = interned;
             return z;
@@ -222,6 +231,7 @@ ZenValue ZenValue_from_function(ZenValue (*f)(void)) {
         z.type = ZEN_NOTHING;
         return z;
     }
+    ZenHeapHeader_init(&c->header, ZEN_FUNCTION, ZEN_FLAG_CONTAINER);
     c->fn = (void*)f;
     c->n_caps = 0;
     c->arity = -1;
@@ -241,6 +251,7 @@ ZenValue ZenValue_from_closure(void* fn, int arity, int n_caps, ...) {
         z.type = ZEN_NOTHING;
         return z;
     }
+    ZenHeapHeader_init(&c->header, ZEN_FUNCTION, ZEN_FLAG_CONTAINER);
     c->fn = fn;
     c->n_caps = n_caps;
     c->arity = arity;
@@ -254,4 +265,257 @@ ZenValue ZenValue_from_closure(void* fn, int arity, int n_caps, ...) {
     z.type = ZEN_FUNCTION;
     z.as.object = c;
     return z;
+}
+
+void ZenClosure_destroy(ZenClosureData* c) {
+    if (!c) return;
+    for (int i = 0; i < c->n_caps; i++) {
+        ZenValue_release(c->caps[i]);
+    }
+    if (c->header.ref_count != ZEN_REF_PINNED) {
+        free(c);
+    }
+}
+
+/* Forward declarations of container destructors */
+void ZenList_destroy(struct ZenList* list);
+void ZenMap_destroy(struct ZenMap* map);
+void ZenSet_destroy(struct ZenSet* set);
+void ZenVariantObject_destroy(struct ZenVariantObject* v);
+void ZenObject_destroy(struct ZenObject* obj);
+
+void ZenValue_destroy_heap_object(ZenHeapHeader* h, ZenValue v) {
+    if (!h) return;
+    ZenGC_remove_suspect(h);
+    h->ref_count = ZEN_REF_DEAD;
+    switch (h->type) {
+        case ZEN_LIST:
+            ZenList_destroy(v.as.list);
+            break;
+        case ZEN_MAP:
+            ZenMap_destroy(v.as.map);
+            break;
+        case ZEN_SET:
+            ZenSet_destroy(v.as.set);
+            break;
+        case ZEN_VARIANT:
+            ZenVariantObject_destroy(v.as.variant);
+            break;
+        case ZEN_FUNCTION:
+            ZenClosure_destroy((ZenClosureData*)v.as.object);
+            break;
+        case ZEN_OBJECT:
+            ZenObject_destroy((struct ZenObject*)v.as.object);
+            break;
+        case ZEN_CHANNEL:
+            ZenChannel_destroy((ZenChannel*)h);
+            break;
+        case ZEN_TASK:
+            ZenTask_destroy((ZenTaskHandle*)h);
+            break;
+        default:
+            break;
+    }
+}
+
+/* Forward declarations for deep cloning */
+struct ZenList* ZenList_deep_clone(struct ZenList* list);
+struct ZenMap* ZenMap_deep_clone(struct ZenMap* map);
+struct ZenSet* ZenSet_deep_clone(struct ZenSet* set);
+struct ZenVariantObject* ZenVariantObject_deep_clone(struct ZenVariantObject* v);
+ZenValue ZenValue_from_set(struct ZenSet* set);
+ZenValue ZenValue_from_variant(struct ZenVariantObject* v);
+
+typedef struct {
+    void* src;
+    ZenValue clone;
+} ZenClonePair;
+
+#define ZEN_STATIC_CLONE_PAIRS 256
+static __thread ZenClonePair zen_static_clone_pairs[ZEN_STATIC_CLONE_PAIRS];
+static __thread ZenClonePair* zen_clone_pairs = NULL;
+static __thread int zen_clone_count = 0;
+static __thread int zen_clone_cap = ZEN_STATIC_CLONE_PAIRS;
+static __thread int zen_clone_depth = 0;
+
+void zen_clone_enter(void) {
+    zen_clone_depth++;
+}
+
+void zen_clone_leave(void) {
+    if (--zen_clone_depth == 0) {
+        if (zen_clone_pairs != NULL) {
+            free(zen_clone_pairs);
+            zen_clone_pairs = NULL;
+            zen_clone_cap = ZEN_STATIC_CLONE_PAIRS;
+        }
+        zen_clone_count = 0;
+    }
+}
+
+ZenValue zen_clone_lookup(void* src) {
+    if (!src || zen_clone_count == 0) return (ZenValue){ZEN_NOTHING, {0}};
+    ZenClonePair* pairs = zen_clone_pairs ? zen_clone_pairs : zen_static_clone_pairs;
+    for (int i = 0; i < zen_clone_count; i++) {
+        if (pairs[i].src == src) {
+            return pairs[i].clone;
+        }
+    }
+    return (ZenValue){ZEN_NOTHING, {0}};
+}
+
+void zen_clone_register(void* src, ZenValue clone) {
+    if (!src || zen_clone_depth == 0) return;
+    if (zen_clone_count >= zen_clone_cap) {
+        int new_cap = zen_clone_cap * 2;
+        ZenClonePair* new_p = (ZenClonePair*)malloc(new_cap * sizeof(ZenClonePair));
+        if (new_p) {
+            ZenClonePair* cur_p = zen_clone_pairs ? zen_clone_pairs : zen_static_clone_pairs;
+            memcpy(new_p, cur_p, zen_clone_count * sizeof(ZenClonePair));
+            if (zen_clone_pairs != NULL) {
+                free(zen_clone_pairs);
+            }
+            zen_clone_pairs = new_p;
+            zen_clone_cap = new_cap;
+        } else {
+            return;
+        }
+    }
+    ZenClonePair* pairs = zen_clone_pairs ? zen_clone_pairs : zen_static_clone_pairs;
+    pairs[zen_clone_count].src = src;
+    pairs[zen_clone_count].clone = clone;
+    zen_clone_count++;
+}
+
+ZenValue ZenValue_clone_to_heap(ZenValue v) {
+    if (!ZenValue_is_heap_pointer(v)) return v;
+
+    ZenValue existing = zen_clone_lookup(v.as.object);
+    if (existing.type != ZEN_NOTHING) {
+        return existing;
+    }
+
+    extern void ZenArena_suspend(void);
+    extern void ZenArena_resume(void);
+
+    ZenArena_suspend(); 
+    zen_clone_enter();
+    
+    ZenValue promoted = v;
+    ZenHeapHeader* h = (ZenHeapHeader*)v.as.object;
+    
+    switch (h->type) {
+        case ZEN_LIST:
+            promoted = ZenValue_from_list(ZenList_deep_clone((struct ZenList*)v.as.list));
+            break;
+        case ZEN_MAP:
+            promoted = ZenValue_from_map(ZenMap_deep_clone((struct ZenMap*)v.as.map));
+            break;
+        case ZEN_SET:
+            promoted = ZenValue_from_set(ZenSet_deep_clone((struct ZenSet*)v.as.set));
+            break;
+        case ZEN_VARIANT:
+            promoted = ZenValue_from_variant(ZenVariantObject_deep_clone((struct ZenVariantObject*)v.as.variant));
+            break;
+        default:
+            promoted = v; 
+            break;
+    }
+    
+    zen_clone_leave();
+    ZenArena_resume();
+    return promoted;
+}
+
+/* =========================================================================
+ * Universal Child Traversal Dispatcher
+ * ========================================================================= */
+void ZenValue_visit_children(ZenHeapHeader* h, ZenValueVisitor visitor, void* context) {
+    if (!h || !(h->flags & ZEN_FLAG_CONTAINER)) return;
+
+    switch (h->type) {
+        case ZEN_LIST: {
+            ZenList* list = (ZenList*)h;
+            for (int i = 0; i < list->count; i++) {
+                visitor(list->items[i], context);
+            }
+            break;
+        }
+        case ZEN_MAP: {
+            ZenMap* map = (ZenMap*)h;
+            for (int i = 0; i < map->count; i++) {
+                visitor(map->entries[i].key, context);
+                visitor(map->entries[i].value, context);
+            }
+            break;
+        }
+        case ZEN_SET: {
+            ZenSet* set = (ZenSet*)h;
+            visitor(set->list, context);
+            break;
+        }
+        case ZEN_VARIANT: {
+            ZenVariantObject* var = (ZenVariantObject*)h;
+            visitor(var->enum_name, context);
+            visitor(var->variant_name, context);
+            visitor(var->data, context);
+            break;
+        }
+        case ZEN_FUNCTION: {
+            ZenClosureData* closure = (ZenClosureData*)h;
+            for (int i = 0; i < closure->n_caps; i++) {
+                visitor(closure->caps[i], context);
+            }
+            break;
+        }
+        case ZEN_CHANNEL: {
+            ZenChannel* ch = (ZenChannel*)h;
+            pthread_mutex_lock(&ch->lock);
+            for (int i = 0; i < ch->count; i++) {
+                int idx = (ch->tail + i) % ch->capacity;
+                visitor(ch->buffer[idx], context);
+            }
+            pthread_mutex_unlock(&ch->lock);
+            break;
+        }
+        case ZEN_TASK: {
+            ZenTaskHandle* task = (ZenTaskHandle*)h;
+            pthread_mutex_lock(&task->lock);
+            visitor(task->callable, context);
+            visitor(task->argument, context);
+            visitor(task->result, context);
+            pthread_mutex_unlock(&task->lock);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+/* =========================================================================
+ * Deep Freezing (Immutable Cross-Thread Promotion)
+ * ========================================================================= */
+static void freeze_visitor(ZenValue child, void* context) {
+    (void)context;
+    ZenValue_freeze(child); // Recursively freeze children
+}
+
+void ZenValue_freeze(ZenValue v) {
+    if (!ZenValue_is_heap_pointer(v)) return;
+    if (v.type == ZEN_CHANNEL || v.type == ZEN_TASK) return;
+    
+    ZenHeapHeader* h = (ZenHeapHeader*)v.as.object;
+    if (!h) return;
+
+    // If already frozen or dead, halt the cascade to prevent infinite loops in cyclic graphs
+    if (h->ref_count == ZEN_REF_FROZEN || h->ref_count == ZEN_REF_DEAD) {
+        return;
+    }
+
+    // Lock the header
+    h->ref_count = ZEN_REF_FROZEN;
+    h->flags |= ZEN_FLAG_FROZEN;
+
+    // Cascade freeze to all children
+    ZenValue_visit_children(h, freeze_visitor, NULL);
 }
